@@ -24,6 +24,7 @@
                 "cloudfront:CreateDistribution",
                 "cloudfront:DeleteDistribution",
                 "cloudfront:TagResource",
+                "cloudfront:ListTagsForResource",
                 "cloudfront:CreateOriginAccessControl",
                 "cloudfront:DeleteOriginAccessControl",
                 "cloudfront:GetOriginAccessControl",
@@ -93,19 +94,19 @@
                 "route53:ListHostedZones",
                 "route53:ChangeResourceRecordSets",
                 "route53:GetChange",
-                "route53:ListResourceRecordSets"
+                "route53:ListResourceRecordSets",
+                "route53:ListTagsForResource"
             ],
             "Resource": "*"
         },
         {
-            "Sid": "SSMAccess",
+            "Sid": "SSMWriteAccess",
             "Effect": "Allow",
             "Action": [
                 "ssm:PutParameter",
                 "ssm:GetParameter",
                 "ssm:GetParameters",
                 "ssm:DeleteParameter",
-                "ssm:DescribeParameters",
                 "ssm:ListTagsForResource",
                 "ssm:AddTagsToResource"
             ],
@@ -114,12 +115,19 @@
             ]
         },
         {
+            "Sid": "SSMListAccess",
+            "Effect": "Allow",
+            "Action": [
+                "ssm:DescribeParameters"
+            ],
+            "Resource": "*"
+        },
+        {
             "Sid": "CloudWatchLogsAccess",
             "Effect": "Allow",
             "Action": [
                 "logs:CreateLogGroup",
                 "logs:DeleteLogGroup",
-                "logs:DescribeLogGroups",
                 "logs:PutRetentionPolicy",
                 "logs:TagResource",
                 "logs:ListTagsForResource"
@@ -128,6 +136,14 @@
                 "arn:aws:logs:*:*:log-group:/aws/lambda/portfolio-*",
                 "arn:aws:logs:*:*:log-group:/aws/apigateway/portfolio-*"
             ]
+        },
+        {
+            "Sid": "CloudWatchListAccess",
+            "Effect": "Allow",
+            "Action": [
+                "logs:DescribeLogGroups"
+            ],
+            "Resource": "*"
         },
         {
             "Sid": "KMSAccess",

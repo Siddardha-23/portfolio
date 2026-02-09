@@ -1,0 +1,163 @@
+name: Deploy Portfolio to AWS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: "1.6.0"
+
+jobs:
+  # ===========================================================================
+  # Frontend Build & Deploy
+  # ===========================================================================
+  deploy-frontend:
+    name: 🌐 Deploy Frontend
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: portfolio-frontend
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: portfolio-frontend/package-lock.json
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: 🔧 Create production environment file
+        run: |
+          echo "VITE_API_URL=https://${{ secrets.DOMAIN_NAME }}/api" > .env.production
+
+      - name: 🏗️ Build frontend
+        run: npm run build
+
+      - name: 🔑 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🚀 Deploy to S3
+        run: |
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }}/ \
+            --delete \
+            --cache-control "public, max-age=31536000" \
+            --exclude "index.html" \
+            --exclude "*.json"
+          
+          # Upload index.html and JSON with no-cache for instant updates
+          aws s3 cp dist/index.html s3://${{ secrets.S3_BUCKET_NAME }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate"
+          
+          # Upload JSON files without aggressive caching
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET_NAME }}/ \
+            --exclude "*" \
+            --include "*.json" \
+            --cache-control "public, max-age=60"
+
+      - name: 🔄 Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+  # ===========================================================================
+  # Backend Build & Deploy
+  # ===========================================================================
+  deploy-backend:
+    name: ⚡ Deploy Backend
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: portfolio-backend
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: portfolio-backend/requirements.txt
+
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -t ./package
+
+      - name: 📁 Prepare Lambda package
+        run: |
+          # Copy application code to package directory
+          cp -r *.py package/ 2>/dev/null || true
+          cp -r blueprints package/
+          cp -r models package/
+          cp -r services package/
+          cp -r utils package/
+          
+          # Create deployment zip
+          cd package
+          zip -r9 ../lambda-deployment.zip .
+
+      - name: 🔑 Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: 🚀 Deploy to Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+            --zip-file fileb://lambda-deployment.zip \
+            --publish
+
+      - name: ⏳ Wait for Lambda update
+        run: |
+          aws lambda wait function-updated \
+            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }}
+
+      - name: ✅ Verify deployment
+        run: |
+          # Test the health endpoint
+          curl -f https://${{ secrets.DOMAIN_NAME }}/api/health || echo "Health check pending..."
+
+  # ===========================================================================
+  # Post-Deployment Summary
+  # ===========================================================================
+  summary:
+    name: 📊 Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deploy-frontend, deploy-backend]
+    if: always()
+    
+    steps:
+      - name: 📝 Generate summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Frontend | ${{ needs.deploy-frontend.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Backend | ${{ needs.deploy-backend.result == 'success' && '✅ Success' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
+          echo "- **Website**: https://${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Health**: https://${{ secrets.DOMAIN_NAME }}/api/health" >> $GITHUB_STEP_SUMMARY

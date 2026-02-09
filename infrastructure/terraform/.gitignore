@@ -1,0 +1,33 @@
+# Terraform state files
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Terraform lock file (should be committed but excluded during dev)
+# .terraform.lock.hcl
+
+# Terraform directory
+.terraform/
+
+# Terraform variable files containing secrets
+terraform.tfvars
+*.auto.tfvars
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Terraform plan files
+*.tfplan
+tfplan
+
+# Zip files (Lambda packages)
+*.zip
+
+# Local testing
+.env.local

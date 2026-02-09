@@ -1,0 +1,57 @@
+# =============================================================================
+# Terraform Variables Configuration
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values
+# 
+# IMPORTANT: 
+# - NEVER commit terraform.tfvars to version control!
+# - Secrets are stored in AWS SSM Parameter Store (SecureString)
+# - After first deploy, you can manage secrets directly in AWS Console:
+#   AWS Console → Systems Manager → Parameter Store
+# =============================================================================
+
+# AWS Configuration
+aws_region   = "us-east-1"
+project_name = "portfolio"
+environment  = "prod"
+
+# Domain Configuration (already set up in Route 53)
+domain_name = "manneharshithsiddardha.com"
+
+# =============================================================================
+# SECRETS - Only needed for FIRST deployment
+# After initial deploy, manage these in AWS SSM Parameter Store console
+# =============================================================================
+
+# MongoDB Atlas Connection String
+# Get this from: MongoDB Atlas → Database → Connect → Connect your application
+mongodb_uri = "mongodb+srv://username:password@cluster.mongodb.net/portfolio?retryWrites=true&w=majority"
+
+# JWT Secret Key (generate a strong random key)
+# Example: openssl rand -hex 32
+jwt_secret_key = "your-super-secret-jwt-key-here-change-this"
+
+# IPInfo Token (optional - for IP geolocation)
+# Get free token at: https://ipinfo.io/signup
+ipinfo_token = ""
+
+# =============================================================================
+# Lambda Configuration
+# =============================================================================
+
+# Memory size in MB (512 is good balance of cost/performance)
+# More memory = faster CPU = faster cold starts
+lambda_memory_size = 512
+
+# Timeout in seconds
+lambda_timeout = 30
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+
+# Enable AWS WAF for additional security (adds ~$5/month)
+enable_waf = false
+
+# Enable CloudWatch logging
+enable_logging = true

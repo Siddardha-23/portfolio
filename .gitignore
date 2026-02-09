@@ -1,0 +1,60 @@
+# =============================================================================
+# Root .gitignore for Portfolio Monorepo
+# =============================================================================
+
+# Dependencies
+node_modules/
+env/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Environment files (SECRETS!)
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.production
+portfolio-backend/.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.mgx/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Terraform
+infrastructure/terraform/.terraform/
+infrastructure/terraform/*.tfstate
+infrastructure/terraform/*.tfstate.*
+infrastructure/terraform/terraform.tfvars
+infrastructure/terraform/*.tfplan
+infrastructure/terraform/tfplan
+infrastructure/terraform/placeholder.zip
+
+# Python
+*.pyc
+package/
+lambda-deployment.zip
+
+# Test
+test-env/
+coverage/
+
+# Lock files (optional - some prefer to commit these)
+# pnpm-lock.yaml

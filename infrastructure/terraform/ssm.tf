@@ -101,6 +101,7 @@ resource "aws_ssm_parameter" "environment" {
 # -----------------------------------------------------------------------------
 output "ssm_parameter_paths" {
   description = "SSM Parameter Store paths"
+  sensitive   = true
   value = {
     mongodb_uri     = aws_ssm_parameter.mongodb_uri.name
     jwt_secret      = aws_ssm_parameter.jwt_secret.name

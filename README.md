@@ -1,6 +1,6 @@
 # 🚀 DevOps Portfolio
 
-A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, deployed on AWS using Infrastructure as Code.
+A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, deployed on AWS using Infrastructure as Code. |
 
 [![Deploy to AWS](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml/badge.svg)](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml)
 

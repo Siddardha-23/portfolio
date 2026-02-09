@@ -67,7 +67,8 @@
                 "iam:GetRolePolicy",
                 "iam:TagRole",
                 "iam:ListRolePolicies",
-                "iam:ListAttachedRolePolicies"
+                "iam:ListAttachedRolePolicies",
+                "iam:ListInstanceProfilesForRole"
             ],
             "Resource": [
                 "arn:aws:iam::*:role/portfolio-*"

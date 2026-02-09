@@ -13,13 +13,18 @@ except ImportError:
     pass
 
 # Configure logging
+# Configure logging
+handlers = [logging.StreamHandler()]
+
+# Only log to file if NOT running in Lambda/Cloud (or if explicitly enabled)
+# Assuming local dev doesn't set USE_SSM_SECRETS (or sets it to false)
+if os.getenv('USE_SSM_SECRETS', 'false').lower() != 'true':
+    handlers.append(logging.FileHandler('app.log'))
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s:%(levelname)s:%(name)s:%(message)s',
-    handlers=[
-        logging.FileHandler('app.log'),
-        logging.StreamHandler()
-    ]
+    handlers=handlers
 )
 
 logger = logging.getLogger(__name__)

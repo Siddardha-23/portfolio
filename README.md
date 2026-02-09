@@ -2,7 +2,7 @@
 
 A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, deployed on AWS using Infrastructure as Code.
 
-[![Deploy to AWS](https://github.com/YOUR_USERNAME/portfolio/actions/workflows/deploy.yml/badge.svg)](https://github.com/YOUR_USERNAME/portfolio/actions/workflows/deploy.yml)
+[![Deploy to AWS](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml/badge.svg)](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml)
 
 ## 🌐 Live Demo
 
@@ -100,7 +100,7 @@ portfolio/
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOUR_USERNAME/portfolio.git
+git clone https://github.com/Siddardha-23/portfolio.git
 cd portfolio
 
 # 2. Configure Terraform variables
@@ -164,5 +164,5 @@ MIT License - feel free to use this as a template for your own portfolio!
 
 **Harshith Siddardha Manne**
 - LinkedIn: [linkedin.com/in/harshith-siddardha](https://linkedin.com/in/harshith-siddardha)
-- GitHub: [github.com/YOUR_USERNAME](https://github.com/YOUR_USERNAME)
+- GitHub: [github.com/Siddardha-23](https://github.com/Siddardha-23)
 - Email: harshith.siddardha@gmail.com

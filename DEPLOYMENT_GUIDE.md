@@ -311,8 +311,8 @@ environment  = "prod"
 domain_name = "manneharshithsiddardha.com"
 
 # COPY THESE FROM YOUR .env FILE:
-mongodb_uri    = "mongodb+srv://YOUR_USERNAME:YOUR_PASSWORD@YOUR_CLUSTER.mongodb.net/portfolio?retryWrites=true&w=majority"
-jwt_secret_key = "YOUR_JWT_SECRET_FROM_ENV"
+mongodb_uri    = "REPLACE_WITH_YOUR_MONGODB_URI"
+jwt_secret_key = "REPLACE_WITH_YOUR_JWT_SECRET"
 ipinfo_token   = ""  # Leave empty if you don't have one
 
 # Lambda settings (keep defaults)

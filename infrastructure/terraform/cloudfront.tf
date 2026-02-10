@@ -2,17 +2,11 @@
 # CloudFront Distribution for Frontend + API
 # =============================================================================
 
-# Managed cache policies (replaces deprecated forwarded_values)
-data "aws_cloudfront_cache_policy" "caching_optimized" {
-  name = "Managed-CachingOptimized"
-}
-
-data "aws_cloudfront_cache_policy" "caching_disabled" {
-  name = "Managed-CachingDisabled"
-}
-
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
-  name = "Managed-AllViewerExceptHostHeader"
+# AWS managed policy IDs (avoids cloudfront:GetCachePolicy/GetOriginRequestPolicy)
+locals {
+  cloudfront_cache_policy_caching_optimized     = "658327ea-f89d-4fab-a63d-7e88639e58f6"  # Managed-CachingOptimized
+  cloudfront_cache_policy_caching_disabled      = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"  # Managed-CachingDisabled
+  cloudfront_origin_request_policy_all_viewer   = "b689b0a8-53d0-40ab-baf2-68738e2966ac"  # Managed-AllViewerExceptHostHeader
 }
 
 # Security response headers policy
@@ -102,7 +96,7 @@ resource "aws_cloudfront_distribution" "frontend" {
     allowed_methods            = ["GET", "HEAD", "OPTIONS"]
     cached_methods             = ["GET", "HEAD"]
     target_origin_id           = "S3-Frontend"
-    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    cache_policy_id            = local.cloudfront_cache_policy_caching_optimized
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
     viewer_protocol_policy = "redirect-to-https"
@@ -116,8 +110,8 @@ resource "aws_cloudfront_distribution" "frontend" {
     allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
     cached_methods             = ["GET", "HEAD"]
     target_origin_id           = "API-Backend"
-    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    cache_policy_id            = local.cloudfront_cache_policy_caching_disabled
+    origin_request_policy_id   = local.cloudfront_origin_request_policy_all_viewer
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
     viewer_protocol_policy = "https-only"

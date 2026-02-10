@@ -213,6 +213,7 @@ class ApiService {
 
   async getOrgStats() {
     return this.request<{
+      total_visitors: number;
       organizations: Array<{
         name: string;
         visitors: number;

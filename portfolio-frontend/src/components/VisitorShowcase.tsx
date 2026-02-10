@@ -10,6 +10,7 @@ interface OrgStat {
 }
 
 interface OrgStatsData {
+    total_visitors: number;
     organizations: OrgStat[];
     total_registered: number;
     linkedin_profiles_found: number;
@@ -60,7 +61,9 @@ export default function VisitorShowcase() {
         );
     }
 
-    if (!stats || stats.total_registered === 0) {
+    const totalVisitors = stats?.total_visitors ?? 0;
+    const totalRegistered = stats?.total_registered ?? 0;
+    if (!stats || (totalVisitors === 0 && totalRegistered === 0)) {
         return null;
     }
 
@@ -90,10 +93,10 @@ export default function VisitorShowcase() {
                         </div>
                     </div>
 
-                    {/* Stats row */}
+                    {/* Stats row: total visitors (all), orgs and LinkedIn (form submitters only) */}
                     <div className="grid grid-cols-3 gap-4 mb-6">
                         <div className="text-center p-3 rounded-xl bg-secondary/50 dark:bg-secondary/30 border border-border">
-                            <div className="text-2xl font-bold text-primary">{stats.total_registered}</div>
+                            <div className="text-2xl font-bold text-primary">{totalVisitors}</div>
                             <div className="text-xs text-muted-foreground">Total Visitors</div>
                         </div>
                         <div className="text-center p-3 rounded-xl bg-secondary/50 dark:bg-secondary/30 border border-border">

@@ -25,6 +25,59 @@ interface FingerprintData {
 const SESSION_STORAGE_KEY = 'portfolio_session_id';
 const SESSION_TRACKED_KEY = 'portfolio_session_tracked';
 
+// Persistent fingerprint hash for cross-session deduplication (same browser = one visitor)
+const FINGERPRINT_HASH_KEY = 'portfolio_fingerprint_hash';
+
+/**
+ * Simple non-crypto hash for fingerprint string (consistent across sessions).
+ */
+function hashString(str: string): string {
+  let h = 5381;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) + h) ^ str.charCodeAt(i);
+  }
+  return Math.abs(h >>> 0).toString(16);
+}
+
+/**
+ * Collect only hardware/software-stable signals for cross-session fingerprinting.
+ * Excludes window size, battery, and other volatile data.
+ */
+async function computeStableFingerprintData(): Promise<string> {
+  const canvas = getCanvasFingerprint();
+  const webgl = getWebGLInfo();
+  const fonts = detectAvailableFonts();
+  const parts = [
+    navigator.userAgent,
+    navigator.platform,
+    navigator.language,
+    navigator.hardwareConcurrency ?? '',
+    navigator.deviceMemory ?? '',
+    screen.width,
+    screen.height,
+    screen.colorDepth,
+    new Date().getTimezoneOffset(),
+    typeof webgl === 'object' ? [webgl.renderer, webgl.vendor].join('|') : String(webgl),
+    canvas,
+    fonts.join(','),
+  ];
+  return parts.join('|');
+}
+
+/**
+ * Get or create a persistent fingerprint hash (localStorage).
+ * Same browser/device will get the same hash across sessions.
+ */
+export async function getOrCreateFingerprintHash(): Promise<string> {
+  if (typeof window === 'undefined') return '';
+  const stored = localStorage.getItem(FINGERPRINT_HASH_KEY);
+  if (stored) return stored;
+  const data = await computeStableFingerprintData();
+  const hash = hashString(data);
+  localStorage.setItem(FINGERPRINT_HASH_KEY, hash);
+  return hash;
+}
+
 /**
  * Get or create a unique session ID.
  * Uses sessionStorage to persist across page navigation within the same tab.
@@ -172,16 +225,18 @@ const detectAvailableFonts = (): string[] => {
     return fontList.filter(fontAvailable);
 };
 
-const collectFingerprint = async (page: string): Promise<Partial<FingerprintData>> => {
-    const [battery, mediaDevices, clientIp] = await Promise.all([
+const collectFingerprint = async (page: string): Promise<Partial<FingerprintData> & { fingerprintHash?: string }> => {
+    const [battery, mediaDevices, clientIp, fingerprintHash] = await Promise.all([
         getBatteryInfo(),
         getMediaDevicesInfo(),
         getClientIP(),
+        getOrCreateFingerprintHash(),
     ]);
 
     const sessionId = getSessionId();
 
     return {
+        fingerprintHash,
         userAgent: navigator.userAgent,
         screen: {
             width: screen.width,

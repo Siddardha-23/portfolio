@@ -5,10 +5,12 @@ This service handles:
 - Visitor data collection and storage
 - Integration with session and IP services
 - Visitor analytics and statistics
+- Fingerprint-based deduplication (same browser = one visitor)
 """
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
+from pymongo.errors import DuplicateKeyError
 from utils.db_connect import DBConnect
 from services.session_service import get_session_service
 from services.ip_service import get_ip_service
@@ -38,16 +40,20 @@ class VisitorService:
             self.collection.create_index("ip_address")
             # Index for time-based queries
             self.collection.create_index("timestamp")
+            # Sparse index for fingerprint-based deduplication (cross-session same browser)
+            self.collection.create_index("fingerprint_hash", unique=True, sparse=True)
         except Exception as e:
             logger.warning(f"Index creation warning (may already exist): {e}")
     
-    def track_visitor(self, session_id: str, ip_address: str, 
+    def track_visitor(self, session_id: str, ip_address: str,
                       client_ip: str = None, user_agent: str = None,
                       page: str = 'unknown', referrer: str = 'direct',
-                      raw_data: dict = None) -> Dict[str, Any]:
+                      raw_data: dict = None, fingerprint_hash: str = None) -> Dict[str, Any]:
         """
-        Track a visitor with session-based deduplication.
-        
+        Track a visitor with session-based and fingerprint-based deduplication.
+        If fingerprint_hash is provided and already exists, updates that visitor's
+        last_activity and visit_count instead of creating a duplicate.
+
         Args:
             session_id: Client session ID
             ip_address: Server-detected IP address
@@ -56,23 +62,39 @@ class VisitorService:
             page: Page being visited
             referrer: Referrer URL
             raw_data: Additional fingerprint/browser data
-            
+            fingerprint_hash: Stable browser fingerprint hash for cross-session dedup
+
         Returns:
-            Result dictionary with tracking status
+            Result dictionary with tracking status (new, existing, or error)
         """
         try:
-            # Use client IP if provided and valid, else use server IP
             effective_ip = self._get_effective_ip(ip_address, client_ip)
-            
-            # Get or create session
-            session = self.session_service.create_or_get_session(
+
+            self.session_service.create_or_get_session(
                 session_id, effective_ip, user_agent
             )
-            
-            # Add page to session
             self.session_service.add_page_visit(session_id, page)
-            
-            # Check if we should create a new visitor entry
+
+            # Fingerprint-based dedup: same browser across sessions = one visitor
+            if fingerprint_hash:
+                existing = self.collection.find_one({"fingerprint_hash": fingerprint_hash})
+                if existing:
+                    self.collection.update_one(
+                        {"fingerprint_hash": fingerprint_hash},
+                        {
+                            "$set": {"last_activity": datetime.utcnow(), "page": page},
+                            "$inc": {"visit_count": 1}
+                        }
+                    )
+                    logger.info(f"Returning visitor by fingerprint: {fingerprint_hash[:12]}...")
+                    return {
+                        "status": "existing",
+                        "message": "Visitor already tracked (same browser)",
+                        "session_id": session_id,
+                        "ip": effective_ip
+                    }
+
+            # Session-based dedup: same tab/session = one visitor entry per session
             if not self.session_service.should_track_visitor(session_id):
                 logger.info(f"Session {session_id} already tracked, skipping duplicate entry")
                 return {
@@ -81,14 +103,10 @@ class VisitorService:
                     "session_id": session_id,
                     "ip": effective_ip
                 }
-            
-            # Get IP geolocation info
+
             ip_info = self.ip_service.get_ip_info(effective_ip)
-            
-            # Parse user agent if provided
             ua_data = self._parse_user_agent(user_agent) if user_agent else {}
-            
-            # Create visitor document
+
             visitor_doc = {
                 "session_id": session_id,
                 "ip_address": effective_ip,
@@ -101,8 +119,9 @@ class VisitorService:
                 "page": page,
                 "referrer": referrer,
                 "timestamp": datetime.utcnow(),
+                "last_activity": datetime.utcnow(),
+                "visit_count": 1,
                 "raw_data": raw_data or {},
-                # Geolocation summary for easy access
                 "geo": {
                     "city": ip_info.get("city"),
                     "region": ip_info.get("region"),
@@ -112,21 +131,36 @@ class VisitorService:
                     "org": ip_info.get("org")
                 }
             }
-            
-            result = self.collection.insert_one(visitor_doc)
-            
+            if fingerprint_hash:
+                visitor_doc["fingerprint_hash"] = fingerprint_hash
+
+            try:
+                result = self.collection.insert_one(visitor_doc)
+            except DuplicateKeyError:
+                # Race: another request with same fingerprint_hash inserted first
+                self.collection.update_one(
+                    {"fingerprint_hash": fingerprint_hash},
+                    {
+                        "$set": {"last_activity": datetime.utcnow(), "page": page},
+                        "$inc": {"visit_count": 1}
+                    }
+                )
+                return {
+                    "status": "existing",
+                    "message": "Visitor already tracked (same browser)",
+                    "session_id": session_id,
+                    "ip": effective_ip
+                }
+
             if result.inserted_id:
-                # Mark session as tracked
                 self.session_service.mark_session_tracked(
-                    session_id, 
+                    session_id,
                     str(result.inserted_id)
                 )
-                
                 logger.info(
                     f"New visitor tracked: {session_id} from "
                     f"{ip_info.get('city', 'Unknown')}, {ip_info.get('country', 'Unknown')}"
                 )
-                
                 return {
                     "status": "created",
                     "message": "Visitor tracked successfully",
@@ -137,12 +171,12 @@ class VisitorService:
                         "country": ip_info.get("country_name")
                     }
                 }
-            
+
             return {
                 "status": "error",
                 "message": "Failed to insert visitor document"
             }
-            
+
         except Exception as e:
             logger.error(f"Error tracking visitor: {e}")
             return {
@@ -210,15 +244,33 @@ class VisitorService:
             visitors = list(self.collection.find(
                 {"ip_address": ip_address}
             ).sort("timestamp", -1))
-            
             for v in visitors:
                 v['_id'] = str(v['_id'])
-            
             return visitors
         except Exception as e:
             logger.error(f"Error getting visitors by IP: {e}")
             return []
-    
+
+    def get_unique_visitor_count(self) -> int:
+        """
+        Count unique visitors: distinct fingerprint_hash count plus legacy
+        documents without a fingerprint_hash (each counted as one).
+        """
+        try:
+            distinct_hashes = self.collection.distinct("fingerprint_hash")
+            unique_by_fingerprint = len([h for h in distinct_hashes if h])
+            legacy_count = self.collection.count_documents({
+                "$or": [
+                    {"fingerprint_hash": {"$exists": False}},
+                    {"fingerprint_hash": None},
+                    {"fingerprint_hash": ""}
+                ]
+            })
+            return unique_by_fingerprint + legacy_count
+        except Exception as e:
+            logger.error(f"Error getting unique visitor count: {e}")
+            return 0
+
     def get_statistics(self) -> Dict[str, Any]:
         """Get comprehensive visitor statistics"""
         try:

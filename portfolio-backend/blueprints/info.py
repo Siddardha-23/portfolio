@@ -1,71 +1,21 @@
-"""Visitor info blueprint - Updated to use service layer with security"""
+"""Visitor info blueprint - routes for visitor tracking and registration."""
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from services.visitor_service import get_visitor_service
-from services.ip_service import get_ip_service
-from utils.db_connect import DBConnect
-from utils.security import InputSanitizer, get_rate_limiter
 from datetime import datetime
 import logging
-import requests
 from ua_parser import user_agent_parser
 
+from services.visitor_service import get_visitor_service
+from services.ip_service import get_ip_service
+from services.linkedin_service import (
+    search_linkedin_profile,
+    extract_organization_from_email,
+)
+from utils.db_connect import DBConnect
+from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 
 info_bp = Blueprint('info', __name__)
 logger = logging.getLogger(__name__)
-
-
-def search_linkedin_via_duckduckgo(first_name, last_name, email=None):
-    """
-    Search for LinkedIn profile using DuckDuckGo Instant Answer API.
-    This is a privacy-respecting, free API that doesn't require authentication.
-    """
-    try:
-        query = f"{first_name} {last_name} site:linkedin.com/in"
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            data = response.json()
-            # Check for results
-            if data.get('AbstractURL') and 'linkedin.com' in data.get('AbstractURL', ''):
-                return {
-                    'found': True,
-                    'url': data.get('AbstractURL'),
-                    'headline': data.get('AbstractText', ''),
-                    'source': 'duckduckgo'
-                }
-            # Check related topics
-            for topic in data.get('RelatedTopics', []):
-                if isinstance(topic, dict) and 'FirstURL' in topic:
-                    if 'linkedin.com/in' in topic.get('FirstURL', ''):
-                        return {
-                            'found': True,
-                            'url': topic.get('FirstURL'),
-                            'headline': topic.get('Text', ''),
-                            'source': 'duckduckgo'
-                        }
-        return {'found': False, 'source': 'duckduckgo'}
-    except Exception as e:
-        logger.error(f"LinkedIn search error: {e}")
-        return {'found': False, 'error': str(e)}
-
-
-def extract_company_from_email(email):
-    """Extract company/organization name from email domain"""
-    try:
-        if not email or '@' not in email:
-            return None
-        domain = email.split('@')[1].lower()
-        # Skip common personal email providers
-        personal_domains = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 
-                          'icloud.com', 'aol.com', 'protonmail.com', 'mail.com']
-        if domain in personal_domains:
-            return None
-        # Extract company name from domain
-        company = domain.split('.')[0]
-        return company.title()
-    except:
-        return None
 
 
 @info_bp.route('', methods=['POST'])
@@ -85,20 +35,13 @@ def store_visitor_info():
             import uuid
             session_id = str(uuid.uuid4())
         
-        # Enhanced IP detection
-        if request.headers.getlist("X-Forwarded-For"):
-            ip_address = request.headers.getlist("X-Forwarded-For")[0]
-        else:
-            ip_address = request.remote_addr
-        
-        # Client-provided IP (from frontend IP detection)
+        ip_address = get_client_ip(request)
         client_ip = data.get('clientIp', data.get('client_ip'))
-        
         user_agent = request.headers.get('User-Agent', data.get('user_agent', 'unknown'))
         page = data.get('page', 'unknown')
         referrer = data.get('referrer', 'direct')
-        
-        # Use visitor service for tracking
+        fingerprint_hash = data.get('fingerprintHash') or data.get('fingerprint_hash') or None
+
         visitor_service = get_visitor_service()
         result = visitor_service.track_visitor(
             session_id=session_id,
@@ -107,7 +50,8 @@ def store_visitor_info():
             user_agent=user_agent,
             page=page,
             referrer=referrer,
-            raw_data=data
+            raw_data=data,
+            fingerprint_hash=fingerprint_hash
         )
         
         if result.get('status') == 'existing':
@@ -146,9 +90,8 @@ def register_visitor():
     and attempt to find their LinkedIn profile.
     """
     try:
-        # Rate limiting
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
         rate_limiter = get_rate_limiter()
+        client_ip = get_client_ip(request)
         if rate_limiter.is_rate_limited(f"register-visitor:{client_ip}", max_requests=10, window_seconds=3600):
             return jsonify({'error': 'Too many requests'}), 429
         
@@ -170,27 +113,26 @@ def register_visitor():
         
         if not first_name or not last_name:
             return jsonify({'error': 'First and last name are required'}), 400
-        
-        # Enhanced IP detection
-        if request.headers.getlist("X-Forwarded-For"):
-            ip_address = request.headers.getlist("X-Forwarded-For")[0]
-        else:
-            ip_address = request.remote_addr
-        
-        # Get IP geolocation
+
+        ip_address = get_client_ip(request)
         ip_service = get_ip_service()
         ip_info = ip_service.get_ip_info(ip_address)
         
         user_agent_string = request.headers.get('User-Agent', 'unknown')
         ua_parsed = user_agent_parser.Parse(user_agent_string)
         
-        # Extract organization from email
-        organization = extract_company_from_email(email)
-        
-        # Attempt LinkedIn lookup (non-blocking, best effort)
-        linkedin_info = search_linkedin_via_duckduckgo(first_name, last_name, email)
-        
-        # Store in registered_visitors collection
+        organization = extract_organization_from_email(email)
+
+        linkedin_info = search_linkedin_profile(first_name, last_name, email)
+        if linkedin_info.get("organization_from_headline"):
+            organization = organization or linkedin_info["organization_from_headline"]
+        linkedin_response = {
+            "found": linkedin_info.get("found", False),
+            "url": linkedin_info.get("url"),
+            "headline": linkedin_info.get("headline", ""),
+            "source": linkedin_info.get("source", ""),
+        }
+
         visitor_doc = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -203,7 +145,7 @@ def register_visitor():
             'browser': ua_parsed.get('user_agent', {}).get('family'),
             'os': ua_parsed.get('os', {}).get('family'),
             'device': ua_parsed.get('device', {}).get('family'),
-            'linkedin': linkedin_info,
+            'linkedin': linkedin_response,
             'registered_at': datetime.utcnow(),
             'fingerprint': data.get('fingerprint', {}),
             'session_id': data.get('sessionId', data.get('session_id')),
@@ -223,7 +165,7 @@ def register_visitor():
         return jsonify({
             'success': True,
             'message': 'Visitor registered successfully',
-            'linkedin': linkedin_info,
+            'linkedin': linkedin_response,
             'organization': organization,
             'location': {
                 'city': ip_info.get('city'),
@@ -253,12 +195,17 @@ def get_visitor_stats():
 
 @info_bp.route('/org-stats', methods=['GET'])
 def get_organization_stats():
-    """Get public organization visitor statistics (no auth required)"""
+    """
+    Public stats: total visitors (all who visited, including skip),
+    plus organizations and LinkedIn counts from form submitters only.
+    """
     try:
+        visitor_service = get_visitor_service()
+        total_visitors = visitor_service.get_unique_visitor_count()
+
         db = DBConnect().get_db()
         collection = db.registered_visitors
-        
-        # Aggregate visitors by organization
+
         pipeline = [
             {"$match": {"organization": {"$ne": None}}},
             {"$group": {
@@ -287,6 +234,7 @@ def get_organization_stats():
         top_countries = list(collection.aggregate(geo_pipeline))
         
         return jsonify({
+            'total_visitors': total_visitors,
             'organizations': [
                 {
                     'name': stat['_id'],
@@ -298,7 +246,7 @@ def get_organization_stats():
             'total_registered': total_registered,
             'linkedin_profiles_found': linkedin_found,
             'top_countries': [
-                {'country': c['_id'], 'count': c['count']} 
+                {'country': c['_id'], 'count': c['count']}
                 for c in top_countries
             ]
         }), 200

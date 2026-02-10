@@ -85,6 +85,7 @@ function RecruiterPanel() {
   const [searchQuery, setSearchQuery] = useState('');
   const [stats, setStats] = useState<{
     organizations: Array<{ name: string; visitors: number }>;
+    total_visitors: number;
     total_registered: number;
     linkedin_profiles_found: number;
   } | null>(null);
@@ -208,7 +209,7 @@ function RecruiterPanel() {
           {stats && (
             <div className="grid grid-cols-3 gap-3 mb-6">
               <div className="text-center p-3 rounded-xl bg-secondary/40 border border-border">
-                <div className="text-xl font-bold text-primary">{stats.total_registered}</div>
+                <div className="text-xl font-bold text-primary">{stats.total_visitors}</div>
                 <div className="text-[10px] text-muted-foreground uppercase">Visitors</div>
               </div>
               <div className="text-center p-3 rounded-xl bg-secondary/40 border border-border">

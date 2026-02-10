@@ -36,8 +36,9 @@ export default function WelcomeForm() {
     setIsSubmitting(true);
 
     try {
-      // Store visitor info in localStorage
+      // Store visitor info and mark as visited
       localStorage.setItem('visitorInfo', JSON.stringify(userInfo));
+      localStorage.setItem('portfolio_visited', 'true');
 
       // Get fingerprint and session ID for the form submission
       const fingerprint = await getVisitorFingerprint('welcome-form');
@@ -62,6 +63,7 @@ export default function WelcomeForm() {
 
 
   const handleSkip = () => {
+    localStorage.setItem('portfolio_visited', 'true');
     navigate('/home');
   };
 

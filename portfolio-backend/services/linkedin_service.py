@@ -1,16 +1,18 @@
 """
 LinkedIn lookup service - Find LinkedIn profiles and extract organization from names/headlines.
 
-Uses DuckDuckGo Instant Answer API (primary) and optional Google search fallback.
+Uses duckduckgo-search library for web search (primary) and optional Google HTML fallback.
 Extracts organization from email domain and from LinkedIn headline text.
 """
 import logging
 import re
+
 import requests
+from duckduckgo_search import DDGS
 
 logger = logging.getLogger(__name__)
 
-# Browser-like User-Agent for search requests
+# Browser-like User-Agent for Google fallback requests
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -60,37 +62,25 @@ def extract_organization_from_headline(headline: str) -> str | None:
 
 
 def _search_linkedin_duckduckgo(first_name: str, last_name: str) -> dict:
-    """DuckDuckGo Instant Answer API - no auth, privacy-respecting."""
+    """DuckDuckGo web search via duckduckgo-search library - returns LinkedIn profile URLs."""
     try:
         query = f"{first_name} {last_name} site:linkedin.com/in"
-        url = f"https://api.duckduckgo.com/?q={query}&format=json&no_html=1"
-        resp = requests.get(url, timeout=5, headers={"User-Agent": USER_AGENT})
-        if resp.status_code != 200:
-            return {"found": False, "source": "duckduckgo"}
-        data = resp.json()
-        if data.get("AbstractURL") and "linkedin.com" in (data.get("AbstractURL") or ""):
-            headline = (data.get("AbstractText") or "").strip()
-            org = extract_organization_from_headline(headline)
-            return {
-                "found": True,
-                "url": data.get("AbstractURL"),
-                "headline": headline,
-                "organization_from_headline": org,
-                "source": "duckduckgo",
-            }
-        for topic in data.get("RelatedTopics") or []:
-            if isinstance(topic, dict) and "FirstURL" in topic:
-                url_val = topic.get("FirstURL") or ""
-                if "linkedin.com/in" in url_val:
-                    headline = (topic.get("Text") or "").strip()
-                    org = extract_organization_from_headline(headline)
-                    return {
-                        "found": True,
-                        "url": url_val,
-                        "headline": headline,
-                        "organization_from_headline": org,
-                        "source": "duckduckgo",
-                    }
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=10))
+        for r in results:
+            href = (r.get("href") or "").strip()
+            if "linkedin.com/in/" in href:
+                title = (r.get("title") or "").strip()
+                body = (r.get("body") or "").strip()
+                headline = title or body
+                org = extract_organization_from_headline(headline)
+                return {
+                    "found": True,
+                    "url": href,
+                    "headline": headline,
+                    "organization_from_headline": org,
+                    "source": "duckduckgo",
+                }
         return {"found": False, "source": "duckduckgo"}
     except Exception as e:
         logger.debug("DuckDuckGo LinkedIn search failed: %s", e)

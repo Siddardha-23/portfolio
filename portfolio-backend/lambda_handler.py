@@ -1,12 +1,12 @@
 """
 AWS Lambda Handler for Flask Application
 
-This module wraps the Flask application with Mangum to handle
-AWS Lambda + API Gateway events. It provides seamless WSGI/ASGI
-compatibility for serverless deployment.
+This module wraps the Flask application with apig-wsgi to handle
+AWS Lambda + API Gateway events. apig-wsgi translates API Gateway
+HTTP API v2.0 payloads to WSGI requests that Flask understands.
 
 Architecture:
-    API Gateway (HTTP API) -> Lambda -> Mangum -> Flask App -> MongoDB Atlas
+    API Gateway (HTTP API) -> Lambda -> apig-wsgi -> Flask App -> MongoDB Atlas
 """
 
 import logging
@@ -19,8 +19,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Lazy import to reduce cold start time
+# Lazy initialization to reduce cold start time
 _app = None
+_handler = None
+
 
 def get_app():
     """
@@ -36,41 +38,40 @@ def get_app():
     return _app
 
 
+def get_handler():
+    """Get or create the apig-wsgi Lambda handler (lazy)."""
+    global _handler
+    if _handler is None:
+        from apig_wsgi import make_lambda_handler
+        _handler = make_lambda_handler(get_app(), binary_support=True)
+    return _handler
+
+
 def handler(event, context):
     """
     AWS Lambda handler function.
-    
+
     This function is invoked by AWS Lambda for each incoming request
-    from API Gateway. It uses Mangum to translate between Lambda/API Gateway
+    from API Gateway. It uses apig-wsgi to translate between Lambda/API Gateway
     events and WSGI requests that Flask can understand.
-    
+
     Args:
         event: AWS Lambda event (API Gateway HTTP API v2.0 format)
         context: AWS Lambda context object
-    
+
     Returns:
         dict: HTTP response in API Gateway format
     """
     try:
-        from mangum import Mangum
-        
-        app = get_app()
-        
-        # Create Mangum handler with API Gateway HTTP API v2.0 format
-        mangum_handler = Mangum(
-            app,
-            lifespan="off",  # Flask doesn't need ASGI lifespan
-            api_gateway_base_path=None  # Handle all paths
-        )
-        
         # Log request info (be careful about sensitive data in production)
         if os.getenv('ENVIRONMENT') != 'prod':
-            logger.info(f"Incoming request: {event.get('requestContext', {}).get('http', {}).get('method')} {event.get('rawPath')}")
-        
-        response = mangum_handler(event, context)
-        
-        return response
-        
+            logger.info(
+                f"Incoming request: {event.get('requestContext', {}).get('http', {}).get('method')} "
+                f"{event.get('rawPath')}"
+            )
+
+        return get_handler()(event, context)
+
     except Exception as e:
         logger.error(f"Lambda handler error: {str(e)}", exc_info=True)
         return {
@@ -97,6 +98,6 @@ if __name__ == "__main__":
         "rawPath": "/api/health",
         "isBase64Encoded": False
     }
-    
+
     result = handler(test_event, None)
     print(f"Test result: {result}")

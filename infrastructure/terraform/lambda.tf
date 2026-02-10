@@ -83,7 +83,7 @@ resource "aws_lambda_function" "backend" {
   function_name = "${var.project_name}-backend"
   role          = aws_iam_role.lambda.arn
   handler       = "lambda_handler.handler"
-  runtime       = "python3.11"
+  runtime       = "python3.12"
   memory_size   = var.lambda_memory_size
   timeout       = var.lambda_timeout
 

@@ -78,7 +78,7 @@ def handler(event, context):
             'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json',
-                'Access-Control-Allow-Origin': os.getenv('ALLOWED_ORIGINS', '*').split(',')[0]
+                'Access-Control-Allow-Origin': os.getenv('ALLOWED_ORIGINS', 'https://manneharshithsiddardha.com').split(',')[0]
             },
             'body': '{"error": "Internal server error"}'
         }

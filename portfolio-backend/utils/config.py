@@ -1,4 +1,5 @@
 import os
+import secrets
 from datetime import timedelta
 
 # Load environment variables from .env file if available (local development)
@@ -12,14 +13,14 @@ except ImportError:
 def _get_config_value(key: str, default: str = None) -> str:
     """
     Get configuration value from SSM Parameter Store or environment variable.
-    
+
     Priority:
     1. SSM Parameter Store (when USE_SSM_SECRETS=true, i.e., Lambda)
     2. Environment variable
     3. Default value
     """
     use_ssm = os.getenv('USE_SSM_SECRETS', 'false').lower() == 'true'
-    
+
     if use_ssm:
         try:
             from utils.ssm_config import ssm_config
@@ -29,31 +30,26 @@ def _get_config_value(key: str, default: str = None) -> str:
         except Exception as e:
             import logging
             logging.warning(f"SSM config failed for {key}: {e}")
-    
+
     # Fallback to environment variable
     return os.getenv(key, default)
 
 
-class DBConfig(object):
-    """Database configuration - supports both local and AWS Lambda environments."""
-    
-    @property
-    def mongo_uri(self):
-        return _get_config_value('MONGODB_URI', os.getenv('MONGO_URI', 'mongodb://localhost:27017/'))
-    
-    @property
-    def db_name(self):
-        return os.getenv('DB_NAME', 'portfolio_db')
-    
-    # For backward compatibility
-    DATABASE_CONFIG = property(lambda self: {
-        'mongo_uri': self.mongo_uri,
-        'db_name': self.db_name,
-    })
-
-
-# Singleton instance for DBConfig
-_db_config = DBConfig()
+def _get_jwt_secret_key() -> str:
+    """
+    Get JWT secret key. In production, a secret must be configured (SSM or env).
+    In development, generates a per-process fallback so tokens are invalidated on restart.
+    """
+    value = _get_config_value('JWT_SECRET_KEY', None)
+    if value:
+        return value
+    env = os.getenv('ENVIRONMENT', 'development').lower()
+    if env != 'development':
+        raise RuntimeError(
+            "JWT_SECRET_KEY must be set in production (via SSM or environment variable). "
+            "Refusing to run with an unconfigured secret."
+        )
+    return secrets.token_hex(32)
 
 
 class DBConfigMeta(type):
@@ -71,24 +67,25 @@ class DBConfig(object, metaclass=DBConfigMeta):
     pass
 
 
-class AppConfig(object):
-    """Application configuration."""
-    
-    @classmethod
+class AppConfigMeta(type):
+    """Metaclass so AppConfig.JWT_SECRET_KEY is a class-level property."""
     @property
     def JWT_SECRET_KEY(cls):
-        return _get_config_value('JWT_SECRET_KEY', 'your-secret-key-change-in-production')
-    
+        return _get_jwt_secret_key()
+
+
+class AppConfig(object, metaclass=AppConfigMeta):
+    """Application configuration."""
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(hours=24)
 
 
 class IPInfoConfig(object):
     """Configuration for ipinfo.io API
-    
+
     Get a free token at: https://ipinfo.io/signup
     Free tier: 50,000 requests/month
     """
-    
+
     @classmethod
     @property
     def IPINFO_TOKEN(cls):

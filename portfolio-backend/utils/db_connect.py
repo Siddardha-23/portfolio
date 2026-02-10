@@ -3,11 +3,8 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure, OperationFailure
 from .config import DBConfig
 
-logging.basicConfig(
-    filename='db.log',
-    level=logging.INFO,
-    format='%(asctime)s:%(levelname)s:%(message)s'
-)
+logger = logging.getLogger(__name__)
+
 
 class DBConnect:
     """MongoDB connection manager"""
@@ -25,12 +22,12 @@ class DBConnect:
                 DBConnect._client = MongoClient(self.mongo_uri)
                 # Verify connection
                 DBConnect._client.admin.command('ping')
-                logging.info("MongoDB successfully connected")
+                logger.info("MongoDB successfully connected")
             except ConnectionFailure as e:
-                logging.error(f"MongoDB connection failed: {e}")
+                logger.error(f"MongoDB connection failed: {e}")
                 raise
             except Exception as e:
-                logging.error(f"MongoDB initialization error: {e}")
+                logger.error(f"MongoDB initialization error: {e}")
                 raise
         return DBConnect._client
 

@@ -135,19 +135,7 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-# Lambda Function URL (optional, for direct access during development)
-resource "aws_lambda_function_url" "backend" {
-  function_name      = aws_lambda_function.backend.function_name
-  authorization_type = "NONE"
-
-  cors {
-    allow_origins     = ["https://${var.domain_name}", "https://www.${var.domain_name}"]
-    allow_methods     = ["GET", "POST", "PUT", "DELETE"]
-    allow_headers     = ["Content-Type", "Authorization"]
-    allow_credentials = true
-    max_age           = 3600
-  }
-}
+# All traffic goes through CloudFront -> API Gateway; no direct Lambda Function URL.
 
 # =============================================================================
 # API Gateway HTTP API

@@ -123,8 +123,14 @@ class InputSanitizer:
 
 
 class RateLimiter:
-    """Simple in-memory rate limiter"""
-    
+    """
+    Simple in-memory rate limiter.
+
+    Note: On AWS Lambda, each invocation may run in a different container, so state
+    does not persist across requests. This provides best-effort per-container limiting
+    only. API Gateway throttling (configured in Terraform) is the primary rate limit.
+    """
+
     def __init__(self):
         self._requests = {}
     

@@ -43,6 +43,8 @@ class ApiService {
     return this.token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
   }
 
+  private static readonly REQUEST_TIMEOUT_MS = 15000;
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -56,16 +58,27 @@ class ApiService {
     };
 
     if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
+      (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), ApiService.REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetch(url, {
         ...options,
         headers,
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       const data = await response.json().catch(() => ({}));
+
+      if (response.status === 401 && token) {
+        this.logout();
+        return { error: 'Session expired. Please sign in again.' };
+      }
 
       if (!response.ok) {
         return {
@@ -75,6 +88,10 @@ class ApiService {
 
       return { data };
     } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        return { error: 'Request timed out. Please try again.' };
+      }
       return {
         error: error instanceof Error ? error.message : 'Network error',
       };

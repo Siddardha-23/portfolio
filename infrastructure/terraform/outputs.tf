@@ -35,11 +35,6 @@ output "lambda_function_arn" {
   value       = aws_lambda_function.backend.arn
 }
 
-output "lambda_function_url" {
-  description = "Lambda function URL for direct access"
-  value       = aws_lambda_function_url.backend.function_url
-}
-
 # API Gateway
 output "api_gateway_url" {
   description = "API Gateway endpoint URL"

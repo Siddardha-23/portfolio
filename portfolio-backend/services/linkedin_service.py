@@ -25,17 +25,76 @@ PERSONAL_DOMAINS = {
     "live.com", "msn.com", "ymail.com", "googlemail.com",
 }
 
+# Common misspellings / typos of personal email domains
+PERSONAL_DOMAIN_TYPOS = {
+    # Gmail typos
+    "gmaio.com", "gmial.com", "gamil.com", "gmai.com", "gmil.com",
+    "gmal.com", "gnail.com", "gmaill.com", "gmali.com", "gimail.com",
+    "gamail.com", "gmsil.com", "gmeil.com", "gmaul.com", "gmaol.com",
+    "gmailcom", "gail.com", "gemail.com", "gmaik.com", "gmqil.com",
+    "gmail.co", "gmail.cm", "gmail.om", "gmail.con", "gmail.cim",
+    # Yahoo typos
+    "yaho.com", "yahooo.com", "yhoo.com", "yaoo.com", "yhaoo.com",
+    "yahoo.co", "yahoo.cm",
+    # Hotmail typos
+    "hotmial.com", "hotmal.com", "hotmali.com", "hotmaill.com",
+    "hotmai.com", "hotamil.com", "hotmail.co",
+    # Outlook typos
+    "outlok.com", "outllook.com", "outlookk.com", "outloo.com",
+    "outlool.com", "outlook.co",
+}
+
+
+def _is_personal_domain(domain: str) -> bool:
+    """
+    Check if a domain is a personal email provider, including common typos.
+    Uses exact match first, then Levenshtein-like similarity for edge cases.
+    """
+    domain = domain.lower().strip()
+    if domain in PERSONAL_DOMAINS or domain in PERSONAL_DOMAIN_TYPOS:
+        return True
+
+    # Check if the domain name (without TLD) is very similar to a known personal domain
+    domain_name = domain.split(".")[0]
+    personal_names = {"gmail", "yahoo", "hotmail", "outlook", "icloud", "aol",
+                      "protonmail", "mail", "live", "msn", "ymail", "googlemail"}
+
+    for pn in personal_names:
+        # If the domain name is within edit distance of 2 from a known personal name
+        if _edit_distance(domain_name, pn) <= 2:
+            return True
+
+    return False
+
+
+def _edit_distance(s1: str, s2: str) -> int:
+    """Compute Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return _edit_distance(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    prev_row = range(len(s2) + 1)
+    for i, c1 in enumerate(s1):
+        curr_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = prev_row[j + 1] + 1
+            deletions = curr_row[j] + 1
+            substitutions = prev_row[j] + (c1 != c2)
+            curr_row.append(min(insertions, deletions, substitutions))
+        prev_row = curr_row
+    return prev_row[-1]
+
 
 def extract_organization_from_email(email: str) -> str | None:
     """
     Infer organization name from email domain (e.g. john@acme.com -> Acme).
-    Returns None for personal email providers.
+    Returns None for personal email providers and common misspellings.
     """
     if not email or "@" not in email:
         return None
     try:
         domain = email.strip().split("@")[1].lower()
-        if domain in PERSONAL_DOMAINS:
+        if _is_personal_domain(domain):
             return None
         # Use first part of domain as company name
         company = domain.split(".")[0]

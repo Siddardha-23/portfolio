@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
 import Welcome from './pages/Welcome';
 import Home from './pages/Home';
+import ProjectArchitecture from './pages/ProjectArchitecture';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient();
@@ -21,6 +22,7 @@ const App = () => (
               <Route path="/" element={<Welcome />} />
               <Route path="/welcome" element={<Welcome />} />
               <Route path="/home" element={<Home />} />
+              <Route path="/project/:slug" element={<ProjectArchitecture />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

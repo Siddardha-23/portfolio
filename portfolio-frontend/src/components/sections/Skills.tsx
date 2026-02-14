@@ -1,5 +1,5 @@
 import { motion, useInView } from 'framer-motion';
-import { useRef, useState, useEffect } from 'react';
+import { useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SKILLS } from '@/lib/constants';
@@ -158,10 +158,12 @@ function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof ty
 
   return (
     <motion.div
+      id={`skills-${categoryKey}`}
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{ delay: index * 0.15, duration: 0.6 }}
+      className="rounded-xl transition-all duration-500"
     >
       <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
         {/* Top gradient accent */}
@@ -260,10 +262,12 @@ function CertificationsSection({ certifications, index }: { certifications: { na
 
   return (
     <motion.div
+      id="skills-certifications"
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{ delay: index * 0.15, duration: 0.6 }}
+      className="rounded-xl transition-all duration-500"
     >
       <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
         {/* Top gradient accent */}
@@ -325,17 +329,29 @@ function FloatingParticles() {
   );
 }
 
-// Skill radar/stats component
+// Skill radar/stats component — clickable to scroll to category
 function SkillsStats() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true });
 
   const stats = [
-    { label: 'Languages', value: SKILLS.programmingLanguages.length, icon: Code2, color: '#3b82f6' },
-    { label: 'Cloud Tools', value: SKILLS.cloudDevOps.length, icon: Cloud, color: '#f59e0b' },
-    { label: 'Databases', value: SKILLS.toolsAndDatabases.length, icon: Database, color: '#10b981' },
-    { label: 'Certifications', value: SKILLS.certifications.length, icon: Award, color: '#a855f7' }
+    { label: 'Languages', value: SKILLS.programmingLanguages.length, icon: Code2, color: '#3b82f6', scrollTo: 'skills-programmingLanguages' },
+    { label: 'Cloud Tools', value: SKILLS.cloudDevOps.length, icon: Cloud, color: '#f59e0b', scrollTo: 'skills-cloudDevOps' },
+    { label: 'Databases', value: SKILLS.toolsAndDatabases.length, icon: Database, color: '#10b981', scrollTo: 'skills-toolsAndDatabases' },
+    { label: 'Certifications', value: SKILLS.certifications.length, icon: Award, color: '#a855f7', scrollTo: 'skills-certifications' }
   ];
+
+  const handleClick = (scrollTo: string) => {
+    const el = document.getElementById(scrollTo);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Add a brief highlight effect
+      el.classList.add('ring-2', 'ring-primary/50', 'ring-offset-2', 'ring-offset-background');
+      setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-primary/50', 'ring-offset-2', 'ring-offset-background');
+      }, 2000);
+    }
+  };
 
   return (
     <div ref={ref} className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8 md:mb-12">
@@ -345,12 +361,16 @@ function SkillsStats() {
           initial={{ opacity: 0, scale: 0.8 }}
           animate={isInView ? { opacity: 1, scale: 1 } : {}}
           transition={{ delay: i * 0.1, duration: 0.5, type: "spring" }}
-          className="relative group"
+          className="relative group cursor-pointer"
+          onClick={() => handleClick(stat.scrollTo)}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && handleClick(stat.scrollTo)}
         >
           <div className="absolute inset-0 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/10 to-accent/10 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="relative p-4 md:p-6 rounded-xl md:rounded-2xl bg-card border border-border/50 text-center hover:border-primary/30 transition-all">
+          <div className="relative p-4 md:p-6 rounded-xl md:rounded-2xl bg-card border border-border/50 text-center hover:border-primary/30 hover:shadow-lg transition-all">
             <div
-              className="w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center"
+              className="w-12 h-12 rounded-xl mx-auto mb-3 flex items-center justify-center transition-transform group-hover:scale-110"
               style={{ background: `${stat.color}20` }}
             >
               <stat.icon className="h-6 w-6" style={{ color: stat.color }} />
@@ -363,7 +383,8 @@ function SkillsStats() {
             >
               {stat.value}
             </motion.div>
-            <div className="text-sm text-muted-foreground">{stat.label}</div>
+            <div className="text-sm text-muted-foreground group-hover:text-primary transition-colors">{stat.label}</div>
+            <div className="text-[10px] text-muted-foreground/50 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Click to view ↓</div>
           </div>
         </motion.div>
       ))}

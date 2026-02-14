@@ -177,6 +177,62 @@ class SessionService:
         except Exception as e:
             logger.error(f"Error adding page visit: {e}")
     
+    def store_section_times(self, session_id: str, page: str,
+                             total_time_ms: int, sections: dict,
+                             timestamp: str = None):
+        """
+        Store section engagement time data for analytics.
+        Upserts data for a session, so multiple flushes update the same doc.
+        
+        Args:
+            session_id: The session ID
+            page: The page being tracked (e.g., 'home')
+            total_time_ms: Total time spent on the page in milliseconds
+            sections: Dict of section_id -> { timeMs, visits }
+            timestamp: ISO timestamp of when this data was recorded
+        """
+        try:
+            analytics_collection = self.db.section_analytics
+            
+            # Build section update fields
+            section_updates = {}
+            for section_id, data in sections.items():
+                time_ms = data.get('timeMs', 0) if isinstance(data, dict) else 0
+                visits = data.get('visits', 0) if isinstance(data, dict) else 0
+                section_updates[f"sections.{section_id}.timeMs"] = time_ms
+                section_updates[f"sections.{section_id}.visits"] = visits
+            
+            update_doc = {
+                "$set": {
+                    "session_id": session_id,
+                    "page": page,
+                    "total_time_ms": total_time_ms,
+                    "last_updated": datetime.utcnow(),
+                    "client_timestamp": timestamp,
+                    **section_updates
+                },
+                "$setOnInsert": {
+                    "created_at": datetime.utcnow()
+                }
+            }
+            
+            analytics_collection.update_one(
+                {"session_id": session_id, "page": page},
+                update_doc,
+                upsert=True
+            )
+            
+            # Also update the session's last activity
+            self.collection.update_one(
+                {"session_id": session_id},
+                {"$set": {"last_activity": datetime.utcnow(), 
+                          "total_time_ms": total_time_ms}}
+            )
+            
+            logger.debug(f"Section times stored for session {session_id}")
+        except Exception as e:
+            logger.error(f"Error storing section times: {e}")
+    
     def get_session_stats(self) -> Dict[str, Any]:
         """Get overall session statistics"""
         try:

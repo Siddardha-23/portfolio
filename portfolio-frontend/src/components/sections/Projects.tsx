@@ -1,5 +1,6 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,9 @@ const techIcons: { [key: string]: React.ReactNode } = {
   'Flask': <Code className="h-4 w-4" />,
   'React': <Code className="h-4 w-4" />,
   'Nginx': <Server className="h-4 w-4" />,
-  'CI/CD': <Rocket className="h-4 w-4" />
+  'CI/CD': <Rocket className="h-4 w-4" />,
+  'ECS': <Cloud className="h-4 w-4" />,
+  'GitHub Actions': <Rocket className="h-4 w-4" />
 };
 
 // Tech color mapping
@@ -39,13 +42,16 @@ const techColors: { [key: string]: string } = {
   'Flask': '#000000',
   'React': '#61DAFB',
   'Nginx': '#009639',
-  'CI/CD': '#4CAF50'
+  'CI/CD': '#4CAF50',
+  'ECS': '#FF9900',
+  'GitHub Actions': '#2088FF'
 };
 
 // Project card component
 function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: number }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <motion.div
@@ -110,11 +116,18 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
               ))}
             </div>
 
-            {/* Project number badge */}
+            {/* Project status badge */}
             <div className="absolute top-4 right-4">
-              <Badge className="bg-background/80 backdrop-blur-sm text-foreground border-0 px-3 py-1 shadow-lg">
-                <Sparkles className="h-3 w-3 mr-1 text-primary" />
-                Featured
+              <Badge className={`backdrop-blur-sm border-0 px-3 py-1 shadow-lg ${project.status === 'Live'
+                  ? 'bg-emerald-500/90 text-white'
+                  : 'bg-amber-500/90 text-white'
+                }`}>
+                {project.status === 'Live' ? (
+                  <Sparkles className="h-3 w-3 mr-1" />
+                ) : (
+                  <Rocket className="h-3 w-3 mr-1" />
+                )}
+                {project.status || 'Featured'}
               </Badge>
             </div>
 
@@ -188,14 +201,25 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
 
             {/* Action buttons */}
             <div className="flex gap-3 mt-6 pt-6 border-t border-border/50">
-              <Button className="flex-1 btn-premium group" size="sm">
+              <Button
+                className="flex-1 btn-premium group"
+                size="sm"
+                onClick={() => navigate(`/project/${project.slug}`)}
+              >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                Live Demo
+                {project.status === 'Live' ? 'Live Demo' : 'Architecture'}
                 <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
               </Button>
-              <Button variant="outline" size="sm" className="border-primary/50 text-primary hover:bg-primary/10">
-                <Github className="h-4 w-4 mr-2" />
-                Code
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-primary/50 text-primary hover:bg-primary/10"
+                asChild
+              >
+                <a href={project.github || '#'} target="_blank" rel="noopener noreferrer">
+                  <Github className="h-4 w-4 mr-2" />
+                  Code
+                </a>
               </Button>
             </div>
           </div>

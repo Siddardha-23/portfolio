@@ -75,6 +75,44 @@ def track_page_view():
         return jsonify({'error': 'Failed to track page view'}), 500
 
 
+@session_bp.route('/track-time', methods=['POST'])
+def track_section_time():
+    """
+    Track time spent in each section of the portfolio.
+    Stores section engagement data for analytics.
+    Supports both regular POSTs and navigator.sendBeacon.
+    """
+    try:
+        data = request.get_json(force=True) or {}
+        session_id = data.get('session_id', '')
+        
+        if not session_id:
+            return jsonify({'error': 'Session ID required'}), 400
+        
+        page = data.get('page', 'home')
+        total_time_ms = data.get('totalTimeMs', 0)
+        sections = data.get('sections', {})
+        timestamp = data.get('timestamp')
+        
+        session_service = get_session_service()
+        session_service.store_section_times(
+            session_id=session_id,
+            page=page,
+            total_time_ms=total_time_ms,
+            sections=sections,
+            timestamp=timestamp
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': 'Section time tracked'
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error tracking section time: {e}")
+        return jsonify({'error': 'Failed to track section time'}), 500
+
+
 @session_bp.route('/stats', methods=['GET'])
 @jwt_required()
 def get_session_stats():

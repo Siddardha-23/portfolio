@@ -32,9 +32,7 @@ export const EDUCATION = [
       { name: "Technology Innovation Lab", grade: "A" }
     ],
     achievements: [
-      "Perfect 4.0 GPA",
-      "Graduate Research Assistant",
-      "Dean's List"
+      "Perfect 4.0 GPA"
     ],
     color: {
       primary: "#8C1D40",
@@ -219,13 +217,206 @@ export const EXPERIENCE = [
 export const PROJECTS = [
   {
     title: "Cloud-Deployed Personal Portfolio",
-    period: "December 2023 - March 2023",
+    slug: "cloud-portfolio",
+    period: "December 2024 - Present",
+    status: "Live",
     description: [
       "Developed and deployed a personal portfolio showcasing projects and skills, hosted on a 3-tier AWS architecture provisioned with Terraform, including VPC, EC2, RDS, and ECS services.",
       "Containerized the Flask backend and React frontend using Docker with Nginx as a reverse proxy, and automated deployment through CI/CD pipelines using CodePipeline, CodeCommit, and CloudFormation.",
-      "Enabled real-time updates and seamless rollout of portfolio changes through automated pipeline triggers, improving deployment speed and reliability."
+      "Enabled real-time updates and seamless rollout of portfolio changes through automated pipeline triggers, improving deployment speed and reliability.",
+      "Implemented visitor tracking with fingerprinting, session management, and organization detection for analytics.",
+      "Applied AWS Well-Architected Framework principles for security, cost optimization, and operational excellence."
     ],
-    technologies: ["AWS", "Terraform", "Docker", "Flask", "React", "Nginx", "CI/CD"]
+    technologies: ["AWS", "Terraform", "Docker", "Flask", "React", "Nginx", "CI/CD"],
+    github: "https://github.com/Siddardha-23/portfolio",
+    architecture: {
+      stack: {
+        frontend: ["React 18", "TypeScript", "Tailwind CSS", "Vite", "Framer Motion"],
+        backend: ["Python 3.12", "Flask", "MongoDB Atlas", "Mangum (ASGI adapter)"],
+        infrastructure: ["AWS Lambda", "API Gateway", "S3 + CloudFront", "Route 53", "ACM (SSL/TLS)"],
+        cicd: ["GitHub Actions", "AWS CodePipeline", "Terraform", "Docker"],
+        monitoring: ["CloudWatch Logs", "CloudWatch Alarms", "CloudTrail"]
+      },
+      diagram: {
+        title: "3-Tier Serverless Architecture",
+        layers: [
+          {
+            name: "Presentation Layer",
+            color: "#3B82F6",
+            components: [
+              "React SPA hosted on S3",
+              "CloudFront CDN (global edge caching)",
+              "Route 53 DNS with SSL/TLS via ACM",
+              "Custom domain with HTTPS enforcement"
+            ]
+          },
+          {
+            name: "Application Layer",
+            color: "#8B5CF6",
+            components: [
+              "API Gateway (REST API with throttling)",
+              "AWS Lambda (Python Flask via Mangum)",
+              "JWT-based authentication",
+              "Rate limiting & input sanitization"
+            ]
+          },
+          {
+            name: "Data Layer",
+            color: "#10B981",
+            components: [
+              "MongoDB Atlas (managed NoSQL)",
+              "Visitor tracking & analytics collections",
+              "Session management with TTL indexes",
+              "IP geolocation caching"
+            ]
+          }
+        ]
+      },
+      security: [
+        "HTTPS everywhere with ACM-managed SSL/TLS certificates",
+        "API Gateway throttling to prevent DDoS and abuse",
+        "JWT-based authentication for protected endpoints",
+        "Input sanitization against XSS and NoSQL injection",
+        "CORS origin restriction to known domains only",
+        "Rate limiting on sensitive endpoints (contact, registration)",
+        "IAM least-privilege roles for Lambda execution",
+        "CloudTrail audit logging for all API calls",
+        "Bcrypt password hashing for admin authentication"
+      ],
+      scalability: [
+        "Serverless Lambda auto-scales from 0 to thousands of concurrent requests",
+        "CloudFront CDN caches static assets at 400+ edge locations worldwide",
+        "API Gateway handles burst traffic with configurable throttling",
+        "MongoDB Atlas auto-scales storage and compute independently",
+        "S3 provides virtually unlimited static asset storage",
+        "Stateless architecture enables horizontal scaling without session affinity"
+      ],
+      costEfficiency: [
+        "Lambda pay-per-invocation: $0 cost at idle, pennies under moderate traffic",
+        "S3 + CloudFront: fraction of a cent per GB for static hosting",
+        "No always-on EC2 instances eliminates idle compute costs",
+        "MongoDB Atlas free tier for development, pay-as-you-grow for production",
+        "Estimated monthly cost under moderate traffic: < $5/month",
+        "CloudFront caching reduces Lambda invocations by 80%+"
+      ],
+      coldStartOptimization: [
+        "Provisioned Concurrency configured for critical Lambda functions",
+        "Lightweight Flask application with lazy-loaded dependencies",
+        "Mangum ASGI adapter enables efficient request handling",
+        "Python 3.12 runtime with optimized startup performance",
+        "Minimized deployment package size (~15MB) for faster cold starts",
+        "Connection pooling for MongoDB to avoid reconnection overhead",
+        "API Gateway caching for frequently accessed endpoints"
+      ]
+    }
+  },
+  {
+    title: "Ephemeral Test Environments (SLATE)",
+    slug: "slate-environments",
+    period: "January 2025 - Present",
+    status: "In Progress",
+    description: [
+      "Building a system that automatically creates ephemeral test environments for every new feature branch or pull request, mirroring production infrastructure.",
+      "CI/CD pipeline (GitHub Actions) triggers Infrastructure-as-Code (Terraform) to provision isolated environments with containerized Python/Flask app, database, and required services.",
+      "Teams can test features in short-lived, production-like environments, then automatically tear them down when the PR is merged or closed.",
+      "Implements a web dashboard/API for requesting, monitoring, and managing ephemeral environments in real-time.",
+      "Showcases GitOps principles by tying infrastructure provisioning to Git events, eliminating shared staging bottlenecks."
+    ],
+    technologies: ["AWS", "Terraform", "Docker", "Flask", "CI/CD", "ECS", "GitHub Actions"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["React", "TypeScript", "Dashboard UI"],
+        backend: ["Python 3.12", "Flask", "REST API", "Webhook handlers"],
+        infrastructure: ["AWS ECS/EKS", "RDS", "S3", "VPC", "ALB", "IAM", "CodePipeline", "CodeBuild"],
+        cicd: ["GitHub Actions", "AWS CodePipeline", "CodeBuild", "Terraform", "Docker"],
+        monitoring: ["CloudWatch", "Container Insights", "Custom Dashboard"]
+      },
+      diagram: {
+        title: "SLATE Ephemeral Environment Architecture",
+        layers: [
+          {
+            name: "Git & CI/CD Trigger Layer",
+            color: "#F59E0B",
+            components: [
+              "GitHub repository with PR/branch webhooks",
+              "GitHub Actions workflow triggers on PR events",
+              "AWS CodePipeline orchestrates multi-stage deployment",
+              "AWS CodeBuild compiles, tests, and builds Docker images",
+              "Event-driven triggers for create/update/destroy lifecycle"
+            ]
+          },
+          {
+            name: "Infrastructure Provisioning Layer",
+            color: "#8B5CF6",
+            components: [
+              "Terraform modules for per-environment infrastructure",
+              "Isolated VPC or Kubernetes namespace per feature branch",
+              "Application Load Balancer with unique URL per environment",
+              "ECS Fargate tasks for containerized application deployment",
+              "RDS instance or containerized database per environment",
+              "IAM roles with least-privilege per-environment access"
+            ]
+          },
+          {
+            name: "Application & Services Layer",
+            color: "#3B82F6",
+            components: [
+              "Dockerized Python/Flask application per branch",
+              "Isolated database with seeded test data",
+              "S3 buckets for environment-specific assets",
+              "Environment-specific secrets via AWS Secrets Manager",
+              "Unique subdomain URL routed via ALB rules"
+            ]
+          },
+          {
+            name: "Management & Dashboard Layer",
+            color: "#10B981",
+            components: [
+              "Flask-based web dashboard for environment monitoring",
+              "REST API for manual environment start/stop/extend",
+              "Real-time status of all active environments",
+              "Terraform output integration (URLs, credentials, logs)",
+              "Automatic cleanup on PR merge or close event"
+            ]
+          }
+        ]
+      },
+      security: [
+        "Each environment gets its own isolated VPC or Kubernetes namespace",
+        "Network segregation prevents cross-environment communication",
+        "IAM role per environment with least-privilege access policies",
+        "Ephemeral credentials via AWS Secrets Manager (auto-rotated)",
+        "Security groups restrict access to authorized team members only",
+        "All IaC changes are code-reviewed before provisioning",
+        "CloudTrail logging for audit trail of all resource operations",
+        "Automatic resource destruction prevents orphaned infrastructure"
+      ],
+      scalability: [
+        "Supports dozens of concurrent ephemeral environments",
+        "ECS Fargate auto-scales application containers per environment",
+        "Modular Terraform enables adding services without refactoring",
+        "Event-driven architecture scales with PR volume",
+        "ALB routing rules dynamically manage environment endpoints",
+        "Namespace isolation in Kubernetes enables dense packing"
+      ],
+      costEfficiency: [
+        "Environments exist only for the lifetime of a PR (hours to days)",
+        "Automatic teardown on merge/close eliminates forgotten resources",
+        "No always-on staging servers reduces cloud spend by 60-80%",
+        "Spot instances for non-critical test workloads",
+        "Resource tagging enables per-feature cost attribution",
+        "Terraform state management prevents resource drift and waste"
+      ],
+      innovations: [
+        "Mirrors practices used at elite tech companies (e.g., Uber's SLATE)",
+        "Eliminates 'works on my machine' issues with production-like environments",
+        "Reduces staging bottlenecks that slow release velocity",
+        "Enables parallel feature testing without environment conflicts",
+        "Git-driven infrastructure: merge triggers both code and infra deployment",
+        "Demonstrates platform engineering and environment-as-a-service concepts"
+      ]
+    }
   }
 ];
 

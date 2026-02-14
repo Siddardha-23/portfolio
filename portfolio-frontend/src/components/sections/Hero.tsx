@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
-import { motion, useInView, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Users } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { PERSONAL_INFO, ROLES } from '@/lib/constants';
 import { apiService } from '@/lib/api';
+import { VisitorMapTrigger } from '@/components/VisitorGlobe';
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -223,6 +224,13 @@ function RecruiterPanel() {
             </div>
           )}
 
+          {/* Global Reach Button */}
+          {stats && (
+            <div className="mb-4">
+              <VisitorMapTrigger onClick={() => window.dispatchEvent(new CustomEvent('open-visitor-map'))} />
+            </div>
+          )}
+
           {/* Organization Carousel */}
           {stats && stats.organizations.length > 0 && (
             <div className="flex-1 flex flex-col justify-end">
@@ -273,12 +281,22 @@ function RecruiterPanel() {
 
 export default function Hero() {
   const [visitorName, setVisitorName] = useState('');
+  const [isReturningVisitor, setIsReturningVisitor] = useState(false);
 
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
     if (visitorInfo) {
       const { firstName } = JSON.parse(visitorInfo);
       setVisitorName(firstName);
+
+      // Track visit count to distinguish first visit from return visits
+      const visitCountStr = localStorage.getItem('portfolio_visit_count');
+      const currentCount = parseInt(visitCountStr || '0', 10);
+      if (currentCount > 1) {
+        setIsReturningVisitor(true);
+      }
+      // Increment visit count for next time
+      localStorage.setItem('portfolio_visit_count', String(currentCount + 1));
     }
   }, []);
 
@@ -344,7 +362,7 @@ export default function Hero() {
               >
                 <Badge className="px-3 py-1.5 text-xs md:text-sm bg-primary/10 text-primary border-primary/30">
                   <Sparkles className="h-3 w-3 md:h-4 md:w-4 mr-1.5" />
-                  Welcome back, {visitorName}!
+                  {isReturningVisitor ? `Welcome back, ${visitorName}!` : `Hello, ${visitorName}!`}
                 </Badge>
               </motion.div>
             )}

@@ -39,6 +39,8 @@ export default function WelcomeForm() {
       // Store visitor info and mark as visited
       localStorage.setItem('visitorInfo', JSON.stringify(userInfo));
       localStorage.setItem('portfolio_visited', 'true');
+      localStorage.setItem('portfolio_visit_count', '1');
+      localStorage.setItem('portfolio_form_submitted', 'true');
 
       // Get fingerprint and session ID for the form submission
       const fingerprint = await getVisitorFingerprint('welcome-form');

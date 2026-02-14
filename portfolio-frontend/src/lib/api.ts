@@ -264,6 +264,22 @@ class ApiService {
     });
   }
 
+  async trackSectionTime(data: {
+    session_id: string;
+    page: string;
+    totalTimeMs: number;
+    sections: { [key: string]: { timeMs: number; visits: number } };
+    timestamp: string;
+  }) {
+    return this.request<{
+      success: boolean;
+      message: string;
+    }>('/session/track-time', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ============================================
   // Geolocation endpoints (/api/geo)
   // ============================================

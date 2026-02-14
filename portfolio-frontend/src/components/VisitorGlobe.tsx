@@ -3,15 +3,21 @@
  * Globe is lazy-loaded so the main app does not load Three.js at startup (avoids blank page).
  * Triggered by event 'open-visitor-map'.
  */
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe, X, MapPin, Users, AlertCircle, ZoomIn, ZoomOut } from 'lucide-react';
+import { Globe, X, MapPin, Users, AlertCircle, ZoomIn, ZoomOut, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { apiService } from '@/lib/api';
+import { GlobeErrorBoundary } from '@/components/GlobeErrorBoundary';
 
-// Lazy-load GlobeView so we never import Three.js/react-globe.gl until the popup is opened
-const LazyGlobeView = lazy(() => import('@/components/GlobeView'));
+type GlobeViewComponent = React.ComponentType<{
+    ref: React.RefObject<unknown>;
+    width: number;
+    height: number;
+    pointsData: { lat: number; lng: number; country: string; count: number }[];
+    onGlobeReady: () => void;
+}>;
 
 // Country lat/lng for globe points (lat, lng)
 const COUNTRY_LATLNG: Record<string, [number, number]> = {
@@ -80,6 +86,9 @@ export default function VisitorGlobe() {
     const [locations, setLocations] = useState<VisitorLocation[]>([]);
     const [totalVisitors, setTotalVisitors] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [GlobeComponent, setGlobeComponent] = useState<GlobeViewComponent | null>(null);
+    const [globeLoadError, setGlobeLoadError] = useState(false);
+    const [globeKey, setGlobeKey] = useState(0);
     const mapReady = useRef(false);
     const spinResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const globeRef = useRef<{
@@ -129,6 +138,33 @@ export default function VisitorGlobe() {
             spinResumeTimeoutRef.current = null;
         }
     }, [isOpen]);
+
+    // Load globe chunk when popup opens with data (handles production chunk paths)
+    useEffect(() => {
+        if (!isOpen || locations.length === 0) return;
+        if (GlobeComponent) return;
+        setGlobeLoadError(false);
+        import('@/components/GlobeView')
+            .then((mod) => setGlobeComponent(() => mod.default))
+            .catch(() => setGlobeLoadError(true));
+    }, [isOpen, locations.length, GlobeComponent]);
+
+    const handleRetryGlobe = () => {
+        setGlobeLoadError(false);
+        setGlobeComponent(null);
+        setGlobeKey((k) => k + 1);
+    };
+
+    const globeErrorFallback = (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+            <AlertCircle className="h-10 w-10 text-amber-500" />
+            <p className="text-sm text-center text-muted-foreground">Globe could not load. Try again.</p>
+            <Button size="sm" variant="outline" onClick={handleRetryGlobe} className="gap-2">
+                <RefreshCw className="h-4 w-4" />
+                Retry
+            </Button>
+        </div>
+    );
 
     const pointsData = locations
         .map((loc) => {
@@ -262,27 +298,28 @@ export default function VisitorGlobe() {
                                         <AlertCircle className="h-8 w-8 text-muted-foreground" />
                                         <p className="text-xs text-muted-foreground">No visitor data</p>
                                     </div>
+                                ) : globeLoadError ? (
+                                    globeErrorFallback
+                                ) : !GlobeComponent ? (
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                                        <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
+                                            <Globe className="h-8 w-8 text-primary/70" />
+                                        </motion.div>
+                                        <p className="text-xs">Loading globe...</p>
+                                    </div>
                                 ) : (
                                     <>
                                         <div className="w-full h-full min-h-[280px] flex items-center justify-center" style={{ maxWidth: GLOBE_SIZE, maxHeight: GLOBE_SIZE }}>
-                                            <Suspense fallback={
-                                                <div className="flex flex-col items-center justify-center gap-2 text-muted-foreground">
-                                                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}>
-                                                        <Globe className="h-8 w-8 text-primary/70" />
-                                                    </motion.div>
-                                                    <p className="text-xs">Loading globe...</p>
-                                                </div>
-                                            }>
-                                                <LazyGlobeView
+                                            <GlobeErrorBoundary key={globeKey} fallback={globeErrorFallback}>
+                                                <GlobeComponent
                                                     ref={globeRef}
                                                     width={GLOBE_SIZE}
                                                     height={GLOBE_SIZE}
                                                     pointsData={pointsData}
                                                     onGlobeReady={() => setGlobeReady(true)}
                                                 />
-                                            </Suspense>
+                                            </GlobeErrorBoundary>
                                         </div>
-                                        {/* Zoom controls */}
                                         <div className="absolute bottom-3 right-3 flex flex-col gap-1 rounded-lg bg-card/90 border border-border/50 p-1 shadow-lg">
                                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleZoomIn} title="Zoom in">
                                                 <ZoomIn className="h-4 w-4" />

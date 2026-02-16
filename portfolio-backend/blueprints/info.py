@@ -146,6 +146,54 @@ def register_visitor():
             "source": linkedin_info.get("source", ""),
         }
 
+        session_id = data.get('sessionId', data.get('session_id')) or None
+        fp_obj = data.get('fingerprint') or {}
+        fingerprint_hash = (
+            data.get('fingerprintHash') or data.get('fingerprint_hash')
+            or fp_obj.get('fingerprintHash') or fp_obj.get('fingerprint_hash')
+        ) or None
+
+        # Same browser/session: update existing registration instead of duplicating
+        or_conditions = []
+        if session_id:
+            or_conditions.append({"session_id": session_id})
+        if fingerprint_hash:
+            or_conditions.append({"fingerprint_hash": fingerprint_hash})
+        if or_conditions:
+            existing = db.registered_visitors.find_one({"$or": or_conditions})
+            if existing:
+                db.registered_visitors.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {
+                        "first_name": first_name,
+                        "middle_name": middle_name,
+                        "last_name": last_name,
+                        "full_name": f"{first_name} {middle_name} {last_name}".strip().replace('  ', ' '),
+                        "email": email,
+                        "organization": organization,
+                        "ip_info": ip_info,
+                        "linkedin": linkedin_response,
+                        "registered_at": datetime.utcnow(),
+                        "geo": {
+                            "city": ip_info.get('city'),
+                            "region": ip_info.get('region'),
+                            "country": ip_info.get('country_name'),
+                            "timezone": ip_info.get('timezone')
+                        }
+                    }}
+                )
+                logger.info(f"Visitor re-registered (same session/fingerprint): {first_name} {last_name}")
+                return jsonify({
+                    'success': True,
+                    'message': 'Visitor registered successfully',
+                    'linkedin': linkedin_response,
+                    'organization': organization,
+                    'location': {
+                        'city': ip_info.get('city'),
+                        'country': ip_info.get('country_name')
+                    }
+                }), 200
+
         visitor_doc = {
             'first_name': first_name,
             'middle_name': middle_name,
@@ -161,7 +209,8 @@ def register_visitor():
             'linkedin': linkedin_response,
             'registered_at': datetime.utcnow(),
             'fingerprint': data.get('fingerprint', {}),
-            'session_id': data.get('sessionId', data.get('session_id')),
+            'session_id': session_id,
+            'fingerprint_hash': fingerprint_hash,
             # Add geolocation summary
             'geo': {
                 'city': ip_info.get('city'),
@@ -286,15 +335,6 @@ def get_organization_stats():
         
         # Count with LinkedIn found
         linkedin_found = collection.count_documents({"linkedin.found": True})
-        
-        # Geographic distribution from registered_visitors (form submitters) for top_countries
-        geo_pipeline = [
-            {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
-            {"$group": {"_id": "$geo.country", "count": {"$sum": 1}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 20}
-        ]
-        top_countries_raw = list(collection.aggregate(geo_pipeline))
 
         # Normalize country so frontend map finds it: "IN" -> "India", "United States" stays
         def country_for_map(raw_country):
@@ -302,11 +342,6 @@ def get_organization_stats():
             if len(s) == 2:
                 return COUNTRY_CODE_TO_NAME.get(s.upper(), s)
             return s or raw_country
-
-        top_countries = [
-            {'country': country_for_map(c['_id']), 'count': c['count']}
-            for c in top_countries_raw
-        ]
 
         def build_map_entry(m):
             cid = m["_id"]
@@ -337,8 +372,7 @@ def get_organization_stats():
                 "lng": {"$first": "$ip_info.longitude"}
             }},
             {"$match": {"_id.country": {"$ne": ""}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 100}
+            {"$sort": {"count": -1}}
         ]
         map_locations_raw = list(collection.aggregate(map_locations_pipeline))
 
@@ -361,8 +395,7 @@ def get_organization_stats():
                 "lng": {"$first": "$ip_info.longitude"}
             }},
             {"$match": {"_id.country": {"$ne": ""}}},
-            {"$sort": {"count": -1}},
-            {"$limit": 100}
+            {"$sort": {"count": -1}}
         ]
         visitor_map_raw = list(visitor_info_coll.aggregate(visitor_map_pipeline))
 
@@ -383,7 +416,17 @@ def get_organization_stats():
                     merged[key]["latitude"] = entry["latitude"]
                     merged[key]["longitude"] = entry["longitude"]
 
-        map_locations = sorted(merged.values(), key=lambda x: -x["count"])[:50]
+        map_locations = sorted(merged.values(), key=lambda x: -x["count"])
+
+        # Top countries (below map): derive from same merged map data so counts match the map
+        by_country = {}
+        for loc in map_locations:
+            c = loc["country"]
+            by_country[c] = by_country.get(c, 0) + loc["count"]
+        top_countries = [
+            {"country": c, "count": n}
+            for c, n in sorted(by_country.items(), key=lambda x: -x[1])[:20]
+        ]
 
         return jsonify({
             'total_visitors': total_visitors,

@@ -14,11 +14,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
   <!-- Theme color for browser UI -->
   <meta name="theme-color" content="#4338CA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#27272A" media="(prefers-color-scheme: dark)">
-  <!-- CSP: allow map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' blob:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
+  <!-- CSP: allow map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview; localhost for local dev API -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' blob:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 https://ipapi.co https://api.ipify.org https://api64.ipify.org; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
 </head>
 
 <body>

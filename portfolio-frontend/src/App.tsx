@@ -19,7 +19,7 @@ const App = () => (
       <ThemeProvider defaultTheme="system">
         <TooltipProvider>
           <Toaster />
-          <BrowserRouter>
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
               <Route path="/" element={<Welcome />} />
               <Route path="/welcome" element={<Welcome />} />

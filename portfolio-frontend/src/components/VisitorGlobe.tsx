@@ -176,24 +176,11 @@ export default function VisitorGlobe() {
                         />
 
                         <motion.div
-                            initial={{ opacity: 0, scale: 0.95 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            exit={{ opacity: 0, scale: 0.95 }}
-                            transition={{ duration: 0.3, type: 'spring', bounce: 0.2 }}
-                            style={{
-                                position: 'fixed',
-                                top: '50%',
-                                left: '50%',
-                                marginTop: 'auto',
-                                marginBottom: 'auto',
-                                marginLeft: 'auto',
-                                marginRight: 'auto',
-                                transform: 'translate(-50%, -50%)',
-                                width: 'min(1100px, 92vw)',
-                                height: 'min(850px, 88vh)',
-                                zIndex: 1000,
-                            }}
-                            className="bg-card rounded-3xl shadow-2xl border border-border/50 overflow-hidden flex flex-col"
+                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                            transition={{ duration: 0.3, type: 'spring', bounce: 0.3 }}
+                            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(1100px,92vw)] h-[min(850px,88vh)] z-[1000] bg-card rounded-3xl shadow-2xl border border-border/50 overflow-hidden flex flex-col"
                         >
                             <div className="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0 bg-gradient-to-r from-card via-card/60 to-card">
                                 <div className="flex items-center gap-4 flex-1 min-w-0">

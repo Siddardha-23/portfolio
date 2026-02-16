@@ -25,10 +25,17 @@ PERSONAL_DOMAINS = {
     "live.com", "msn.com", "ymail.com", "googlemail.com",
 }
 
+# Institutional/organizational domains (verified organizations - not personal providers)
+INSTITUTIONAL_DOMAINS = {
+    "asu.edu", "edu", "mit.edu", "stanford.edu", "harvard.edu",
+    "yale.edu", "princeton.edu", "berkeley.edu", "caltech.edu",
+    "cmu.edu", "cornell.edu", "univ", "ac.uk", "org", "gov",
+}
+
 # Common misspellings / typos of personal email domains
 PERSONAL_DOMAIN_TYPOS = {
     # Gmail typos
-    "gmaio.com", "gmial.com", "gamil.com", "gmai.com", "gmil.com",
+    "gmial.com", "gamil.com", "gmai.com", "gmil.com",
     "gmal.com", "gnail.com", "gmaill.com", "gmali.com", "gimail.com",
     "gamail.com", "gmsil.com", "gmeil.com", "gmaul.com", "gmaol.com",
     "gmailcom", "gail.com", "gemail.com", "gmaik.com", "gmqil.com",
@@ -53,6 +60,10 @@ def _is_personal_domain(domain: str) -> bool:
     domain = domain.lower().strip()
     if domain in PERSONAL_DOMAINS or domain in PERSONAL_DOMAIN_TYPOS:
         return True
+    
+    # Check if it's an institutional domain (whitelist - these are NOT personal)
+    if domain in INSTITUTIONAL_DOMAINS or any(domain.endswith(f".{inst}") for inst in INSTITUTIONAL_DOMAINS):
+        return False
 
     # Check if the domain name (without TLD) is very similar to a known personal domain
     domain_name = domain.split(".")[0]

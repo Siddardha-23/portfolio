@@ -37,8 +37,8 @@ resource "aws_cloudfront_response_headers_policy" "security" {
       override        = true
     }
     content_security_policy {
-      # Allow: map (Leaflet/CARTO, cdnjs), IP APIs for visitor globe, Google Fonts, data: images
-      content_security_policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
+      # Allow: map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview in iframe
+      content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
       override               = true
     }
   }
@@ -72,7 +72,7 @@ resource "aws_cloudfront_response_headers_policy" "security_framable" {
       override        = true
     }
     content_security_policy {
-      content_security_policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
+      content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
       override               = true
     }
   }

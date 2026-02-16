@@ -17,8 +17,8 @@
   <!-- Theme color for browser UI -->
   <meta name="theme-color" content="#4338CA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#27272A" media="(prefers-color-scheme: dark)">
-  <!-- CSP: allow map (Leaflet/CARTO), IP APIs, Google Fonts, and data: images -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
+  <!-- CSP: allow map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' blob:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
 </head>
 
 <body>

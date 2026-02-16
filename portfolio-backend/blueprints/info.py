@@ -287,7 +287,7 @@ def get_organization_stats():
         # Count with LinkedIn found
         linkedin_found = collection.count_documents({"linkedin.found": True})
         
-        # Geographic distribution from registered_visitors (form submitters); map shows these only
+        # Geographic distribution from registered_visitors (form submitters) for top_countries
         geo_pipeline = [
             {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
             {"$group": {"_id": "$geo.country", "count": {"$sum": 1}}},
@@ -308,7 +308,26 @@ def get_organization_stats():
             for c in top_countries_raw
         ]
 
-        # City-level points with real lat/long from ip_info so map shows Hyderabad etc. in the right place
+        def build_map_entry(m):
+            cid = m["_id"]
+            country = country_for_map(cid.get("country"))
+            city = (cid.get("city") or "").strip() or None
+            lat, lng = m.get("lat"), m.get("lng")
+            if lat is not None and lng is not None:
+                try:
+                    lat, lng = float(lat), float(lng)
+                except (TypeError, ValueError):
+                    lat, lng = None, None
+            return {
+                "country": country,
+                "city": city,
+                "latitude": lat,
+                "longitude": lng,
+                "count": m["count"]
+            }
+
+        # City-level points: include BOTH registered_visitors (form submitters) AND visitor_info (all visitors)
+        # so Bengaluru and other cities show on the map even if they didn't submit the form
         map_locations_pipeline = [
             {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
             {"$group": {
@@ -319,27 +338,52 @@ def get_organization_stats():
             }},
             {"$match": {"_id.country": {"$ne": ""}}},
             {"$sort": {"count": -1}},
-            {"$limit": 50}
+            {"$limit": 100}
         ]
         map_locations_raw = list(collection.aggregate(map_locations_pipeline))
-        map_locations = []
+
+        # Also get locations from visitor_info (all tracked visitors, not just form submitters)
+        visitor_info_coll = db.visitor_info
+        visitor_map_pipeline = [
+            {"$match": {
+                "$or": [
+                    {"geo.country": {"$exists": True, "$nin": [None, ""]}},
+                    {"geo.country_name": {"$exists": True, "$nin": [None, ""]}}
+                ]
+            }},
+            {"$group": {
+                "_id": {
+                    "country": {"$ifNull": ["$geo.country", "$geo.country_name"]},
+                    "city": {"$ifNull": ["$geo.city", ""]}
+                },
+                "count": {"$sum": 1},
+                "lat": {"$first": "$ip_info.latitude"},
+                "lng": {"$first": "$ip_info.longitude"}
+            }},
+            {"$match": {"_id.country": {"$ne": ""}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 100}
+        ]
+        visitor_map_raw = list(visitor_info_coll.aggregate(visitor_map_pipeline))
+
+        # Merge: key by (country, city), sum counts, keep any non-null lat/lng
+        merged = {}
         for m in map_locations_raw:
-            cid = m["_id"]
-            country = country_for_map(cid.get("country"))
-            city = (cid.get("city") or "").strip() or None
-            lat, lng = m.get("lat"), m.get("lng")
-            if lat is not None and lng is not None:
-                try:
-                    lat, lng = float(lat), float(lng)
-                except (TypeError, ValueError):
-                    lat, lng = None, None
-            map_locations.append({
-                "country": country,
-                "city": city,
-                "latitude": lat,
-                "longitude": lng,
-                "count": m["count"]
-            })
+            entry = build_map_entry(m)
+            key = (entry["country"], entry["city"] or "")
+            merged[key] = dict(entry)
+        for m in visitor_map_raw:
+            entry = build_map_entry(m)
+            key = (entry["country"], entry["city"] or "")
+            if key not in merged:
+                merged[key] = dict(entry)
+            else:
+                merged[key]["count"] += entry["count"]
+                if merged[key]["latitude"] is None and entry["latitude"] is not None:
+                    merged[key]["latitude"] = entry["latitude"]
+                    merged[key]["longitude"] = entry["longitude"]
+
+        map_locations = sorted(merged.values(), key=lambda x: -x["count"])[:50]
 
         return jsonify({
             'total_visitors': total_visitors,

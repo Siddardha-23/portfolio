@@ -3,11 +3,12 @@
  * Use as wrapper around the button/link that should open the viewer.
  */
 import { useEffect, useState } from 'react';
-import { Download, X } from 'lucide-react';
+import { Download, ExternalLink, X } from 'lucide-react';
 import {
   Dialog,
   DialogClose,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -58,6 +59,7 @@ function ResumeDialogContent() {
       <DialogHeader className="flex shrink-0 flex-row items-center justify-between gap-3 border-b border-border/50 bg-muted/30 px-4 py-3 pr-14 sm:rounded-t-xl">
         <div className="flex items-center gap-2">
           <DialogTitle className="text-base font-semibold">Resume</DialogTitle>
+          <DialogDescription className="sr-only">View or download Harshith&apos;s resume as PDF. If the preview does not load, use Open in new tab or Download.</DialogDescription>
           <span className="hidden text-xs text-muted-foreground sm:inline">— click outside to close</span>
         </div>
         <div className="flex items-center gap-2">
@@ -78,9 +80,17 @@ function ResumeDialogContent() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-b-xl bg-muted/20">
         <iframe
           src={`${RESUME_URL}${RESUME_VIEW_HASH}`}
-          title="Resume"
+          title="Resume PDF preview"
           className="h-full min-h-[70vh] w-full flex-1 border-0"
         />
+        <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          <span>If the preview doesn&apos;t load,</span>
+          <a href={RESUME_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline">
+            <ExternalLink className="h-3 w-3" />
+            open in new tab
+          </a>
+          <span>or use Download above.</span>
+        </div>
       </div>
     </DialogContent>
   );

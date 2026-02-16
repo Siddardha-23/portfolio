@@ -9,7 +9,7 @@ locals {
   cloudfront_origin_request_policy_all_viewer   = "b689b0a8-53d0-40ab-baf2-68738e2966ac"  # Managed-AllViewerExceptHostHeader
 }
 
-# Security response headers policy
+# Security response headers policy (DENY framing for main site)
 resource "aws_cloudfront_response_headers_policy" "security" {
   name = "${var.project_name}-security-headers"
 
@@ -38,6 +38,40 @@ resource "aws_cloudfront_response_headers_policy" "security" {
     }
     content_security_policy {
       # Allow: map (Leaflet/CARTO, cdnjs), IP APIs for visitor globe, Google Fonts, data: images
+      content_security_policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
+      override               = true
+    }
+  }
+}
+
+# Same as security but SAMEORIGIN so resume PDF can be embedded in iframe on this site only
+resource "aws_cloudfront_response_headers_policy" "security_framable" {
+  name = "${var.project_name}-security-headers-framable-pdf"
+
+  security_headers_config {
+    strict_transport_security {
+      access_control_max_age_sec = 31536000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+    content_type_options {
+      override = true
+    }
+    frame_options {
+      frame_option = "SAMEORIGIN"
+      override     = true
+    }
+    xss_protection {
+      mode_block  = true
+      protection  = true
+      override    = true
+    }
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+    content_security_policy {
       content_security_policy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org;"
       override               = true
     }
@@ -116,6 +150,20 @@ resource "aws_cloudfront_distribution" "frontend" {
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
 
     viewer_protocol_policy = "https-only"
+  }
+
+  # ==========================================================================
+  # PDF (resume): same security headers but SAMEORIGIN so in-page iframe works
+  # ==========================================================================
+  ordered_cache_behavior {
+    path_pattern               = "/*.pdf"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    target_origin_id           = "S3-Frontend"
+    cache_policy_id            = local.cloudfront_cache_policy_caching_optimized
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.security_framable.id
+
+    viewer_protocol_policy = "redirect-to-https"
   }
 
   # ==========================================================================

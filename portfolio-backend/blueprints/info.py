@@ -141,7 +141,11 @@ def register_visitor():
         raw_linkedin_url = InputSanitizer.sanitize_html(data.get('linkedinUrl', ''), max_length=200)
         linkedin_url = validate_linkedin_url(raw_linkedin_url) if raw_linkedin_url else None
 
-        linkedin_info = search_linkedin_profile(first_name, last_name, email, linkedin_url=linkedin_url)
+        linkedin_info = search_linkedin_profile(
+            first_name, last_name, email,
+            linkedin_url=linkedin_url,
+            middle_name=middle_name,
+        )
         if linkedin_info.get("organization_from_headline"):
             organization = organization or linkedin_info["organization_from_headline"]
         linkedin_response = {

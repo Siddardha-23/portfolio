@@ -1,11 +1,13 @@
 """
 LinkedIn lookup service - Find LinkedIn profiles and extract organization from names/headlines.
 
-Uses duckduckgo-search library for web search (primary) and optional Google HTML fallback.
-Extracts organization from email domain and from LinkedIn headline text.
+Uses multi-strategy search with result scoring to accurately identify profiles.
+Priority: user-provided URL > name+org search > name-only search > Google fallback.
+All name parts (first, middle, last) and email domain are used to narrow results.
 """
 import logging
 import re
+from urllib.parse import unquote
 
 import requests
 from duckduckgo_search import DDGS
@@ -52,6 +54,10 @@ PERSONAL_DOMAIN_TYPOS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Utility helpers
+# ---------------------------------------------------------------------------
+
 def _is_personal_domain(domain: str) -> bool:
     """
     Check if a domain is a personal email provider, including common typos.
@@ -60,7 +66,7 @@ def _is_personal_domain(domain: str) -> bool:
     domain = domain.lower().strip()
     if domain in PERSONAL_DOMAINS or domain in PERSONAL_DOMAIN_TYPOS:
         return True
-    
+
     # Check if it's an institutional domain (whitelist - these are NOT personal)
     if domain in INSTITUTIONAL_DOMAINS or any(domain.endswith(f".{inst}") for inst in INSTITUTIONAL_DOMAINS):
         return False
@@ -71,7 +77,6 @@ def _is_personal_domain(domain: str) -> bool:
                       "protonmail", "mail", "live", "msn", "ymail", "googlemail"}
 
     for pn in personal_names:
-        # If the domain name is within edit distance of 2 from a known personal name
         if _edit_distance(domain_name, pn) <= 2:
             return True
 
@@ -96,6 +101,91 @@ def _edit_distance(s1: str, s2: str) -> int:
     return prev_row[-1]
 
 
+def _get_org_hint(email: str) -> str:
+    """Extract organization hint from a non-personal email domain."""
+    if not email or "@" not in email:
+        return ""
+    try:
+        domain = email.strip().split("@")[1].lower()
+        if _is_personal_domain(domain):
+            return ""
+        return domain.split(".")[0]  # e.g. "google" from "user@google.com"
+    except Exception:
+        return ""
+
+
+def _normalize_name(name: str) -> str:
+    """Lowercase and strip a name part for comparison."""
+    return (name or "").strip().lower()
+
+
+def _extract_linkedin_slug(url: str) -> str:
+    """Extract the slug from a LinkedIn profile URL."""
+    match = re.search(r"linkedin\.com/in/([a-zA-Z0-9_%-]+)", url)
+    if match:
+        return unquote(match.group(1)).lower().rstrip("/")
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Result scoring — ensures the found profile actually matches the person
+# ---------------------------------------------------------------------------
+
+def _score_result(
+    result_text: str,
+    result_url: str,
+    first_name: str,
+    middle_name: str,
+    last_name: str,
+    org_hint: str,
+) -> int:
+    """
+    Score a search result on how well it matches the person.
+    Higher = better match.  Range roughly 0–100.
+
+    Checks:
+    - First name present in text or URL slug        (+30)
+    - Last name present in text or URL slug         (+30)
+    - Middle name present in text or URL slug       (+15)
+    - Organization hint present in text             (+20)
+    - Slug contains name parts                      (+5 bonus)
+    """
+    score = 0
+    text = result_text.lower()
+    slug = _extract_linkedin_slug(result_url)
+
+    fn = _normalize_name(first_name)
+    mn = _normalize_name(middle_name)
+    ln = _normalize_name(last_name)
+    org = _normalize_name(org_hint)
+
+    # First name
+    if fn and (fn in text or fn in slug):
+        score += 30
+
+    # Last name
+    if ln and (ln in text or ln in slug):
+        score += 30
+
+    # Middle name (bonus, not required)
+    if mn and (mn in text or mn in slug):
+        score += 15
+
+    # Organization hint from email domain
+    if org and org in text:
+        score += 20
+
+    # Bonus if the slug itself contains both first and last name parts
+    if fn and ln and fn in slug and ln in slug:
+        score += 5
+
+    return score
+
+
+# ---------------------------------------------------------------------------
+# Organization extraction
+# ---------------------------------------------------------------------------
+
 def extract_organization_from_email(email: str) -> str | None:
     """
     Infer organization name from email domain (e.g. john@acme.com -> Acme).
@@ -107,7 +197,6 @@ def extract_organization_from_email(email: str) -> str | None:
         domain = email.strip().split("@")[1].lower()
         if _is_personal_domain(domain):
             return None
-        # Use first part of domain as company name
         company = domain.split(".")[0]
         return company.title() if company else None
     except Exception:
@@ -121,7 +210,6 @@ def extract_organization_from_headline(headline: str) -> str | None:
     if not headline or not isinstance(headline, str):
         return None
     headline = headline.strip()
-    # "Title at Company" or "Title - Company"
     at_match = re.search(r"\s+at\s+(.+?)(?:\s*[|\-–]|$)", headline, re.IGNORECASE)
     if at_match:
         return at_match.group(1).strip()
@@ -131,69 +219,9 @@ def extract_organization_from_headline(headline: str) -> str | None:
     return None
 
 
-def _search_linkedin_duckduckgo(first_name: str, last_name: str) -> dict:
-    """DuckDuckGo web search via duckduckgo-search library - returns LinkedIn profile URLs."""
-    try:
-        query = f"{first_name} {last_name} site:linkedin.com/in"
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=10))
-        for r in results:
-            href = (r.get("href") or "").strip()
-            if "linkedin.com/in/" in href:
-                title = (r.get("title") or "").strip()
-                body = (r.get("body") or "").strip()
-                headline = title or body
-                org = extract_organization_from_headline(headline)
-                return {
-                    "found": True,
-                    "url": href,
-                    "headline": headline,
-                    "organization_from_headline": org,
-                    "source": "duckduckgo",
-                }
-        return {"found": False, "source": "duckduckgo"}
-    except Exception as e:
-        logger.debug("DuckDuckGo LinkedIn search failed: %s", e)
-        return {"found": False, "source": "duckduckgo", "error": str(e)}
-
-
-def _search_linkedin_google(first_name: str, last_name: str) -> dict:
-    """
-    Try to find LinkedIn profile via Google search HTML.
-    Often blocked or captcha; use as best-effort only.
-    """
-    try:
-        query = f"{first_name} {last_name} site:linkedin.com/in"
-        url = "https://www.google.com/search"
-        params = {"q": query}
-        resp = requests.get(
-            url,
-            params=params,
-            timeout=6,
-            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
-        )
-        if resp.status_code != 200:
-            return {"found": False, "source": "google"}
-        html = resp.text
-        # Match LinkedIn profile URLs
-        pattern = r"https?://(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)"
-        matches = re.findall(pattern, html)
-        if matches:
-            # Prefer first match (likely first result)
-            slug = matches[0]
-            profile_url = f"https://www.linkedin.com/in/{slug}"
-            return {
-                "found": True,
-                "url": profile_url,
-                "headline": "",
-                "organization_from_headline": None,
-                "source": "google",
-            }
-        return {"found": False, "source": "google"}
-    except Exception as e:
-        logger.debug("Google LinkedIn search failed: %s", e)
-        return {"found": False, "source": "google", "error": str(e)}
-
+# ---------------------------------------------------------------------------
+# URL validation
+# ---------------------------------------------------------------------------
 
 def validate_linkedin_url(url: str) -> str | None:
     """
@@ -203,7 +231,6 @@ def validate_linkedin_url(url: str) -> str | None:
     if not url or not isinstance(url, str):
         return None
     url = url.strip()
-    # Match linkedin.com/in/username patterns
     match = re.match(
         r"^(?:https?://)?(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)/?$",
         url,
@@ -214,23 +241,14 @@ def validate_linkedin_url(url: str) -> str | None:
     return None
 
 
-def _search_linkedin_with_email(first_name: str, last_name: str, email: str) -> dict:
-    """
-    Enhanced DuckDuckGo search including the email's domain/org context
-    to narrow results for common names.
-    """
+# ---------------------------------------------------------------------------
+# Search strategies — each returns a list of candidate dicts
+# ---------------------------------------------------------------------------
+
+def _ddg_search(query: str, source_label: str) -> list[dict]:
+    """Run a DuckDuckGo search and return all LinkedIn /in/ candidates."""
+    candidates = []
     try:
-        # Extract useful context from email
-        domain = email.split("@")[1].lower() if "@" in email else ""
-        org_hint = ""
-        if domain and not _is_personal_domain(domain):
-            org_hint = domain.split(".")[0]  # e.g. "google" from "user@google.com"
-
-        query = f'"{first_name} {last_name}"'
-        if org_hint:
-            query += f" {org_hint}"
-        query += " site:linkedin.com/in"
-
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=10))
         for r in results:
@@ -240,33 +258,134 @@ def _search_linkedin_with_email(first_name: str, last_name: str, email: str) -> 
                 body = (r.get("body") or "").strip()
                 headline = title or body
                 org = extract_organization_from_headline(headline)
-                return {
+                candidates.append({
                     "found": True,
                     "url": href,
                     "headline": headline,
                     "organization_from_headline": org,
-                    "source": "duckduckgo_email",
-                }
-        return {"found": False, "source": "duckduckgo_email"}
+                    "source": source_label,
+                })
     except Exception as e:
-        logger.debug("DuckDuckGo email-enhanced LinkedIn search failed: %s", e)
-        return {"found": False, "source": "duckduckgo_email", "error": str(e)}
+        logger.debug("DuckDuckGo search failed (%s): %s", source_label, e)
+    return candidates
 
+
+def _google_search(query: str) -> list[dict]:
+    """Google HTML scrape fallback — returns LinkedIn /in/ candidates."""
+    candidates = []
+    try:
+        resp = requests.get(
+            "https://www.google.com/search",
+            params={"q": query},
+            timeout=6,
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
+        )
+        if resp.status_code != 200:
+            return candidates
+        pattern = r"https?://(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)"
+        seen = set()
+        for slug in re.findall(pattern, resp.text):
+            if slug in seen:
+                continue
+            seen.add(slug)
+            candidates.append({
+                "found": True,
+                "url": f"https://www.linkedin.com/in/{slug}",
+                "headline": "",
+                "organization_from_headline": None,
+                "source": "google",
+            })
+    except Exception as e:
+        logger.debug("Google LinkedIn search failed: %s", e)
+    return candidates
+
+
+def _bing_search(query: str) -> list[dict]:
+    """Bing HTML scrape fallback — returns LinkedIn /in/ candidates."""
+    candidates = []
+    try:
+        resp = requests.get(
+            "https://www.bing.com/search",
+            params={"q": query},
+            timeout=6,
+            headers={"User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9"},
+        )
+        if resp.status_code != 200:
+            return candidates
+        pattern = r"https?://(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)"
+        seen = set()
+        for slug in re.findall(pattern, resp.text):
+            if slug in seen:
+                continue
+            seen.add(slug)
+            candidates.append({
+                "found": True,
+                "url": f"https://www.linkedin.com/in/{slug}",
+                "headline": "",
+                "organization_from_headline": None,
+                "source": "bing",
+            })
+    except Exception as e:
+        logger.debug("Bing LinkedIn search failed: %s", e)
+    return candidates
+
+
+def _pick_best_candidate(
+    candidates: list[dict],
+    first_name: str,
+    middle_name: str,
+    last_name: str,
+    org_hint: str,
+    min_score: int = 25,
+) -> dict | None:
+    """
+    Score all candidates and return the best one that exceeds min_score.
+    A min_score of 25 means at least the first name OR last name must match.
+    """
+    if not candidates:
+        return None
+
+    best = None
+    best_score = -1
+
+    for c in candidates:
+        text = f"{c.get('headline', '')} {c.get('url', '')}"
+        s = _score_result(text, c.get("url", ""), first_name, middle_name, last_name, org_hint)
+        if s > best_score:
+            best_score = s
+            best = c
+
+    if best and best_score >= min_score:
+        best["match_score"] = best_score
+        return best
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
 
 def search_linkedin_profile(
     first_name: str,
     last_name: str,
     email: str | None = None,
     linkedin_url: str | None = None,
+    middle_name: str | None = None,
 ) -> dict:
     """
     Find LinkedIn profile for the given person.
 
+    Uses all available info (first, middle, last name + email domain) to
+    build multiple search queries in decreasing specificity, then scores
+    every candidate result to pick the best match.
+
     Priority order:
-    1. User-provided LinkedIn URL (validated) - most reliable
-    2. DuckDuckGo search with email context (for common names)
-    3. DuckDuckGo search with name only
-    4. Google search fallback
+    1. User-provided LinkedIn URL (validated) — instant, 100% accurate
+    2. DuckDuckGo: full name + middle + org hint (most specific)
+    3. DuckDuckGo: full name + org hint
+    4. DuckDuckGo: full name only
+    5. Google fallback with best query
+    6. Bing fallback with best query
 
     Returns dict with found, url, headline, organization_from_headline, source.
     """
@@ -283,21 +402,67 @@ def search_linkedin_profile(
             }
 
     first_name = (first_name or "").strip()
+    middle_name = (middle_name or "").strip()
     last_name = (last_name or "").strip()
+    email = (email or "").strip()
+
     if not first_name and not last_name:
         return {"found": False, "source": "none"}
 
-    # 2. Try email-enhanced search first (better for common names)
-    if email and "@" in email:
-        result = _search_linkedin_with_email(first_name, last_name, email)
-        if result.get("found"):
-            return result
+    org_hint = _get_org_hint(email)
 
-    # 3. Standard DuckDuckGo name search
-    result = _search_linkedin_duckduckgo(first_name, last_name)
-    if result.get("found"):
-        return result
+    # Build the full name string (with middle name if available)
+    if middle_name:
+        full_name = f"{first_name} {middle_name} {last_name}"
+    else:
+        full_name = f"{first_name} {last_name}"
 
-    # 4. Google fallback
-    result = _search_linkedin_google(first_name, last_name)
-    return result
+    # --- Strategy 2: Most specific — full name + middle + org hint ---
+    if middle_name and org_hint:
+        query = f'"{full_name}" {org_hint} site:linkedin.com/in'
+        candidates = _ddg_search(query, "ddg_fullname_org")
+        best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+        if best:
+            return best
+
+    # --- Strategy 3: Full name + org hint (no middle) ---
+    if org_hint:
+        query = f'"{first_name} {last_name}" {org_hint} site:linkedin.com/in'
+        candidates = _ddg_search(query, "ddg_name_org")
+        best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+        if best:
+            return best
+
+    # --- Strategy 4: Full name with middle (no org) ---
+    if middle_name:
+        query = f'"{full_name}" site:linkedin.com/in'
+        candidates = _ddg_search(query, "ddg_fullname")
+        best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+        if best:
+            return best
+
+    # --- Strategy 5: First + last name only (broadest DuckDuckGo) ---
+    query = f'"{first_name} {last_name}" site:linkedin.com/in'
+    candidates = _ddg_search(query, "ddg_name")
+    best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+    if best:
+        return best
+
+    # --- Strategy 6: Google fallback ---
+    google_query = f'"{full_name}"'
+    if org_hint:
+        google_query += f" {org_hint}"
+    google_query += " site:linkedin.com/in"
+    candidates = _google_search(google_query)
+    best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+    if best:
+        return best
+
+    # --- Strategy 7: Bing fallback ---
+    candidates = _bing_search(google_query)
+    best = _pick_best_candidate(candidates, first_name, middle_name, last_name, org_hint)
+    if best:
+        return best
+
+    logger.info("LinkedIn profile not found for: %s %s %s", first_name, middle_name, last_name)
+    return {"found": False, "source": "all_exhausted"}

@@ -17,8 +17,13 @@ import { Button } from '@/components/ui/button';
 
 // Actual filename in public/; UI shows "Resume", download keeps this name
 const RESUME_FILENAME = 'Harshith_Manne_Cloud_DevOps_Engineer_Resume.pdf';
-const RESUME_URL = `/${RESUME_FILENAME}`;
+const RESUME_PATH = `/${RESUME_FILENAME}`;
 const RESUME_VIEW_HASH = '#view=FitW&zoom=120';
+
+function getResumeUrl(): string {
+  if (typeof window === 'undefined') return RESUME_PATH;
+  return window.location.origin + RESUME_PATH;
+}
 
 interface ResumeViewerProps {
   children: React.ReactNode;
@@ -69,9 +74,11 @@ function ResumeDialogContent({ open: isOpen }: { open: boolean }) {
     setLoading(true);
     setError(false);
 
-    fetch(RESUME_URL)
+    fetch(getResumeUrl())
       .then((res) => {
         if (!res.ok) throw new Error('Resume failed to load');
+        const ct = res.headers.get('Content-Type') || '';
+        if (!ct.toLowerCase().includes('application/pdf')) throw new Error('Not a PDF (wrong Content-Type)');
         return res.blob();
       })
       .then((blob) => {
@@ -114,7 +121,7 @@ function ResumeDialogContent({ open: isOpen }: { open: boolean }) {
               Close
             </Button>
           </DialogClose>
-          <a href={RESUME_URL} download={RESUME_FILENAME} className="inline-flex shrink-0">
+          <a href={RESUME_PATH} download={RESUME_FILENAME} className="inline-flex shrink-0">
             <Button size="sm" variant="default" className="gap-2">
               <Download className="h-4 w-4" />
               Download
@@ -143,7 +150,7 @@ function ResumeDialogContent({ open: isOpen }: { open: boolean }) {
         )}
         <div className="flex shrink-0 flex-wrap items-center justify-center gap-2 border-t border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
           <span>If the preview doesn&apos;t load,</span>
-          <a href={RESUME_URL} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline">
+          <a href={getResumeUrl()} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline">
             <ExternalLink className="h-3 w-3" />
             open in new tab
           </a>

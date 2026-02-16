@@ -17,7 +17,8 @@ import { Button } from '@/components/ui/button';
 
 // Actual filename in public/; UI shows "Resume", download keeps this name
 const RESUME_FILENAME = 'Harshith_Manne_Cloud_DevOps_Engineer_Resume.pdf';
-const RESUME_URL = `${import.meta.env.BASE_URL}${RESUME_FILENAME}`;
+// Root-relative so iframe always requests /filename.pdf (not relative to /home etc.)
+const RESUME_URL = `/${RESUME_FILENAME}`;
 // Fit to viewer width so no horizontal scroll; zoom for readability
 const RESUME_VIEW_HASH = '#view=FitW&zoom=120';
 

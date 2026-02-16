@@ -425,7 +425,7 @@ def get_organization_stats():
             by_country[c] = by_country.get(c, 0) + loc["count"]
         top_countries = [
             {"country": c, "count": n}
-            for c, n in sorted(by_country.items(), key=lambda x: -x[1])[:20]
+            for c, n in sorted(by_country.items(), key=lambda x: -x[1])
         ]
 
         return jsonify({

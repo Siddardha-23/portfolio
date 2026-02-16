@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Menu, X, ChevronRight, Download, Mail } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { ResumeViewer } from '@/components/ResumeViewer';
 
 const navItems = [
   { label: 'Home', href: '/home', shortLabel: 'Home' },
@@ -294,12 +295,12 @@ export default function Navbar() {
                     Get In Touch
                   </a>
                 </Button>
-                <Button variant="outline" className="w-full py-6 text-lg border-primary/50" asChild>
-                  <a href="/resume.pdf" download>
+                <ResumeViewer className="w-full">
+                  <Button variant="outline" className="w-full py-6 text-lg border-primary/50">
                     <Download className="h-5 w-5 mr-2" />
-                    Download Resume
-                  </a>
-                </Button>
+                    View / Download Resume
+                  </Button>
+                </ResumeViewer>
               </motion.div>
             </motion.nav>
           </motion.div>

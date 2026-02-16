@@ -58,8 +58,8 @@ class IPService:
         if not ip_address or ip_address in ['127.0.0.1', 'localhost', '::1']:
             return self._get_local_ip_info(ip_address)
         
-        # Clean the IP (handle X-Forwarded-For format)
-        ip_address = ip_address.split(',')[0].strip()
+        # Use only the leftmost (original client) IP when multiple are present
+        ip_address = (ip_address or "").split(",")[0].strip()
         
         # Check cache first
         if use_cache:
@@ -117,32 +117,37 @@ class IPService:
             
             if response.status_code == 200:
                 data = response.json()
-                
-                # Parse and enrich the data
+                # Location is taken from API's city/region/country (origin), not from lat/long.
+                # We never derive city/country from coordinates, so display stays consistent with ipinfo.io.
+                country_code = (data.get('country') or '').strip().upper() or 'Unknown'
+                country_name = self._get_country_name(country_code) if country_code != 'Unknown' else 'Unknown'
+                city = (data.get('city') or 'Unknown').strip() or 'Unknown'
+                region = (data.get('region') or 'Unknown').strip() or 'Unknown'
+
                 ip_info = {
                     "ip": ip_address,
-                    "city": data.get('city', 'Unknown'),
-                    "region": data.get('region', 'Unknown'),
-                    "country": data.get('country', 'Unknown'),
-                    "country_name": self._get_country_name(data.get('country', '')),
-                    "postal": data.get('postal', ''),
-                    "timezone": data.get('timezone', 'UTC'),
-                    "org": data.get('org', 'Unknown'),
-                    "loc": data.get('loc', ''),
+                    "city": city,
+                    "region": region,
+                    "country": country_code,
+                    "country_name": country_name,
+                    "postal": (data.get('postal') or '').strip(),
+                    "timezone": (data.get('timezone') or 'UTC').strip() or 'UTC',
+                    "org": (data.get('org') or 'Unknown').strip() or 'Unknown',
+                    "loc": (data.get('loc') or '').strip(),
                     "fetched_at": datetime.utcnow().isoformat(),
                     "source": "ipinfo.io"
                 }
-                
-                # Parse coordinates if available
+
+                # Store lat/long only for mapping; never used to derive city/country
                 if ip_info['loc']:
                     try:
                         lat, lon = ip_info['loc'].split(',')
-                        ip_info['latitude'] = float(lat)
-                        ip_info['longitude'] = float(lon)
+                        ip_info['latitude'] = float(lat.strip())
+                        ip_info['longitude'] = float(lon.strip())
                     except (ValueError, AttributeError):
                         pass
-                
-                logger.info(f"IP info fetched for {ip_address}: {ip_info['city']}, {ip_info['country']}")
+
+                logger.info(f"IP info fetched for {ip_address}: {ip_info['city']}, {ip_info['country_name']}")
                 return ip_info
             
             elif response.status_code == 429:

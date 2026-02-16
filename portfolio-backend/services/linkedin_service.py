@@ -38,7 +38,7 @@ PERSONAL_DOMAIN_TYPOS = {
     "gmial.com", "gamil.com", "gmai.com", "gmil.com",
     "gmal.com", "gnail.com", "gmaill.com", "gmali.com", "gimail.com",
     "gamail.com", "gmsil.com", "gmeil.com", "gmaul.com", "gmaol.com",
-    "gmailcom", "gail.com", "gemail.com", "gmaik.com", "gmqil.com",
+    "gmailcom", "gail.com", "gemail.com", "gmqil.com", "gmaio.com",
     "gmail.co", "gmail.cm", "gmail.om", "gmail.con", "gmail.cim",
     # Yahoo typos
     "yaho.com", "yahooo.com", "yhoo.com", "yaoo.com", "yhaoo.com",

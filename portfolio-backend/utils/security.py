@@ -10,11 +10,14 @@ logger = logging.getLogger(__name__)
 def get_client_ip(request) -> str:
     """
     Get client IP from request, respecting X-Forwarded-For when behind a proxy.
-    Call from Flask blueprints: get_client_ip(request).
+    Uses the leftmost (original client) IP when the header contains multiple IPs.
     """
+    raw = ""
     if request.headers.getlist("X-Forwarded-For"):
-        return request.headers.getlist("X-Forwarded-For")[0].strip()
-    return (request.remote_addr or "").strip()
+        raw = request.headers.getlist("X-Forwarded-For")[0].strip()
+    else:
+        raw = (request.remote_addr or "").strip()
+    return raw.split(",")[0].strip() if raw else ""
 
 
 class InputSanitizer:

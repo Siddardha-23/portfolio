@@ -222,6 +222,13 @@ class ApiService {
       total_registered: number;
       linkedin_profiles_found: number;
       top_countries?: Array<{ country: string; count: number }>;
+      map_locations?: Array<{
+        country: string;
+        city?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        count: number;
+      }>;
     }>('/info/org-stats', {
       method: 'GET',
     });

@@ -4,6 +4,7 @@
  * Triggered by event 'open-visitor-map'.
  */
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, X, MapPin, Users, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -63,24 +64,60 @@ interface VisitorLocation {
     count: number;
 }
 
-// Map controller component to handle bounds and initial setup
-function MapController({ locations }: { locations: VisitorLocation[] }) {
+/** Map point: country-level or city-level with real lat/long when available */
+interface MapPoint {
+    country: string;
+    city?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+    count: number;
+}
+
+function getPointLatLng(point: MapPoint): [number, number] | null {
+    if (point.latitude != null && point.longitude != null &&
+        Number.isFinite(point.latitude) && Number.isFinite(point.longitude)) {
+        return [point.latitude, point.longitude];
+    }
+    const countryLatLng = COUNTRY_LATLNG[point.country];
+    return countryLatLng ? countryLatLng : null;
+}
+
+// Map controller: fit bounds from map points (real lat/long or country centroid)
+function MapController({
+    mapPoints,
+    flyToCountry,
+    onFlyDone,
+}: {
+    mapPoints: MapPoint[];
+    flyToCountry: string | null;
+    onFlyDone: () => void;
+}) {
     const map = useMap();
 
     useEffect(() => {
-        if (locations.length === 0) return;
-
-        // Create bounds from all locations
-        const latlngs = locations
-            .map(loc => COUNTRY_LATLNG[loc.country])
-            .filter(Boolean) as L.LatLngExpression[];
-
+        if (mapPoints.length === 0) return;
+        const latlngs = mapPoints
+            .map(p => getPointLatLng(p))
+            .filter((ll): ll is [number, number] => ll != null) as L.LatLngExpression[];
         if (latlngs.length > 0) {
             const bounds = L.latLngBounds(latlngs);
-            // Add padding
             map.fitBounds(bounds, { padding: [80, 80], maxZoom: 4 });
         }
-    }, [locations, map]);
+    }, [mapPoints, map]);
+
+    useEffect(() => {
+        if (!flyToCountry) return;
+        const latlng = COUNTRY_LATLNG[flyToCountry] ?? COUNTRY_LATLNG['United States'];
+        if (!latlng) return;
+        map.flyTo(latlng as L.LatLngExpression, 5, { duration: 1.2 });
+        const handleMoveEnd = () => {
+            onFlyDone();
+        };
+        map.once('moveend', handleMoveEnd);
+        return () => {
+            map.off('moveend', handleMoveEnd);
+        };
+    }, [flyToCountry, map, onFlyDone]);
 
     return null;
 }
@@ -106,8 +143,10 @@ export function VisitorMapTrigger({ onClick }: { onClick: () => void }) {
 export default function VisitorGlobe() {
     const [isOpen, setIsOpen] = useState(false);
     const [locations, setLocations] = useState<VisitorLocation[]>([]);
+    const [mapPoints, setMapPoints] = useState<MapPoint[]>([]);
     const [totalVisitors, setTotalVisitors] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [flyToCountry, setFlyToCountry] = useState<string | null>(null);
     const mapReady = useRef(false);
 
     const fetchData = async () => {
@@ -117,7 +156,14 @@ export default function VisitorGlobe() {
             const response = await apiService.getOrgStats();
             if (response.data) {
                 setTotalVisitors(response.data.total_visitors || 0);
-                setLocations(response.data.top_countries || []);
+                const topCountries = response.data.top_countries || [];
+                setLocations(topCountries);
+                const ml = response.data.map_locations;
+                if (ml && ml.length > 0) {
+                    setMapPoints(ml);
+                } else {
+                    setMapPoints(topCountries.map(c => ({ country: c.country, count: c.count })));
+                }
                 mapReady.current = true;
             }
         } catch {
@@ -143,7 +189,16 @@ export default function VisitorGlobe() {
         if (!mapReady.current) fetchData();
     };
 
-    const maxCount = Math.max(...locations.map(l => l.count), 1);
+    // Lock body scroll when popup is open so modal stays centered
+    useEffect(() => {
+        if (isOpen) {
+            const prev = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+            return () => { document.body.style.overflow = prev; };
+        }
+    }, [isOpen]);
+
+    const maxCount = Math.max(...mapPoints.map(p => p.count), 1);
     const isClient = typeof window !== 'undefined';
 
     return (
@@ -163,33 +218,54 @@ export default function VisitorGlobe() {
                 </Button>
             </motion.div>
 
-            <AnimatePresence>
-                {isOpen && isClient && (
-                    <>
-                        <motion.div
-                            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[999] cursor-pointer"
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => setIsOpen(false)}
-                            onKeyDown={(e) => e.key === 'Escape' && setIsOpen(false)}
-                        />
+            {isClient && createPortal(
+                <AnimatePresence>
+                    {isOpen && (
+                        <>
+                            <motion.div
+                                className="fixed inset-0 bg-black/80 backdrop-blur-md z-[9999] cursor-pointer"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                onClick={() => setIsOpen(false)}
+                                onKeyDown={(e) => e.key === 'Escape' && setIsOpen(false)}
+                                role="button"
+                                tabIndex={0}
+                                aria-label="Close overlay"
+                            />
 
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: 20 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                            transition={{ duration: 0.3, type: 'spring', bounce: 0.3 }}
-                            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(1100px,92vw)] h-[min(850px,88vh)] z-[1000] bg-card rounded-3xl shadow-2xl border border-border/50 overflow-hidden flex flex-col"
-                        >
-                            <div className="flex items-center justify-between px-6 py-5 border-b border-border/50 shrink-0 bg-gradient-to-r from-card via-card/60 to-card">
-                                <div className="flex items-center gap-4 flex-1 min-w-0">
-                                    <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 via-blue-400 to-cyan-500 shadow-lg shrink-0">
-                                        <Globe className="h-6 w-6 text-white" />
+                            {/* Wrapper handles centering so Framer Motion's transform doesn't override it */}
+                            <div
+                                className="fixed z-[10000] flex flex-col overflow-hidden rounded-3xl border border-border/50 bg-card shadow-2xl"
+                                style={{
+                                    left: '50%',
+                                    top: '50%',
+                                    transform: 'translate(-50%, -50%)',
+                                    width: 'min(1100px, 92vw)',
+                                    height: 'min(850px, 88vh)',
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <motion.div
+                                    initial={{ opacity: 0, scale: 0.85 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.85 }}
+                                    transition={{ duration: 0.25, type: 'spring', bounce: 0.25 }}
+                                    className="flex h-full w-full flex-col overflow-hidden"
+                                >
+                            <div className="flex shrink-0 items-center justify-between border-b border-border/50 bg-gradient-to-r from-card via-card/60 to-card px-6 py-5">
+                                <div className="flex min-w-0 flex-1 items-center gap-4">
+                                    <div className="shrink-0 rounded-xl bg-gradient-to-br from-blue-500 via-blue-400 to-cyan-500 p-3 shadow-lg">
+                                        <motion.div
+                                            animate={{ rotate: 360 }}
+                                            transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
+                                        >
+                                            <Globe className="h-6 w-6 text-white" />
+                                        </motion.div>
                                     </div>
                                     <div className="min-w-0">
                                         <h2 className="text-xl font-bold text-foreground">Global Visitors</h2>
-                                        <p className="text-sm text-muted-foreground">Interactive map — zoom and explore</p>
+                                        <p className="text-sm text-muted-foreground">Scroll to zoom • Drag to pan • Use +/− to zoom in/out</p>
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
@@ -215,7 +291,7 @@ export default function VisitorGlobe() {
                                         </motion.div>
                                         <p className="text-sm text-muted-foreground">Loading visitor data...</p>
                                     </div>
-                                ) : locations.length === 0 ? (
+                                ) : mapPoints.length === 0 ? (
                                     <div className="absolute inset-0 flex items-center justify-center z-10 flex-col gap-3 bg-slate-950/40">
                                         <AlertCircle className="h-10 w-10 text-muted-foreground" />
                                         <p className="text-sm text-muted-foreground">No visitor data available</p>
@@ -254,13 +330,14 @@ export default function VisitorGlobe() {
                                             tileSize={256}
                                             opacity={0.7}
                                         />
-                                        {locations.map((loc, i) => {
-                                            const latlng = COUNTRY_LATLNG[loc.country];
+                                        {mapPoints.map((point, i) => {
+                                            const latlng = getPointLatLng(point);
                                             if (!latlng) return null;
-                                            const radius = 5 + (loc.count / maxCount) * 18;
+                                            const radius = 5 + (point.count / maxCount) * 18;
+                                            const label = point.city ? `${point.city}, ${point.country}` : point.country;
                                             return (
                                                 <CircleMarker
-                                                    key={`${loc.country}-${i}`}
+                                                    key={`${point.country}-${point.city ?? ''}-${i}`}
                                                     center={latlng}
                                                     radius={radius}
                                                     pathOptions={{
@@ -273,14 +350,18 @@ export default function VisitorGlobe() {
                                                 >
                                                     <Popup>
                                                         <div className="text-center font-sans">
-                                                            <div className="font-bold text-sm">{loc.country}</div>
-                                                            <div className="text-xs text-gray-600">{loc.count} visitor{loc.count > 1 ? 's' : ''}</div>
+                                                            <div className="font-bold text-sm">{label}</div>
+                                                            <div className="text-xs text-gray-600">{point.count} visitor{point.count > 1 ? 's' : ''}</div>
                                                         </div>
                                                     </Popup>
                                                 </CircleMarker>
                                             );
                                         })}
-                                        <MapController locations={locations} />
+                                        <MapController
+                                            mapPoints={mapPoints}
+                                            flyToCountry={flyToCountry}
+                                            onFlyDone={() => setFlyToCountry(null)}
+                                        />
                                         <ZoomControl position="bottomright" />
                                     </MapContainer>
                                 )}
@@ -289,18 +370,26 @@ export default function VisitorGlobe() {
                             <div className="border-t border-border/50 px-4 py-3 shrink-0 bg-gradient-to-r from-card/50 via-card to-card/50 max-h-24 overflow-hidden">
                                 <div className="flex flex-wrap gap-2 justify-center overflow-y-auto max-h-20">
                                     {locations.map((loc, i) => (
-                                        <Badge key={i} variant="outline" className="px-2 py-1 gap-1 text-xs flex-shrink-0 border-primary/20 bg-primary/5 hover:bg-primary/10 transition-colors">
-                                            <MapPin className="h-3 w-3 text-cyan-500 flex-shrink-0" />
+                                        <button
+                                            key={i}
+                                            type="button"
+                                            onClick={() => setFlyToCountry(loc.country)}
+                                            className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/5 px-2 py-1 text-xs font-medium transition-colors hover:bg-primary/10 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                                        >
+                                            <MapPin className="h-3 w-3 flex-shrink-0 text-cyan-500" />
                                             <span className="truncate">{loc.country}</span>
-                                            <span className="text-muted-foreground flex-shrink-0">· {loc.count}</span>
-                                        </Badge>
+                                            <span className="flex-shrink-0 text-muted-foreground">· {loc.count}</span>
+                                        </button>
                                     ))}
                                 </div>
                             </div>
-                        </motion.div>
-                    </>
-                )}
-            </AnimatePresence>
+                                </motion.div>
+                            </div>
+                        </>
+                    )}
+                </AnimatePresence>,
+                document.body
+            )}
         </>
     );
 }

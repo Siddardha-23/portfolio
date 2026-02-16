@@ -4,6 +4,7 @@ import { Cloud, Code, Database, Server, Download, ArrowRight, Zap, Users, Clock,
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PERSONAL_INFO } from '@/lib/constants';
+import { ResumeViewer } from '@/components/ResumeViewer';
 
 // Animated stat counter
 function AnimatedStat({ value, label, suffix = '', icon: Icon }: { value: number; label: string; suffix?: string; icon: React.ElementType }) {
@@ -237,12 +238,12 @@ export default function About() {
                     <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
                   </a>
                 </Button>
-                <Button variant="outline" className="border-primary/50 text-primary hover:bg-primary/10" asChild>
-                  <a href="/resume.pdf" download>
+                <ResumeViewer>
+                  <Button variant="outline" className="border-primary/50 text-primary hover:bg-primary/10">
                     <Download className="mr-2 h-4 w-4" />
-                    Download Resume
-                  </a>
-                </Button>
+                    View / Download Resume
+                  </Button>
+                </ResumeViewer>
               </motion.div>
             </motion.div>
 

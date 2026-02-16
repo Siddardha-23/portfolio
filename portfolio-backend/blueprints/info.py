@@ -17,6 +17,19 @@ from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 info_bp = Blueprint('info', __name__)
 logger = logging.getLogger(__name__)
 
+# Map country codes to full names so frontend map always gets a known key (India, United States, etc.)
+COUNTRY_CODE_TO_NAME = {
+    'US': 'United States', 'GB': 'United Kingdom', 'CA': 'Canada', 'IN': 'India',
+    'AU': 'Australia', 'DE': 'Germany', 'FR': 'France', 'JP': 'Japan', 'CN': 'China',
+    'BR': 'Brazil', 'MX': 'Mexico', 'NL': 'Netherlands', 'SE': 'Sweden', 'KR': 'South Korea',
+    'IT': 'Italy', 'ES': 'Spain', 'SG': 'Singapore', 'AE': 'UAE', 'RU': 'Russia',
+    'IL': 'Israel', 'TR': 'Turkey', 'PL': 'Poland', 'BE': 'Belgium', 'AT': 'Austria',
+    'CH': 'Switzerland', 'PT': 'Portugal', 'ZA': 'South Africa', 'AR': 'Argentina',
+    'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'PH': 'Philippines', 'ID': 'Indonesia',
+    'VN': 'Vietnam', 'TH': 'Thailand', 'MY': 'Malaysia', 'EG': 'Egypt', 'PK': 'Pakistan',
+    'BD': 'Bangladesh', 'NG': 'Nigeria', 'KE': 'Kenya', 'NZ': 'New Zealand', 'HK': 'Hong Kong',
+}
+
 
 @info_bp.route('', methods=['POST'])
 def store_visitor_info():
@@ -206,11 +219,61 @@ def get_organization_stats():
         db = DBConnect().get_db()
         collection = db.registered_visitors
 
+        # Derive org from email when organization is missing (e.g. @asu.edu -> Asu) so all ASU users count together
+        _email_domain = {"$toLower": {"$arrayElemAt": [{"$split": [{"$ifNull": ["$email", ""]}, "@"]}, 1]}}
+        _has_org = {"$and": [
+            {"$ne": ["$organization", None]},
+            {"$gt": [{"$strLenCP": {"$ifNull": ["$organization", ""]}}, 0]}
+        ]}
+        # Prefer email domain for known .edu so "Arizona State University" and "Asu" both become "asu"
+        _edu_org_key_branches = [
+            {"case": {"$eq": ["$_email_domain", "asu.edu"]}, "then": "asu"},
+            {"case": {"$eq": ["$_email_domain", "mit.edu"]}, "then": "mit"},
+            {"case": {"$eq": ["$_email_domain", "stanford.edu"]}, "then": "stanford"},
+            {"case": {"$eq": ["$_email_domain", "harvard.edu"]}, "then": "harvard"},
+            {"case": {"$eq": ["$_email_domain", "berkeley.edu"]}, "then": "berkeley"},
+            {"case": {"$eq": ["$_email_domain", "yale.edu"]}, "then": "yale"},
+            {"case": {"$eq": ["$_email_domain", "princeton.edu"]}, "then": "princeton"},
+            {"case": {"$eq": ["$_email_domain", "caltech.edu"]}, "then": "caltech"},
+            {"case": {"$eq": ["$_email_domain", "cmu.edu"]}, "then": "cmu"},
+            {"case": {"$eq": ["$_email_domain", "cornell.edu"]}, "then": "cornell"},
+        ]
+        _edu_display_branches = [
+            {"case": {"$eq": ["$_email_domain", "asu.edu"]}, "then": "Asu"},
+            {"case": {"$eq": ["$_email_domain", "mit.edu"]}, "then": "MIT"},
+            {"case": {"$eq": ["$_email_domain", "stanford.edu"]}, "then": "Stanford"},
+            {"case": {"$eq": ["$_email_domain", "harvard.edu"]}, "then": "Harvard"},
+            {"case": {"$eq": ["$_email_domain", "berkeley.edu"]}, "then": "Berkeley"},
+            {"case": {"$eq": ["$_email_domain", "yale.edu"]}, "then": "Yale"},
+            {"case": {"$eq": ["$_email_domain", "princeton.edu"]}, "then": "Princeton"},
+            {"case": {"$eq": ["$_email_domain", "caltech.edu"]}, "then": "Caltech"},
+            {"case": {"$eq": ["$_email_domain", "cmu.edu"]}, "then": "CMU"},
+            {"case": {"$eq": ["$_email_domain", "cornell.edu"]}, "then": "Cornell"},
+        ]
         pipeline = [
-            {"$match": {"organization": {"$ne": None}}},
+            {"$match": {"email": {"$exists": True}, "email": {"$regex": "@", "$ne": ""}}},
+            {"$addFields": {"_email_domain": _email_domain}},
+            {"$addFields": {
+                "_org_from_edu": {"$switch": {"branches": _edu_org_key_branches, "default": None}},
+                "_display_from_edu": {"$switch": {"branches": _edu_display_branches, "default": None}}
+            }},
+            {"$addFields": {
+                "org_key": {"$cond": [
+                    {"$ne": ["$_org_from_edu", None]},
+                    "$_org_from_edu",
+                    {"$cond": [_has_org, {"$toLower": {"$ifNull": ["$organization", ""]}}, None]}
+                ]},
+                "_display_name": {"$cond": [
+                    {"$ne": ["$_display_from_edu", None]},
+                    "$_display_from_edu",
+                    {"$cond": [_has_org, "$organization", None]}
+                ]}
+            }},
+            {"$match": {"org_key": {"$nin": [None, "", "gmaio"]}}},
             {"$group": {
-                "_id": "$organization",
+                "_id": "$org_key",
                 "count": {"$sum": 1},
+                "display_name": {"$first": {"$ifNull": ["$_display_name", "$organization"]}},
                 "latest_visit": {"$max": "$registered_at"}
             }},
             {"$sort": {"count": -1}},
@@ -224,20 +287,65 @@ def get_organization_stats():
         # Count with LinkedIn found
         linkedin_found = collection.count_documents({"linkedin.found": True})
         
-        # Geographic distribution
+        # Geographic distribution from registered_visitors (form submitters); map shows these only
         geo_pipeline = [
-            {"$match": {"geo.country": {"$ne": None}}},
+            {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
             {"$group": {"_id": "$geo.country", "count": {"$sum": 1}}},
             {"$sort": {"count": -1}},
-            {"$limit": 5}
+            {"$limit": 20}
         ]
-        top_countries = list(collection.aggregate(geo_pipeline))
-        
+        top_countries_raw = list(collection.aggregate(geo_pipeline))
+
+        # Normalize country so frontend map finds it: "IN" -> "India", "United States" stays
+        def country_for_map(raw_country):
+            s = (raw_country or "").strip()
+            if len(s) == 2:
+                return COUNTRY_CODE_TO_NAME.get(s.upper(), s)
+            return s or raw_country
+
+        top_countries = [
+            {'country': country_for_map(c['_id']), 'count': c['count']}
+            for c in top_countries_raw
+        ]
+
+        # City-level points with real lat/long from ip_info so map shows Hyderabad etc. in the right place
+        map_locations_pipeline = [
+            {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
+            {"$group": {
+                "_id": {"country": "$geo.country", "city": {"$ifNull": ["$geo.city", ""]}},
+                "count": {"$sum": 1},
+                "lat": {"$first": "$ip_info.latitude"},
+                "lng": {"$first": "$ip_info.longitude"}
+            }},
+            {"$match": {"_id.country": {"$ne": ""}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 50}
+        ]
+        map_locations_raw = list(collection.aggregate(map_locations_pipeline))
+        map_locations = []
+        for m in map_locations_raw:
+            cid = m["_id"]
+            country = country_for_map(cid.get("country"))
+            city = (cid.get("city") or "").strip() or None
+            lat, lng = m.get("lat"), m.get("lng")
+            if lat is not None and lng is not None:
+                try:
+                    lat, lng = float(lat), float(lng)
+                except (TypeError, ValueError):
+                    lat, lng = None, None
+            map_locations.append({
+                "country": country,
+                "city": city,
+                "latitude": lat,
+                "longitude": lng,
+                "count": m["count"]
+            })
+
         return jsonify({
             'total_visitors': total_visitors,
             'organizations': [
                 {
-                    'name': stat['_id'],
+                    'name': stat.get('display_name') or (stat['_id'].title() if stat.get('_id') else ''),
                     'visitors': stat['count'],
                     'latest_visit': stat['latest_visit'].isoformat() if stat.get('latest_visit') else None
                 }
@@ -245,10 +353,8 @@ def get_organization_stats():
             ],
             'total_registered': total_registered,
             'linkedin_profiles_found': linkedin_found,
-            'top_countries': [
-                {'country': c['_id'], 'count': c['count']}
-                for c in top_countries
-            ]
+            'top_countries': top_countries,
+            'map_locations': map_locations
         }), 200
         
     except Exception as e:

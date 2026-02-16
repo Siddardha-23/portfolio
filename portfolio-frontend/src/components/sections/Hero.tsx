@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { PERSONAL_INFO, ROLES } from '@/lib/constants';
 import { apiService } from '@/lib/api';
 import { VisitorMapTrigger } from '@/components/VisitorGlobe';
+import { ResumeViewer } from '@/components/ResumeViewer';
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -459,17 +460,16 @@ export default function Hero() {
                   Get In Touch
                 </a>
               </Button>
-              <Button
-                size="lg"
-                variant="ghost"
-                className="text-muted-foreground hover:text-foreground text-sm md:text-base px-6 py-5"
-                asChild
-              >
-                <a href="/resume.pdf" download>
+              <ResumeViewer>
+                <Button
+                  size="lg"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground text-sm md:text-base px-6 py-5"
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Resume
-                </a>
-              </Button>
+                </Button>
+              </ResumeViewer>
             </motion.div>
 
             {/* Availability */}

@@ -361,8 +361,8 @@ def get_organization_stats():
                 "count": m["count"]
             }
 
-        # City-level points: include BOTH registered_visitors (form submitters) AND visitor_info (all visitors)
-        # so Bengaluru and other cities show on the map even if they didn't submit the form
+        # City-level points: unique visitors per location only (map matches "unique visitors" at top)
+        # registered_visitors: one doc per person (we dedupe on insert), so count = $sum 1 is already unique
         map_locations_pipeline = [
             {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
             {"$group": {
@@ -376,7 +376,7 @@ def get_organization_stats():
         ]
         map_locations_raw = list(collection.aggregate(map_locations_pipeline))
 
-        # Also get locations from visitor_info (all tracked visitors, not just form submitters)
+        # visitor_info: count unique by fingerprint_hash per (country, city); legacy docs (no hash) count as 1 each
         visitor_info_coll = db.visitor_info
         visitor_map_pipeline = [
             {"$match": {
@@ -390,9 +390,33 @@ def get_organization_stats():
                     "country": {"$ifNull": ["$geo.country", "$geo.country_name"]},
                     "city": {"$ifNull": ["$geo.city", ""]}
                 },
-                "count": {"$sum": 1},
+                "hashes": {"$addToSet": "$fingerprint_hash"},
+                "legacy_count": {"$sum": {"$cond": [
+                    {"$or": [
+                        {"$eq": ["$fingerprint_hash", None]},
+                        {"$eq": ["$fingerprint_hash", ""]}
+                    ]},
+                    1,
+                    0
+                ]}},
                 "lat": {"$first": "$ip_info.latitude"},
                 "lng": {"$first": "$ip_info.longitude"}
+            }},
+            {"$project": {
+                "_id": 1,
+                "lat": 1,
+                "lng": 1,
+                "count": {"$add": [
+                    {"$size": {"$filter": {
+                        "input": "$hashes",
+                        "as": "h",
+                        "cond": {"$and": [
+                            {"$ne": ["$$h", None]},
+                            {"$ne": ["$$h", ""]}
+                        ]}
+                    }}},
+                    "$legacy_count"
+                ]}
             }},
             {"$match": {"_id.country": {"$ne": ""}}},
             {"$sort": {"count": -1}}
@@ -418,7 +442,7 @@ def get_organization_stats():
 
         map_locations = sorted(merged.values(), key=lambda x: -x["count"])
 
-        # Top countries (below map): derive from same merged map data so counts match the map
+        # Top countries (below map): derive from same merged map data
         by_country = {}
         for loc in map_locations:
             c = loc["country"]

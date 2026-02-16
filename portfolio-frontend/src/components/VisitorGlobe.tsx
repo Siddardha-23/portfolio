@@ -269,9 +269,12 @@ export default function VisitorGlobe() {
                                     </div>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0">
-                                    <Badge className="hidden sm:flex gap-2 bg-primary/10 border-primary/20 text-primary">
+                                    <Badge
+                                        className="hidden sm:flex gap-2 bg-primary/10 border-primary/20 text-primary"
+                                        title="One count per unique browser (fingerprint)"
+                                    >
                                         <Users className="h-4 w-4" />
-                                        <span className="font-semibold">{totalVisitors} visitors</span>
+                                        <span className="font-semibold">{totalVisitors} unique visitors</span>
                                     </Badge>
                                     <Button 
                                         onClick={() => setIsOpen(false)} 
@@ -368,6 +371,9 @@ export default function VisitorGlobe() {
                             </div>
 
                             <div className="border-t border-border/50 px-4 py-3 shrink-0 bg-gradient-to-r from-card/50 via-card to-card/50 max-h-24 overflow-hidden">
+                                <p className="text-center text-xs text-muted-foreground mb-1.5" title="Counts by location; sum may exceed unique visitors">
+                                    By location
+                                </p>
                                 <div className="flex flex-wrap gap-2 justify-center overflow-y-auto max-h-20">
                                     {locations.map((loc, i) => (
                                         <button

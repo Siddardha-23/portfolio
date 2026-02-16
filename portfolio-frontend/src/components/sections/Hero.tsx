@@ -8,6 +8,8 @@ import { PERSONAL_INFO, ROLES } from '@/lib/constants';
 import { apiService } from '@/lib/api';
 import { VisitorMapTrigger } from '@/components/VisitorGlobe';
 import { ResumeViewer } from '@/components/ResumeViewer';
+import { RecruiterQuickView } from '@/components/RecruiterQuickView';
+import { Timer, Github, Linkedin } from 'lucide-react';
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -79,6 +81,25 @@ function FloatingIcon({ icon: Icon, delay, size, x, y, duration }: {
     >
       <Icon style={{ width: size, height: size }} />
     </motion.div>
+  );
+}
+
+// Recruiter Quick View — 60-second summary button
+function RecruiterQuickViewButton() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="lg"
+        variant="outline"
+        className="border-accent/50 text-accent hover:bg-accent/10 text-sm md:text-base px-6 py-5"
+        onClick={() => setOpen(true)}
+      >
+        <Timer className="mr-2 h-4 w-4" />
+        View 60-Second Summary
+      </Button>
+      <RecruiterQuickView open={open} onOpenChange={setOpen} />
+    </>
   );
 }
 
@@ -368,14 +389,14 @@ export default function Hero() {
               </motion.div>
             )}
 
-            {/* Intro text */}
+            {/* Professional headline */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              <h2 className="text-lg md:text-xl text-muted-foreground mb-2 font-light">
-                Hello, I'm
+              <h2 className="text-base md:text-lg text-muted-foreground mb-2 font-medium">
+                {PERSONAL_INFO.headline}
               </h2>
             </motion.div>
 
@@ -396,12 +417,12 @@ export default function Hero() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 0.4, duration: 0.6 }}
-              className="text-lg sm:text-xl md:text-2xl lg:text-3xl font-medium mb-6 min-h-[2rem]"
+              className="text-lg sm:text-xl md:text-2xl font-medium mb-4 min-h-[2rem]"
             >
               <RoleTypewriter />
             </motion.div>
 
-            {/* Summary */}
+            {/* Summary — 3–4 lines, professional */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -434,42 +455,50 @@ export default function Hero() {
               ))}
             </motion.div>
 
-            {/* CTA Buttons */}
+            {/* CTA Buttons: Resume, GitHub, LinkedIn, Recruiter Quick View */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.7, duration: 0.5 }}
-              className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start"
+              className="flex flex-col sm:flex-row flex-wrap gap-3 justify-center lg:justify-start"
             >
-              <Button
-                size="lg"
-                className="btn-premium text-sm md:text-base px-6 py-5 group"
-                onClick={scrollToAbout}
-              >
-                Explore My Work
-                <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                className="border-primary/50 text-primary hover:bg-primary/10 text-sm md:text-base px-6 py-5"
-                asChild
-              >
-                <a href="#contact">
-                  <Mail className="mr-2 h-4 w-4" />
-                  Get In Touch
-                </a>
-              </Button>
               <ResumeViewer>
                 <Button
                   size="lg"
-                  variant="ghost"
-                  className="text-muted-foreground hover:text-foreground text-sm md:text-base px-6 py-5"
+                  className="btn-premium text-sm md:text-base px-6 py-5"
                 >
                   <Download className="mr-2 h-4 w-4" />
                   Resume
                 </Button>
               </ResumeViewer>
+              <Button size="lg" variant="outline" className="border-primary/50 text-primary hover:bg-primary/10 text-sm md:text-base px-6 py-5" asChild>
+                <a href={`https://${PERSONAL_INFO.github}`} target="_blank" rel="noopener noreferrer">
+                  <Github className="mr-2 h-4 w-4" />
+                  GitHub
+                </a>
+              </Button>
+              <Button size="lg" variant="outline" className="border-primary/50 text-primary hover:bg-primary/10 text-sm md:text-base px-6 py-5" asChild>
+                <a href={`https://${PERSONAL_INFO.linkedin}`} target="_blank" rel="noopener noreferrer">
+                  <Linkedin className="mr-2 h-4 w-4" />
+                  LinkedIn
+                </a>
+              </Button>
+              <RecruiterQuickViewButton />
+              <Button
+                size="lg"
+                variant="outline"
+                className="border-border text-muted-foreground hover:text-foreground text-sm md:text-base px-6 py-5"
+                onClick={scrollToAbout}
+              >
+                Explore My Work
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
+              <Button size="lg" variant="ghost" className="text-muted-foreground hover:text-foreground text-sm md:text-base px-6 py-5" asChild>
+                <a href="#contact">
+                  <Mail className="mr-2 h-4 w-4" />
+                  Get In Touch
+                </a>
+              </Button>
             </motion.div>
 
             {/* Availability */}

@@ -18,12 +18,18 @@ import {
   Rocket,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  LayoutGrid,
+  Target,
+  Shield,
+  Lightbulb,
 } from 'lucide-react';
+import { ArchitectureDiagramModal } from '@/components/ArchitectureDiagramModal';
 
 // Tech icon mapping
 const techIcons: { [key: string]: React.ReactNode } = {
   'AWS': <Cloud className="h-4 w-4" />,
+  'AWS Textract': <Cloud className="h-4 w-4" />,
   'Terraform': <Server className="h-4 w-4" />,
   'Docker': <Layers className="h-4 w-4" />,
   'Flask': <Code className="h-4 w-4" />,
@@ -31,12 +37,17 @@ const techIcons: { [key: string]: React.ReactNode } = {
   'Nginx': <Server className="h-4 w-4" />,
   'CI/CD': <Rocket className="h-4 w-4" />,
   'ECS': <Cloud className="h-4 w-4" />,
-  'GitHub Actions': <Rocket className="h-4 w-4" />
+  'GitHub Actions': <Rocket className="h-4 w-4" />,
+  'Azure Blob Storage': <Cloud className="h-4 w-4" />,
+  'GCP Firestore': <Cloud className="h-4 w-4" />,
+  'GCP BigQuery': <Cloud className="h-4 w-4" />,
+  'Python': <Code className="h-4 w-4" />,
 };
 
 // Tech color mapping
 const techColors: { [key: string]: string } = {
   'AWS': '#FF9900',
+  'AWS Textract': '#FF9900',
   'Terraform': '#7B42BC',
   'Docker': '#2496ED',
   'Flask': '#000000',
@@ -44,14 +55,32 @@ const techColors: { [key: string]: string } = {
   'Nginx': '#009639',
   'CI/CD': '#4CAF50',
   'ECS': '#FF9900',
-  'GitHub Actions': '#2088FF'
+  'GitHub Actions': '#2088FF',
+  'Azure Blob Storage': '#0078D4',
+  'GCP Firestore': '#4285F4',
+  'GCP BigQuery': '#4285F4',
+  'Python': '#3776AB',
+};
+
+// Project type with optional architecture subsections
+type ProjectItem = typeof PROJECTS[0] & {
+  problemStatement?: string;
+  architectureOverview?: string;
+  keyDecisions?: string[];
+  deploymentStrategy?: string;
+  securityConsiderations?: string;
+  futureImprovements?: string;
 };
 
 // Project card component
-function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: number }) {
+function ProjectCard({ project, index }: { project: ProjectItem; index: number }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
+  const [diagramOpen, setDiagramOpen] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
   const navigate = useNavigate();
+  const hasDetails = 'problemStatement' in project && (project.problemStatement || project.architectureOverview || project.keyDecisions?.length);
+  const diagramLayers = project.architecture?.diagram?.layers;
 
   return (
     <motion.div
@@ -199,10 +228,66 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
               </button>
             )}
 
+            {/* Architecture / engineering details (problem, decisions, deployment, security, future) */}
+            {hasDetails && (
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <button
+                  onClick={() => setDetailsExpanded(!detailsExpanded)}
+                  className="w-full flex items-center justify-between gap-2 py-2 text-sm font-medium text-primary hover:underline"
+                >
+                  <span className="flex items-center gap-2">
+                    <LayoutGrid className="h-4 w-4" />
+                    Key Engineering Details
+                  </span>
+                  {detailsExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </button>
+                {detailsExpanded && (
+                  <div className="mt-3 space-y-3 text-xs text-muted-foreground">
+                    {project.problemStatement && (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1"><Target className="h-3 w-3" /> Problem</span>
+                        <p className="mt-0.5 pl-4">{project.problemStatement}</p>
+                      </div>
+                    )}
+                    {project.architectureOverview && (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1"><Layers className="h-3 w-3" /> Architecture</span>
+                        <p className="mt-0.5 pl-4">{project.architectureOverview}</p>
+                      </div>
+                    )}
+                    {project.keyDecisions?.length ? (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1">Key decisions</span>
+                        <ul className="mt-0.5 pl-4 list-disc space-y-0.5">{project.keyDecisions.map((d, i) => <li key={i}>{d}</li>)}</ul>
+                      </div>
+                    ) : null}
+                    {project.deploymentStrategy && (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1"><Rocket className="h-3 w-3" /> Deployment</span>
+                        <p className="mt-0.5 pl-4">{project.deploymentStrategy}</p>
+                      </div>
+                    )}
+                    {project.securityConsiderations && (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1"><Shield className="h-3 w-3" /> Security</span>
+                        <p className="mt-0.5 pl-4">{project.securityConsiderations}</p>
+                      </div>
+                    )}
+                    {project.futureImprovements && (
+                      <div>
+                        <span className="font-medium text-foreground flex items-center gap-1"><Lightbulb className="h-3 w-3" /> Future</span>
+                        <p className="mt-0.5 pl-4">{project.futureImprovements}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Action buttons */}
-            <div className="flex gap-3 mt-6 pt-6 border-t border-border/50">
+            <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-border/50">
               <Button
-                className="flex-1 btn-premium group"
+                className="flex-1 min-w-[120px] btn-premium group"
                 size="sm"
                 onClick={() => navigate(`/project/${project.slug}`)}
               >
@@ -210,6 +295,12 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 {project.status === 'Live' ? 'Live Demo' : 'Architecture'}
                 <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
               </Button>
+              {diagramLayers?.length ? (
+                <Button variant="outline" size="sm" className="border-primary/50 text-primary hover:bg-primary/10" onClick={() => setDiagramOpen(true)}>
+                  <Layers className="h-4 w-4 mr-2" />
+                  View Diagram
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
@@ -222,6 +313,14 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 </a>
               </Button>
             </div>
+            {diagramLayers?.length ? (
+              <ArchitectureDiagramModal
+                open={diagramOpen}
+                onOpenChange={setDiagramOpen}
+                title={project.architecture?.diagram?.title || project.title}
+                layers={diagramLayers}
+              />
+            ) : null}
           </div>
         </div>
       </Card>

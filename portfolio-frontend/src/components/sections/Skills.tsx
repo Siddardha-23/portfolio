@@ -2,7 +2,7 @@ import { motion, useInView } from 'framer-motion';
 import { useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { SKILLS } from '@/lib/constants';
+import { SKILLS, TECH_STACK_CATEGORIES } from '@/lib/constants';
 import {
   Code2,
   Cloud,
@@ -69,25 +69,31 @@ const skillColors: { [key: string]: string } = {
   'AWS Cloud Practitioner': '#FF9900'
 };
 
-// Category configurations
-const categoryConfig = {
-  programmingLanguages: {
-    title: 'Programming Languages',
-    icon: Code2,
-    gradient: 'from-blue-500 to-cyan-500',
-    description: 'Core languages for development'
-  },
-  cloudDevOps: {
-    title: 'Cloud & DevOps',
+// Category configurations for tech stack (no skill bars / star ratings)
+const categoryConfig: Record<string, { title: string; icon: React.ElementType; gradient: string; description: string }> = {
+  cloud: {
+    title: 'Cloud',
     icon: Cloud,
     gradient: 'from-orange-500 to-amber-500',
-    description: 'Infrastructure & deployment tools'
+    description: 'Cloud platforms'
   },
-  toolsAndDatabases: {
-    title: 'Tools & Databases',
+  infrastructureAsCode: {
+    title: 'Infrastructure as Code',
+    icon: Server,
+    gradient: 'from-purple-500 to-violet-500',
+    description: 'IaC tools'
+  },
+  languages: {
+    title: 'Languages',
+    icon: Code2,
+    gradient: 'from-blue-500 to-cyan-500',
+    description: 'Programming languages'
+  },
+  tools: {
+    title: 'Tools',
     icon: Database,
     gradient: 'from-emerald-500 to-teal-500',
-    description: 'Development ecosystem'
+    description: 'Development & ops tools'
   },
   certifications: {
     title: 'Certifications',
@@ -97,63 +103,31 @@ const categoryConfig = {
   }
 };
 
-// Animated skill level bar
-function SkillLevelBar({ delay }: { delay: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true });
-  // Random proficiency between 75-100 for demo
-  const level = 75 + Math.random() * 25;
-
-  return (
-    <div ref={ref} className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden">
-      <motion.div
-        className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
-        initial={{ width: 0 }}
-        animate={isInView ? { width: `${level}%` } : { width: 0 }}
-        transition={{ duration: 1, delay, ease: "easeOut" }}
-      />
-    </div>
-  );
-}
-
-// Individual skill card with hover effects
-function SkillCard({ skill, index, categoryIndex }: { skill: string; index: number; categoryIndex: number }) {
+// Clean skill chip (no bars, no ratings)
+function SkillChip({ skill, index, categoryIndex }: { skill: string; index: number; categoryIndex: number }) {
   const color = skillColors[skill.split(' ')[0]] || '#6366f1';
-  const Icon = skillIcons[skill.split(' ')[0]] || <Zap className="h-5 w-5" />;
-  const delay = categoryIndex * 0.2 + index * 0.05;
+  const Icon = skillIcons[skill.split(' ')[0]] || <Zap className="h-4 w-4" />;
+  const delay = categoryIndex * 0.1 + index * 0.03;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.9 }}
-      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+    <motion.span
+      initial={{ opacity: 0, y: 8 }}
+      whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay, duration: 0.4, type: "spring", stiffness: 100 }}
-      whileHover={{ scale: 1.05, y: -5 }}
-      className="group relative"
+      transition={{ delay, duration: 0.3 }}
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border/50 bg-card/80 text-sm text-foreground hover:border-primary/30 transition-colors"
+      style={{ borderLeftColor: color, borderLeftWidth: '3px' }}
     >
-      <div
-        className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"
-        style={{ background: `${color}40` }}
-      />
-      <div className="relative p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl">
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
-            style={{ background: `${color}20` }}
-          >
-            <div style={{ color }}>{Icon}</div>
-          </div>
-          <span className="font-medium text-foreground text-sm">{skill}</span>
-        </div>
-        <SkillLevelBar delay={delay} />
-      </div>
-    </motion.div>
+      <span style={{ color }}>{Icon}</span>
+      {skill}
+    </motion.span>
   );
 }
 
-// Category section component
-function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof typeof categoryConfig; skills: string[]; index: number }) {
+// Category section component (clean listing, no bars)
+function CategorySection({ categoryKey, skills, index }: { categoryKey: string; skills: string[]; index: number }) {
   const config = categoryConfig[categoryKey];
+  if (!config) return null;
   const Icon = config.icon;
 
   return (
@@ -166,12 +140,9 @@ function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof ty
       className="rounded-xl transition-all duration-500"
     >
       <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
-        {/* Top gradient accent */}
         <div className={`h-1.5 bg-gradient-to-r ${config.gradient}`} />
-
         <div className="p-6">
-          {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-4">
             <div className={`p-3 rounded-xl bg-gradient-to-br ${config.gradient} shadow-lg`}>
               <Icon className="h-6 w-6 text-white" />
             </div>
@@ -180,14 +151,12 @@ function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof ty
               <p className="text-sm text-muted-foreground">{config.description}</p>
             </div>
             <Badge variant="outline" className="ml-auto text-primary border-primary/30">
-              {skills.length} skills
+              {skills.length}
             </Badge>
           </div>
-
-          {/* Skills grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="flex flex-wrap gap-2">
             {skills.map((skill, i) => (
-              <SkillCard key={i} skill={skill} index={i} categoryIndex={index} />
+              <SkillChip key={i} skill={skill} index={i} categoryIndex={index} />
             ))}
           </div>
         </div>
@@ -329,15 +298,15 @@ function FloatingParticles() {
   );
 }
 
-// Skill radar/stats component — clickable to scroll to category
+// Skill stats — clickable to scroll to category
 function SkillsStats() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true });
 
   const stats = [
-    { label: 'Languages', value: SKILLS.programmingLanguages.length, icon: Code2, color: '#3b82f6', scrollTo: 'skills-programmingLanguages' },
-    { label: 'Cloud Tools', value: SKILLS.cloudDevOps.length, icon: Cloud, color: '#f59e0b', scrollTo: 'skills-cloudDevOps' },
-    { label: 'Databases', value: SKILLS.toolsAndDatabases.length, icon: Database, color: '#10b981', scrollTo: 'skills-toolsAndDatabases' },
+    { label: 'Cloud', value: TECH_STACK_CATEGORIES.cloud.length, icon: Cloud, color: '#f59e0b', scrollTo: 'skills-cloud' },
+    { label: 'IaC', value: TECH_STACK_CATEGORIES.infrastructureAsCode.length, icon: Server, color: '#7c3aed', scrollTo: 'skills-infrastructureAsCode' },
+    { label: 'Languages', value: TECH_STACK_CATEGORIES.languages.length, icon: Code2, color: '#3b82f6', scrollTo: 'skills-languages' },
     { label: 'Certifications', value: SKILLS.certifications.length, icon: Award, color: '#a855f7', scrollTo: 'skills-certifications' }
   ];
 
@@ -438,26 +407,31 @@ export default function Skills() {
         {/* Stats overview */}
         <SkillsStats />
 
-        {/* Skills categories grid */}
+        {/* Tech stack categories (clean, no skill bars) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <CategorySection
-            categoryKey="programmingLanguages"
-            skills={SKILLS.programmingLanguages}
+            categoryKey="cloud"
+            skills={TECH_STACK_CATEGORIES.cloud}
             index={0}
           />
           <CategorySection
-            categoryKey="cloudDevOps"
-            skills={SKILLS.cloudDevOps}
+            categoryKey="infrastructureAsCode"
+            skills={TECH_STACK_CATEGORIES.infrastructureAsCode}
             index={1}
           />
           <CategorySection
-            categoryKey="toolsAndDatabases"
-            skills={SKILLS.toolsAndDatabases}
+            categoryKey="languages"
+            skills={TECH_STACK_CATEGORIES.languages}
             index={2}
+          />
+          <CategorySection
+            categoryKey="tools"
+            skills={TECH_STACK_CATEGORIES.tools}
+            index={3}
           />
           <CertificationsSection
             certifications={SKILLS.certifications}
-            index={3}
+            index={4}
           />
         </div>
 

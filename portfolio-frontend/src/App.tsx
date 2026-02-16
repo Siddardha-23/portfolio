@@ -7,6 +7,8 @@ import { ThemeProvider } from './components/theme-provider';
 import Welcome from './pages/Welcome';
 import Home from './pages/Home';
 import ProjectArchitecture from './pages/ProjectArchitecture';
+import WebsiteArchitecture from './pages/WebsiteArchitecture';
+import Blog from './pages/Blog';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient();
@@ -23,6 +25,8 @@ const App = () => (
               <Route path="/welcome" element={<Welcome />} />
               <Route path="/home" element={<Home />} />
               <Route path="/project/:slug" element={<ProjectArchitecture />} />
+              <Route path="/website-architecture" element={<WebsiteArchitecture />} />
+              <Route path="/blog" element={<Blog />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

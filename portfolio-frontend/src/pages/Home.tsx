@@ -2,6 +2,8 @@ import Navbar from '@/components/Navbar';
 import Hero from '@/components/sections/Hero';
 import About from '@/components/sections/About';
 import Skills from '@/components/sections/Skills';
+import CloudDevOpsCapabilities from '@/components/sections/CloudDevOpsCapabilities';
+import SystemDesignThinking from '@/components/sections/SystemDesignThinking';
 import Education from '@/components/sections/Education';
 import Experience from '@/components/sections/Experience';
 import Projects from '@/components/sections/Projects';
@@ -47,6 +49,8 @@ export default function Home() {
 
         <About />
         <Skills />
+        <CloudDevOpsCapabilities />
+        <SystemDesignThinking />
         <Education />
         <Experience />
         <Projects />

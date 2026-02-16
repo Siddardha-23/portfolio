@@ -4,7 +4,9 @@ export const PERSONAL_INFO = {
   email: "harshith.siddardha@gmail.com",
   linkedin: "linkedin.com/in/harshith-siddardha",
   github: "github.com/Siddardha-23",
-  summary: "Cloud & DevOps Professional graduating in May 2026, seeking full-time opportunities to apply expertise in cloud technologies, infrastructure management, and DevOps automation. Passionate about building scalable, secure solutions and contributing to impactful projects in a collaborative environment."
+  headline: "Cloud & DevOps Engineer | AWS | Multi-Cloud | Terraform | Distributed Systems",
+  summary: "I build production-oriented cloud systems with a focus on scalability, cost optimization, security, and automation. Experience with multi-cloud integration (AWS, Azure, GCP), Infrastructure as Code, and containerized deployments. Master's in IT at ASU; seeking full-time opportunities starting May 2026.",
+  summaryShort: "Building production-grade cloud systems. Focus on scalability, cost optimization, security, and automation. Multi-cloud (AWS, Azure, GCP) and IaC."
 };
 
 export const EDUCATION = [
@@ -215,6 +217,135 @@ export const EXPERIENCE = [
 ];
 
 export const PROJECTS = [
+  {
+    title: "Multi-Cloud Resume Screener",
+    slug: "multi-cloud-resume-screener",
+    period: "In Progress",
+    status: "In Progress",
+    description: [
+      "A resume screening pipeline that uses Azure for file storage, AWS Textract for text extraction, and GCP Firestore/BigQuery for storage and analytics.",
+      "Designed to demonstrate multi-cloud integration, service selection tradeoffs, and cost-efficient data flow across cloud providers."
+    ],
+    technologies: ["AWS Textract", "Azure Blob Storage", "GCP Firestore", "GCP BigQuery", "Python"],
+    github: "https://github.com/Siddardha-23",
+    problemStatement: "Parse and analyze resumes at scale using best-in-class services from multiple clouds while keeping data and cost under control.",
+    architectureOverview: "File upload to Azure Blob; async processing triggers AWS Textract for OCR; extracted text and metadata stored in Firestore with analytics in BigQuery.",
+    keyDecisions: [
+      "AWS Textract for document text extraction (accuracy and API simplicity vs. Azure Form Recognizer).",
+      "Firestore for flexible document storage and querying; BigQuery for analytics and reporting.",
+      "Retry logic and dead-letter handling for failed extraction jobs."
+    ],
+    deploymentStrategy: "Planned: containerized workers, event-driven triggers, IaC for each cloud.",
+    securityConsiderations: "IAM/least privilege per service; encrypted storage; no PII in logs.",
+    futureImprovements: "Multi-region failover, cost alerts, and ML-based ranking layer.",
+    architecture: {
+      stack: {
+        frontend: ["Upload UI (optional)", "Dashboard"],
+        backend: ["Python", "Serverless/Workers"],
+        infrastructure: ["Azure Blob Storage", "AWS Textract", "GCP Firestore", "GCP BigQuery", "IAM per cloud"],
+        cicd: ["GitHub Actions", "Terraform (planned)"],
+        monitoring: ["CloudWatch", "Stackdriver (planned)"]
+      },
+      diagram: {
+        title: "Multi-Cloud Resume Screener",
+        layers: [
+          { name: "Ingest", color: "#0078D4", components: ["Azure Blob Storage", "Upload API", "Event trigger"] },
+          { name: "Process", color: "#FF9900", components: ["AWS Textract", "Extraction worker", "Retry logic"] },
+          { name: "Store & Analyze", color: "#4285F4", components: ["Firestore", "BigQuery", "Metadata pipeline"] }
+        ]
+      },
+      security: ["IAM least-privilege per cloud", "Encryption at rest", "No PII in application logs"],
+      scalability: ["Queue-based processing", "Serverless/auto-scaling workers", "BigQuery for large-scale analytics"],
+      costEfficiency: ["Pay-per-use Textract", "Firestore/BigQuery tiering", "Lifecycle policies on Blob storage"],
+      innovations: ["Multi-cloud choice per capability", "Clear separation of ingest, process, and analytics"]
+    }
+  },
+  {
+    title: "Desktop Employee Monitoring Application",
+    slug: "desktop-monitoring-app",
+    period: "Completed",
+    status: "Completed",
+    description: [
+      "A desktop application for employee activity monitoring and reporting, built to demonstrate system design and secure local/network architecture.",
+      "Includes activity tracking, reporting dashboards, and configurable policies."
+    ],
+    technologies: ["Python", "Desktop GUI", "Local DB", "Reporting"],
+    github: "https://github.com/Siddardha-23",
+    problemStatement: "Provide organizations with visibility into desktop usage while respecting privacy and security constraints.",
+    architectureOverview: "Client agents on workstations report to a central service; data stored locally or in a central DB; dashboards for admins.",
+    keyDecisions: [
+      "Desktop-first design for reliability and offline capability.",
+      "Configurable retention and privacy controls.",
+      "Lightweight agent to minimize impact on user machines."
+    ],
+    deploymentStrategy: "Distributed installers; optional central server; manual or scripted rollout.",
+    securityConsiderations: "Data encryption, access controls, audit logging, and compliance with organizational policies.",
+    futureImprovements: "Cloud-backed optional sync, richer analytics, and cross-platform support.",
+    architecture: {
+      stack: {
+        frontend: ["Desktop GUI", "Admin dashboard"],
+        backend: ["Python", "Local/central DB"],
+        infrastructure: ["Local storage", "Optional central server"],
+        cicd: ["Manual/build scripts"],
+        monitoring: ["Local logs", "Optional reporting"]
+      },
+      diagram: {
+        title: "Desktop Monitoring Architecture",
+        layers: [
+          { name: "Agents", color: "#3B82F6", components: ["Desktop client", "Activity capture", "Local buffer"] },
+          { name: "Service", color: "#10B981", components: ["Collector API", "Auth", "Config"] },
+          { name: "Data & Reporting", color: "#8B5CF6", components: ["Database", "Reports", "Dashboard"] }
+        ]
+      },
+      security: ["Encrypted data in transit and at rest", "Role-based access", "Audit logging"],
+      scalability: ["Horizontal scaling of collector", "Efficient batching from agents"],
+      costEfficiency: ["Minimal cloud dependency", "On-premise option"],
+      innovations: ["Privacy-preserving defaults", "Configurable retention"]
+    }
+  },
+  {
+    title: "Smart Clipboard Manager",
+    slug: "smart-clipboard-manager",
+    period: "In Progress",
+    status: "In Progress",
+    description: [
+      "A smart clipboard manager built with Python and Tkinter for local productivity. Tracks clipboard history, supports search, and organizes snippets.",
+      "Ongoing development with plans for better search and optional cloud sync."
+    ],
+    technologies: ["Python", "Tkinter", "Local storage"],
+    github: "https://github.com/Siddardha-23",
+    problemStatement: "Improve productivity with a fast, searchable clipboard history that works offline and respects privacy.",
+    architectureOverview: "Local desktop app; system tray integration; SQLite or file-based storage; Tkinter UI for history and search.",
+    keyDecisions: [
+      "Python + Tkinter for cross-platform desktop and rapid iteration.",
+      "Local-first to ensure privacy and no dependency on network.",
+      "Simple data model to allow future sync or AI features without rewrite."
+    ],
+    deploymentStrategy: "Local install; optional installer or portable build.",
+    securityConsiderations: "Data stays on device; no telemetry; optional encryption for stored clips.",
+    futureImprovements: "AI-powered search, optional encrypted cloud backup, plugins.",
+    architecture: {
+      stack: {
+        frontend: ["Tkinter UI", "System tray"],
+        backend: ["Python", "Clipboard hooks", "Local DB/file"],
+        infrastructure: ["Local only"],
+        cicd: ["Manual"],
+        monitoring: ["Local logs"]
+      },
+      diagram: {
+        title: "Smart Clipboard Manager",
+        layers: [
+          { name: "Input", color: "#3B82F6", components: ["System clipboard", "Hotkey capture"] },
+          { name: "App", color: "#10B981", components: ["Python core", "Tkinter UI", "History manager"] },
+          { name: "Storage", color: "#8B5CF6", components: ["SQLite / file", "Search index"] }
+        ]
+      },
+      security: ["Local-only by default", "No telemetry", "Optional encryption at rest"],
+      scalability: ["Efficient history limits", "Indexed search for large history"],
+      costEfficiency: ["Zero cloud cost", "Low resource usage"],
+      innovations: ["Extensible for future AI or sync features"]
+    }
+  },
   {
     title: "Cloud-Deployed Personal Portfolio",
     slug: "cloud-portfolio",
@@ -428,3 +559,11 @@ export const ROLES = [
   "Site Reliability Engineer",
   "Full-Stack Developer"
 ];
+
+/** Categorized tech stack for clean listing (no skill bars / star ratings) */
+export const TECH_STACK_CATEGORIES = {
+  cloud: ["AWS", "Azure", "GCP"],
+  infrastructureAsCode: ["Terraform", "CloudFormation"],
+  languages: ["Python", "JavaScript", "SQL", "Bash", "HTML", "CSS"],
+  tools: ["Docker", "Git", "GitHub", "Linux", "Nginx", "Flask", "Postgres"]
+};

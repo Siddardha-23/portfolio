@@ -1,19 +1,28 @@
-import { useState, useEffect, useRef, KeyboardEvent } from 'react';
+import { useState, useEffect, useRef, KeyboardEvent, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeForm from '@/components/WelcomeForm';
 import { motion } from 'framer-motion';
-import { FaAws, FaDocker, FaLinux, FaPython, FaGitAlt, FaJenkins, FaTerminal, FaReact, FaHeart } from 'react-icons/fa';
+import { FaAws, FaDocker, FaLinux, FaPython, FaGitAlt, FaJenkins, FaTerminal, FaReact } from 'react-icons/fa';
 import { SiKubernetes, SiTerraform, SiAnsible, SiGrafana, SiPrometheus, SiApachekafka, SiNginx, SiRedis } from 'react-icons/si';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const PORTFOLIO_VISITED_KEY = 'portfolio_visited';
 
+// All command names for tab completion
+const COMMAND_NAMES = ['help', 'whoami', 'ls', 'cat', 'clear', 'skill', 'explore', 'about', 'date', 'neofetch'];
+// Files available for `cat`
+const FILE_NAMES = ['skills.txt', 'projects.json', 'about.md', 'experience.log'];
+// Skills available for `skill`
+const SKILL_NAMES = ['aws', 'kubernetes', 'terraform', 'docker', 'jenkins', 'python', 'ansible', 'prometheus'];
+
 export default function Welcome() {
   const [terminalText, setTerminalText] = useState<string[]>([]);
   const [userInput, setUserInput] = useState('');
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [tabCycleIndex, setTabCycleIndex] = useState(-1);
+  const [tabBase, setTabBase] = useState('');
   const navigate = useNavigate();
   const terminalRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -30,6 +39,12 @@ export default function Welcome() {
 
   if (shouldRedirect) return null;
 
+  // Focus the hidden input whenever user clicks anywhere on the terminal
+  const focusTerminal = () => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
 
   // Available commands and their outputs
   const availableCommands: Record<string, (args?: string) => string> = {
@@ -42,7 +57,10 @@ export default function Welcome() {
       "  clear          - Clear the terminal\n" +
       "  skill [name]   - Display skill details\n" +
       "  explore        - Continue to portfolio\n" +
-      "  about          - About Harshith",
+      "  about          - About Harshith\n" +
+      "  date           - Show current date/time\n" +
+      "  neofetch       - System information\n\n" +
+      "Shortcuts: Tab = autocomplete, Ctrl+L = clear, Ctrl+C = cancel, \u2191/\u2193 = history",
 
     whoami: () => "prospective-employer",
 
@@ -50,16 +68,16 @@ export default function Welcome() {
       "skills.txt    projects.json    about.md    experience.log",
 
     cat: (args) => {
-      if (!args) return "Usage: cat [file]";
+      if (!args) return "Usage: cat [file]\nAvailable files: " + FILE_NAMES.join(", ");
       const file = args.trim();
 
       if (file === "skills.txt") {
-        return "• Cloud Infrastructure (AWS, Azure, GCP)\n" +
-          "• Infrastructure as Code (Terraform, CloudFormation)\n" +
-          "• Containerization (Docker, Kubernetes)\n" +
-          "• CI/CD (Jenkins, GitHub Actions)\n" +
-          "• Scripting (Python, Bash)\n" +
-          "• Monitoring & Observability (Prometheus, Grafana)";
+        return "\u2022 Cloud Infrastructure (AWS, Azure, GCP)\n" +
+          "\u2022 Infrastructure as Code (Terraform, CloudFormation)\n" +
+          "\u2022 Containerization (Docker, Kubernetes)\n" +
+          "\u2022 CI/CD (Jenkins, GitHub Actions)\n" +
+          "\u2022 Scripting (Python, Bash)\n" +
+          "\u2022 Monitoring & Observability (Prometheus, Grafana)";
       }
 
       if (file === "projects.json") {
@@ -104,21 +122,21 @@ export default function Welcome() {
     },
 
     skill: (args) => {
-      if (!args) return "Usage: skill [name]";
+      if (!args) return "Usage: skill [name]\nAvailable: " + SKILL_NAMES.join(", ");
       const skill = args.trim().toLowerCase();
 
       const skills: Record<string, string> = {
-        aws: "AWS: ⭐⭐⭐⭐⭐\nExpert in EC2, S3, Lambda, ECS, EKS, CloudFormation, and AWS architecture design.",
-        kubernetes: "Kubernetes: ⭐⭐⭐⭐\nExperienced in cluster management, deployment strategies, and Helm.",
-        terraform: "Terraform: ⭐⭐⭐⭐⭐\nInfrastructure as Code specialist with multi-cloud deployment expertise.",
-        docker: "Docker: ⭐⭐⭐⭐⭐\nContainer expert with experience in multi-stage builds and optimization.",
-        jenkins: "Jenkins: ⭐⭐⭐⭐\nCI/CD pipeline architecture and implementation specialist.",
-        python: "Python: ⭐⭐⭐⭐\nAutomation scripting, AWS SDK, and infrastructure tooling.",
-        ansible: "Ansible: ⭐⭐⭐⭐\nConfiguration management and infrastructure automation.",
-        prometheus: "Prometheus: ⭐⭐⭐\nMetrics collection, alerting, and monitoring solutions.",
+        aws: "AWS: \u2b50\u2b50\u2b50\u2b50\u2b50\nExpert in EC2, S3, Lambda, ECS, EKS, CloudFormation, and AWS architecture design.",
+        kubernetes: "Kubernetes: \u2b50\u2b50\u2b50\u2b50\nExperienced in cluster management, deployment strategies, and Helm.",
+        terraform: "Terraform: \u2b50\u2b50\u2b50\u2b50\u2b50\nInfrastructure as Code specialist with multi-cloud deployment expertise.",
+        docker: "Docker: \u2b50\u2b50\u2b50\u2b50\u2b50\nContainer expert with experience in multi-stage builds and optimization.",
+        jenkins: "Jenkins: \u2b50\u2b50\u2b50\u2b50\nCI/CD pipeline architecture and implementation specialist.",
+        python: "Python: \u2b50\u2b50\u2b50\u2b50\nAutomation scripting, AWS SDK, and infrastructure tooling.",
+        ansible: "Ansible: \u2b50\u2b50\u2b50\u2b50\nConfiguration management and infrastructure automation.",
+        prometheus: "Prometheus: \u2b50\u2b50\u2b50\nMetrics collection, alerting, and monitoring solutions.",
       };
 
-      return skills[skill] || `Skill '${args}' not found. Try: aws, kubernetes, terraform, docker, jenkins, python, ansible, prometheus`;
+      return skills[skill] || `Skill '${args}' not found. Try: ${SKILL_NAMES.join(", ")}`;
     },
 
     explore: () => {
@@ -134,14 +152,32 @@ export default function Welcome() {
         "Harshith specializes in cloud architecture, containerization,\n" +
         "and creating efficient CI/CD pipelines.\n\n" +
         "Type 'explore' to learn more about Harshith's work.";
+    },
+
+    date: () => {
+      return new Date().toString();
+    },
+
+    neofetch: () => {
+      return "        _____          visitor@portfolio\n" +
+        "       /     \\         -----------------\n" +
+        "      | () () |        OS: Portfolio Linux x86_64\n" +
+        "       \\  ^  /         Host: Harshith's Cloud\n" +
+        "        |||||          Kernel: DevOps 5.15.0\n" +
+        "        |||||          Uptime: always on\n" +
+        "                       Shell: portfolio-bash\n" +
+        "  Cloud & DevOps       Terminal: portfolio-terminal\n" +
+        "    Engineer           CPU: Innovation @ 100%\n" +
+        "                       Memory: Unlimited Ideas";
     }
   };
 
-  // Show welcome message and focus input on mount
+  // Show welcome message on mount
   const showWelcomeMessage = () => {
     const welcomeText =
       "Welcome to Harshith's DevOps Portfolio Terminal!\n" +
-      "Type 'help' to see available commands.";
+      "Type 'help' to see available commands.\n" +
+      "Click anywhere on the terminal to start typing.";
 
     setTerminalText([welcomeText]);
   };
@@ -154,50 +190,145 @@ export default function Welcome() {
     return () => clearTimeout(t);
   }, []);
 
-  // Execute command
-  const executeCommand = (fullCommand: string) => {
-    const parts = fullCommand.trim().split(' ');
-    const cmd = parts[0].toLowerCase();
-    const args = parts.slice(1).join(' ');
-
-    // Save command to history
-    setCommandHistory(prev => [...prev, fullCommand]);
-    setHistoryIndex(-1);
-
-    // Show command in terminal
-    const promptText = `visitor@portfolio:~$ ${fullCommand}`;
-    setTerminalText(prev => [...prev, promptText]);
-
-    // Process command
-    if (cmd && cmd in availableCommands) {
-      const output = availableCommands[cmd](args);
-      if (output) {
-        setTerminalText(prev => [...prev, output]);
-      }
-    } else if (cmd) {
-      setTerminalText(prev => [...prev, `Command not found: ${cmd}. Type 'help' for available commands.`]);
-    }
-
-    // Scroll to bottom
+  // Scroll terminal to bottom
+  const scrollToBottom = useCallback(() => {
     setTimeout(() => {
       if (terminalRef.current) {
         terminalRef.current.scrollTop = terminalRef.current.scrollHeight;
       }
     }, 10);
+  }, []);
+
+  // Execute command
+  const executeCommand = (fullCommand: string) => {
+    const trimmed = fullCommand.trim();
+    const parts = trimmed.split(' ');
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1).join(' ');
+
+    // Save to history (only non-empty commands)
+    if (trimmed) {
+      setCommandHistory(prev => [...prev, trimmed]);
+    }
+    setHistoryIndex(-1);
+
+    // Show the prompt + command in terminal
+    const promptText = `visitor@portfolio:~$ ${fullCommand}`;
+    setTerminalText(prev => [...prev, promptText]);
+
+    // Process command
+    if (!cmd) {
+      // Empty enter — just show a new prompt line (like a real terminal)
+      scrollToBottom();
+      return;
+    }
+
+    if (cmd in availableCommands) {
+      const output = availableCommands[cmd](args);
+      if (output) {
+        setTerminalText(prev => [...prev, output]);
+      }
+    } else {
+      setTerminalText(prev => [
+        ...prev,
+        `bash: ${cmd}: command not found. Type 'help' for available commands.`
+      ]);
+    }
+
+    scrollToBottom();
+  };
+
+  // Tab completion logic
+  const handleTabCompletion = () => {
+    const input = userInput;
+    const parts = input.split(' ');
+
+    let candidates: string[] = [];
+    let prefix = '';
+
+    if (parts.length <= 1) {
+      // Completing a command name
+      prefix = parts[0].toLowerCase();
+      candidates = COMMAND_NAMES.filter(c => c.startsWith(prefix));
+    } else {
+      // Completing an argument
+      const cmd = parts[0].toLowerCase();
+      const argPrefix = parts.slice(1).join(' ').toLowerCase();
+
+      if (cmd === 'cat') {
+        candidates = FILE_NAMES.filter(f => f.startsWith(argPrefix));
+      } else if (cmd === 'skill') {
+        candidates = SKILL_NAMES.filter(s => s.startsWith(argPrefix));
+      }
+      prefix = argPrefix;
+    }
+
+    if (candidates.length === 0) return;
+
+    if (candidates.length === 1) {
+      // Single match — auto-complete it
+      if (parts.length <= 1) {
+        setUserInput(candidates[0] + ' ');
+      } else {
+        setUserInput(parts[0] + ' ' + candidates[0]);
+      }
+      setTabCycleIndex(-1);
+      setTabBase('');
+    } else {
+      // Multiple matches — cycle through them on repeated Tab presses
+      const base = tabBase || input;
+      const nextIndex = (tabCycleIndex + 1) % candidates.length;
+      setTabCycleIndex(nextIndex);
+      setTabBase(base);
+
+      if (parts.length <= 1) {
+        setUserInput(candidates[nextIndex]);
+      } else {
+        setUserInput(parts[0] + ' ' + candidates[nextIndex]);
+      }
+
+      // Show all options in terminal on first Tab
+      if (tabCycleIndex === -1) {
+        setTerminalText(prev => [...prev, candidates.join('  ')]);
+        scrollToBottom();
+      }
+    }
   };
 
   // Handle Enter key press
   const handleEnterKey = () => {
-    if (userInput.trim()) {
-      executeCommand(userInput);
-      setUserInput('');
-    }
+    executeCommand(userInput);
+    setUserInput('');
+    // Reset tab state
+    setTabCycleIndex(-1);
+    setTabBase('');
   };
 
-  // Handle keyboard navigation in command history
+  // Handle keyboard events
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    // Reset tab cycle on any key that's not Tab
+    if (e.key !== 'Tab') {
+      setTabCycleIndex(-1);
+      setTabBase('');
+    }
+
     if (e.key === 'Enter') {
       handleEnterKey();
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      handleTabCompletion();
+    } else if (e.key === 'l' && e.ctrlKey) {
+      // Ctrl+L — clear terminal
+      e.preventDefault();
+      setTerminalText([]);
+    } else if (e.key === 'c' && e.ctrlKey) {
+      // Ctrl+C — cancel current input, show ^C
+      e.preventDefault();
+      const promptText = `visitor@portfolio:~$ ${userInput}^C`;
+      setTerminalText(prev => [...prev, promptText]);
+      setUserInput('');
+      setHistoryIndex(-1);
+      scrollToBottom();
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       if (commandHistory.length > 0) {
@@ -295,6 +426,7 @@ export default function Welcome() {
               <div className="relative glass-card p-4 rounded-lg">
                 {/* Terminal UI */}
                 <div className="bg-gray-900 dark:bg-gray-950 rounded-md overflow-hidden border border-border">
+                  {/* Title bar */}
                   <div className="bg-gray-800 dark:bg-gray-900 p-2 border-b border-gray-700">
                     <div className="flex space-x-2">
                       <div className="w-3 h-3 rounded-full bg-red-500"></div>
@@ -306,36 +438,41 @@ export default function Welcome() {
                     </div>
                   </div>
 
+                  {/* Terminal body — clicking ANYWHERE here focuses the input */}
                   <div
                     ref={terminalRef}
-                    className="font-mono text-xs md:text-sm text-green-400 text-left p-4 h-80 overflow-auto bg-gradient-to-br from-gray-900 to-black"
+                    onClick={focusTerminal}
+                    className="font-mono text-xs md:text-sm text-green-400 text-left p-4 h-80 overflow-auto bg-gradient-to-br from-gray-900 to-black cursor-text select-text"
                   >
                     {terminalText.map((text, index) => (
                       <div key={index} className="whitespace-pre-wrap mb-2">{text}</div>
                     ))}
                     <div className="flex items-center">
-                      <span className="text-primary">visitor@portfolio:~$&nbsp;</span>
+                      <span className="text-primary shrink-0">visitor@portfolio:~$&nbsp;</span>
                       <input
                         ref={inputRef}
                         type="text"
                         value={userInput}
                         onChange={(e) => setUserInput(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        className="flex-1 bg-transparent border-none outline-none text-green-400"
+                        className="flex-1 bg-transparent border-none outline-none text-green-400 caret-green-400 min-w-0"
                         spellCheck="false"
                         autoComplete="off"
+                        autoCapitalize="off"
+                        autoCorrect="off"
                         autoFocus
                       />
-                      <span className="ml-1 w-2 h-5 bg-green-400 animate-pulse"></span>
+                      <span className="ml-0.5 w-2 h-5 bg-green-400 animate-pulse shrink-0"></span>
                     </div>
                   </div>
                 </div>
 
                 {/* Hint section below the terminal */}
                 <div className="mt-4 font-mono text-xs md:text-sm text-left p-3 rounded-md bg-secondary/50 dark:bg-black/70 border border-border">
-                  <div className="text-primary mb-2">// Terminal hints:</div>
+                  <div className="text-primary mb-2">// Quick start:</div>
                   <div className="text-muted-foreground">Type <span className="text-amber-500 dark:text-amber-300">'help'</span> to see all commands</div>
-                  <div className="text-muted-foreground">Try <span className="text-amber-500 dark:text-amber-300">'cat about.md'</span> or <span className="text-amber-500 dark:text-amber-300">'skill aws'</span></div>
+                  <div className="text-muted-foreground">Try <span className="text-amber-500 dark:text-amber-300">'cat about.md'</span> or <span className="text-amber-500 dark:text-amber-300">'neofetch'</span></div>
+                  <div className="text-muted-foreground">Press <span className="text-amber-500 dark:text-amber-300">Tab</span> to autocomplete commands</div>
                   <div className="text-muted-foreground">Use <span className="text-amber-500 dark:text-amber-300">'explore'</span> to continue to portfolio</div>
                 </div>
               </div>

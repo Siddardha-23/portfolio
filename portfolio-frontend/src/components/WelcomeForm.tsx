@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from '@/components/ui/label';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FaRegHandPaper, FaArrowRight } from 'react-icons/fa';
+import { FaRegHandPaper, FaArrowRight, FaLinkedin } from 'react-icons/fa';
 import { apiService } from '@/lib/api';
 import { getVisitorFingerprint, getSessionIdSync } from '@/hooks/useVisitorTracking';
 
@@ -14,6 +14,7 @@ type UserInfo = {
   middleName: string;
   lastName: string;
   email: string;
+  linkedinUrl: string;
 };
 
 export default function WelcomeForm() {
@@ -22,13 +23,42 @@ export default function WelcomeForm() {
     middleName: '',
     lastName: '',
     email: '',
+    linkedinUrl: '',
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [linkedinError, setLinkedinError] = useState('');
   const navigate = useNavigate();
+
+  const validateLinkedinUrl = (url: string): boolean => {
+    if (!url) return true; // optional field
+    const pattern = /^(https?:\/\/)?(www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+\/?$/;
+    return pattern.test(url.trim());
+  };
+
+  const normalizeLinkedinUrl = (url: string): string => {
+    if (!url) return '';
+    let normalized = url.trim();
+    // Remove trailing slash
+    normalized = normalized.replace(/\/+$/, '');
+    // Add https:// if missing
+    if (!normalized.startsWith('http')) {
+      normalized = 'https://' + normalized;
+    }
+    // Ensure www
+    normalized = normalized.replace('://linkedin.com', '://www.linkedin.com');
+    return normalized;
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setUserInfo((prev) => ({ ...prev, [name]: value }));
+    if (name === 'linkedinUrl') {
+      if (value && !validateLinkedinUrl(value)) {
+        setLinkedinError('Enter a valid LinkedIn URL (e.g. linkedin.com/in/yourname)');
+      } else {
+        setLinkedinError('');
+      }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -46,9 +76,14 @@ export default function WelcomeForm() {
       const fingerprint = await getVisitorFingerprint('welcome-form');
       const sessionId = getSessionIdSync();
 
-      // Register visitor with details including session ID
+      // Register visitor with details including session ID and LinkedIn URL
+      const linkedinUrl = normalizeLinkedinUrl(userInfo.linkedinUrl);
       await apiService.registerVisitor({
-        ...userInfo,
+        firstName: userInfo.firstName,
+        middleName: userInfo.middleName,
+        lastName: userInfo.lastName,
+        email: userInfo.email,
+        linkedinUrl: linkedinUrl || undefined,
         fingerprint,
         sessionId
       });
@@ -175,6 +210,32 @@ export default function WelcomeForm() {
                 placeholder="you@example.com"
                 className="bg-background/50 border-border focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
               />
+            </motion.div>
+
+            <motion.div
+              className="space-y-2"
+              whileHover={{ scale: 1.01 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+            >
+              <Label htmlFor="linkedinUrl" className="text-foreground font-medium flex items-center gap-1.5">
+                <FaLinkedin className="text-[#0A66C2]" />
+                LinkedIn Profile
+                <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+              </Label>
+              <Input
+                id="linkedinUrl"
+                name="linkedinUrl"
+                type="url"
+                value={userInfo.linkedinUrl}
+                onChange={handleChange}
+                placeholder="linkedin.com/in/yourprofile"
+                className={`bg-background/50 border-border focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all ${
+                  linkedinError ? 'border-red-400 focus:border-red-400 focus:ring-red-400/30' : ''
+                }`}
+              />
+              {linkedinError && (
+                <p className="text-xs text-red-400 mt-1">{linkedinError}</p>
+              )}
             </motion.div>
           </CardContent>
 

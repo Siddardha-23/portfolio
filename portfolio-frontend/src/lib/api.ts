@@ -193,6 +193,7 @@ class ApiService {
     middleName?: string;
     lastName: string;
     email: string;
+    linkedinUrl?: string;
     fingerprint?: Record<string, any>;
     sessionId?: string;
   }) {

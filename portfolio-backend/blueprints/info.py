@@ -10,6 +10,7 @@ from services.ip_service import get_ip_service
 from services.linkedin_service import (
     search_linkedin_profile,
     extract_organization_from_email,
+    validate_linkedin_url,
 )
 from utils.db_connect import DBConnect
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
@@ -136,7 +137,11 @@ def register_visitor():
         
         organization = extract_organization_from_email(email)
 
-        linkedin_info = search_linkedin_profile(first_name, last_name, email)
+        # Accept user-provided LinkedIn URL (most reliable source)
+        raw_linkedin_url = InputSanitizer.sanitize_html(data.get('linkedinUrl', ''), max_length=200)
+        linkedin_url = validate_linkedin_url(raw_linkedin_url) if raw_linkedin_url else None
+
+        linkedin_info = search_linkedin_profile(first_name, last_name, email, linkedin_url=linkedin_url)
         if linkedin_info.get("organization_from_headline"):
             organization = organization or linkedin_info["organization_from_headline"]
         linkedin_response = {

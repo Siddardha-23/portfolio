@@ -195,18 +195,109 @@ def _search_linkedin_google(first_name: str, last_name: str) -> dict:
         return {"found": False, "source": "google", "error": str(e)}
 
 
-def search_linkedin_profile(first_name: str, last_name: str, email: str | None = None) -> dict:
+def validate_linkedin_url(url: str) -> str | None:
     """
-    Find LinkedIn profile for the given name. Tries DuckDuckGo first, then Google.
+    Validate and normalize a LinkedIn profile URL.
+    Returns the cleaned URL if valid, None otherwise.
+    """
+    if not url or not isinstance(url, str):
+        return None
+    url = url.strip()
+    # Match linkedin.com/in/username patterns
+    match = re.match(
+        r"^(?:https?://)?(?:www\.)?linkedin\.com/in/([a-zA-Z0-9_-]+)/?$",
+        url,
+    )
+    if match:
+        slug = match.group(1)
+        return f"https://www.linkedin.com/in/{slug}"
+    return None
+
+
+def _search_linkedin_with_email(first_name: str, last_name: str, email: str) -> dict:
+    """
+    Enhanced DuckDuckGo search including the email's domain/org context
+    to narrow results for common names.
+    """
+    try:
+        # Extract useful context from email
+        domain = email.split("@")[1].lower() if "@" in email else ""
+        org_hint = ""
+        if domain and not _is_personal_domain(domain):
+            org_hint = domain.split(".")[0]  # e.g. "google" from "user@google.com"
+
+        query = f'"{first_name} {last_name}"'
+        if org_hint:
+            query += f" {org_hint}"
+        query += " site:linkedin.com/in"
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=10))
+        for r in results:
+            href = (r.get("href") or "").strip()
+            if "linkedin.com/in/" in href:
+                title = (r.get("title") or "").strip()
+                body = (r.get("body") or "").strip()
+                headline = title or body
+                org = extract_organization_from_headline(headline)
+                return {
+                    "found": True,
+                    "url": href,
+                    "headline": headline,
+                    "organization_from_headline": org,
+                    "source": "duckduckgo_email",
+                }
+        return {"found": False, "source": "duckduckgo_email"}
+    except Exception as e:
+        logger.debug("DuckDuckGo email-enhanced LinkedIn search failed: %s", e)
+        return {"found": False, "source": "duckduckgo_email", "error": str(e)}
+
+
+def search_linkedin_profile(
+    first_name: str,
+    last_name: str,
+    email: str | None = None,
+    linkedin_url: str | None = None,
+) -> dict:
+    """
+    Find LinkedIn profile for the given person.
+
+    Priority order:
+    1. User-provided LinkedIn URL (validated) - most reliable
+    2. DuckDuckGo search with email context (for common names)
+    3. DuckDuckGo search with name only
+    4. Google search fallback
+
     Returns dict with found, url, headline, organization_from_headline, source.
     """
+    # 1. User-provided URL takes top priority
+    if linkedin_url:
+        validated_url = validate_linkedin_url(linkedin_url)
+        if validated_url:
+            return {
+                "found": True,
+                "url": validated_url,
+                "headline": "",
+                "organization_from_headline": None,
+                "source": "user_provided",
+            }
+
     first_name = (first_name or "").strip()
     last_name = (last_name or "").strip()
     if not first_name and not last_name:
         return {"found": False, "source": "none"}
 
+    # 2. Try email-enhanced search first (better for common names)
+    if email and "@" in email:
+        result = _search_linkedin_with_email(first_name, last_name, email)
+        if result.get("found"):
+            return result
+
+    # 3. Standard DuckDuckGo name search
     result = _search_linkedin_duckduckgo(first_name, last_name)
     if result.get("found"):
         return result
+
+    # 4. Google fallback
     result = _search_linkedin_google(first_name, last_name)
     return result

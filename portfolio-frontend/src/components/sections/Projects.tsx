@@ -18,21 +18,18 @@ import {
   Rocket,
   ChevronDown,
   ChevronUp,
-  Sparkles
+  Sparkles,
+  Users,
+  Globe,
+  HardDrive,
+  Cpu,
+  Database,
+  Lock,
+  Network,
+  BarChart3,
+  Activity,
+  GitBranch,
 } from 'lucide-react';
-
-// Tech icon mapping
-const techIcons: { [key: string]: React.ReactNode } = {
-  'AWS': <Cloud className="h-4 w-4" />,
-  'Terraform': <Server className="h-4 w-4" />,
-  'Docker': <Layers className="h-4 w-4" />,
-  'Flask': <Code className="h-4 w-4" />,
-  'React': <Code className="h-4 w-4" />,
-  'Nginx': <Server className="h-4 w-4" />,
-  'CI/CD': <Rocket className="h-4 w-4" />,
-  'ECS': <Cloud className="h-4 w-4" />,
-  'GitHub Actions': <Rocket className="h-4 w-4" />
-};
 
 // Tech color mapping
 const techColors: { [key: string]: string } = {
@@ -47,11 +44,337 @@ const techColors: { [key: string]: string } = {
   'GitHub Actions': '#2088FF'
 };
 
-// Project card component
+// Tech icon mapping
+const techIcons: { [key: string]: React.ReactNode } = {
+  'AWS': <Cloud className="h-4 w-4" />,
+  'Terraform': <Server className="h-4 w-4" />,
+  'Docker': <Layers className="h-4 w-4" />,
+  'Flask': <Code className="h-4 w-4" />,
+  'React': <Code className="h-4 w-4" />,
+  'Nginx': <Server className="h-4 w-4" />,
+  'CI/CD': <Rocket className="h-4 w-4" />,
+  'ECS': <Cloud className="h-4 w-4" />,
+  'GitHub Actions': <Rocket className="h-4 w-4" />
+};
+
+// ==================== AWS-STYLE ARCHITECTURE DIAGRAM ====================
+
+interface ArchNode {
+  id: string;
+  label: string;
+  sublabel?: string;
+  icon: React.ReactNode;
+  color: string;
+  x: number;
+  y: number;
+}
+
+interface ArchEdge {
+  from: string;
+  to: string;
+  label?: string;
+  dashed?: boolean;
+}
+
+interface ArchRegion {
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+  dashed?: boolean;
+  icon?: React.ReactNode;
+}
+
+interface ArchData {
+  nodes: ArchNode[];
+  edges: ArchEdge[];
+  regions: ArchRegion[];
+}
+
+// ---- Portfolio: Serverless 3-tier on AWS ----
+const PORTFOLIO_ARCH: ArchData = {
+  regions: [
+    { label: 'AWS Cloud', x: 140, y: 8, w: 490, h: 265, color: '#FF9900', dashed: true, icon: <Cloud className="h-3 w-3" /> },
+    { label: 'Edge (Global)', x: 152, y: 32, w: 145, h: 232, color: '#F59E0B', dashed: false },
+    { label: 'Serverless Compute', x: 308, y: 32, w: 155, h: 232, color: '#FF9900', dashed: false },
+    { label: 'Storage & Security', x: 474, y: 32, w: 145, h: 232, color: '#8B5CF6', dashed: false },
+  ],
+  nodes: [
+    // External
+    { id: 'user', label: 'End Users', sublabel: 'Browser', icon: <Users className="h-4 w-4" />, color: '#3B82F6', x: 62, y: 140 },
+    // Edge
+    { id: 'r53', label: 'Route 53', sublabel: 'DNS', icon: <Globe className="h-4 w-4" />, color: '#8B5CF6', x: 224, y: 90 },
+    { id: 'cf', label: 'CloudFront', sublabel: 'CDN', icon: <Network className="h-4 w-4" />, color: '#8B5CF6', x: 224, y: 200 },
+    // Compute
+    { id: 'apigw', label: 'API Gateway', sublabel: 'REST API', icon: <Server className="h-4 w-4" />, color: '#E7157B', x: 385, y: 90 },
+    { id: 'lambda', label: 'Lambda', sublabel: 'Flask App', icon: <Cpu className="h-4 w-4" />, color: '#FF9900', x: 385, y: 200 },
+    // Storage
+    { id: 's3', label: 'S3 Bucket', sublabel: 'Static SPA', icon: <HardDrive className="h-4 w-4" />, color: '#3ECF8E', x: 546, y: 70 },
+    { id: 'mongo', label: 'MongoDB', sublabel: 'Atlas', icon: <Database className="h-4 w-4" />, color: '#00684A', x: 546, y: 155 },
+    { id: 'ssm', label: 'SSM Params', sublabel: 'Secrets', icon: <Lock className="h-4 w-4" />, color: '#DD344C', x: 546, y: 235 },
+    // External right
+    { id: 'acm', label: 'ACM', sublabel: 'SSL/TLS', icon: <Lock className="h-4 w-4" />, color: '#DD344C', x: 700, y: 140 },
+  ],
+  edges: [
+    { from: 'user', to: 'r53', label: 'HTTPS' },
+    { from: 'r53', to: 'cf', dashed: true },
+    { from: 'cf', to: 'apigw', label: 'REST' },
+    { from: 'cf', to: 's3', label: 'Static' },
+    { from: 'apigw', to: 'lambda', label: 'Invoke' },
+    { from: 'lambda', to: 'mongo', label: 'Query' },
+    { from: 'lambda', to: 'ssm', dashed: true },
+    { from: 'acm', to: 'cf', dashed: true },
+  ],
+};
+
+// ---- SLATE: Ephemeral environments on AWS ----
+const SLATE_ARCH: ArchData = {
+  regions: [
+    { label: 'AWS Cloud', x: 262, y: 8, w: 470, h: 265, color: '#FF9900', dashed: true, icon: <Cloud className="h-3 w-3" /> },
+    { label: 'VPC (per branch)', x: 396, y: 32, w: 325, h: 232, color: '#10B981', dashed: true },
+  ],
+  nodes: [
+    // External / CI
+    { id: 'gh', label: 'GitHub', sublabel: 'PR / Push', icon: <Github className="h-4 w-4" />, color: '#24292F', x: 55, y: 140 },
+    { id: 'actions', label: 'GH Actions', sublabel: 'CI Pipeline', icon: <GitBranch className="h-4 w-4" />, color: '#2088FF', x: 168, y: 140 },
+    // AWS - IaC
+    { id: 'tf', label: 'Terraform', sublabel: 'IaC Engine', icon: <Layers className="h-4 w-4" />, color: '#7B42BC', x: 310, y: 140 },
+    // Inside VPC
+    { id: 'alb', label: 'ALB', sublabel: 'Load Balancer', icon: <Network className="h-4 w-4" />, color: '#8B5CF6', x: 440, y: 80 },
+    { id: 'ecs', label: 'ECS Fargate', sublabel: 'Containers', icon: <Cloud className="h-4 w-4" />, color: '#FF9900', x: 565, y: 80 },
+    { id: 'rds', label: 'RDS', sublabel: 'Database', icon: <Database className="h-4 w-4" />, color: '#3B82F6', x: 440, y: 200 },
+    { id: 's3', label: 'S3', sublabel: 'Artifacts', icon: <HardDrive className="h-4 w-4" />, color: '#3ECF8E', x: 565, y: 200 },
+    { id: 'cw', label: 'CloudWatch', sublabel: 'Monitoring', icon: <BarChart3 className="h-4 w-4" />, color: '#E7157B', x: 680, y: 140 },
+  ],
+  edges: [
+    { from: 'gh', to: 'actions', label: 'Webhook' },
+    { from: 'actions', to: 'tf', label: 'Trigger' },
+    { from: 'tf', to: 'alb', label: 'Provision' },
+    { from: 'tf', to: 'rds', label: 'Setup' },
+    { from: 'alb', to: 'ecs', label: 'Route' },
+    { from: 'ecs', to: 'rds', dashed: true },
+    { from: 'ecs', to: 's3', dashed: true },
+    { from: 'ecs', to: 'cw', label: 'Metrics' },
+  ],
+};
+
+const ARCH_MAP: Record<string, ArchData> = {
+  'cloud-portfolio': PORTFOLIO_ARCH,
+  'slate-environments': SLATE_ARCH,
+};
+
+// AWS-style service icon node dimensions
+const NW = 78;
+const NH = 68;
+
+function MiniArchitectureDiagram({ slug }: { slug: string }) {
+  const [hovered, setHovered] = useState<string | null>(null);
+  const data = ARCH_MAP[slug];
+  if (!data) return null;
+
+  const nodeMap = new Map(data.nodes.map(n => [n.id, n]));
+
+  const connectedEdges = new Set<number>();
+  const connectedNodes = new Set<string>();
+  if (hovered) {
+    connectedNodes.add(hovered);
+    data.edges.forEach((e, i) => {
+      if (e.from === hovered || e.to === hovered) {
+        connectedEdges.add(i);
+        connectedNodes.add(e.from);
+        connectedNodes.add(e.to);
+      }
+    });
+  }
+
+  return (
+    <div className="w-full h-full">
+      <svg viewBox="0 0 760 280" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <filter id={`sh-${slug}`} x="-8%" y="-8%" width="116%" height="116%">
+            <feDropShadow dx="0" dy="1" stdDeviation="1.5" floodColor="#000" floodOpacity="0.08" />
+          </filter>
+          <marker id={`arr-${slug}`} markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" className="fill-zinc-400 dark:fill-zinc-500" />
+          </marker>
+          <marker id={`arrH-${slug}`} markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#FF9900" />
+          </marker>
+        </defs>
+
+        {/* ---- Regions (AWS Cloud, VPC, etc.) ---- */}
+        {data.regions.map((r, i) => (
+          <g key={`region-${i}`}>
+            <rect
+              x={r.x} y={r.y} width={r.w} height={r.h} rx="8"
+              fill={r.dashed ? `${r.color}06` : `${r.color}08`}
+              stroke={r.color}
+              strokeWidth={r.dashed ? 1.5 : 0.8}
+              strokeDasharray={r.dashed ? '8,4' : '0'}
+              className="dark:opacity-80"
+            />
+            {/* Region label */}
+            <g transform={`translate(${r.x + 8}, ${r.y - 1})`}>
+              <rect
+                x="0" y="-4" rx="3"
+                width={r.label.length * 6.5 + (r.icon ? 20 : 10)} height="16"
+                fill={r.color} opacity="0.9"
+              />
+              {r.icon && (
+                <foreignObject x="4" y="-2" width="12" height="12">
+                  <div className="flex items-center justify-center text-white w-full h-full">{r.icon}</div>
+                </foreignObject>
+              )}
+              <text
+                x={r.icon ? 18 : 5} y="8"
+                fontSize="8" fontWeight="700" fill="white"
+                style={{ pointerEvents: 'none' }}
+              >
+                {r.label}
+              </text>
+            </g>
+          </g>
+        ))}
+
+        {/* ---- Edges ---- */}
+        {data.edges.map((edge, idx) => {
+          const from = nodeMap.get(edge.from);
+          const to = nodeMap.get(edge.to);
+          if (!from || !to) return null;
+
+          const isActive = connectedEdges.has(idx);
+          const isDimmed = hovered && !isActive;
+
+          const x1 = from.x + NW / 2;
+          const y1 = from.y;
+          const x2 = to.x - NW / 2;
+          const y2 = to.y;
+
+          // Bezier control offset
+          const dx = x2 - x1;
+          const dy = Math.abs(y2 - y1);
+          const ctrl = Math.min(55, Math.abs(dx) * 0.35);
+          // If mostly vertical movement, curve more
+          const cy1 = dy > Math.abs(dx) * 0.8 ? y1 + (y2 - y1) * 0.3 : y1;
+          const cy2 = dy > Math.abs(dx) * 0.8 ? y2 - (y2 - y1) * 0.3 : y2;
+
+          const path = `M ${x1} ${y1} C ${x1 + ctrl} ${cy1}, ${x2 - ctrl} ${cy2}, ${x2} ${y2}`;
+
+          return (
+            <g key={`edge-${idx}`} opacity={isDimmed ? 0.15 : 1} className="transition-opacity duration-200">
+              <path d={path} fill="none" stroke="transparent" strokeWidth="14" />
+              <path
+                d={path}
+                fill="none"
+                stroke={isActive ? '#FF9900' : '#94a3b8'}
+                strokeWidth={isActive ? 2.2 : 1}
+                strokeDasharray={edge.dashed ? '5,3' : '0'}
+                markerEnd={isActive ? `url(#arrH-${slug})` : `url(#arr-${slug})`}
+                className={`transition-all duration-200 ${!isActive ? 'dark:stroke-zinc-600' : ''}`}
+              />
+              {edge.label && (
+                <g>
+                  <rect
+                    x={(x1 + x2) / 2 - edge.label.length * 3 - 4}
+                    y={(y1 + y2) / 2 - 7}
+                    width={edge.label.length * 6 + 8}
+                    height="14" rx="3"
+                    className="fill-white/90 dark:fill-zinc-800/90 stroke-zinc-200 dark:stroke-zinc-700"
+                    strokeWidth="0.5"
+                  />
+                  <text
+                    x={(x1 + x2) / 2}
+                    y={(y1 + y2) / 2 + 3}
+                    textAnchor="middle" fontSize="7.5" fontWeight="600"
+                    className={isActive ? 'fill-[#FF9900]' : 'fill-zinc-400 dark:fill-zinc-500'}
+                    style={{ transition: 'fill 0.2s' }}
+                  >
+                    {edge.label}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+
+        {/* ---- Nodes (AWS-style: icon centered, label below) ---- */}
+        {data.nodes.map((node) => {
+          const isActive = !hovered || connectedNodes.has(node.id);
+          const isThis = hovered === node.id;
+          const nx = node.x - NW / 2;
+          const ny = node.y - NH / 2;
+
+          return (
+            <g
+              key={node.id}
+              transform={`translate(${nx}, ${ny})`}
+              onMouseEnter={() => setHovered(node.id)}
+              onMouseLeave={() => setHovered(null)}
+              className="cursor-pointer"
+              opacity={isActive ? 1 : 0.2}
+              style={{ transition: 'opacity 0.2s' }}
+            >
+              {/* Hover glow ring */}
+              {isThis && (
+                <rect
+                  x="-3" y="-3" width={NW + 6} height={NH + 6} rx="10"
+                  fill="none" stroke={node.color} strokeWidth="1.5" opacity="0.35"
+                />
+              )}
+              {/* Card */}
+              <rect
+                x="0" y="0" width={NW} height={NH} rx="7"
+                className="fill-white dark:fill-zinc-800"
+                stroke={isThis ? node.color : '#e2e8f0'}
+                strokeWidth={isThis ? 1.8 : 0.8}
+                filter={`url(#sh-${slug})`}
+                style={{ transition: 'stroke 0.15s' }}
+              />
+              {/* Icon circle */}
+              <circle cx={NW / 2} cy="24" r="14" fill={`${node.color}15`} />
+              <circle cx={NW / 2} cy="24" r="14" fill="none" stroke={node.color} strokeWidth="0.6" opacity="0.5" />
+              <foreignObject x={NW / 2 - 9} y="15" width="18" height="18">
+                <div className="flex items-center justify-center w-full h-full" style={{ color: node.color }}>
+                  {node.icon}
+                </div>
+              </foreignObject>
+              {/* Label */}
+              <text
+                x={NW / 2} y="50"
+                textAnchor="middle" fontSize="8" fontWeight="700"
+                className="fill-zinc-800 dark:fill-zinc-200"
+                style={{ pointerEvents: 'none' }}
+              >
+                {node.label}
+              </text>
+              {/* Sublabel */}
+              {node.sublabel && (
+                <text
+                  x={NW / 2} y="59"
+                  textAnchor="middle" fontSize="6.5" fontWeight="500"
+                  className="fill-zinc-400 dark:fill-zinc-500"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {node.sublabel}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ==================== PROJECT CARD ====================
+
 function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: number }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const navigate = useNavigate();
+  const hasArch = !!ARCH_MAP[project.slug];
 
   return (
     <motion.div
@@ -74,51 +397,63 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
 
         {/* Inner content */}
         <div className="relative bg-card m-[2px] rounded-lg overflow-hidden">
-          {/* Project header with visual element */}
-          <div className="relative h-48 overflow-hidden bg-gradient-to-br from-primary/20 via-secondary/50 to-accent/20">
-            {/* Animated background pattern */}
-            <div className="absolute inset-0 opacity-30">
-              <div className="absolute inset-0" style={{
-                backgroundImage: 'radial-gradient(circle at 2px 2px, hsl(var(--primary)) 1px, transparent 0)',
-                backgroundSize: '20px 20px'
-              }} />
-            </div>
-
-            {/* Floating icons animation */}
-            <div className="absolute inset-0">
-              {project.technologies.slice(0, 4).map((tech, i) => (
-                <motion.div
-                  key={i}
-                  className="absolute"
-                  style={{
-                    top: `${20 + i * 20}%`,
-                    left: `${10 + i * 25}%`
-                  }}
-                  animate={{
-                    y: [0, -10, 0],
-                    rotate: [0, 5, -5, 0]
-                  }}
-                  transition={{
-                    duration: 3,
-                    repeat: Infinity,
-                    delay: i * 0.5
-                  }}
-                >
-                  <div
-                    className="p-3 rounded-xl backdrop-blur-sm border border-white/10"
-                    style={{ background: `${techColors[tech] || '#6366f1'}20` }}
-                  >
-                    <div style={{ color: techColors[tech] || '#6366f1' }}>
-                      {techIcons[tech] || <Code className="h-4 w-4" />}
-                    </div>
+          {/* Architecture diagram header */}
+          <div className="relative overflow-hidden bg-gradient-to-br from-zinc-50 via-white to-zinc-50 dark:from-zinc-900 dark:via-zinc-900/80 dark:to-zinc-800/50">
+            {hasArch ? (
+              <div className="relative">
+                {/* AWS-style header bar */}
+                <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700/50 bg-zinc-50/80 dark:bg-zinc-800/50">
+                  <div className="p-1 rounded bg-[#FF9900]">
+                    <Cloud className="h-3 w-3 text-white" />
                   </div>
-                </motion.div>
-              ))}
-            </div>
+                  <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                    Architecture
+                  </span>
+                  <div className="ml-auto flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                    <Activity className="h-3 w-3" />
+                    <span className="hidden sm:inline">Hover to explore</span>
+                  </div>
+                </div>
+                {/* Diagram */}
+                <div className="px-2 py-3" style={{ height: '240px' }}>
+                  <MiniArchitectureDiagram slug={project.slug} />
+                </div>
+              </div>
+            ) : (
+              /* Fallback: floating icons for projects without architecture */
+              <div className="relative h-48 bg-gradient-to-br from-primary/20 via-secondary/50 to-accent/20">
+                <div className="absolute inset-0 opacity-30">
+                  <div className="absolute inset-0" style={{
+                    backgroundImage: 'radial-gradient(circle at 2px 2px, hsl(var(--primary)) 1px, transparent 0)',
+                    backgroundSize: '20px 20px'
+                  }} />
+                </div>
+                <div className="absolute inset-0">
+                  {project.technologies.slice(0, 4).map((tech, i) => (
+                    <motion.div
+                      key={i}
+                      className="absolute"
+                      style={{ top: `${20 + i * 20}%`, left: `${10 + i * 25}%` }}
+                      animate={{ y: [0, -10, 0], rotate: [0, 5, -5, 0] }}
+                      transition={{ duration: 3, repeat: Infinity, delay: i * 0.5 }}
+                    >
+                      <div
+                        className="p-3 rounded-xl backdrop-blur-sm border border-white/10"
+                        style={{ background: `${techColors[tech] || '#6366f1'}20` }}
+                      >
+                        <div style={{ color: techColors[tech] || '#6366f1' }}>
+                          {techIcons[tech] || <Code className="h-4 w-4" />}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Project status badge */}
-            <div className="absolute top-4 right-4">
-              <Badge className={`backdrop-blur-sm border-0 px-3 py-1 shadow-lg ${project.status === 'Live'
+            <div className="absolute top-2 right-3 z-10">
+              <Badge className={`backdrop-blur-sm border-0 px-2.5 py-0.5 shadow-lg text-xs ${project.status === 'Live'
                   ? 'bg-emerald-500/90 text-white'
                   : 'bg-amber-500/90 text-white'
                 }`}>
@@ -130,21 +465,21 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 {project.status || 'Featured'}
               </Badge>
             </div>
+          </div>
 
-            {/* Title overlay */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-card via-card/80 to-transparent">
-              <h3 className="text-2xl font-bold text-foreground mb-1">{project.title}</h3>
-              <div className="flex items-center text-muted-foreground text-sm">
-                <Calendar className="h-4 w-4 mr-2" />
-                {project.period}
-              </div>
+          {/* Title section */}
+          <div className="px-6 pt-5 pb-2">
+            <h3 className="text-xl font-bold text-foreground mb-1">{project.title}</h3>
+            <div className="flex items-center text-muted-foreground text-sm">
+              <Calendar className="h-4 w-4 mr-2" />
+              {project.period}
             </div>
           </div>
 
           {/* Content section */}
-          <div className="p-6">
+          <div className="p-6 pt-3">
             {/* Tech stack */}
-            <div className="flex flex-wrap gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-5">
               {project.technologies.map((tech, i) => (
                 <motion.div
                   key={i}
@@ -156,7 +491,7 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 >
                   <Badge
                     variant="outline"
-                    className="px-3 py-1 flex items-center gap-1.5 border font-medium transition-colors"
+                    className="px-2.5 py-0.5 flex items-center gap-1.5 border font-medium transition-colors text-xs"
                     style={{
                       background: `${techColors[tech] || '#6366f1'}10`,
                       color: techColors[tech] || '#6366f1',
@@ -207,7 +542,7 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 onClick={() => navigate(`/project/${project.slug}`)}
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                {project.status === 'Live' ? 'Live Demo' : 'Architecture'}
+                {project.status === 'Live' ? 'Full Architecture' : 'Architecture'}
                 <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
               </Button>
               <Button

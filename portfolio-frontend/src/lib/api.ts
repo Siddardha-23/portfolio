@@ -222,6 +222,7 @@ class ApiService {
       }>;
       total_registered: number;
       linkedin_profiles_found: number;
+      notable_linkedin?: Array<{ name: string; count: number }>;
       top_countries?: Array<{ country: string; count: number }>;
       map_locations?: Array<{
         country: string;

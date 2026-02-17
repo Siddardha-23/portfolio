@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FaBuilding, FaLinkedin, FaUsers, FaUserTie } from 'react-icons/fa';
 import { apiService } from '@/lib/api';
 
@@ -9,17 +9,25 @@ interface OrgStat {
     latest_visit: string | null;
 }
 
+interface NotableLinkedin {
+    name: string;
+    count: number;
+}
+
 interface OrgStatsData {
     total_visitors: number;
     organizations: OrgStat[];
     total_registered: number;
     linkedin_profiles_found: number;
+    notable_linkedin?: NotableLinkedin[];
 }
 
 export default function VisitorShowcase() {
     const [stats, setStats] = useState<OrgStatsData | null>(null);
     const [loading, setLoading] = useState(true);
     const [currentIndex, setCurrentIndex] = useState(0);
+    const [showLinkedinTooltip, setShowLinkedinTooltip] = useState(false);
+    const linkedinRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const fetchStats = async () => {
@@ -103,11 +111,45 @@ export default function VisitorShowcase() {
                             <div className="text-2xl font-bold text-accent">{stats.organizations.length}</div>
                             <div className="text-xs text-muted-foreground">Organizations</div>
                         </div>
-                        <div className="text-center p-3 rounded-xl bg-secondary/50 dark:bg-secondary/30 border border-border">
+                        <div
+                            ref={linkedinRef}
+                            className="relative text-center p-3 rounded-xl bg-secondary/50 dark:bg-secondary/30 border border-border cursor-pointer transition-colors hover:border-blue-500/50"
+                            onMouseEnter={() => setShowLinkedinTooltip(true)}
+                            onMouseLeave={() => setShowLinkedinTooltip(false)}
+                        >
                             <div className="text-2xl font-bold text-blue-500">{stats.linkedin_profiles_found}</div>
                             <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
                                 <FaLinkedin className="text-blue-500" /> Found
                             </div>
+
+                            {/* Notable orgs tooltip */}
+                            <AnimatePresence>
+                                {showLinkedinTooltip && stats.notable_linkedin && stats.notable_linkedin.length > 0 && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                                        transition={{ duration: 0.15 }}
+                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56"
+                                    >
+                                        <div className="bg-popover border border-border rounded-lg shadow-xl p-3">
+                                            <div className="text-xs font-semibold text-foreground mb-2">
+                                                Professionals from
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {stats.notable_linkedin.map((org, i) => (
+                                                    <div key={i} className="flex items-center justify-between text-xs">
+                                                        <span className="text-muted-foreground truncate mr-2">{org.name}</span>
+                                                        <span className="text-blue-500 font-medium shrink-0">{org.count}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            {/* Arrow */}
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 bg-popover border-r border-b border-border rotate-45 -mt-1" />
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </div>
                     </div>
 

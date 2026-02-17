@@ -11,6 +11,8 @@ from services.linkedin_service import (
     search_linkedin_profile,
     extract_organization_from_email,
     validate_linkedin_url,
+    get_notable_org_name,
+    is_notable_org,
 )
 from utils.db_connect import DBConnect
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
@@ -145,6 +147,11 @@ def register_visitor():
             first_name, last_name, email,
             linkedin_url=linkedin_url,
             middle_name=middle_name,
+            location={
+                "city": ip_info.get("city", ""),
+                "region": ip_info.get("region", ""),
+                "country": ip_info.get("country_name", ""),
+            },
         )
         if linkedin_info.get("organization_from_headline"):
             organization = organization or linkedin_info["organization_from_headline"]
@@ -154,6 +161,31 @@ def register_visitor():
             "headline": linkedin_info.get("headline", ""),
             "source": linkedin_info.get("source", ""),
         }
+
+        # Upsert into linkedin_profiles collection for accurate counts
+        notable_org = get_notable_org_name(
+            linkedin_info.get("headline"),
+            organization,
+        )
+        linkedin_doc = {
+            "first_name": first_name,
+            "middle_name": middle_name,
+            "last_name": last_name,
+            "email": email,
+            "found": linkedin_info.get("found", False),
+            "url": linkedin_info.get("url"),
+            "headline": linkedin_info.get("headline", ""),
+            "source": linkedin_info.get("source", ""),
+            "match_score": linkedin_info.get("match_score"),
+            "organization": organization,
+            "notable_org": notable_org,
+            "updated_at": datetime.utcnow(),
+        }
+        db.linkedin_profiles.update_one(
+            {"email": email} if email else {"first_name": first_name, "last_name": last_name},
+            {"$set": linkedin_doc, "$setOnInsert": {"created_at": datetime.utcnow()}},
+            upsert=True,
+        )
 
         session_id = data.get('sessionId', data.get('session_id')) or None
         fp_obj = data.get('fingerprint') or {}
@@ -335,15 +367,41 @@ def get_organization_stats():
                 "latest_visit": {"$max": "$registered_at"}
             }},
             {"$sort": {"count": -1}},
-            {"$limit": 10}
+            {"$limit": 50}  # Fetch more, then filter to notable only
         ]
-        org_stats = list(collection.aggregate(pipeline))
+        org_stats_raw = list(collection.aggregate(pipeline))
+
+        # Only keep notable organizations (top MNCs, universities — no small companies)
+        org_stats = [
+            s for s in org_stats_raw
+            if is_notable_org(s.get("display_name") or s.get("_id", ""))
+        ][:10]
         
         # Total registered visitors
         total_registered = collection.count_documents({})
-        
-        # Count with LinkedIn found
-        linkedin_found = collection.count_documents({"linkedin.found": True})
+
+        # Count with LinkedIn found — check both collections (new + legacy)
+        linkedin_coll = db.linkedin_profiles
+        linkedin_from_profiles = linkedin_coll.count_documents({"found": True})
+        linkedin_from_registered = collection.count_documents({"linkedin.found": True})
+        linkedin_found = max(linkedin_from_profiles, linkedin_from_registered)
+
+        # Notable orgs from LinkedIn profiles (top MNCs, universities — no startups)
+        notable_pipeline = [
+            {"$match": {"found": True, "notable_org": {"$ne": None}}},
+            {"$group": {
+                "_id": {"$toLower": "$notable_org"},
+                "display_name": {"$first": "$notable_org"},
+                "count": {"$sum": 1},
+            }},
+            {"$sort": {"count": -1}},
+            {"$limit": 15},
+        ]
+        notable_raw = list(linkedin_coll.aggregate(notable_pipeline))
+        notable_linkedin = [
+            {"name": r["display_name"], "count": r["count"]}
+            for r in notable_raw
+        ]
 
         # Normalize country so frontend map finds it: "IN" -> "India", "United States" stays
         def country_for_map(raw_country):
@@ -473,6 +531,7 @@ def get_organization_stats():
             ],
             'total_registered': total_registered,
             'linkedin_profiles_found': linkedin_found,
+            'notable_linkedin': notable_linkedin,
             'top_countries': top_countries,
             'map_locations': map_locations
         }), 200
@@ -480,3 +539,5 @@ def get_organization_stats():
     except Exception as e:
         logger.error(f"Error getting org stats: {e}")
         return jsonify({'error': 'Database error'}), 500
+
+

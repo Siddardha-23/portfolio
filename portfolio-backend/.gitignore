@@ -122,3 +122,8 @@ __pycache__/
 *.swp
 *.swo
 *~
+
+# LinkedIn utility scripts (local-only, not for production)
+backfill_linkedin.py
+test_linkedin_lookup.py
+debug_linkedin.py

@@ -125,11 +125,10 @@ export function useSectionTimeTracking() {
         // Periodic flush
         const flushInterval = setInterval(flushTimes, FLUSH_INTERVAL_MS);
 
-        // Flush on page unload
+        // Flush on page unload using sendBeacon with proper Content-Type
         const handleUnload = () => {
             if (!hasFlushed.current) {
                 hasFlushed.current = true;
-                // Use sendBeacon for reliable delivery on page close
                 const sessionId = getSessionIdSync();
                 if (sessionId) {
                     const now = Date.now();
@@ -155,23 +154,29 @@ export function useSectionTimeTracking() {
                         timestamp: new Date().toISOString()
                     });
 
+                    // Use Blob with explicit JSON content type so backend parses correctly
+                    const blob = new Blob([payload], { type: 'application/json' });
                     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-                    navigator.sendBeacon(`${apiUrl}/session/track-time`, payload);
+                    navigator.sendBeacon(`${apiUrl}/session/track-time`, blob);
                 }
             }
         };
 
-        window.addEventListener('beforeunload', handleUnload);
-        document.addEventListener('visibilitychange', () => {
+        const handleVisibilityChange = () => {
             if (document.visibilityState === 'hidden') {
                 flushTimes();
             }
-        });
+        };
+
+        window.addEventListener('beforeunload', handleUnload);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
 
         return () => {
             observer.disconnect();
             clearInterval(flushInterval);
             window.removeEventListener('beforeunload', handleUnload);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            hasFlushed.current = false;
             flushTimes();
         };
     }, [flushTimes]);

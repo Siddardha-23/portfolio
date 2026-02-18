@@ -8,11 +8,13 @@ import Projects from '@/components/sections/Projects';
 import Contact from '@/components/sections/Contact';
 import Footer from '@/components/Footer';
 import FloatingFormPrompt from '@/components/FloatingFormPrompt';
-import VisitorGlobe from '@/components/VisitorGlobe';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+
+// Lazy load VisitorGlobe since it imports Leaflet (~200KB) and is only shown on user action
+const VisitorGlobe = lazy(() => import('@/components/VisitorGlobe'));
 
 
 
@@ -55,7 +57,9 @@ export default function Home() {
 
       <Footer />
       <FloatingFormPrompt />
-      <VisitorGlobe />
+      <Suspense fallback={null}>
+        <VisitorGlobe />
+      </Suspense>
     </div>
   );
 }

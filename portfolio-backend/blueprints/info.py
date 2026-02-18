@@ -214,7 +214,7 @@ def register_visitor():
                         "organization": organization,
                         "ip_info": ip_info,
                         "linkedin": linkedin_response,
-                        "registered_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
                         "geo": {
                             "city": ip_info.get('city'),
                             "region": ip_info.get('region'),
@@ -341,7 +341,7 @@ def get_organization_stats():
             {"case": {"$eq": ["$_email_domain", "cornell.edu"]}, "then": "Cornell"},
         ]
         pipeline = [
-            {"$match": {"email": {"$exists": True}, "email": {"$regex": "@", "$ne": ""}}},
+            {"$match": {"email": {"$exists": True, "$regex": "@", "$ne": ""}}},
             {"$addFields": {"_email_domain": _email_domain}},
             {"$addFields": {
                 "_org_from_edu": {"$switch": {"branches": _edu_org_key_branches, "default": None}},
@@ -431,7 +431,7 @@ def get_organization_stats():
         # City-level points: unique visitors per location only (map matches "unique visitors" at top)
         # registered_visitors: one doc per person (we dedupe on insert), so count = $sum 1 is already unique
         map_locations_pipeline = [
-            {"$match": {"geo.country": {"$exists": True}, "geo.country": {"$nin": [None, ""]}}},
+            {"$match": {"geo.country": {"$exists": True, "$nin": [None, ""]}}},
             {"$group": {
                 "_id": {"country": "$geo.country", "city": {"$ifNull": ["$geo.city", ""]}},
                 "count": {"$sum": 1},

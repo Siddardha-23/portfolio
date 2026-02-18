@@ -101,6 +101,10 @@ export default function WelcomeForm() {
 
   const handleSkip = () => {
     localStorage.setItem('portfolio_visited', 'true');
+    // Initialize visit count so Hero's returning-visitor detection works correctly
+    if (!localStorage.getItem('portfolio_visit_count')) {
+      localStorage.setItem('portfolio_visit_count', '1');
+    }
     navigate('/home');
   };
 
@@ -154,6 +158,7 @@ export default function WelcomeForm() {
                   onChange={handleChange}
                   className="bg-background/50 border-border focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                   placeholder="John"
+                  required
                 />
               </motion.div>
               <motion.div
@@ -171,6 +176,7 @@ export default function WelcomeForm() {
                   onChange={handleChange}
                   className="bg-background/50 border-border focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all"
                   placeholder="Doe"
+                  required
                 />
               </motion.div>
             </div>

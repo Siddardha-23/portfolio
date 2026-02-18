@@ -154,20 +154,27 @@ class RateLimiter:
         """
         import time
         current_time = time.time()
-        
+
+        # Periodic cleanup to prevent memory growth (every 100 checks)
+        if not hasattr(self, '_check_count'):
+            self._check_count = 0
+        self._check_count += 1
+        if self._check_count % 100 == 0:
+            self.cleanup()
+
         if key not in self._requests:
             self._requests[key] = []
-        
+
         # Remove old requests outside the window
         self._requests[key] = [
             req_time for req_time in self._requests[key]
             if current_time - req_time < window_seconds
         ]
-        
+
         # Check if limit exceeded
         if len(self._requests[key]) >= max_requests:
             return True
-        
+
         # Add current request
         self._requests[key].append(current_time)
         return False

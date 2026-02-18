@@ -71,13 +71,19 @@ export default function FloatingFormPrompt() {
         try {
             localStorage.setItem('visitorInfo', JSON.stringify(userInfo));
             localStorage.setItem('portfolio_form_submitted', 'true');
-            localStorage.setItem('portfolio_visit_count', '1');
+            // Preserve existing visit count (user may have visited multiple times before filling the form)
+            if (!localStorage.getItem('portfolio_visit_count')) {
+                localStorage.setItem('portfolio_visit_count', '1');
+            }
 
             const fingerprint = await getVisitorFingerprint('floating-form');
             const sessionId = getSessionIdSync();
 
             await apiService.registerVisitor({
-                ...userInfo,
+                firstName: userInfo.firstName,
+                middleName: userInfo.middleName,
+                lastName: userInfo.lastName,
+                email: userInfo.email,
                 fingerprint,
                 sessionId
             });

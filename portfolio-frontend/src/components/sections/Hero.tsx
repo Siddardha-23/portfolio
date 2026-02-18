@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { PERSONAL_INFO, ROLES } from '@/lib/constants';
 import { apiService } from '@/lib/api';
-import { VisitorMapTrigger } from '@/components/VisitorGlobe';
+import { VisitorMapTrigger } from '@/components/VisitorMapTrigger';
 import { ResumeViewer } from '@/components/ResumeViewer';
 
 // Animated role typewriter
@@ -287,16 +287,26 @@ export default function Hero() {
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
     if (visitorInfo) {
-      const { firstName } = JSON.parse(visitorInfo);
-      setVisitorName(firstName);
-
-      // Track visit count to distinguish first visit from return visits
-      const visitCountStr = localStorage.getItem('portfolio_visit_count');
-      const currentCount = parseInt(visitCountStr || '0', 10);
-      if (currentCount > 1) {
-        setIsReturningVisitor(true);
+      try {
+        const { firstName } = JSON.parse(visitorInfo);
+        setVisitorName(firstName);
+      } catch {
+        // Corrupted visitorInfo - clear it
+        localStorage.removeItem('visitorInfo');
+        return;
       }
-      // Increment visit count for next time
+    }
+
+    // Track visit count to distinguish first visit from return visits
+    // This runs for all users (form submitted or skipped) since portfolio_visit_count
+    // is set during both form submit and skip
+    const visitCountStr = localStorage.getItem('portfolio_visit_count');
+    const currentCount = parseInt(visitCountStr || '0', 10);
+    if (currentCount > 1) {
+      setIsReturningVisitor(true);
+    }
+    // Increment visit count for next time
+    if (currentCount > 0) {
       localStorage.setItem('portfolio_visit_count', String(currentCount + 1));
     }
   }, []);

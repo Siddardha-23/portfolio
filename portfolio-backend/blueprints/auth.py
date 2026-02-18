@@ -2,7 +2,7 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from utils.db_connect import DBConnect
-from utils.security import InputSanitizer, get_rate_limiter
+from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 from models.user import User
 from datetime import datetime
 import logging
@@ -16,7 +16,7 @@ def register():
     try:
         # Rate limiting
         rate_limiter = get_rate_limiter()
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        client_ip = get_client_ip(request)
         if rate_limiter.is_rate_limited(f"register:{client_ip}", max_requests=5, window_seconds=3600):
             logger.warning(f"Rate limit exceeded for registration from {client_ip}")
             return jsonify({'error': 'Too many attempts. Please try again later.'}), 429
@@ -89,8 +89,8 @@ def register():
 def login():
     """Login user with rate limiting and account lockout"""
     try:
-        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-        
+        client_ip = get_client_ip(request)
+
         # Rate limiting for login attempts
         rate_limiter = get_rate_limiter()
         if rate_limiter.is_rate_limited(f"login:{client_ip}", max_requests=10, window_seconds=300):
@@ -127,8 +127,12 @@ def login():
             if last_attempt:
                 lockout_time = 900  # 15 minutes
                 import time
-                if time.time() - last_attempt.timestamp() < lockout_time:
-                    return jsonify({'error': 'Account locked. Try again in 15 minutes.'}), 423
+                try:
+                    attempt_ts = last_attempt.timestamp() if hasattr(last_attempt, 'timestamp') else float(last_attempt)
+                    if time.time() - attempt_ts < lockout_time:
+                        return jsonify({'error': 'Account locked. Try again in 15 minutes.'}), 423
+                except (TypeError, ValueError, OSError):
+                    pass  # If timestamp is corrupted, skip lockout check
         
         # Verify password
         if not User.verify_password(password, user['password_hash']):

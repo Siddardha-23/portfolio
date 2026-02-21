@@ -29,6 +29,8 @@ import {
   BarChart3,
   Activity,
   GitBranch,
+  Shield,
+  FileText,
 } from 'lucide-react';
 
 // Tech color mapping
@@ -41,7 +43,15 @@ const techColors: { [key: string]: string } = {
   'Nginx': '#009639',
   'CI/CD': '#4CAF50',
   'ECS': '#FF9900',
-  'GitHub Actions': '#2088FF'
+  'GitHub Actions': '#2088FF',
+  'Cybersecurity': '#DC2626',
+  'NIST CSF 2.0': '#6366F1',
+  'API Security': '#F59E0B',
+  'AI/ML': '#8B5CF6',
+  'Aviation': '#0EA5E9',
+  'Risk Analytics': '#10B981',
+  'CloudFormation': '#E7157B',
+  'RDS': '#3B82F6'
 };
 
 // Tech icon mapping
@@ -54,7 +64,15 @@ const techIcons: { [key: string]: React.ReactNode } = {
   'Nginx': <Server className="h-4 w-4" />,
   'CI/CD': <Rocket className="h-4 w-4" />,
   'ECS': <Cloud className="h-4 w-4" />,
-  'GitHub Actions': <Rocket className="h-4 w-4" />
+  'GitHub Actions': <Rocket className="h-4 w-4" />,
+  'Cybersecurity': <Shield className="h-4 w-4" />,
+  'NIST CSF 2.0': <Lock className="h-4 w-4" />,
+  'API Security': <Server className="h-4 w-4" />,
+  'AI/ML': <Cpu className="h-4 w-4" />,
+  'Aviation': <Globe className="h-4 w-4" />,
+  'Risk Analytics': <BarChart3 className="h-4 w-4" />,
+  'CloudFormation': <Layers className="h-4 w-4" />,
+  'RDS': <Database className="h-4 w-4" />
 };
 
 // ==================== AWS-STYLE ARCHITECTURE DIAGRAM ====================
@@ -160,9 +178,97 @@ const SLATE_ARCH: ArchData = {
   ],
 };
 
+// ---- AEROSEC: Aviation Cybersecurity Risk Platform ----
+const AEROSEC_ARCH: ArchData = {
+  regions: [
+    { label: 'AEROSEC Platform', x: 140, y: 8, w: 520, h: 265, color: '#DC2626', dashed: true, icon: <Shield className="h-3 w-3" /> },
+    { label: 'Data Ingestion', x: 152, y: 32, w: 145, h: 232, color: '#F59E0B', dashed: false },
+    { label: 'Analysis Engine', x: 308, y: 32, w: 155, h: 232, color: '#8B5CF6', dashed: false },
+    { label: 'Risk Intelligence', x: 474, y: 32, w: 175, h: 232, color: '#10B981', dashed: false },
+  ],
+  nodes: [
+    { id: 'airlines', label: 'Airlines', sublabel: 'PSS Data', icon: <Globe className="h-4 w-4" />, color: '#3B82F6', x: 62, y: 140 },
+    { id: 'apis', label: 'API Monitor', sublabel: 'Real-time', icon: <Activity className="h-4 w-4" />, color: '#F59E0B', x: 224, y: 90 },
+    { id: 'vendors', label: 'Vendor Feed', sublabel: 'Third-party', icon: <Network className="h-4 w-4" />, color: '#F59E0B', x: 224, y: 200 },
+    { id: 'ai', label: 'AI Engine', sublabel: 'Anomaly Det.', icon: <Cpu className="h-4 w-4" />, color: '#8B5CF6', x: 385, y: 90 },
+    { id: 'compliance', label: 'Compliance', sublabel: 'NIST/FAA', icon: <Lock className="h-4 w-4" />, color: '#8B5CF6', x: 385, y: 200 },
+    { id: 'dashboard', label: 'Dashboard', sublabel: 'Executive', icon: <BarChart3 className="h-4 w-4" />, color: '#10B981', x: 546, y: 90 },
+    { id: 'audit', label: 'Audit Logs', sublabel: 'Auto-gen', icon: <FileText className="h-4 w-4" />, color: '#10B981', x: 546, y: 200 },
+    { id: 'nist', label: 'NIST CSF', sublabel: 'Standards', icon: <Shield className="h-4 w-4" />, color: '#DC2626', x: 700, y: 140 },
+  ],
+  edges: [
+    { from: 'airlines', to: 'apis', label: 'APIs' },
+    { from: 'airlines', to: 'vendors' },
+    { from: 'apis', to: 'ai', label: 'Analyze' },
+    { from: 'vendors', to: 'compliance', label: 'Score' },
+    { from: 'ai', to: 'dashboard', label: 'Risk' },
+    { from: 'compliance', to: 'audit', label: 'Report' },
+    { from: 'ai', to: 'compliance', dashed: true },
+    { from: 'nist', to: 'compliance', dashed: true },
+  ],
+};
+
+// ---- AWS Microservices CI/CD Architecture ----
+const MICROSERVICES_ARCH: ArchData = {
+  regions: [
+    { label: 'AWS Cloud', x: 140, y: 8, w: 530, h: 265, color: '#FF9900', dashed: true, icon: <Cloud className="h-3 w-3" /> },
+    { label: 'CI/CD Pipeline', x: 152, y: 32, w: 165, h: 232, color: '#F59E0B', dashed: false },
+    { label: 'VPC (3-Tier)', x: 328, y: 32, w: 195, h: 232, color: '#10B981', dashed: true },
+  ],
+  nodes: [
+    { id: 'dev', label: 'Developer', sublabel: 'Push Code', icon: <Users className="h-4 w-4" />, color: '#3B82F6', x: 62, y: 140 },
+    { id: 'commit', label: 'CodeCommit', sublabel: 'Source', icon: <GitBranch className="h-4 w-4" />, color: '#24292F', x: 234, y: 80 },
+    { id: 'pipeline', label: 'CodePipeline', sublabel: 'Build+Deploy', icon: <Rocket className="h-4 w-4" />, color: '#4CAF50', x: 234, y: 200 },
+    { id: 'alb', label: 'ALB', sublabel: 'Public Tier', icon: <Network className="h-4 w-4" />, color: '#8B5CF6', x: 426, y: 70 },
+    { id: 'ecs', label: 'ECS Fargate', sublabel: '4 Services', icon: <Cloud className="h-4 w-4" />, color: '#FF9900', x: 426, y: 155 },
+    { id: 'rds', label: 'RDS', sublabel: 'Data Tier', icon: <Database className="h-4 w-4" />, color: '#3B82F6', x: 426, y: 235 },
+    { id: 'r53', label: 'Route 53', sublabel: 'DNS + SSL', icon: <Globe className="h-4 w-4" />, color: '#8B5CF6', x: 600, y: 80 },
+    { id: 'ecr', label: 'ECR', sublabel: 'Images', icon: <Layers className="h-4 w-4" />, color: '#FF9900', x: 600, y: 200 },
+  ],
+  edges: [
+    { from: 'dev', to: 'commit', label: 'Push' },
+    { from: 'commit', to: 'pipeline', label: 'Trigger' },
+    { from: 'pipeline', to: 'ecs', label: 'Deploy' },
+    { from: 'r53', to: 'alb', dashed: true },
+    { from: 'alb', to: 'ecs' },
+    { from: 'ecs', to: 'rds', label: 'Query' },
+    { from: 'ecr', to: 'ecs', dashed: true },
+  ],
+};
+
+// ---- Cross-Account CI/CD Multi-Tenancy ----
+const CROSS_ACCOUNT_ARCH: ArchData = {
+  regions: [
+    { label: 'Main Account', x: 140, y: 8, w: 195, h: 265, color: '#FF9900', dashed: true, icon: <Cloud className="h-3 w-3" /> },
+    { label: 'Tenant Accounts', x: 347, y: 8, w: 270, h: 265, color: '#10B981', dashed: true, icon: <Users className="h-3 w-3" /> },
+  ],
+  nodes: [
+    { id: 'dev', label: 'Developer', sublabel: 'Push Code', icon: <Users className="h-4 w-4" />, color: '#3B82F6', x: 62, y: 140 },
+    { id: 'pipeline', label: 'CodePipeline', sublabel: 'Multi-Stage', icon: <Rocket className="h-4 w-4" />, color: '#4CAF50', x: 238, y: 90 },
+    { id: 'ecr', label: 'ECR', sublabel: 'Shared', icon: <Layers className="h-4 w-4" />, color: '#FF9900', x: 238, y: 200 },
+    { id: 'ecsA', label: 'ECS Fargate', sublabel: 'Tenant A', icon: <Cloud className="h-4 w-4" />, color: '#10B981', x: 430, y: 70 },
+    { id: 'ecsB', label: 'ECS Fargate', sublabel: 'Tenant B', icon: <Cloud className="h-4 w-4" />, color: '#10B981', x: 430, y: 155 },
+    { id: 'rds', label: 'RDS', sublabel: 'Per Tenant', icon: <Database className="h-4 w-4" />, color: '#3B82F6', x: 430, y: 235 },
+    { id: 'kms', label: 'KMS', sublabel: 'Encryption', icon: <Lock className="h-4 w-4" />, color: '#DD344C', x: 560, y: 80 },
+    { id: 'iam', label: 'IAM Roles', sublabel: 'Cross-Acct', icon: <Shield className="h-4 w-4" />, color: '#DD344C', x: 560, y: 200 },
+  ],
+  edges: [
+    { from: 'dev', to: 'pipeline', label: 'Push' },
+    { from: 'pipeline', to: 'ecr', label: 'Build' },
+    { from: 'ecr', to: 'ecsA', label: 'Pull' },
+    { from: 'ecr', to: 'ecsB', label: 'Pull' },
+    { from: 'ecsB', to: 'rds', dashed: true },
+    { from: 'kms', to: 'ecr', dashed: true },
+    { from: 'iam', to: 'ecsA', dashed: true },
+  ],
+};
+
 const ARCH_MAP: Record<string, ArchData> = {
   'cloud-portfolio': PORTFOLIO_ARCH,
   'slate-environments': SLATE_ARCH,
+  'aerosec': AEROSEC_ARCH,
+  'aws-microservices-cicd': MICROSERVICES_ARCH,
+  'cross-account-cicd': CROSS_ACCOUNT_ARCH,
 };
 
 // AWS-style service icon node dimensions
@@ -403,11 +509,11 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
               <div className="relative">
                 {/* AWS-style header bar */}
                 <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-200 dark:border-zinc-700/50 bg-zinc-50/80 dark:bg-zinc-800/50">
-                  <div className="p-1 rounded bg-[#FF9900]">
-                    <Cloud className="h-3 w-3 text-white" />
+                  <div className={`p-1 rounded ${project.slug === 'aerosec' ? 'bg-red-600' : 'bg-[#FF9900]'}`}>
+                    {project.slug === 'aerosec' ? <Shield className="h-3 w-3 text-white" /> : <Cloud className="h-3 w-3 text-white" />}
                   </div>
                   <span className="text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                    Architecture
+                    {project.slug === 'aerosec' ? 'Security Architecture' : 'Architecture'}
                   </span>
                   <div className="ml-auto flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
                     <Activity className="h-3 w-3" />
@@ -542,7 +648,7 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
                 onClick={() => navigate(`/project/${project.slug}`)}
               >
                 <ExternalLink className="h-4 w-4 mr-2" />
-                {project.status === 'Live' ? 'Full Architecture' : 'Architecture'}
+                {project.slug === 'aerosec' ? 'Case Study' : project.status === 'Live' ? 'Full Architecture' : 'Architecture'}
                 <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
               </Button>
               <Button

@@ -216,6 +216,309 @@ export const EXPERIENCE = [
 
 export const PROJECTS = [
   {
+    title: "Cybersecurity in Connected Aviation – AEROSEC",
+    slug: "aerosec",
+    period: "August 2025 - December 2025",
+    status: "Live",
+    description: [
+      "Led a Honeywell-guided innovation project targeting aviation's most exposed attack surface — third-party integrations connecting Passenger Service Systems (PSS), payment processors, loyalty programs, and booking APIs.",
+      "Conducted 20+ stakeholder interviews with FAA officials, Air France–KLM, Delta, cybersecurity engineers, and IT security leaders, validating that passenger-facing systems face more frequent attacks than avionics, with 60%+ of breaches involving third-party or API exposure.",
+      "Developed AEROSEC — a real-time vendor cyber risk dashboard with AI-driven anomaly detection, automated compliance scoring aligned with NIST CSF 2.0, ISO 27001, DO-326A, and executive-level risk-to-revenue impact mapping.",
+      "Built comprehensive business validation including TAM–SAM–SOM analysis ($200B → $15B → $2B), SaaS tiered pricing, 5-year financial projection, and go-to-market roadmap for airline and travel technology segments.",
+      "Evolved from a DevOps engineering mindset to a systems-oriented cybersecurity strategist — framing security as business resilience and connecting technical controls to revenue protection and executive decision-making."
+    ],
+    technologies: ["Cybersecurity", "NIST CSF 2.0", "API Security", "AI/ML", "Aviation", "Risk Analytics"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["Executive Dashboard", "Real-time Risk Visualizations", "Compliance Scorecards"],
+        backend: ["AI/ML Anomaly Detection Engine", "Vendor Risk Scoring API", "Audit Log Generator"],
+        infrastructure: ["Real-time API Monitoring", "PSS Integration Layer", "Threat Intelligence Feeds"],
+        cicd: ["Automated Compliance Reports", "Continuous Vendor Assessment", "NIST CSF Alignment"],
+        monitoring: ["MTTD/MTTR Tracking", "API Health Monitoring", "Business Impact Scoring"]
+      },
+      diagram: {
+        title: "AEROSEC — Real-Time Third-Party Vendor Cyber Risk Platform",
+        layers: [
+          {
+            name: "Data Ingestion",
+            color: "#F59E0B",
+            components: [
+              "Real-time PSS API monitoring",
+              "Third-party vendor data feeds",
+              "Threat intelligence integration",
+              "Booking & payment system telemetry"
+            ]
+          },
+          {
+            name: "Analysis Engine",
+            color: "#8B5CF6",
+            components: [
+              "AI-driven anomaly detection",
+              "Vendor risk scoring (NIST/FAA-aligned)",
+              "BOLA vulnerability detection",
+              "Compliance gap analysis"
+            ]
+          },
+          {
+            name: "Risk Intelligence",
+            color: "#10B981",
+            components: [
+              "Executive risk dashboard",
+              "Cyber risk → business impact mapping",
+              "Auto-generated audit reports",
+              "Real-time compliance scoring"
+            ]
+          }
+        ]
+      },
+      security: [
+        "Aligned with NIST CSF 2.0 (Govern, Identify, Protect, Detect, Respond, Recover)",
+        "ISO/IEC 27001 Information Security Management System compliance",
+        "DO-326A Airworthiness Security Risk Assessment methodology",
+        "DO-355 Security Assurance and Validation processes",
+        "Privacy by Design principles embedded in architecture",
+        "BOLA and API-specific vulnerability detection",
+        "Supply chain risk management for third-party vendors",
+        "Real-time threat detection and automated incident response"
+      ],
+      scalability: [
+        "Supports monitoring across hundreds of third-party API integrations",
+        "Modular architecture scales from regional to major international carriers",
+        "SaaS multi-tenant design enables rapid customer onboarding",
+        "AI models continuously improve with expanded threat telemetry",
+        "Extensible framework for new compliance standards and regulations",
+        "Cloud-native deployment for global availability"
+      ],
+      costEfficiency: [
+        "Average data breach costs ~$4.4M globally, >$10M in the US (IBM)",
+        "Reduces Mean Time to Detect (MTTD) and Mean Time to Respond (MTTR)",
+        "Prevents revenue leakage from booking errors and integration failures",
+        "Automated compliance reporting reduces manual audit costs",
+        "Early threat detection prevents cascading operational disruptions",
+        "ROI through reduced regulatory fines and brand damage avoidance"
+      ],
+      innovations: [
+        "First-of-kind focus on third-party PSS API risk in aviation",
+        "AI-driven anomaly detection tailored to aviation integration patterns",
+        "Maps cyber risk directly to business revenue impact",
+        "Bridges gap between technical security teams and executive decision-makers",
+        "Customer discovery-driven design validated with 20+ industry stakeholders",
+        "Integrates regulatory compliance as a competitive differentiator"
+      ]
+    }
+  },
+  {
+    title: "AWS CI/CD Microservices Architecture",
+    slug: "aws-microservices-cicd",
+    period: "January 2025 - May 2025",
+    status: "Live",
+    description: [
+      "Designed and deployed a fully automated microservices architecture on AWS using a 3-tier VPC model with public, private application, and private data subnets across multiple Availability Zones, provisioned entirely through CloudFormation.",
+      "Implemented 4 containerized ECS Fargate services (Frontend, Backend, AI Service, Third-party API) with ALB listener routing, tiered security group isolation, and NAT Gateway for controlled private subnet outbound access.",
+      "Built end-to-end CI/CD pipeline using CodeCommit, EventBridge, CodePipeline, CodeBuild, and ECR with branch-based deployments, immutable Docker images, and zero-touch production rollouts via rolling ECS updates.",
+      "Enforced defense-in-depth security with chained security groups (ALB → Frontend → Backend → RDS), private-only RDS access restricted to Backend and AI service SGs, ACM-managed SSL/TLS, and no public database endpoints.",
+      "Architected for high availability with multi-AZ deployments, ECS rolling updates, ALB health checks, and full Infrastructure-as-Code reproducibility — aligned with the AWS Well-Architected Framework."
+    ],
+    technologies: ["AWS", "ECS", "CloudFormation", "Docker", "CI/CD", "RDS"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["React", "Nginx", "ECS Fargate (Public Tier)"],
+        backend: ["Backend API (ECS)", "AI Service (ECS)", "Third-party API Service (ECS)"],
+        infrastructure: ["3-Tier VPC", "Multi-AZ Subnets", "NAT Gateway", "ALB", "Route 53", "ACM"],
+        cicd: ["CloudFormation (IaC)", "CodeCommit", "EventBridge", "CodePipeline", "CodeBuild", "ECR"],
+        monitoring: ["CloudWatch Logs", "ECS Service Metrics", "ALB Health Checks"]
+      },
+      diagram: {
+        title: "Fully Automated AWS Microservices CI/CD Architecture",
+        layers: [
+          {
+            name: "CI/CD Pipeline",
+            color: "#F59E0B",
+            components: [
+              "CodeCommit branch-based source control",
+              "EventBridge commit event detection",
+              "CodePipeline multi-stage orchestration",
+              "CodeBuild Docker image builds with Nginx",
+              "ECR immutable image storage",
+              "S3 build artifact storage"
+            ]
+          },
+          {
+            name: "Public Tier",
+            color: "#8B5CF6",
+            components: [
+              "Application Load Balancer (ALB)",
+              "Route 53 DNS routing",
+              "ACM SSL/TLS certificate validation",
+              "Frontend ECS Fargate service"
+            ]
+          },
+          {
+            name: "Private Application Tier",
+            color: "#3B82F6",
+            components: [
+              "Backend ECS Fargate service",
+              "AI Service (ECS Fargate)",
+              "Third-party API integration service",
+              "Security group isolated communication"
+            ]
+          },
+          {
+            name: "Private Data Tier",
+            color: "#10B981",
+            components: [
+              "Amazon RDS in private subnets",
+              "Access restricted to Backend & AI SGs only",
+              "No public accessibility",
+              "Multi-AZ deployment for high availability"
+            ]
+          }
+        ]
+      },
+      security: [
+        "3-tier VPC isolation: public, private app, and private data subnets (WAF: Security Pillar)",
+        "Security group chaining: ALB → Frontend → Backend → RDS",
+        "RDS access restricted to Backend & AI Service security groups only",
+        "No public database endpoints — RDS deployed exclusively in private subnets",
+        "NAT Gateway for controlled outbound access from private subnets",
+        "ACM-managed SSL/TLS certificates with Route 53 DNS validation",
+        "IAM least-privilege roles for ECS task execution",
+        "Immutable Docker images — no runtime mutations, full audit trail"
+      ],
+      scalability: [
+        "ECS Fargate auto-scales each microservice independently (WAF: Performance Efficiency)",
+        "ALB distributes traffic across multiple Availability Zones (WAF: Reliability)",
+        "Multi-AZ RDS deployment for database high availability and failover",
+        "Stateless container design enables horizontal scaling without session affinity",
+        "Rolling ECS updates ensure zero-downtime deployments",
+        "Branch-based environments support parallel development workflows"
+      ],
+      costEfficiency: [
+        "Fargate pay-per-task eliminates idle EC2 compute costs (WAF: Cost Optimization)",
+        "NAT Gateway shared across private subnets to minimize data transfer charges",
+        "CloudFormation IaC eliminates manual provisioning overhead and drift",
+        "Fully automated CI/CD reduces deployment labor and human error costs",
+        "Branch-based environments prevent resource conflicts and staging bottlenecks",
+        "ECR lifecycle policies automatically manage image storage costs"
+      ],
+      innovations: [
+        "End-to-end automation: git push to production with zero manual steps (WAF: Operational Excellence)",
+        "EventBridge-driven pipeline triggers replace polling with event-driven architecture",
+        "Infrastructure as Code: entire stack reproducible from CloudFormation templates",
+        "Image immutability guarantees deployment consistency across environments",
+        "4 independent microservices with isolated scaling, deployment, and failure domains",
+        "Defense-in-depth security model fully aligned with AWS Well-Architected Framework"
+      ]
+    }
+  },
+  {
+    title: "Cross-Account CI/CD Multi-Tenancy Architecture",
+    slug: "cross-account-cicd",
+    period: "March 2025 - May 2025",
+    status: "Live",
+    description: [
+      "Designed a cross-account CI/CD pipeline architecture enabling centralized build in a main DevOps account with automated deployment to multiple isolated tenant AWS accounts, fully provisioned through CloudFormation.",
+      "Implemented multi-stage CodePipeline with per-tenant deployment stages — each tenant account operates its own ECS Fargate services, 3-tier VPC, and RDS, configured via environment-specific parameters and task definition variables.",
+      "Configured cross-account ECR access through IAM inline policies allowing tenant ECS tasks to pull Docker images from the main account's shared registry, with KMS-encrypted artifact sharing via S3 for secure cross-boundary data transfer.",
+      "Built for horizontal tenant scalability — adding a new tenant requires only a new pipeline stage and deploying the CloudFormation stack to the target account, with zero impact to existing tenants.",
+      "Enforced account-level blast radius isolation: each tenant runs in a fully independent AWS account with its own VPC, security groups, and RDS instance, preventing cross-tenant data leakage or failure propagation."
+    ],
+    technologies: ["AWS", "CloudFormation", "ECS", "Docker", "CI/CD", "RDS"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["React", "Nginx", "ECS Fargate (per tenant)"],
+        backend: ["Backend API (ECS)", "AI Service (ECS)", "Third-party API Service (ECS)"],
+        infrastructure: ["Cross-Account IAM Roles", "3-Tier VPC per Tenant", "NAT Gateway", "ALB", "RDS per Tenant", "KMS Encryption"],
+        cicd: ["CloudFormation (IaC)", "CodeCommit", "EventBridge", "CodePipeline (multi-stage)", "CodeBuild", "ECR (shared)", "S3 (KMS-encrypted)"],
+        monitoring: ["CloudWatch Logs", "Cross-Account CloudWatch", "ECS Service Metrics", "ALB Health Checks"]
+      },
+      diagram: {
+        title: "Cross-Account CI/CD Multi-Tenancy Architecture",
+        layers: [
+          {
+            name: "Main Account — CI/CD Pipeline",
+            color: "#F59E0B",
+            components: [
+              "CodeCommit branch-based source control",
+              "EventBridge commit event detection",
+              "CodePipeline with per-tenant deployment stages",
+              "CodeBuild Docker image builds",
+              "ECR shared image registry (cross-account access)",
+              "S3 build artifacts encrypted with KMS"
+            ]
+          },
+          {
+            name: "Cross-Account Access Layer",
+            color: "#8B5CF6",
+            components: [
+              "IAM inline policies for ECR pull from tenant accounts",
+              "Cross-account IAM assume-role for CodePipeline deployment",
+              "KMS key policy for cross-account artifact decryption",
+              "imagedetail.json artifact for image URI propagation"
+            ]
+          },
+          {
+            name: "Tenant Account — Compute & Network",
+            color: "#10B981",
+            components: [
+              "Independent 3-tier VPC per tenant (public, private app, private data)",
+              "ECS Fargate services pulling from main account ECR",
+              "ALB with Route 53 DNS and ACM SSL/TLS per tenant",
+              "NAT Gateway for private subnet outbound access"
+            ]
+          },
+          {
+            name: "Tenant Account — Data Tier",
+            color: "#3B82F6",
+            components: [
+              "Amazon RDS in private subnets per tenant",
+              "Environment-specific configuration via ECS task parameters",
+              "Security group isolation (Backend & AI SG → RDS only)",
+              "Multi-AZ deployment for tenant-level high availability"
+            ]
+          }
+        ]
+      },
+      security: [
+        "Account-level blast radius isolation — each tenant in a separate AWS account",
+        "Cross-account ECR access via scoped IAM inline policies (least privilege)",
+        "KMS-encrypted S3 artifacts with cross-account key policies",
+        "No shared databases — each tenant has its own RDS in private subnets",
+        "Security group chaining within each tenant: ALB → Frontend → Backend → RDS",
+        "CodePipeline uses assume-role for cross-account deployment (no long-lived credentials)",
+        "Immutable Docker images shared from centralized ECR registry",
+        "CloudFormation drift detection ensures infrastructure consistency"
+      ],
+      scalability: [
+        "Add new tenants by adding pipeline stages + deploying CloudFormation stack",
+        "Zero impact to existing tenants when onboarding new accounts",
+        "Each tenant independently scales ECS services based on own traffic",
+        "Multi-AZ RDS per tenant for independent database high availability",
+        "Shared ECR registry scales image distribution across all tenant accounts",
+        "Branch-based pipeline supports parallel development across environments"
+      ],
+      costEfficiency: [
+        "Centralized build pipeline — single CodeBuild project serves all tenants",
+        "Shared ECR registry eliminates per-tenant image build redundancy",
+        "Fargate pay-per-task in each tenant — no idle compute across accounts",
+        "CloudFormation IaC enables repeatable tenant provisioning in minutes",
+        "KMS key sharing reduces per-tenant encryption overhead",
+        "Account-level cost attribution via AWS Organizations for chargeback"
+      ],
+      innovations: [
+        "True multi-tenancy with AWS account-level isolation (strongest isolation boundary)",
+        "Single pipeline deploys to N tenants — linear stage addition, not pipeline duplication",
+        "Cross-account image sharing with encrypted artifact propagation",
+        "Environment-specific ECS task parameters eliminate per-tenant code branches",
+        "CloudFormation parameterized stacks: one template, many tenants",
+        "Production-grade multi-tenancy pattern used by SaaS platforms at scale"
+      ]
+    }
+  },
+  {
     title: "Cloud-Deployed Personal Portfolio",
     slug: "cloud-portfolio",
     period: "December 2024 - Present",

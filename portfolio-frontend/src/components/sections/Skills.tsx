@@ -384,7 +384,7 @@ function SkillsStats() {
               {stat.value}
             </motion.div>
             <div className="text-sm text-muted-foreground group-hover:text-primary transition-colors">{stat.label}</div>
-            <div className="text-[10px] text-muted-foreground/50 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">Click to view ↓</div>
+            <div className="text-[10px] text-muted-foreground/60 mt-1">Click to view ↓</div>
           </div>
         </motion.div>
       ))}
@@ -472,7 +472,7 @@ export default function Skills() {
           <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
             <Shield className="h-5 w-5 text-primary" />
             <span className="text-sm text-muted-foreground">
-              Continuously learning and expanding my skill set
+              Always learning. Always building.
             </span>
             <Sparkles className="h-4 w-4 text-accent" />
           </div>

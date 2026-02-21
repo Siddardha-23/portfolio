@@ -42,7 +42,7 @@ export const EDUCATION = [
   {
     degree: "Bachelor's in Computer Science",
     institution: "JNTU Kakinada",
-    institutionFull: "University College of Engineering, Kakinada(A), JNTU",
+    institutionFull: "University College of Engineering, Kakinada (A), JNTU",
     location: "Kakinada, India",
     period: "2019 - May 2023",
     gpa: 3.7,
@@ -79,25 +79,25 @@ export const SKILLS = {
       name: "AWS Academy Graduate - Cloud Security Foundations",
       issuer: "Amazon Web Services (AWS)",
       date: "Oct 2025",
-      link: "" // Add your credential link here
+      link: ""
     },
     {
       name: "AWS Academy Graduate - Cloud Operations",
       issuer: "Amazon Web Services (AWS)",
       date: "Oct 2025",
-      link: "" // Add your credential link here
+      link: ""
     },
     {
       name: "AWS Academy Graduate - Cloud Architecting",
       issuer: "Amazon Web Services (AWS)",
       date: "Apr 2025",
-      link: "" // Add your credential link here
+      link: ""
     },
     {
       name: "AWS Cloud Quest: Cloud Practitioner",
       issuer: "Amazon Web Services (AWS)",
       date: "Dec 2024",
-      link: "" // Add your credential link here
+      link: ""
     }
   ]
 };
@@ -157,7 +157,7 @@ export const EXPERIENCE = [
     ],
     responsibilities: [
       {
-        text: "Trained extensively on Java, Spring, Spring Boot, and Reactive Spring Boot, React, React Native and successfully completed relevant assignments to solidify expertise.",
+        text: "Trained extensively on Java, Spring, Spring Boot, Reactive Spring Boot, React, and React Native, successfully completing relevant assignments to solidify expertise.",
         category: "Learning"
       },
       {
@@ -206,7 +206,7 @@ export const EXPERIENCE = [
         category: "Exploration"
       },
       {
-        text: "Automated Linux-based system maintenance and log parsing with Bash scripts, enhancing troubleshooting efficiency by 30%, while applying Agile and DevOps methodologies through active participation in sprints, reviews, and retrospectives.",
+        text: "Automated Linux-based system maintenance and log parsing with Bash scripts, enhancing troubleshooting efficiency by 30%. Applied Agile and DevOps methodologies through active participation in sprints, reviews, and retrospectives.",
         category: "DevOps"
       }
     ],
@@ -524,9 +524,9 @@ export const PROJECTS = [
     period: "December 2024 - Present",
     status: "Live",
     description: [
-      "Developed and deployed a personal portfolio showcasing projects and skills, hosted on a 3-tier AWS architecture provisioned with Terraform, including VPC, EC2, RDS, and ECS services.",
-      "Containerized the Flask backend and React frontend using Docker with Nginx as a reverse proxy, and automated deployment through CI/CD pipelines using CodePipeline, CodeCommit, and CloudFormation.",
-      "Enabled real-time updates and seamless rollout of portfolio changes through automated pipeline triggers, improving deployment speed and reliability.",
+      "Designed and deployed a full-stack portfolio on a 3-tier serverless AWS architecture — React SPA on S3/CloudFront, Flask API on Lambda via API Gateway, and MongoDB Atlas for data persistence, all provisioned with Terraform.",
+      "Built automated CI/CD pipelines using GitHub Actions for continuous deployment, with S3 static hosting, CloudFront cache invalidation, and Lambda function updates on every push.",
+      "Implemented visitor analytics with fingerprint-based deduplication, session tracking, organization detection, and real-time engagement metrics.",
       "Implemented visitor tracking with fingerprinting, session management, and organization detection for analytics.",
       "Applied AWS Well-Architected Framework principles for security, cost optimization, and operational excellence."
     ],

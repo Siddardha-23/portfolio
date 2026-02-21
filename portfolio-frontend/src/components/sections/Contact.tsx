@@ -243,7 +243,7 @@ export default function Contact() {
             </h2>
             <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto mb-4 md:mb-6 px-4">
               Have a project in mind or interested in working together?
-              I'd love to hear from you. Let's create something amazing!
+              I'd love to hear from you. Let's discuss how I can help.
             </p>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>
@@ -319,7 +319,7 @@ export default function Contact() {
                 {/* Fun message */}
                 <div className="text-center">
                   <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
-                    Made with <Heart className="h-4 w-4 text-red-500 animate-pulse" /> and lots of coffee
+                    Built with <Heart className="h-4 w-4 text-red-500 animate-pulse" /> and attention to detail
                   </p>
                 </div>
               </CardContent>

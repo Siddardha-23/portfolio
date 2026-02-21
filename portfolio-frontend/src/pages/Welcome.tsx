@@ -10,11 +10,11 @@ import { ThemeToggle } from '@/components/theme-toggle';
 const PORTFOLIO_VISITED_KEY = 'portfolio_visited';
 
 // All command names for tab completion
-const COMMAND_NAMES = ['help', 'whoami', 'ls', 'cat', 'clear', 'skill', 'explore', 'about', 'date', 'neofetch'];
+const COMMAND_NAMES = ['help', 'whoami', 'ls', 'cat', 'clear', 'skill', 'explore', 'about', 'date', 'neofetch', 'uptime', 'docker', 'terraform'];
 // Files available for `cat`
-const FILE_NAMES = ['skills.txt', 'projects.json', 'about.md', 'experience.log'];
+const FILE_NAMES = ['skills.txt', 'projects.json', 'about.md', 'experience.log', 'certs.yaml'];
 // Skills available for `skill`
-const SKILL_NAMES = ['aws', 'kubernetes', 'terraform', 'docker', 'jenkins', 'python', 'ansible', 'prometheus'];
+const SKILL_NAMES = ['aws', 'terraform', 'docker', 'python', 'cloudformation', 'cicd', 'flask', 'linux'];
 
 export default function Welcome() {
   const [terminalText, setTerminalText] = useState<string[]>([]);
@@ -50,50 +50,57 @@ export default function Welcome() {
   const availableCommands: Record<string, (args?: string) => string> = {
     help: () =>
       "Available commands:\n" +
-      "  help           - Show this help message\n" +
-      "  whoami         - Display current user\n" +
-      "  ls             - List directory contents\n" +
-      "  cat [file]     - Display file contents\n" +
-      "  clear          - Clear the terminal\n" +
-      "  skill [name]   - Display skill details\n" +
-      "  explore        - Continue to portfolio\n" +
-      "  about          - About Harshith\n" +
-      "  date           - Show current date/time\n" +
-      "  neofetch       - System information\n\n" +
+      "  help            - Show available commands\n" +
+      "  whoami          - Display current user\n" +
+      "  ls              - List directory contents\n" +
+      "  cat [file]      - Display file contents\n" +
+      "  skill [name]    - Skill proficiency details\n" +
+      "  about           - About Harshith\n" +
+      "  neofetch        - System information\n" +
+      "  uptime          - Portfolio uptime & status\n" +
+      "  docker ps       - Running project services\n" +
+      "  terraform plan  - Infrastructure overview\n" +
+      "  date            - Current date/time\n" +
+      "  clear           - Clear the terminal\n" +
+      "  explore         - Continue to portfolio\n\n" +
       "Shortcuts: Tab = autocomplete, Ctrl+L = clear, Ctrl+C = cancel, \u2191/\u2193 = history",
 
     whoami: () => "prospective-employer",
 
     ls: () =>
-      "skills.txt    projects.json    about.md    experience.log",
+      "skills.txt  projects.json  about.md  experience.log  certs.yaml",
 
     cat: (args) => {
       if (!args) return "Usage: cat [file]\nAvailable files: " + FILE_NAMES.join(", ");
       const file = args.trim();
 
       if (file === "skills.txt") {
-        return "\u2022 Cloud Infrastructure (AWS, Azure, GCP)\n" +
-          "\u2022 Infrastructure as Code (Terraform, CloudFormation)\n" +
-          "\u2022 Containerization (Docker, Kubernetes)\n" +
-          "\u2022 CI/CD (Jenkins, GitHub Actions)\n" +
-          "\u2022 Scripting (Python, Bash)\n" +
-          "\u2022 Monitoring & Observability (Prometheus, Grafana)";
+        return "\u2022 Languages:    Python | Java | Bash | JavaScript | SQL\n" +
+          "\u2022 Cloud:        AWS (EC2, S3, Lambda, ECS, VPC, CloudWatch)\n" +
+          "\u2022 IaC:          Terraform | CloudFormation\n" +
+          "\u2022 Containers:   Docker | ECS Fargate | Nginx\n" +
+          "\u2022 CI/CD:        CodePipeline | GitHub Actions | CodeBuild\n" +
+          "\u2022 Tools:        Flask | Git | Linux/Unix | PostgreSQL";
       }
 
       if (file === "projects.json") {
         return '{\n' +
           '  "projects": [\n' +
           '    {\n' +
-          '      "name": "Auto-scaling Microservice Platform",\n' +
-          '      "tech": ["Kubernetes", "Terraform", "AWS", "Prometheus"]\n' +
+          '      "name": "AEROSEC — Aviation Cybersecurity Platform",\n' +
+          '      "tech": ["NIST CSF 2.0", "API Security", "AI/ML", "Risk Analytics"]\n' +
           '    },\n' +
           '    {\n' +
-          '      "name": "CI/CD Pipeline Automation",\n' +
-          '      "tech": ["Jenkins", "Docker", "GitLab", "Ansible"]\n' +
+          '      "name": "AWS CI/CD Microservices Architecture",\n' +
+          '      "tech": ["ECS Fargate", "CodePipeline", "CloudFormation", "Docker"]\n' +
           '    },\n' +
           '    {\n' +
-          '      "name": "Cloud Cost Optimization Tool",\n' +
-          '      "tech": ["Python", "AWS SDK", "Lambda", "DynamoDB"]\n' +
+          '      "name": "Cross-Account CI/CD Multi-Tenancy",\n' +
+          '      "tech": ["AWS", "KMS", "ECR", "CloudFormation"]\n' +
+          '    },\n' +
+          '    {\n' +
+          '      "name": "Cloud-Deployed Portfolio",\n' +
+          '      "tech": ["Lambda", "S3", "CloudFront", "Terraform"]\n' +
           '    }\n' +
           '  ]\n' +
           '}';
@@ -103,14 +110,33 @@ export default function Welcome() {
         return "# Harshith Siddardha Manne\n\n" +
           "Cloud & DevOps Engineer passionate about building resilient, scalable\n" +
           "infrastructure and optimizing development workflows.\n\n" +
-          "With extensive experience in AWS, Kubernetes, and automation tools,\n" +
-          "I help organizations implement robust DevOps practices and cloud-native solutions.";
+          "MS in Information Technology at Arizona State University (4.0 GPA).\n" +
+          "Experienced with AWS, Terraform, Docker, and CI/CD automation.";
       }
 
       if (file === "experience.log") {
-        return "2023-Present: Senior DevOps Engineer at CloudScale Solutions\n" +
-          "2020-2023: Cloud Infrastructure Engineer at TechInnovate\n" +
-          "2018-2020: Systems Administrator at DataCorp";
+        return "[2023-2024] Associate Data Scientist \u2014 Deep Algorithms & Solutions\n" +
+          "            45% deployment efficiency | 99.9% uptime | AWS + Terraform + Docker\n\n" +
+          "[2023]      Software Dev Intern \u2014 Backflipt Xenovous\n" +
+          "            Java/Spring Boot backend | React Native | Redux\n\n" +
+          "[2021-2022] Data Science Intern \u2014 Deep Algorithms & Solutions\n" +
+          "            15+ AWS services explored | 30% automation gains | Python + Flask";
+      }
+
+      if (file === "certs.yaml") {
+        return "certifications:\n" +
+          "  - name: AWS Cloud Security Foundations\n" +
+          "    issuer: Amazon Web Services\n" +
+          "    date: Oct 2025\n\n" +
+          "  - name: AWS Cloud Operations\n" +
+          "    issuer: Amazon Web Services\n" +
+          "    date: Oct 2025\n\n" +
+          "  - name: AWS Cloud Architecting\n" +
+          "    issuer: Amazon Web Services\n" +
+          "    date: Apr 2025\n\n" +
+          "  - name: AWS Cloud Practitioner (Cloud Quest)\n" +
+          "    issuer: Amazon Web Services\n" +
+          "    date: Dec 2024";
       }
 
       return `cat: ${file}: No such file or directory`;
@@ -126,14 +152,14 @@ export default function Welcome() {
       const skill = args.trim().toLowerCase();
 
       const skills: Record<string, string> = {
-        aws: "AWS: \u2b50\u2b50\u2b50\u2b50\u2b50\nExpert in EC2, S3, Lambda, ECS, EKS, CloudFormation, and AWS architecture design.",
-        kubernetes: "Kubernetes: \u2b50\u2b50\u2b50\u2b50\nExperienced in cluster management, deployment strategies, and Helm.",
-        terraform: "Terraform: \u2b50\u2b50\u2b50\u2b50\u2b50\nInfrastructure as Code specialist with multi-cloud deployment expertise.",
-        docker: "Docker: \u2b50\u2b50\u2b50\u2b50\u2b50\nContainer expert with experience in multi-stage builds and optimization.",
-        jenkins: "Jenkins: \u2b50\u2b50\u2b50\u2b50\nCI/CD pipeline architecture and implementation specialist.",
-        python: "Python: \u2b50\u2b50\u2b50\u2b50\nAutomation scripting, AWS SDK, and infrastructure tooling.",
-        ansible: "Ansible: \u2b50\u2b50\u2b50\u2b50\nConfiguration management and infrastructure automation.",
-        prometheus: "Prometheus: \u2b50\u2b50\u2b50\nMetrics collection, alerting, and monitoring solutions.",
+        aws: "AWS  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 5/5\nEC2, S3, Lambda, ECS, VPC, CloudWatch, CodePipeline, CloudTrail, IAM",
+        terraform: "Terraform  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 5/5\nMulti-resource IaC: Lambda, S3, CloudFront, API Gateway, VPC provisioning",
+        docker: "Docker  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588 5/5\nMulti-stage builds, ECS Fargate deployments, Nginx reverse proxy containers",
+        python: "Python  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591 4/5\nFlask REST APIs, automation scripts, AWS SDK (boto3), data pipelines",
+        cloudformation: "CloudFormation  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591 4/5\n3-tier VPC stacks, ECS services, cross-account pipeline orchestration",
+        cicd: "CI/CD  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591 4/5\nCodePipeline, GitHub Actions, CodeBuild, zero-touch deployments",
+        flask: "Flask  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591 4/5\nREST APIs, Lambda deployment via Mangum, JWT auth, MongoDB integration",
+        linux: "Linux  \u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2591\u2591\u2591\u2591 4/5\nBash scripting, system administration, log parsing, cron automation",
       };
 
       return skills[skill] || `Skill '${args}' not found. Try: ${SKILL_NAMES.join(", ")}`;
@@ -146,12 +172,10 @@ export default function Welcome() {
     },
 
     about: () => {
-      return "Harshith Siddardha Manne is a Cloud & DevOps Engineer with expertise in\n" +
-        "building and maintaining scalable, reliable infrastructure.\n\n" +
-        "With a passion for automation and continuous improvement,\n" +
-        "Harshith specializes in cloud architecture, containerization,\n" +
-        "and creating efficient CI/CD pipelines.\n\n" +
-        "Type 'explore' to learn more about Harshith's work.";
+      return "Cloud & DevOps Engineer | MS in IT @ Arizona State University (4.0 GPA)\n\n" +
+        "Building production AWS infrastructure with Terraform, Docker, and CI/CD\n" +
+        "pipelines. 4 AWS certifications. 5+ deployed projects.\n\n" +
+        "Type 'explore' to see the full portfolio.";
     },
 
     date: () => {
@@ -162,13 +186,48 @@ export default function Welcome() {
       return "        _____          visitor@portfolio\n" +
         "       /     \\         -----------------\n" +
         "      | () () |        OS: Portfolio Linux x86_64\n" +
-        "       \\  ^  /         Host: Harshith's Cloud\n" +
+        "       \\  ^  /         Host: AWS Cloud (us-west-2)\n" +
         "        |||||          Kernel: DevOps 5.15.0\n" +
-        "        |||||          Uptime: always on\n" +
+        "        |||||          Uptime: 99.9%\n" +
         "                       Shell: portfolio-bash\n" +
-        "  Cloud & DevOps       Terminal: portfolio-terminal\n" +
-        "    Engineer           CPU: Innovation @ 100%\n" +
-        "                       Memory: Unlimited Ideas";
+        "  Cloud & DevOps       Infra: Terraform + Docker\n" +
+        "    Engineer           CI/CD: GitHub Actions\n" +
+        "                       Stack: React + Flask + AWS";
+    },
+
+    uptime: () => {
+      const deployed = new Date('2024-12-01');
+      const now = new Date();
+      const days = Math.floor((now.getTime() - deployed.getTime()) / (1000 * 60 * 60 * 24));
+      return ` ${now.toLocaleTimeString()} up ${days} days\n` +
+        " Portfolio deployed: December 2024\n" +
+        " Status: \u25cf Running (99.9% uptime)\n" +
+        " Infra:  Terraform-managed | GitHub Actions CI/CD";
+    },
+
+    docker: (args) => {
+      if (args?.trim() === 'ps') {
+        return "CONTAINER ID   IMAGE                    STATUS    PORTS      NAMES\n" +
+          "a1b2c3d4e5f6   aerosec:latest           Up 2mo    443/tcp    aerosec-platform\n" +
+          "f6e5d4c3b2a1   microservices-cicd:1.0   Up 9mo    80/tcp     aws-microservices\n" +
+          "b2c3d4e5f6a1   cross-account:1.0        Up 9mo    80/tcp     multi-tenant-cicd\n" +
+          "c3d4e5f6a1b2   portfolio:latest          Up 14mo   443/tcp    cloud-portfolio\n" +
+          "d4e5f6a1b2c3   slate:0.9-beta           Up 13mo   3000/tcp   slate-environments";
+      }
+      return `docker: '${args || ''}' is not a docker command.\nTry: docker ps`;
+    },
+
+    terraform: (args) => {
+      if (args?.trim() === 'plan') {
+        return "aws_lambda_function.api: Refreshing state...\n" +
+          "aws_s3_bucket.frontend: Refreshing state...\n" +
+          "aws_cloudfront_distribution.cdn: Refreshing state...\n\n" +
+          "No changes. Your infrastructure matches the configuration.\n\n" +
+          "  \u2713 12 resources managed (Lambda, S3, CloudFront, API GW, Route53...)\n" +
+          "  \u2713 0 to add, 0 to change, 0 to destroy\n" +
+          "  \u2713 State: s3://portfolio-terraform-state";
+      }
+      return `Usage: terraform plan`;
     }
   };
 
@@ -471,8 +530,8 @@ export default function Welcome() {
                 <div className="mt-4 font-mono text-xs md:text-sm text-left p-3 rounded-md bg-secondary/50 dark:bg-black/70 border border-border">
                   <div className="text-primary mb-2">// Quick start:</div>
                   <div className="text-muted-foreground">Type <span className="text-amber-500 dark:text-amber-300">'help'</span> to see all commands</div>
-                  <div className="text-muted-foreground">Try <span className="text-amber-500 dark:text-amber-300">'cat about.md'</span> or <span className="text-amber-500 dark:text-amber-300">'neofetch'</span></div>
-                  <div className="text-muted-foreground">Press <span className="text-amber-500 dark:text-amber-300">Tab</span> to autocomplete commands</div>
+                  <div className="text-muted-foreground">Try <span className="text-amber-500 dark:text-amber-300">'docker ps'</span> or <span className="text-amber-500 dark:text-amber-300">'terraform plan'</span></div>
+                  <div className="text-muted-foreground">Run <span className="text-amber-500 dark:text-amber-300">'cat skills.txt'</span> or <span className="text-amber-500 dark:text-amber-300">'neofetch'</span></div>
                   <div className="text-muted-foreground">Use <span className="text-amber-500 dark:text-amber-300">'explore'</span> to continue to portfolio</div>
                 </div>
               </div>

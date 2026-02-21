@@ -122,8 +122,8 @@ export default function About() {
   const stats = [
     { value: 2, label: 'Years Experience', suffix: '+', icon: Clock },
     { value: 15, label: 'AWS Services', suffix: '+', icon: Cloud },
-    { value: 45, label: 'Efficiency Gain', suffix: '%', icon: Zap },
-    { value: 100, label: 'Code Coverage', suffix: '%', icon: Target }
+    { value: 45, label: 'CI/CD Efficiency Gain', suffix: '%', icon: Zap },
+    { value: 5, label: 'Projects Deployed', suffix: '+', icon: Target }
   ];
 
   return (

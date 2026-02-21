@@ -719,8 +719,8 @@ export default function Projects() {
               Projects
             </h2>
             <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto mb-4 md:mb-6 px-4">
-              Showcasing real-world applications of cloud infrastructure, DevOps automation,
-              and modern deployment practices
+              Production systems built with AWS, infrastructure as code,
+              and modern CI/CD pipelines
             </p>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>

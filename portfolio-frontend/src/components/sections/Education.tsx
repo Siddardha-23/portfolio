@@ -170,7 +170,7 @@ export default function Education() {
               Education
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto mb-6">
-              My academic foundation in technology and computer science
+              MS in Information Technology (ASU) and BS in Computer Science (JNTU)
             </p>
             <div className="w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>

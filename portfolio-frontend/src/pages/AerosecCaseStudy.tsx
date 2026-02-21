@@ -335,7 +335,7 @@ export default function AerosecCaseStudy() {
                         viewport={{ once: true }}
                         className="mt-6 text-center text-sm text-muted-foreground italic max-w-2xl mx-auto"
                     >
-                        I transitioned from a DevOps engineer who builds and deploys secure systems &mdash; to a business-outcome-driven systems thinker who aligns architecture with regulatory frameworks, maps threats to financial impact, and connects technical security to executive decision-making.
+                        I transitioned from a DevOps engineer who builds and deploys secure systems to a business-outcome-driven systems thinker. I now align architecture with regulatory frameworks, map threats to financial impact, and connect technical security to executive decision-making.
                     </motion.p>
                 </section>
 
@@ -346,7 +346,7 @@ export default function AerosecCaseStudy() {
                         badge="Solution"
                         badgeIcon={<Activity className="h-3 w-3" />}
                         title="AEROSEC &mdash; Real-Time Third-Party Vendor Cyber Risk Dashboard"
-                        subtitle="Complete visibility into the security posture of every third-party integration touching passenger-facing airline systems."
+                        subtitle="Complete visibility into the security posture of every third-party integration connected to passenger-facing airline systems."
                     />
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         {[
@@ -444,7 +444,7 @@ export default function AerosecCaseStudy() {
                                 icon: <Eye className="h-5 w-5" />
                             },
                             {
-                                title: "Supply Chain Risk Mgmt",
+                                title: "Supply Chain Risk Management",
                                 desc: "Systematic assessment and continuous monitoring of vendor security posture aligned with NIST CSF Governance function.",
                                 color: "#D946EF",
                                 icon: <Network className="h-5 w-5" />

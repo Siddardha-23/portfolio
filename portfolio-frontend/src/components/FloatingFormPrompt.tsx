@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { FaRegHandPaper, FaArrowRight, FaTimes } from 'react-icons/fa';
+import { FaRegHandPaper, FaArrowRight } from 'react-icons/fa';
 import { X } from 'lucide-react';
 import { apiService } from '@/lib/api';
 import { getVisitorFingerprint, getSessionIdSync } from '@/hooks/useVisitorTracking';
@@ -122,6 +122,7 @@ export default function FloatingFormPrompt() {
                             {/* Dismiss button */}
                             <button
                                 onClick={handleDismiss}
+                                aria-label="Dismiss"
                                 className="absolute -top-2 -right-2 z-10 w-6 h-6 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                             >
                                 <X className="h-3 w-3" />
@@ -138,7 +139,7 @@ export default function FloatingFormPrompt() {
                                 >
                                     <FaRegHandPaper className="mr-2" />
                                 </motion.div>
-                                <span className="text-sm font-medium">Say Hello!</span>
+                                <span className="text-sm font-medium">Introduce Yourself</span>
                             </Button>
 
                             {/* Tooltip bubble */}
@@ -149,7 +150,7 @@ export default function FloatingFormPrompt() {
                                 className="absolute right-full mr-3 top-1/2 -translate-y-1/2 whitespace-nowrap"
                             >
                                 <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-sm text-foreground">
-                                    👋 Introduce yourself!
+                                    Tell me about yourself
                                     <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 w-2 h-2 bg-card border-r border-b border-border rotate-[-45deg]" />
                                 </div>
                             </motion.div>
@@ -196,13 +197,14 @@ export default function FloatingFormPrompt() {
                                             variant="ghost"
                                             size="icon"
                                             onClick={() => setIsFormOpen(false)}
+                                            aria-label="Close form"
                                             className="rounded-full text-muted-foreground hover:text-foreground"
                                         >
-                                            <FaTimes />
+                                            <X className="h-4 w-4" />
                                         </Button>
                                     </div>
                                     <CardDescription className="text-muted-foreground">
-                                        Let me personalize your experience
+                                        Personalize your portfolio experience
                                     </CardDescription>
                                 </CardHeader>
 

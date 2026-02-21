@@ -205,7 +205,7 @@ export default function VisitorShowcase() {
                         transition={{ delay: 0.5 }}
                     >
                         <p className="text-sm text-muted-foreground italic">
-                            "Join the professionals who have discovered exceptional DevOps talent"
+                            Trusted by professionals across leading organizations
                         </p>
                     </motion.div>
                 </div>

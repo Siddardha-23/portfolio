@@ -90,6 +90,50 @@ resource "aws_ssm_parameter" "gemini_api_key" {
 }
 
 # -----------------------------------------------------------------------------
+# JSearch API Key (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "jsearch_api_key" {
+  count       = var.jsearch_api_key != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/jsearch-api-key"
+  description = "JSearch RapidAPI key for job search"
+  type        = "SecureString"
+  value       = var.jsearch_api_key
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-jsearch-api-key"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Job Search Password Hash (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "job_search_password_hash" {
+  count       = var.job_search_password_hash != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/job-search-password-hash"
+  description = "Bcrypt hash of the job search dashboard password"
+  type        = "SecureString"
+  value       = var.job_search_password_hash
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-job-search-password-hash"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Non-sensitive Configuration (String - not encrypted)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "allowed_origins" {
@@ -125,11 +169,13 @@ output "ssm_parameter_paths" {
   description = "SSM Parameter Store paths"
   sensitive   = true
   value = {
-    mongodb_uri     = aws_ssm_parameter.mongodb_uri.name
-    jwt_secret      = aws_ssm_parameter.jwt_secret.name
-    ipinfo_token    = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
-    gemini_api_key  = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
-    allowed_origins = aws_ssm_parameter.allowed_origins.name
-    environment     = aws_ssm_parameter.environment.name
+    mongodb_uri              = aws_ssm_parameter.mongodb_uri.name
+    jwt_secret               = aws_ssm_parameter.jwt_secret.name
+    ipinfo_token             = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
+    gemini_api_key           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
+    jsearch_api_key          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
+    job_search_password_hash = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
+    allowed_origins          = aws_ssm_parameter.allowed_origins.name
+    environment              = aws_ssm_parameter.environment.name
   }
 }

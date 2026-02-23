@@ -108,7 +108,11 @@ def create_app():
     # AI Chatbot module
     from blueprints.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
-    
+
+    # Job Search module
+    from blueprints.jobs import jobs_bp
+    app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
+
     # Health check endpoint
     @app.route('/api/health')
     def health():
@@ -150,6 +154,10 @@ def create_app():
                 'chat': {
                     'prefix': '/api/chat',
                     'description': 'AI chatbot powered by Gemini'
+                },
+                'jobs': {
+                    'prefix': '/api/jobs',
+                    'description': 'Job search dashboard'
                 }
             }
         }, 200

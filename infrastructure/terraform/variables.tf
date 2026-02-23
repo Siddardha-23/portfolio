@@ -56,6 +56,20 @@ variable "gemini_api_key" {
   default     = ""
 }
 
+variable "jsearch_api_key" {
+  description = "JSearch RapidAPI key for job search"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "job_search_password_hash" {
+  description = "Bcrypt hash of the job search dashboard password"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "lambda_memory_size" {
   description = "Lambda function memory size in MB"
   type        = number

@@ -102,3 +102,21 @@ class GeminiConfig(object):
     @property
     def GEMINI_API_KEY(cls):
         return _get_config_value('GEMINI_API_KEY', '')
+
+
+class JSearchConfig(object):
+    """Configuration for JSearch (RapidAPI) job search API"""
+
+    @classmethod
+    @property
+    def JSEARCH_API_KEY(cls):
+        return _get_config_value('JSEARCH_API_KEY', '')
+
+
+class JobSearchAuthConfig(object):
+    """Configuration for job search password authentication"""
+
+    @classmethod
+    @property
+    def JOB_SEARCH_PASSWORD_HASH(cls):
+        return _get_config_value('JOB_SEARCH_PASSWORD_HASH', '')

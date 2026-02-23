@@ -91,6 +91,8 @@ def get_all_secrets() -> Dict[str, str]:
         'JWT_SECRET_KEY': os.getenv('SSM_JWT_SECRET'),
         'IPINFO_TOKEN': os.getenv('SSM_IPINFO_TOKEN'),
         'GEMINI_API_KEY': os.getenv('SSM_GEMINI_API_KEY'),
+        'JSEARCH_API_KEY': os.getenv('SSM_JSEARCH_API_KEY'),
+        'JOB_SEARCH_PASSWORD_HASH': os.getenv('SSM_JOB_SEARCH_PASSWORD_HASH'),
     }
     
     # Filter out empty values
@@ -186,6 +188,14 @@ class SSMConfig:
     @property
     def GEMINI_API_KEY(self) -> Optional[str]:
         return self._get('GEMINI_API_KEY', 'GEMINI_API_KEY')
+
+    @property
+    def JSEARCH_API_KEY(self) -> Optional[str]:
+        return self._get('JSEARCH_API_KEY', 'JSEARCH_API_KEY')
+
+    @property
+    def JOB_SEARCH_PASSWORD_HASH(self) -> Optional[str]:
+        return self._get('JOB_SEARCH_PASSWORD_HASH', 'JOB_SEARCH_PASSWORD_HASH')
 
     @property
     def ALLOWED_ORIGINS(self) -> str:

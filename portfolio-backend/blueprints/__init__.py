@@ -31,6 +31,17 @@ This package contains Flask blueprints organized in a microservice-like pattern:
 
 - chat.py: AI chatbot
     POST /api/chat
+
+- jobs.py: Job search dashboard
+    POST /api/jobs/auth
+    GET  /api/jobs/search
+    POST /api/jobs/analyze
+    POST /api/jobs/resume
+    GET  /api/jobs/resume
+    GET  /api/jobs/saved
+    POST /api/jobs/saved
+    PUT  /api/jobs/saved/:id
+    DELETE /api/jobs/saved/:id
 """
 
 from .auth import auth_bp
@@ -39,5 +50,6 @@ from .info import info_bp
 from .session import session_bp
 from .geolocation import geo_bp
 from .chat import chat_bp
+from .jobs import jobs_bp
 
-__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp', 'chat_bp']
+__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp', 'chat_bp', 'jobs_bp']

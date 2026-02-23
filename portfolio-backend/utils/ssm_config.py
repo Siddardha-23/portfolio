@@ -90,6 +90,7 @@ def get_all_secrets() -> Dict[str, str]:
         'MONGODB_URI': os.getenv('SSM_MONGODB_URI'),
         'JWT_SECRET_KEY': os.getenv('SSM_JWT_SECRET'),
         'IPINFO_TOKEN': os.getenv('SSM_IPINFO_TOKEN'),
+        'GEMINI_API_KEY': os.getenv('SSM_GEMINI_API_KEY'),
     }
     
     # Filter out empty values
@@ -181,7 +182,11 @@ class SSMConfig:
     @property
     def IPINFO_TOKEN(self) -> Optional[str]:
         return self._get('IPINFO_TOKEN', 'IPINFO_TOKEN')
-    
+
+    @property
+    def GEMINI_API_KEY(self) -> Optional[str]:
+        return self._get('GEMINI_API_KEY', 'GEMINI_API_KEY')
+
     @property
     def ALLOWED_ORIGINS(self) -> str:
         return os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:3000')

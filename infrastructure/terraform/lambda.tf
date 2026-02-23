@@ -97,6 +97,7 @@ resource "aws_lambda_function" "backend" {
       SSM_MONGODB_URI    = aws_ssm_parameter.mongodb_uri.name
       SSM_JWT_SECRET     = aws_ssm_parameter.jwt_secret.name
       SSM_IPINFO_TOKEN   = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : ""
+      SSM_GEMINI_API_KEY = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
       
       # Non-sensitive config (can be in env vars)
       ENVIRONMENT        = var.environment

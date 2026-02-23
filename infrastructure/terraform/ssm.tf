@@ -68,6 +68,28 @@ resource "aws_ssm_parameter" "ipinfo_token" {
 }
 
 # -----------------------------------------------------------------------------
+# Gemini API Key (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "gemini_api_key" {
+  count       = var.gemini_api_key != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/gemini-api-key"
+  description = "Google Gemini API key for AI chatbot"
+  type        = "SecureString"
+  value       = var.gemini_api_key
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-gemini-api-key"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Non-sensitive Configuration (String - not encrypted)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "allowed_origins" {
@@ -106,6 +128,7 @@ output "ssm_parameter_paths" {
     mongodb_uri     = aws_ssm_parameter.mongodb_uri.name
     jwt_secret      = aws_ssm_parameter.jwt_secret.name
     ipinfo_token    = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
+    gemini_api_key  = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
     allowed_origins = aws_ssm_parameter.allowed_origins.name
     environment     = aws_ssm_parameter.environment.name
   }

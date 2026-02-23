@@ -28,6 +28,9 @@ This package contains Flask blueprints organized in a microservice-like pattern:
     POST /api/geo/lookup
     GET  /api/geo/my-ip
     GET  /api/geo/stats (protected)
+
+- chat.py: AI chatbot
+    POST /api/chat
 """
 
 from .auth import auth_bp
@@ -35,5 +38,6 @@ from .contact import contact_bp
 from .info import info_bp
 from .session import session_bp
 from .geolocation import geo_bp
+from .chat import chat_bp
 
-__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp']
+__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp', 'chat_bp']

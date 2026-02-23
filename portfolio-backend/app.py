@@ -43,6 +43,7 @@ def create_app():
         - info.py: Visitor tracking and analytics
         - session.py: Session management
         - geolocation.py: IP geolocation services
+        - chat.py: AI chatbot (Gemini)
     
     - services/: Business logic layer (service classes)
         - session_service.py: Session management logic
@@ -103,6 +104,10 @@ def create_app():
     # IP Geolocation module
     from blueprints.geolocation import geo_bp
     app.register_blueprint(geo_bp, url_prefix='/api/geo')
+
+    # AI Chatbot module
+    from blueprints.chat import chat_bp
+    app.register_blueprint(chat_bp, url_prefix='/api/chat')
     
     # Health check endpoint
     @app.route('/api/health')
@@ -141,6 +146,10 @@ def create_app():
                 'geo': {
                     'prefix': '/api/geo',
                     'description': 'IP geolocation services'
+                },
+                'chat': {
+                    'prefix': '/api/chat',
+                    'description': 'AI chatbot powered by Gemini'
                 }
             }
         }, 200

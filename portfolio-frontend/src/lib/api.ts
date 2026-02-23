@@ -362,6 +362,17 @@ class ApiService {
   }
 
   // ============================================
+  // Chat endpoints (/api/chat)
+  // ============================================
+
+  async sendChatMessage(message: string, history?: Array<{ role: string; content: string }>) {
+    return this.request<{ response: string; success: boolean }>('/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, history }),
+    });
+  }
+
+  // ============================================
   // Health check
   // ============================================
 

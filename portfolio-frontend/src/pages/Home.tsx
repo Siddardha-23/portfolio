@@ -8,6 +8,7 @@ import Projects from '@/components/sections/Projects';
 import Contact from '@/components/sections/Contact';
 import Footer from '@/components/Footer';
 import FloatingFormPrompt from '@/components/FloatingFormPrompt';
+import Chatbot from '@/components/Chatbot';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
 import { lazy, Suspense, useEffect } from 'react';
@@ -57,6 +58,7 @@ export default function Home() {
 
       <Footer />
       <FloatingFormPrompt />
+      <Chatbot />
       <Suspense fallback={null}>
         <VisitorGlobe />
       </Suspense>

@@ -49,6 +49,13 @@ variable "ipinfo_token" {
   default     = ""
 }
 
+variable "gemini_api_key" {
+  description = "Google Gemini API key for AI chatbot"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "lambda_memory_size" {
   description = "Lambda function memory size in MB"
   type        = number

@@ -35,6 +35,12 @@ output "lambda_function_arn" {
   value       = aws_lambda_function.backend.arn
 }
 
+# Lambda Function URL (for resume endpoints, bypasses API Gateway timeout)
+output "lambda_function_url" {
+  description = "Lambda Function URL (used by CloudFront for /api/resume/*)"
+  value       = aws_lambda_function_url.backend.function_url
+}
+
 # API Gateway
 output "api_gateway_url" {
   description = "API Gateway endpoint URL"

@@ -14,6 +14,28 @@ import type {
   ResumeStatus,
 } from '@/types/resume';
 
+const RESUME_STATUS_CACHE_KEY = 'resume_parser_status';
+
+function getCachedResumeStatus(): ResumeStatus | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(RESUME_STATUS_CACHE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as ResumeStatus;
+    return data?.has_resume ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+function setCachedResumeStatus(status: ResumeStatus | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (status?.has_resume) localStorage.setItem(RESUME_STATUS_CACHE_KEY, JSON.stringify(status));
+    else localStorage.removeItem(RESUME_STATUS_CACHE_KEY);
+  } catch { /* ignore */ }
+}
+
 // ---------------------------------------------------------------------------
 // Password gate (same mechanism as job-search)
 // ---------------------------------------------------------------------------
@@ -423,7 +445,8 @@ function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
 // ---------------------------------------------------------------------------
 
 function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
-  const [resumeStatus, setResumeStatus] = useState<ResumeStatus | null>(null);
+  // Initialize from cache so cloud shows "Resume Ready" immediately when we have it (same as local)
+  const [resumeStatus, setResumeStatus] = useState<ResumeStatus | null>(() => getCachedResumeStatus());
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
@@ -440,11 +463,20 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
 
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
 
-  // Load resume status
+  // Load resume status from API; use cache so cloud behaves like local when API fails or is slow
   useEffect(() => {
     apiService.getResumeStatus().then(resp => {
-      if (resp.data) setResumeStatus(resp.data);
       setLoadingStatus(false);
+      if (resp.data?.has_resume) {
+        setResumeStatus(resp.data);
+        setCachedResumeStatus(resp.data);
+      } else if (resp.data && resp.data.has_resume === false) {
+        setResumeStatus(resp.data);
+        setCachedResumeStatus(null);
+      } else if (resp.error && !resp.error.includes('401') && !resp.error.includes('Session expired')) {
+        // API failed (network/500) — keep cached status so we still show "Resume Ready" if we had it
+        if (!getCachedResumeStatus()) setResumeStatus({ has_resume: false });
+      }
     });
   }, []);
 
@@ -467,21 +499,26 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
       if (resp.error.includes('Session expired') && onSessionExpired) onSessionExpired();
       return;
     }
-    // Set status from upload response so UI updates even if getResumeStatus fails (e.g. deployed env)
+    // Set status from upload response and cache it so cloud shows "Resume Ready" like local
     if (resp.data?.resume) {
       const r = resp.data.resume;
-      setResumeStatus({
+      const next: ResumeStatus = {
         has_resume: true,
         skills: r.skills,
         experience_years: r.experience_years,
         job_titles: r.job_titles,
         summary: r.summary,
         parsed_at: r.parsed_at,
-      });
+      };
+      setResumeStatus(next);
+      setCachedResumeStatus(next);
     }
-    // Also refresh from server in case parsed_at etc. differ
+    // Refresh from server when possible
     const statusResp = await apiService.getResumeStatus();
-    if (statusResp.data) setResumeStatus(statusResp.data);
+    if (statusResp.data) {
+      setResumeStatus(statusResp.data);
+      setCachedResumeStatus(statusResp.data);
+    }
   }, [onSessionExpired]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -563,6 +600,7 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
 
   const handleLogout = () => {
     localStorage.removeItem('job_search_token');
+    localStorage.removeItem(RESUME_STATUS_CACHE_KEY);
     window.location.reload();
   };
 

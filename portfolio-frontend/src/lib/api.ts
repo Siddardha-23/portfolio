@@ -10,15 +10,12 @@
  * - /api/geo - IP geolocation
  */
 
-// Use build-time API URL; when on production origin but build points at localhost or is invalid (e.g. empty DOMAIN_NAME), use same origin
+// In browser on production (non-localhost), always use same origin so /api hits CloudFront regardless of build env.
+// This avoids API URL mismatch after infra changes (e.g. Lambda URL, domain).
 function getApiBaseUrl(): string {
   const build = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-  if (typeof window !== 'undefined') {
-    const origin = window.location.origin;
-    const buildInvalid = build.includes('localhost') || /^https:\/\/\/?api/.test(build);
-    if (origin && !origin.includes('localhost') && buildInvalid)
-      return `${origin}/api`;
-  }
+  if (typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost'))
+    return `${window.location.origin}/api`;
   return build;
 }
 const API_BASE_URL = getApiBaseUrl();

@@ -473,6 +473,8 @@ function Dashboard() {
   const [tailorStep, setTailorStep] = useState(0);
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
+  const [taskId, setTaskId] = useState<string | null>(null);
+  const [atsLoading, setAtsLoading] = useState(false);
 
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
 
@@ -519,18 +521,48 @@ function Dashboard() {
     setTailoring(true);
     setTailorError('');
     setResult(null);
+    setTaskId(null);
     setTailorStep(0);
 
     const resp = await apiService.tailorResumeFull(jdText.trim(), (step) => {
       setTailorStep(step);
     });
 
-    setTailorStep(3);
     setTailoring(false);
 
     if (resp.error) { setTailorError(resp.error); return; }
-    if (resp.data) setResult(resp.data);
+    if (resp.data) {
+      setResult(resp.data);
+      // If partial (no ATS yet), save task ID for on-demand refresh
+      if (resp.data.status === 'partial' && resp.data.task_id) {
+        setTaskId(resp.data.task_id);
+        setTailorStep(2);
+      } else {
+        setTailorStep(3);
+        setTaskId(null);
+      }
+    }
   }, [jdText]);
+
+  // Fetch ATS scores on demand
+  const handleRefreshATS = useCallback(async () => {
+    if (!taskId) return;
+    setAtsLoading(true);
+    const resp = await apiService.fetchTaskStatus(taskId);
+    setAtsLoading(false);
+
+    if (resp.data) {
+      if (resp.data.status === 'completed') {
+        setResult(resp.data);
+        setTaskId(null);
+        setTailorStep(3);
+      } else if (resp.data.status === 'failed') {
+        setTailorError('ATS scoring failed. Resume is still available for download.');
+        setTaskId(null);
+      }
+      // If still partial/processing, do nothing — user can try again
+    }
+  }, [taskId]);
 
   // Download handler
   const handleDownload = useCallback(async (format: 'pdf' | 'docx') => {
@@ -756,19 +788,43 @@ function Dashboard() {
               </button>
               <button
                 onClick={() => setActiveTab('ats')}
-                className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
+                className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
                   activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 ATS Analysis
+                {taskId && (
+                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                )}
               </button>
             </div>
 
             {/* Tabbed content */}
             {activeTab === 'preview' ? (
               <ResumePreview resume={result.tailored_resume} />
-            ) : (
+            ) : result.ats_scores ? (
               <ATSPanel scores={result.ats_scores} />
+            ) : (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                    <div className="text-center space-y-2">
+                      <p className="text-sm font-medium">ATS scores are being computed</p>
+                      <p className="text-xs text-muted-foreground">
+                        This may take a minute. Your tailored resume is ready for download in the meantime.
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleRefreshATS}
+                      disabled={atsLoading}
+                    >
+                      {atsLoading ? 'Checking...' : 'Check ATS Scores'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             )}
           </>
         )}

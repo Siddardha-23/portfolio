@@ -546,7 +546,7 @@ class ApiService {
   async tailorResumeFull(
     jobDescription: string,
     onProgress?: (step: number) => void,
-  ): Promise<ApiResponse<import('../types/resume').TailorPipelineResult>> {
+  ): Promise<ApiResponse<import('../types/resume').TailorPipelineResult & { status?: string; task_id?: string }>> {
     // Step 1: Start the async task
     const startResp = await this.jobRequest<{ task_id: string }>('/resume/tailor', {
       method: 'POST',
@@ -557,9 +557,9 @@ class ApiService {
     const taskId = startResp.data?.task_id;
     if (!taskId) return { error: 'Failed to start tailoring task' };
 
-    // Step 2: Poll for results
+    // Step 2: Poll until partial (JD + resume ready) or completed
     const POLL_INTERVAL = 3000;
-    const MAX_POLLS = 40; // 40 * 3s = 2 min max
+    const MAX_POLLS = 30; // 30 * 3s = 90s max for first 2 steps
 
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise(r => setTimeout(r, POLL_INTERVAL));
@@ -576,8 +576,9 @@ class ApiService {
         onProgress(data.step);
       }
 
-      if (data.status === 'completed') {
-        return { data };
+      // Return as soon as partial results (JD + tailored resume) or full results are ready
+      if (data.status === 'partial' || data.status === 'completed') {
+        return { data: { ...data, task_id: taskId } };
       }
 
       if (data.status === 'failed') {
@@ -586,6 +587,14 @@ class ApiService {
     }
 
     return { error: 'Tailoring timed out. Please try again.' };
+  }
+
+  async fetchTaskStatus(
+    taskId: string,
+  ): Promise<ApiResponse<import('../types/resume').TailorPipelineResult & { status: string }>> {
+    return this.jobRequest<
+      import('../types/resume').TailorPipelineResult & { status: string }
+    >(`/resume/tailor/${taskId}`);
   }
 
   async downloadTailoredResume(

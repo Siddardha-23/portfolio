@@ -338,9 +338,12 @@ class ResumeService:
             self.update_task(task_id, step=1)
         tailored = self.tailor_resume(raw_text, jd_analysis)
 
-        # Step 3: ATS scores
+        # Save partial result so frontend can show resume + downloads immediately
+        partial = {"jd_analysis": jd_analysis, "tailored_resume": tailored}
         if task_id:
-            self.update_task(task_id, step=2)
+            self.update_task(task_id, step=2, status="partial", result=partial)
+
+        # Step 3: ATS scores (runs in background, frontend fetches on demand)
         ats_scores = self.compute_ats_scores(tailored, jd_analysis)
 
         return {

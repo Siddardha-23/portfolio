@@ -105,6 +105,14 @@ def tailor_status(task_id):
             **result,
         }), 200
 
+    if task["status"] == "partial":
+        result = task.get("result", {})
+        return jsonify({
+            "status": "partial",
+            "step": 2,
+            **result,
+        }), 200
+
     if task["status"] == "failed":
         return jsonify({
             "status": "failed",

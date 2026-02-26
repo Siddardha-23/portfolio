@@ -543,11 +543,49 @@ class ApiService {
     }
   }
 
-  async tailorResumeFull(jobDescription: string) {
-    return this.jobRequest<import('../types/resume').TailorPipelineResult>('/resume/tailor', {
+  async tailorResumeFull(
+    jobDescription: string,
+    onProgress?: (step: number) => void,
+  ): Promise<ApiResponse<import('../types/resume').TailorPipelineResult>> {
+    // Step 1: Start the async task
+    const startResp = await this.jobRequest<{ task_id: string }>('/resume/tailor', {
       method: 'POST',
       body: JSON.stringify({ job_description: jobDescription }),
-    }, 120000);
+    });
+
+    if (startResp.error) return { error: startResp.error };
+    const taskId = startResp.data?.task_id;
+    if (!taskId) return { error: 'Failed to start tailoring task' };
+
+    // Step 2: Poll for results
+    const POLL_INTERVAL = 3000;
+    const MAX_POLLS = 40; // 40 * 3s = 2 min max
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise(r => setTimeout(r, POLL_INTERVAL));
+
+      const pollResp = await this.jobRequest<
+        import('../types/resume').TailorPipelineResult & { status: string; step?: number; error?: string }
+      >(`/resume/tailor/${taskId}`);
+
+      if (pollResp.error) return { error: pollResp.error };
+      const data = pollResp.data;
+      if (!data) continue;
+
+      if (data.step !== undefined && onProgress) {
+        onProgress(data.step);
+      }
+
+      if (data.status === 'completed') {
+        return { data };
+      }
+
+      if (data.status === 'failed') {
+        return { error: data.error || 'Tailoring failed. Please try again.' };
+      }
+    }
+
+    return { error: 'Tailoring timed out. Please try again.' };
   }
 
   async downloadTailoredResume(

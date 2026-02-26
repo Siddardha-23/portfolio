@@ -521,14 +521,10 @@ function Dashboard() {
     setResult(null);
     setTailorStep(0);
 
-    // Simulate step progress (the backend does all 3 steps in one call)
-    const stepTimer1 = setTimeout(() => setTailorStep(1), 4000);
-    const stepTimer2 = setTimeout(() => setTailorStep(2), 12000);
+    const resp = await apiService.tailorResumeFull(jdText.trim(), (step) => {
+      setTailorStep(step);
+    });
 
-    const resp = await apiService.tailorResumeFull(jdText.trim());
-
-    clearTimeout(stepTimer1);
-    clearTimeout(stepTimer2);
     setTailorStep(3);
     setTailoring(false);
 

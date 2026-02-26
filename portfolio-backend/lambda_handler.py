@@ -47,21 +47,47 @@ def get_handler():
     return _handler
 
 
+def _handle_async_resume_tailor(event):
+    """Process a resume tailoring task invoked asynchronously."""
+    task_id = event['task_id']
+    jd_text = event['jd_text']
+    logger.info(f"Async resume tailor task started: {task_id}")
+
+    # Bootstrap Flask app so DB connections and config are available
+    get_app()
+
+    from services.resume_service import get_resume_service
+    svc = get_resume_service()
+    try:
+        result = svc.full_tailor_pipeline(jd_text, task_id=task_id)
+        svc.update_task(task_id, status='completed', result=result)
+        logger.info(f"Async resume tailor task completed: {task_id}")
+    except Exception as e:
+        logger.error(f"Async resume tailor task failed ({task_id}): {e}", exc_info=True)
+        svc.update_task(task_id, status='failed', error=str(e))
+
+    return {'statusCode': 200}
+
+
 def handler(event, context):
     """
     AWS Lambda handler function.
 
-    This function is invoked by AWS Lambda for each incoming request
-    from API Gateway. It uses apig-wsgi to translate between Lambda/API Gateway
-    events and WSGI requests that Flask can understand.
+    Handles two types of invocations:
+    1. API Gateway HTTP API v2.0 events (normal web requests)
+    2. Async task events (fire-and-forget from Lambda self-invocation)
 
     Args:
-        event: AWS Lambda event (API Gateway HTTP API v2.0 format)
+        event: AWS Lambda event
         context: AWS Lambda context object
 
     Returns:
-        dict: HTTP response in API Gateway format
+        dict: HTTP response in API Gateway format, or simple status for async tasks
     """
+    # Route async task events before touching API Gateway handler
+    if event.get('_async_task') == 'resume_tailor':
+        return _handle_async_resume_tailor(event)
+
     try:
         # Log request info (be careful about sensitive data in production)
         if os.getenv('ENVIRONMENT') != 'prod':

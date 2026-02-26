@@ -127,16 +127,30 @@ jobs:
 
       - name: 📁 Prepare Lambda package
         run: |
+          # Remove packages already in Lambda runtime (saves ~60MB)
+          rm -rf package/boto3* package/botocore* package/s3transfer* package/urllib3/contrib/emscripten*
+
+          # Strip bloat: tests, caches, type stubs, dist-info metadata
+          find package -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+          find package -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+          find package -type d -name "test" -exec rm -rf {} + 2>/dev/null || true
+          find package -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+          find package -type f -name "*.pyc" -delete 2>/dev/null || true
+          find package -type f -name "*.pyo" -delete 2>/dev/null || true
+
           # Copy application code to package directory
           cp -r *.py package/ 2>/dev/null || true
           cp -r blueprints package/
           cp -r models package/
           cp -r services package/
           cp -r utils package/
-          
+
           # Create deployment zip
           cd package
           zip -r9 ../lambda-deployment.zip .
+
+          # Report final size
+          ls -lh ../lambda-deployment.zip
 
       - name: 🔑 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -147,10 +161,27 @@ jobs:
 
       - name: 🚀 Deploy to Lambda
         run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
-            --zip-file fileb://lambda-deployment.zip \
-            --publish
+          ZIP_SIZE=$(stat -c%s lambda-deployment.zip)
+          MAX_DIRECT=50000000  # 50MB threshold for direct upload
+
+          if [ "$ZIP_SIZE" -gt "$MAX_DIRECT" ]; then
+            echo "Package is $(( ZIP_SIZE / 1048576 ))MB — deploying via S3"
+            S3_KEY="lambda-deploy/lambda-deployment-${{ github.sha }}.zip"
+            aws s3 cp lambda-deployment.zip "s3://${{ secrets.S3_BUCKET_NAME }}/${S3_KEY}"
+            aws lambda update-function-code \
+              --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+              --s3-bucket ${{ secrets.S3_BUCKET_NAME }} \
+              --s3-key "${S3_KEY}" \
+              --publish
+            # Clean up the S3 object after deploy
+            aws s3 rm "s3://${{ secrets.S3_BUCKET_NAME }}/${S3_KEY}"
+          else
+            echo "Package is $(( ZIP_SIZE / 1048576 ))MB — deploying directly"
+            aws lambda update-function-code \
+              --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+              --zip-file fileb://lambda-deployment.zip \
+              --publish
+          fi
 
       - name: ⏳ Wait for Lambda update
         run: |

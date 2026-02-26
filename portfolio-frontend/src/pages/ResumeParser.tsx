@@ -431,6 +431,7 @@ function Dashboard() {
 
   const [jdText, setJdText] = useState('');
   const [tailoring, setTailoring] = useState(false);
+  const [tailorStep, setTailorStep] = useState<'jd' | 'resume'>('jd');
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
   const [atsLoading, setAtsLoading] = useState(false);
@@ -474,21 +475,30 @@ function Dashboard() {
     if (file) handleUpload(file);
   }, [handleUpload]);
 
-  // Tailor handler — synchronous, returns result directly
+  // Tailor handler — two sequential calls, one Gemini call each
   const handleTailor = useCallback(async () => {
     if (!jdText.trim()) return;
     setTailoring(true);
+    setTailorStep('jd');
     setTailorError('');
     setResult(null);
 
-    const resp = await apiService.tailorResume(jdText.trim());
+    // Step 1: Extract JD
+    const jdResp = await apiService.extractJD(jdText.trim());
+    if (jdResp.error) { setTailoring(false); setTailorError(jdResp.error); return; }
+    const jdAnalysis = jdResp.data?.jd_analysis;
+    if (!jdAnalysis) { setTailoring(false); setTailorError('Failed to analyze job description.'); return; }
+
+    // Step 2: Tailor resume
+    setTailorStep('resume');
+    const tailorResp = await apiService.tailorResume(jdAnalysis);
     setTailoring(false);
 
-    if (resp.error) { setTailorError(resp.error); return; }
-    if (resp.data) {
+    if (tailorResp.error) { setTailorError(tailorResp.error); return; }
+    if (tailorResp.data) {
       setResult({
-        jd_analysis: resp.data.jd_analysis,
-        tailored_resume: resp.data.tailored_resume,
+        jd_analysis: jdAnalysis,
+        tailored_resume: tailorResp.data.tailored_resume,
       });
     }
   }, [jdText]);
@@ -679,16 +689,18 @@ function Dashboard() {
           </Card>
         )}
 
-        {/* Tailoring spinner */}
+        {/* Tailoring spinner with step indicator */}
         {tailoring && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center justify-center py-6 space-y-4">
                 <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                 <div className="text-center space-y-1">
-                  <p className="text-sm font-medium">Tailoring in progress</p>
+                  <p className="text-sm font-medium">
+                    {tailorStep === 'jd' ? 'Analyzing job description...' : 'Tailoring your resume...'}
+                  </p>
                   <p className="text-xs text-muted-foreground">
-                    Analyzing job description and tailoring your resume. This takes 15-25 seconds.
+                    Step {tailorStep === 'jd' ? '1' : '2'} of 2
                   </p>
                 </div>
               </div>

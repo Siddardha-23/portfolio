@@ -543,13 +543,23 @@ class ApiService {
     }
   }
 
-  async tailorResume(
+  async extractJD(
     jobDescription: string,
-  ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis; tailored_resume: import('../types/resume').TailoredFullResume }>> {
-    return this.jobRequest<{ jd_analysis: import('../types/resume').JDAnalysis; tailored_resume: import('../types/resume').TailoredFullResume }>(
-      '/resume/tailor',
+  ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis }>> {
+    return this.jobRequest<{ jd_analysis: import('../types/resume').JDAnalysis }>(
+      '/resume/extract-jd',
       { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
-      60000,
+      30000,
+    );
+  }
+
+  async tailorResume(
+    jdAnalysis: import('../types/resume').JDAnalysis,
+  ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
+    return this.jobRequest<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
+      '/resume/tailor',
+      { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
+      30000,
     );
   }
 
@@ -560,7 +570,7 @@ class ApiService {
     return this.jobRequest<{ ats_scores: import('../types/resume').ATSScores }>(
       '/resume/ats-scores',
       { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
-      60000,
+      30000,
     );
   }
 

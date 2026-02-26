@@ -3,10 +3,11 @@ Resume blueprint — Resume tailoring, ATS scoring, and document generation endp
 
 Reuses the same JWT from /api/jobs/auth (job_search_token).
 
-All endpoints run synchronously — no async Lambda self-invocation or polling.
-The pipeline is split into two calls so each fits within API Gateway's 29s timeout:
-  1. POST /tailor  → extract JD + tailor resume (~15-25s)
-  2. POST /ats-scores → compute ATS scores (~10-15s)
+All endpoints run synchronously. Each endpoint makes a single Gemini call
+so it finishes well within API Gateway's 30-second integration timeout:
+  1. POST /extract-jd   → extract JD fields (~5-10s)
+  2. POST /tailor       → tailor resume using JD analysis (~10-15s)
+  3. POST /ats-scores   → compute ATS scores (~10-15s)
 """
 import io
 import logging
@@ -21,12 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
-# POST /api/resume/tailor — Extract JD + tailor resume (synchronous)
+# POST /api/resume/extract-jd — Extract structured fields from JD
 # ------------------------------------------------------------------
 
-@resume_bp.route("/tailor", methods=["POST"])
+@resume_bp.route("/extract-jd", methods=["POST"])
 @jwt_required()
-def tailor():
+def extract_jd():
     client_ip = get_client_ip(request)
     limiter = get_rate_limiter()
     if limiter.is_rate_limited(f"resume_tailor:{client_ip}", max_requests=10, window_seconds=300):
@@ -43,19 +44,41 @@ def tailor():
 
     try:
         from services.resume_service import get_resume_service
+        jd_analysis = get_resume_service().extract_jd(jd_text)
+        return jsonify({"jd_analysis": jd_analysis}), 200
+
+    except Exception as e:
+        logger.error(f"JD extraction error: {e}")
+        return jsonify({"error": "Failed to analyze job description. Please try again."}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailor — Tailor resume to JD (single Gemini call)
+# ------------------------------------------------------------------
+
+@resume_bp.route("/tailor", methods=["POST"])
+@jwt_required()
+def tailor():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"resume_tailor:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    jd_analysis = data.get("jd_analysis")
+    if not jd_analysis or not isinstance(jd_analysis, dict):
+        return jsonify({"error": "jd_analysis is required"}), 400
+
+    try:
+        from services.resume_service import get_resume_service
         svc = get_resume_service()
 
         resume = svc.get_base_resume()
         if not resume or not resume.get("raw_text"):
             return jsonify({"error": "No resume uploaded. Please upload your resume first."}), 404
 
-        jd_analysis = svc.extract_jd(jd_text)
         tailored = svc.tailor_resume(resume["raw_text"], jd_analysis)
-
-        return jsonify({
-            "jd_analysis": jd_analysis,
-            "tailored_resume": tailored,
-        }), 200
+        return jsonify({"tailored_resume": tailored}), 200
 
     except Exception as e:
         logger.error(f"Resume tailor error: {e}")

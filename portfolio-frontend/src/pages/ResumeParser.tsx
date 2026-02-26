@@ -433,7 +433,6 @@ function Dashboard() {
   const [tailoring, setTailoring] = useState(false);
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
-  const [taskId, setTaskId] = useState<string | null>(null);
   const [atsLoading, setAtsLoading] = useState(false);
 
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
@@ -475,53 +474,42 @@ function Dashboard() {
     if (file) handleUpload(file);
   }, [handleUpload]);
 
-  // Tailor handler — fire-and-forget, no polling
+  // Tailor handler — synchronous, returns result directly
   const handleTailor = useCallback(async () => {
     if (!jdText.trim()) return;
     setTailoring(true);
     setTailorError('');
     setResult(null);
-    setTaskId(null);
 
-    const resp = await apiService.startTailorTask(jdText.trim());
+    const resp = await apiService.tailorResume(jdText.trim());
     setTailoring(false);
 
     if (resp.error) { setTailorError(resp.error); return; }
-    if (resp.data?.task_id) {
-      setTaskId(resp.data.task_id);
+    if (resp.data) {
+      setResult({
+        jd_analysis: resp.data.jd_analysis,
+        tailored_resume: resp.data.tailored_resume,
+      });
     }
   }, [jdText]);
 
-  // Fetch task results on demand — single API call per click
-  const handleCheckStatus = useCallback(async () => {
-    if (!taskId) return;
+  // Fetch ATS scores on demand — separate synchronous call
+  const handleFetchATS = useCallback(async () => {
+    if (!result?.tailored_resume || !result?.jd_analysis) return;
     setAtsLoading(true);
-    const resp = await apiService.fetchTaskStatus(taskId);
+    setTailorError('');
+
+    const resp = await apiService.fetchATSScores(result.tailored_resume, result.jd_analysis);
     setAtsLoading(false);
 
-    if (resp.error) { setTailorError(resp.error); return; }
-    if (!resp.data) return;
-
-    const { status } = resp.data;
-
-    if (status === 'partial') {
-      // JD + tailored resume ready, ATS still computing
-      setResult(resp.data);
-    } else if (status === 'completed') {
-      // Everything ready
-      setResult(resp.data);
-      setTaskId(null);
-    } else if (status === 'failed') {
-      if (result) {
-        // Had partial results, only ATS failed
-        setTailorError('ATS scoring failed. Resume is still available for download.');
-      } else {
-        setTailorError(resp.data.ats_scores ? '' : 'Tailoring failed. Please try again.');
-      }
-      setTaskId(null);
+    if (resp.error) {
+      setTailorError('ATS scoring failed. Resume is still available for download.');
+      return;
     }
-    // If still "processing", do nothing — user can try again
-  }, [taskId, result]);
+    if (resp.data?.ats_scores) {
+      setResult(prev => prev ? { ...prev, ats_scores: resp.data!.ats_scores } : prev);
+    }
+  }, [result]);
 
   // Download handler
   const handleDownload = useCallback(async (format: 'pdf' | 'docx') => {
@@ -679,9 +667,9 @@ function Dashboard() {
                 <Button
                   size="sm"
                   onClick={handleTailor}
-                  disabled={!jdText.trim() || tailoring || (!!taskId && !result)}
+                  disabled={!jdText.trim() || tailoring}
                 >
-                  {tailoring ? 'Starting...' : 'Analyze & Tailor'}
+                  {tailoring ? 'Tailoring...' : 'Analyze & Tailor'}
                 </Button>
                 <span className="text-[10px] text-muted-foreground">
                   {jdText.length.toLocaleString()}/10,000
@@ -691,8 +679,8 @@ function Dashboard() {
           </Card>
         )}
 
-        {/* Processing — task started but no results yet */}
-        {taskId && !result && (
+        {/* Tailoring spinner */}
+        {tailoring && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center justify-center py-6 space-y-4">
@@ -700,17 +688,9 @@ function Dashboard() {
                 <div className="text-center space-y-1">
                   <p className="text-sm font-medium">Tailoring in progress</p>
                   <p className="text-xs text-muted-foreground">
-                    Your resume is being tailored. This usually takes 30-60 seconds.
+                    Analyzing job description and tailoring your resume. This takes 15-25 seconds.
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleCheckStatus}
-                  disabled={atsLoading}
-                >
-                  {atsLoading ? 'Checking...' : 'Check Status'}
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -774,7 +754,7 @@ function Dashboard() {
                 }`}
               >
                 ATS Analysis
-                {taskId && (
+                {atsLoading && (
                   <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
                 )}
               </button>
@@ -789,20 +769,32 @@ function Dashboard() {
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                    <div className="text-center space-y-2">
-                      <p className="text-sm font-medium">ATS scores are being computed</p>
-                      <p className="text-xs text-muted-foreground">
-                        This may take a minute. Your tailored resume is ready for download in the meantime.
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleCheckStatus}
-                      disabled={atsLoading}
-                    >
-                      {atsLoading ? 'Checking...' : 'Check ATS Scores'}
-                    </Button>
+                    {atsLoading ? (
+                      <>
+                        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                        <div className="text-center space-y-1">
+                          <p className="text-sm font-medium">Computing ATS scores</p>
+                          <p className="text-xs text-muted-foreground">
+                            This takes 10-15 seconds. Your resume is ready for download in the meantime.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-center space-y-2">
+                          <p className="text-sm font-medium">ATS scores not yet loaded</p>
+                          <p className="text-xs text-muted-foreground">
+                            Click below to analyze your tailored resume against ATS systems.
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          onClick={handleFetchATS}
+                        >
+                          Get ATS Scores
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>

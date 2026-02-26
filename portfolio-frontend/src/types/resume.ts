@@ -89,7 +89,7 @@ export interface ATSScores {
 export interface TailorPipelineResult {
   jd_analysis: JDAnalysis;
   tailored_resume: TailoredFullResume;
-  ats_scores: ATSScores;
+  ats_scores?: ATSScores;
 }
 
 export interface ResumeStatus {

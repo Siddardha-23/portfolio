@@ -1,7 +1,7 @@
 """
 Resume Tailoring Service — JD extraction, resume tailoring, ATS scoring, document generation.
 
-Pipeline:
+Each step is a standalone method called directly from the blueprint:
   1. Extract JD fields (Gemini)
   2. Tailor resume to JD (Gemini) — never fabricates, only rewords/reorders
   3. Compute ATS & AI screener scores (Gemini)
@@ -14,7 +14,6 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from utils.config import _get_config_value
 from utils.db_connect import DBConnect
 
 logger = logging.getLogger(__name__)
@@ -90,9 +89,6 @@ class ResumeService:
     def __init__(self):
         db = DBConnect().get_db()
         self.user_resumes = db.user_resumes
-        self.tailor_tasks = db.tailor_tasks
-        # Auto-expire tasks after 1 hour
-        self.tailor_tasks.create_index("created_at", expireAfterSeconds=3600)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -277,80 +273,6 @@ class ResumeService:
         )
         return _gemini_json(prompt, max_tokens=4096, temperature=0.3)
 
-    # ------------------------------------------------------------------
-    # Async task management
-    # ------------------------------------------------------------------
-
-    def create_task(self, task_id: str) -> None:
-        """Create a pending tailor task in MongoDB."""
-        self.tailor_tasks.insert_one({
-            "_id": task_id,
-            "status": "processing",
-            "step": 0,
-            "created_at": datetime.now(timezone.utc),
-        })
-
-    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve a tailor task by ID."""
-        return self.tailor_tasks.find_one({"_id": task_id})
-
-    def update_task(
-        self, task_id: str, *, status: Optional[str] = None,
-        step: Optional[int] = None, result: Optional[Dict] = None,
-        error: Optional[str] = None,
-    ) -> None:
-        """Update a tailor task's status, step, result, or error."""
-        update: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
-        if status is not None:
-            update["status"] = status
-        if step is not None:
-            update["step"] = step
-        if result is not None:
-            update["result"] = result
-        if error is not None:
-            update["error"] = error
-        self.tailor_tasks.update_one({"_id": task_id}, {"$set": update})
-
-    # ------------------------------------------------------------------
-    # Full pipeline
-    # ------------------------------------------------------------------
-
-    def full_tailor_pipeline(self, jd_text: str, task_id: Optional[str] = None) -> Dict[str, Any]:
-        """Run the complete extract → tailor → score pipeline.
-
-        If *task_id* is provided, intermediate progress is written to MongoDB
-        so the frontend can poll for real-time step updates.
-        """
-        resume = self.get_base_resume()
-        if not resume:
-            raise ValueError("No resume uploaded. Please upload your resume first.")
-        raw_text = resume.get("raw_text")
-        if not raw_text:
-            raise ValueError("Resume raw text not available. Please re-upload your resume.")
-
-        # Step 1: Extract JD
-        if task_id:
-            self.update_task(task_id, step=0)
-        jd_analysis = self.extract_jd(jd_text)
-
-        # Step 2: Tailor resume
-        if task_id:
-            self.update_task(task_id, step=1)
-        tailored = self.tailor_resume(raw_text, jd_analysis)
-
-        # Save partial result so frontend can show resume + downloads immediately
-        partial = {"jd_analysis": jd_analysis, "tailored_resume": tailored}
-        if task_id:
-            self.update_task(task_id, step=2, status="partial", result=partial)
-
-        # Step 3: ATS scores (runs in background, frontend fetches on demand)
-        ats_scores = self.compute_ats_scores(tailored, jd_analysis)
-
-        return {
-            "jd_analysis": jd_analysis,
-            "tailored_resume": tailored,
-            "ats_scores": ats_scores,
-        }
 
     # ------------------------------------------------------------------
     # PDF generation (fpdf2)

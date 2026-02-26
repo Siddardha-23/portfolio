@@ -2,12 +2,14 @@
 Resume blueprint — Resume tailoring, ATS scoring, and document generation endpoints.
 
 Reuses the same JWT from /api/jobs/auth (job_search_token).
+
+All endpoints run synchronously — no async Lambda self-invocation or polling.
+The pipeline is split into two calls so each fits within API Gateway's 29s timeout:
+  1. POST /tailor  → extract JD + tailor resume (~15-25s)
+  2. POST /ats-scores → compute ATS scores (~10-15s)
 """
 import io
-import json
 import logging
-import os
-import uuid
 
 from flask import Blueprint, request, jsonify, send_file
 from flask_jwt_extended import jwt_required
@@ -19,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
-# POST /api/resume/tailor — Start async pipeline (returns task_id)
+# POST /api/resume/tailor — Extract JD + tailor resume (synchronous)
 # ------------------------------------------------------------------
 
 @resume_bp.route("/tailor", methods=["POST"])
@@ -43,86 +45,52 @@ def tailor():
         from services.resume_service import get_resume_service
         svc = get_resume_service()
 
-        # Verify resume exists before queueing the task
         resume = svc.get_base_resume()
         if not resume or not resume.get("raw_text"):
             return jsonify({"error": "No resume uploaded. Please upload your resume first."}), 404
 
-        task_id = str(uuid.uuid4())
-        svc.create_task(task_id)
+        jd_analysis = svc.extract_jd(jd_text)
+        tailored = svc.tailor_resume(resume["raw_text"], jd_analysis)
 
-        # Invoke Lambda asynchronously (Event invocation = fire-and-forget)
-        # AWS_LAMBDA_FUNCTION_NAME is auto-set by the Lambda runtime.
-        function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
-        if function_name:
-            import boto3
-            boto3.client("lambda", region_name=os.environ.get("AWS_REGION_NAME", "us-east-1")).invoke(
-                FunctionName=function_name,
-                InvocationType="Event",
-                Payload=json.dumps({
-                    "_async_task": "resume_tailor",
-                    "task_id": task_id,
-                    "jd_text": jd_text,
-                }),
-            )
-        else:
-            # Local dev fallback: run synchronously
-            try:
-                result = svc.full_tailor_pipeline(jd_text, task_id=task_id)
-                svc.update_task(task_id, status="completed", result=result)
-            except Exception as e:
-                logger.error(f"Resume tailor pipeline error: {e}")
-                svc.update_task(task_id, status="failed", error=str(e))
-
-        return jsonify({"task_id": task_id}), 202
+        return jsonify({
+            "jd_analysis": jd_analysis,
+            "tailored_resume": tailored,
+        }), 200
 
     except Exception as e:
-        logger.error(f"Resume tailor start error: {e}")
-        return jsonify({"error": "Failed to start tailoring. Please try again."}), 500
+        logger.error(f"Resume tailor error: {e}")
+        return jsonify({"error": "Failed to tailor resume. Please try again."}), 500
 
 
 # ------------------------------------------------------------------
-# GET /api/resume/tailor/<task_id> — Poll task status
+# POST /api/resume/ats-scores — Compute ATS scores (synchronous)
 # ------------------------------------------------------------------
 
-@resume_bp.route("/tailor/<task_id>", methods=["GET"])
+@resume_bp.route("/ats-scores", methods=["POST"])
 @jwt_required()
-def tailor_status(task_id):
-    if not task_id or len(task_id) > 50:
-        return jsonify({"error": "Invalid task ID"}), 400
+def ats_scores():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"resume_ats:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
 
-    from services.resume_service import get_resume_service
-    task = get_resume_service().get_task(task_id)
+    data = request.get_json(force=True) or {}
+    tailored = data.get("tailored_resume")
+    jd_analysis = data.get("jd_analysis")
 
-    if not task:
-        return jsonify({"error": "Task not found"}), 404
+    if not tailored or not isinstance(tailored, dict):
+        return jsonify({"error": "tailored_resume is required"}), 400
+    if not jd_analysis or not isinstance(jd_analysis, dict):
+        return jsonify({"error": "jd_analysis is required"}), 400
 
-    if task["status"] == "completed":
-        result = task.get("result", {})
-        return jsonify({
-            "status": "completed",
-            "step": 3,
-            **result,
-        }), 200
+    try:
+        from services.resume_service import get_resume_service
+        scores = get_resume_service().compute_ats_scores(tailored, jd_analysis)
+        return jsonify({"ats_scores": scores}), 200
 
-    if task["status"] == "partial":
-        result = task.get("result", {})
-        return jsonify({
-            "status": "partial",
-            "step": 2,
-            **result,
-        }), 200
-
-    if task["status"] == "failed":
-        return jsonify({
-            "status": "failed",
-            "error": task.get("error", "Unknown error"),
-        }), 200
-
-    return jsonify({
-        "status": "processing",
-        "step": task.get("step", 0),
-    }), 200
+    except Exception as e:
+        logger.error(f"ATS scoring error: {e}")
+        return jsonify({"error": "Failed to compute ATS scores. Please try again."}), 500
 
 
 # ------------------------------------------------------------------

@@ -543,21 +543,25 @@ class ApiService {
     }
   }
 
-  async startTailorTask(
+  async tailorResume(
     jobDescription: string,
-  ): Promise<ApiResponse<{ task_id: string }>> {
-    return this.jobRequest<{ task_id: string }>('/resume/tailor', {
-      method: 'POST',
-      body: JSON.stringify({ job_description: jobDescription }),
-    });
+  ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis; tailored_resume: import('../types/resume').TailoredFullResume }>> {
+    return this.jobRequest<{ jd_analysis: import('../types/resume').JDAnalysis; tailored_resume: import('../types/resume').TailoredFullResume }>(
+      '/resume/tailor',
+      { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
+      60000,
+    );
   }
 
-  async fetchTaskStatus(
-    taskId: string,
-  ): Promise<ApiResponse<import('../types/resume').TailorPipelineResult & { status: string; step?: number }>> {
-    return this.jobRequest<
-      import('../types/resume').TailorPipelineResult & { status: string; step?: number }
-    >(`/resume/tailor/${taskId}`);
+  async fetchATSScores(
+    tailoredResume: import('../types/resume').TailoredFullResume,
+    jdAnalysis: import('../types/resume').JDAnalysis,
+  ): Promise<ApiResponse<{ ats_scores: import('../types/resume').ATSScores }>> {
+    return this.jobRequest<{ ats_scores: import('../types/resume').ATSScores }>(
+      '/resume/ats-scores',
+      { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
+      60000,
+    );
   }
 
   async downloadTailoredResume(

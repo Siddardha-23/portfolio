@@ -419,45 +419,6 @@ function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
 }
 
 // ---------------------------------------------------------------------------
-// Progress steps
-// ---------------------------------------------------------------------------
-
-const STEPS = [
-  { label: 'Extracting job requirements', icon: '1' },
-  { label: 'Tailoring your resume', icon: '2' },
-  { label: 'Computing ATS scores', icon: '3' },
-];
-
-function ProgressSteps({ currentStep }: { currentStep: number }) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="space-y-4">
-          {STEPS.map((step, i) => {
-            const isActive = i === currentStep;
-            const isDone = i < currentStep;
-            return (
-              <div key={i} className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium border-2 transition-all ${
-                  isDone ? 'bg-green-500 border-green-500 text-white' :
-                  isActive ? 'border-primary text-primary animate-pulse' :
-                  'border-muted text-muted-foreground'
-                }`}>
-                  {isDone ? '\u2713' : step.icon}
-                </div>
-                <span className={`text-sm ${isActive ? 'font-medium' : 'text-muted-foreground'}`}>
-                  {step.label}{isActive ? '...' : ''}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Main dashboard
 // ---------------------------------------------------------------------------
 
@@ -470,7 +431,6 @@ function Dashboard() {
 
   const [jdText, setJdText] = useState('');
   const [tailoring, setTailoring] = useState(false);
-  const [tailorStep, setTailorStep] = useState(0);
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
@@ -515,54 +475,53 @@ function Dashboard() {
     if (file) handleUpload(file);
   }, [handleUpload]);
 
-  // Tailor handler
+  // Tailor handler — fire-and-forget, no polling
   const handleTailor = useCallback(async () => {
     if (!jdText.trim()) return;
     setTailoring(true);
     setTailorError('');
     setResult(null);
     setTaskId(null);
-    setTailorStep(0);
 
-    const resp = await apiService.tailorResumeFull(jdText.trim(), (step) => {
-      setTailorStep(step);
-    });
-
+    const resp = await apiService.startTailorTask(jdText.trim());
     setTailoring(false);
 
     if (resp.error) { setTailorError(resp.error); return; }
-    if (resp.data) {
-      setResult(resp.data);
-      // If partial (no ATS yet), save task ID for on-demand refresh
-      if (resp.data.status === 'partial' && resp.data.task_id) {
-        setTaskId(resp.data.task_id);
-        setTailorStep(2);
-      } else {
-        setTailorStep(3);
-        setTaskId(null);
-      }
+    if (resp.data?.task_id) {
+      setTaskId(resp.data.task_id);
     }
   }, [jdText]);
 
-  // Fetch ATS scores on demand
-  const handleRefreshATS = useCallback(async () => {
+  // Fetch task results on demand — single API call per click
+  const handleCheckStatus = useCallback(async () => {
     if (!taskId) return;
     setAtsLoading(true);
     const resp = await apiService.fetchTaskStatus(taskId);
     setAtsLoading(false);
 
-    if (resp.data) {
-      if (resp.data.status === 'completed') {
-        setResult(resp.data);
-        setTaskId(null);
-        setTailorStep(3);
-      } else if (resp.data.status === 'failed') {
+    if (resp.error) { setTailorError(resp.error); return; }
+    if (!resp.data) return;
+
+    const { status } = resp.data;
+
+    if (status === 'partial') {
+      // JD + tailored resume ready, ATS still computing
+      setResult(resp.data);
+    } else if (status === 'completed') {
+      // Everything ready
+      setResult(resp.data);
+      setTaskId(null);
+    } else if (status === 'failed') {
+      if (result) {
+        // Had partial results, only ATS failed
         setTailorError('ATS scoring failed. Resume is still available for download.');
-        setTaskId(null);
+      } else {
+        setTailorError(resp.data.ats_scores ? '' : 'Tailoring failed. Please try again.');
       }
-      // If still partial/processing, do nothing — user can try again
+      setTaskId(null);
     }
-  }, [taskId]);
+    // If still "processing", do nothing — user can try again
+  }, [taskId, result]);
 
   // Download handler
   const handleDownload = useCallback(async (format: 'pdf' | 'docx') => {
@@ -720,9 +679,9 @@ function Dashboard() {
                 <Button
                   size="sm"
                   onClick={handleTailor}
-                  disabled={!jdText.trim() || tailoring}
+                  disabled={!jdText.trim() || tailoring || (!!taskId && !result)}
                 >
-                  {tailoring ? 'Tailoring...' : 'Analyze & Tailor'}
+                  {tailoring ? 'Starting...' : 'Analyze & Tailor'}
                 </Button>
                 <span className="text-[10px] text-muted-foreground">
                   {jdText.length.toLocaleString()}/10,000
@@ -732,8 +691,30 @@ function Dashboard() {
           </Card>
         )}
 
-        {/* Progress */}
-        {tailoring && <ProgressSteps currentStep={tailorStep} />}
+        {/* Processing — task started but no results yet */}
+        {taskId && !result && (
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex flex-col items-center justify-center py-6 space-y-4">
+                <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                <div className="text-center space-y-1">
+                  <p className="text-sm font-medium">Tailoring in progress</p>
+                  <p className="text-xs text-muted-foreground">
+                    Your resume is being tailored. This usually takes 30-60 seconds.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleCheckStatus}
+                  disabled={atsLoading}
+                >
+                  {atsLoading ? 'Checking...' : 'Check Status'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Error */}
         {tailorError && (
@@ -817,7 +798,7 @@ function Dashboard() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={handleRefreshATS}
+                      onClick={handleCheckStatus}
                       disabled={atsLoading}
                     >
                       {atsLoading ? 'Checking...' : 'Check ATS Scores'}

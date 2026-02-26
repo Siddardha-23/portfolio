@@ -10,7 +10,18 @@
  * - /api/geo - IP geolocation
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Use build-time API URL; when on production origin but build points at localhost or is invalid (e.g. empty DOMAIN_NAME), use same origin
+function getApiBaseUrl(): string {
+  const build = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  if (typeof window !== 'undefined') {
+    const origin = window.location.origin;
+    const buildInvalid = build.includes('localhost') || /^https:\/\/\/?api/.test(build);
+    if (origin && !origin.includes('localhost') && buildInvalid)
+      return `${origin}/api`;
+  }
+  return build;
+}
+const API_BASE_URL = getApiBaseUrl();
 
 interface ApiResponse<T> {
   data?: T;
@@ -391,16 +402,21 @@ class ApiService {
   // Job Search endpoints (/api/jobs)
   // ============================================
 
-  private jobRequest<T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number): Promise<ApiResponse<T>> {
+  private async jobRequest<T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number): Promise<ApiResponse<T>> {
     const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
-    return this.request<T>(endpoint, {
+    const result = await this.request<T>(endpoint, {
       ...options,
       headers: { ...headers, ...options.headers as Record<string, string> },
     }, timeoutMs);
+    // Clear job-search token on 401 so resume-parser shows password gate again
+    if (result.error && typeof window !== 'undefined' && (result.error.includes('401') || result.error.includes('Session expired'))) {
+      localStorage.removeItem('job_search_token');
+    }
+    return result;
   }
 
   async jobSearchAuth(password: string) {
@@ -535,6 +551,10 @@ class ApiService {
       });
       clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({}));
+      if (response.status === 401 && typeof window !== 'undefined') {
+        localStorage.removeItem('job_search_token');
+        return { error: 'Session expired. Please enter the password again.' };
+      }
       if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
       return { data } as ApiResponse<{ resume: import('../types/jobs').ParsedResume }>;
     } catch (error) {

@@ -422,7 +422,7 @@ function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
 // Main dashboard
 // ---------------------------------------------------------------------------
 
-function Dashboard() {
+function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const [resumeStatus, setResumeStatus] = useState<ResumeStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -462,11 +462,27 @@ function Dashboard() {
     setUploadError('');
     const resp = await apiService.uploadResumeForParser(file);
     setUploading(false);
-    if (resp.error) { setUploadError(resp.error); return; }
-    // Refresh status
+    if (resp.error) {
+      setUploadError(resp.error);
+      if (resp.error.includes('Session expired') && onSessionExpired) onSessionExpired();
+      return;
+    }
+    // Set status from upload response so UI updates even if getResumeStatus fails (e.g. deployed env)
+    if (resp.data?.resume) {
+      const r = resp.data.resume;
+      setResumeStatus({
+        has_resume: true,
+        skills: r.skills,
+        experience_years: r.experience_years,
+        job_titles: r.job_titles,
+        summary: r.summary,
+        parsed_at: r.parsed_at,
+      });
+    }
+    // Also refresh from server in case parsed_at etc. differ
     const statusResp = await apiService.getResumeStatus();
     if (statusResp.data) setResumeStatus(statusResp.data);
-  }, []);
+  }, [onSessionExpired]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -830,7 +846,8 @@ export default function ResumeParser() {
     const token = localStorage.getItem('job_search_token');
     if (token) {
       apiService.getResumeStatus().then(resp => {
-        if (resp.error && resp.error.includes('401')) {
+        const isUnauthorized = resp.error && (resp.error.includes('401') || resp.error.includes('Session expired'));
+        if (isUnauthorized) {
           localStorage.removeItem('job_search_token');
           setAuthed(false);
         } else {
@@ -855,5 +872,5 @@ export default function ResumeParser() {
     return <PasswordGate onAuth={() => setAuthed(true)} />;
   }
 
-  return <Dashboard />;
+  return <Dashboard onSessionExpired={() => setAuthed(false)} />;
 }

@@ -508,6 +508,85 @@ class ApiService {
       method: 'DELETE',
     });
   }
+
+  // ============================================
+  // Resume Parser endpoints (/api/resume)
+  // ============================================
+
+  async getResumeStatus() {
+    return this.jobRequest<import('../types/resume').ResumeStatus>('/resume/status');
+  }
+
+  async uploadResumeForParser(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
+    const url = `${this.baseURL}/resume/upload`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        body: formData,
+        headers,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
+      return { data } as ApiResponse<{ resume: import('../types/jobs').ParsedResume }>;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      return { error: error instanceof Error ? error.message : 'Upload failed' };
+    }
+  }
+
+  async tailorResumeFull(jobDescription: string) {
+    return this.jobRequest<import('../types/resume').TailorPipelineResult>('/resume/tailor', {
+      method: 'POST',
+      body: JSON.stringify({ job_description: jobDescription }),
+    }, 120000);
+  }
+
+  async downloadTailoredResume(
+    tailoredResume: import('../types/resume').TailoredFullResume,
+    jdAnalysis: import('../types/resume').JDAnalysis,
+    format: 'pdf' | 'docx'
+  ): Promise<{ data?: Blob; error?: string; filename?: string }> {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
+    const url = `${this.baseURL}/resume/download`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          tailored_resume: tailoredResume,
+          jd_analysis: jdAnalysis,
+          format,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        return { error: errData.error || `HTTP ${response.status}` };
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get('content-disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match?.[1] || `resume.${format}`;
+      return { data: blob, filename };
+    } catch (error) {
+      clearTimeout(timeoutId);
+      return { error: error instanceof Error ? error.message : 'Download failed' };
+    }
+  }
 }
 
 export const apiService = new ApiService(API_BASE_URL);

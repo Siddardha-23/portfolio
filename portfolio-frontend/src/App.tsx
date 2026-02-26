@@ -11,6 +11,7 @@ import ProjectArchitecture from './pages/ProjectArchitecture';
 import NotFound from './pages/NotFound';
 
 const JobSearch = lazy(() => import('./pages/JobSearch'));
+const ResumeParser = lazy(() => import('./pages/ResumeParser'));
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
               <Route path="/home" element={<Home />} />
               <Route path="/project/:slug" element={<ProjectArchitecture />} />
               <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
+              <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

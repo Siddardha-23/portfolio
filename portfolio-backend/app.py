@@ -66,6 +66,7 @@ def create_app():
             "origins": allowed_origins,
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
+            "expose_headers": ["Content-Disposition"],
             "supports_credentials": True,
             "max_age": 3600
         }
@@ -113,6 +114,10 @@ def create_app():
     from blueprints.jobs import jobs_bp
     app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
 
+    # Resume Tailor module
+    from blueprints.resume import resume_bp
+    app.register_blueprint(resume_bp, url_prefix='/api/resume')
+
     # Health check endpoint
     @app.route('/api/health')
     def health():
@@ -158,6 +163,10 @@ def create_app():
                 'jobs': {
                     'prefix': '/api/jobs',
                     'description': 'Job search dashboard'
+                },
+                'resume': {
+                    'prefix': '/api/resume',
+                    'description': 'Resume tailoring and ATS analysis'
                 }
             }
         }, 200

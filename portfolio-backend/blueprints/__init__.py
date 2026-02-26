@@ -42,6 +42,12 @@ This package contains Flask blueprints organized in a microservice-like pattern:
     POST /api/jobs/saved
     PUT  /api/jobs/saved/:id
     DELETE /api/jobs/saved/:id
+
+- resume.py: Resume tailoring and ATS analysis
+    POST /api/resume/tailor
+    POST /api/resume/download
+    POST /api/resume/upload
+    GET  /api/resume/status
 """
 
 from .auth import auth_bp
@@ -51,5 +57,6 @@ from .session import session_bp
 from .geolocation import geo_bp
 from .chat import chat_bp
 from .jobs import jobs_bp
+from .resume import resume_bp
 
-__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp', 'chat_bp', 'jobs_bp']
+__all__ = ['auth_bp', 'contact_bp', 'info_bp', 'session_bp', 'geo_bp', 'chat_bp', 'jobs_bp', 'resume_bp']

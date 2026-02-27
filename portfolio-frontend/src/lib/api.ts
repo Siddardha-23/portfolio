@@ -566,7 +566,7 @@ class ApiService {
     return this.jobRequest<{ jd_analysis: import('../types/resume').JDAnalysis }>(
       '/resume/extract-jd',
       { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
-      30000,
+      60000,
     );
   }
 
@@ -576,7 +576,7 @@ class ApiService {
     return this.jobRequest<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
       '/resume/tailor',
       { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
-      30000,
+      60000,
     );
   }
 
@@ -587,7 +587,7 @@ class ApiService {
     return this.jobRequest<{ ats_scores: import('../types/resume').ATSScores }>(
       '/resume/ats-scores',
       { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
-      30000,
+      60000,
     );
   }
 

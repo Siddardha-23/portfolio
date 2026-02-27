@@ -18,7 +18,10 @@ from utils.db_connect import DBConnect
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-2.5-flash"
+# Fast model for simple structured extraction (JD parsing, ATS scoring)
+GEMINI_MODEL_FAST = "gemini-2.0-flash-lite"
+# Quality model for complex generation (resume tailoring)
+GEMINI_MODEL_QUALITY = "gemini-2.0-flash"
 
 
 def _clean_json_response(text: str) -> str:
@@ -37,7 +40,12 @@ def _clean_json_response(text: str) -> str:
     return t.strip()
 
 
-def _gemini_json(prompt: str, max_tokens: int = 8192, temperature: float = 0.3) -> dict:
+def _gemini_json(
+    prompt: str,
+    max_tokens: int = 8192,
+    temperature: float = 0.3,
+    model: str = GEMINI_MODEL_FAST,
+) -> dict:
     """Call Gemini and parse JSON response. Retries once with doubled tokens on truncation."""
     from services.chat_service import _get_client
     from google.genai import types
@@ -46,7 +54,7 @@ def _gemini_json(prompt: str, max_tokens: int = 8192, temperature: float = 0.3) 
 
     for attempt, tokens in enumerate([max_tokens, max_tokens * 2]):
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=model,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -122,7 +130,7 @@ class ResumeService:
             '- "keywords": list of strings (ATS-critical keywords from the JD)\n\n'
             f"=== JOB DESCRIPTION ===\n{jd_text[:5000]}"
         )
-        return _gemini_json(prompt, max_tokens=4096)
+        return _gemini_json(prompt, max_tokens=4096, model=GEMINI_MODEL_FAST)
 
     # ------------------------------------------------------------------
     # Step 2 — Tailor resume
@@ -214,7 +222,7 @@ class ResumeService:
             f"=== ORIGINAL RESUME TEXT ===\n{raw_resume_text[:5000]}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=4096, temperature=0.4)
+        return _gemini_json(prompt, max_tokens=8192, temperature=0.4, model=GEMINI_MODEL_QUALITY)
 
     # ------------------------------------------------------------------
     # Step 3 — ATS & AI screener scoring
@@ -271,7 +279,7 @@ class ResumeService:
             f"=== TAILORED RESUME ===\n{tailored_json}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=4096, temperature=0.3)
+        return _gemini_json(prompt, max_tokens=4096, temperature=0.3, model=GEMINI_MODEL_FAST)
 
 
     # ------------------------------------------------------------------

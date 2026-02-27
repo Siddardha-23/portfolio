@@ -20,7 +20,7 @@ from utils.db_connect import DBConnect
 
 logger = logging.getLogger(__name__)
 
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _clean_json_response(text: str) -> str:

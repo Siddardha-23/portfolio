@@ -18,10 +18,7 @@ from utils.db_connect import DBConnect
 
 logger = logging.getLogger(__name__)
 
-# Fast model for simple structured extraction (JD parsing, ATS scoring)
-GEMINI_MODEL_FAST = "gemini-2.0-flash-lite"
-# Quality model for complex generation (resume tailoring)
-GEMINI_MODEL_QUALITY = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _clean_json_response(text: str) -> str:
@@ -40,45 +37,48 @@ def _clean_json_response(text: str) -> str:
     return t.strip()
 
 
-def _gemini_json(
-    prompt: str,
-    max_tokens: int = 4096,
-    temperature: float = 0.3,
-    model: str = GEMINI_MODEL_FAST,
-) -> dict:
-    """Call Gemini and parse JSON response. Single attempt for speed."""
+def _gemini_json(prompt: str, max_tokens: int = 8192, temperature: float = 0.3) -> dict:
+    """Call Gemini and parse JSON response. Retries once with doubled tokens on truncation."""
     from services.chat_service import _get_client
     from google.genai import types
 
     client = _get_client()
 
-    response = client.models.generate_content(
-        model=model,
-        contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-        ),
-    )
+    for attempt, tokens in enumerate([max_tokens, max_tokens * 2]):
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=temperature,
+                max_output_tokens=tokens,
+            ),
+        )
 
-    raw = (response.text or "").strip()
-    if not raw:
-        raise ValueError("AI returned an empty response. Please try again.")
+        raw = (response.text or "").strip()
+        if not raw:
+            if attempt == 0:
+                logger.warning("Gemini returned empty response, retrying with more tokens")
+                continue
+            raise ValueError("AI returned an empty response. Please try again.")
 
-    # Try direct parse
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
+        # Try direct parse
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
 
-    # Clean and retry parse
-    cleaned = _clean_json_response(raw)
-    try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError:
-        logger.error(f"Gemini invalid JSON. Raw (first 500): {raw[:500]}")
-        raise ValueError("AI returned an invalid response. Please try again.")
+        # Clean and retry parse
+        cleaned = _clean_json_response(raw)
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Likely truncated — retry with more tokens on first attempt
+            if attempt == 0:
+                logger.warning(f"JSON truncated (tokens={tokens}), retrying with {tokens * 2}")
+                continue
+            logger.error(f"Gemini invalid JSON after retry. Raw (first 500): {raw[:500]}")
+            raise ValueError("AI returned an invalid response. Please try again.")
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +122,7 @@ class ResumeService:
             '- "keywords": list of strings (ATS-critical keywords from the JD)\n\n'
             f"=== JOB DESCRIPTION ===\n{jd_text[:5000]}"
         )
-        return _gemini_json(prompt, max_tokens=2048, model=GEMINI_MODEL_FAST)
+        return _gemini_json(prompt, max_tokens=4096)
 
     # ------------------------------------------------------------------
     # Step 2 — Tailor resume
@@ -214,7 +214,7 @@ class ResumeService:
             f"=== ORIGINAL RESUME TEXT ===\n{raw_resume_text[:5000]}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=4096, temperature=0.4, model=GEMINI_MODEL_QUALITY)
+        return _gemini_json(prompt, max_tokens=4096, temperature=0.4)
 
     # ------------------------------------------------------------------
     # Step 3 — ATS & AI screener scoring
@@ -271,7 +271,7 @@ class ResumeService:
             f"=== TAILORED RESUME ===\n{tailored_json}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=2048, temperature=0.3, model=GEMINI_MODEL_FAST)
+        return _gemini_json(prompt, max_tokens=4096, temperature=0.3)
 
 
     # ------------------------------------------------------------------

@@ -90,8 +90,8 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
 function ScoreBar({ label, score, color }: { label: string; score: number; color?: string }) {
   const bg =
     score >= 80 ? 'bg-green-500' :
-    score >= 60 ? 'bg-yellow-500' :
-    'bg-red-500';
+      score >= 60 ? 'bg-yellow-500' :
+        'bg-red-500';
   return (
     <div className="space-y-1">
       <div className="flex justify-between text-xs">
@@ -123,21 +123,19 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
               <p className="text-sm font-medium">Overall ATS Score</p>
               <p className="text-xs text-muted-foreground">Weighted across all dimensions</p>
             </div>
-            <div className={`text-4xl font-bold ${
-              scores.overall >= 80 ? 'text-green-500' :
-              scores.overall >= 60 ? 'text-yellow-500' :
-              'text-red-500'
-            }`}>
+            <div className={`text-4xl font-bold ${scores.overall >= 80 ? 'text-green-500' :
+                scores.overall >= 60 ? 'text-yellow-500' :
+                  'text-red-500'
+              }`}>
               {scores.overall}
             </div>
           </div>
           <div className="h-3 rounded-full bg-muted overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-1000 ${
-                scores.overall >= 80 ? 'bg-green-500' :
-                scores.overall >= 60 ? 'bg-yellow-500' :
-                'bg-red-500'
-              }`}
+              className={`h-full rounded-full transition-all duration-1000 ${scores.overall >= 80 ? 'bg-green-500' :
+                  scores.overall >= 60 ? 'bg-yellow-500' :
+                    'bg-red-500'
+                }`}
               style={{ width: `${scores.overall}%` }}
             />
           </div>
@@ -453,8 +451,9 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const [dragOver, setDragOver] = useState(false);
 
   const [jdText, setJdText] = useState('');
+  const [analyzingJD, setAnalyzingJD] = useState(false);
+  const [jdAnalysis, setJdAnalysis] = useState<JDAnalysis | null>(null);
   const [tailoring, setTailoring] = useState(false);
-  const [tailorStep, setTailorStep] = useState<'jd' | 'resume'>('jd');
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
   const [atsLoading, setAtsLoading] = useState(false);
@@ -528,22 +527,29 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     if (file) handleUpload(file);
   }, [handleUpload]);
 
-  // Tailor handler — two sequential calls, one Gemini call each
-  const handleTailor = useCallback(async () => {
+  // Step 1: Analyze JD only
+  const handleAnalyzeJD = useCallback(async () => {
     if (!jdText.trim()) return;
-    setTailoring(true);
-    setTailorStep('jd');
+    setAnalyzingJD(true);
     setTailorError('');
+    setJdAnalysis(null);
     setResult(null);
 
-    // Step 1: Extract JD
     const jdResp = await apiService.extractJD(jdText.trim());
-    if (jdResp.error) { setTailoring(false); setTailorError(jdResp.error); return; }
-    const jdAnalysis = jdResp.data?.jd_analysis;
-    if (!jdAnalysis) { setTailoring(false); setTailorError('Failed to analyze job description.'); return; }
+    setAnalyzingJD(false);
 
-    // Step 2: Tailor resume
-    setTailorStep('resume');
+    if (jdResp.error) { setTailorError(jdResp.error); return; }
+    const analysis = jdResp.data?.jd_analysis;
+    if (!analysis) { setTailorError('Failed to analyze job description.'); return; }
+    setJdAnalysis(analysis);
+  }, [jdText]);
+
+  // Step 2: Tailor resume (only after JD is analyzed)
+  const handleTailorResume = useCallback(async () => {
+    if (!jdAnalysis) return;
+    setTailoring(true);
+    setTailorError('');
+
     const tailorResp = await apiService.tailorResume(jdAnalysis);
     setTailoring(false);
 
@@ -554,9 +560,9 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
         tailored_resume: tailorResp.data.tailored_resume,
       });
     }
-  }, [jdText]);
+  }, [jdAnalysis]);
 
-  // Fetch ATS scores on demand — separate synchronous call
+  // Step 3: Fetch ATS scores on demand — separate synchronous call
   const handleFetchATS = useCallback(async () => {
     if (!result?.tailored_resume || !result?.jd_analysis) return;
     setAtsLoading(true);
@@ -644,9 +650,8 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
                 onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={onDrop}
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                  dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-                }`}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+                  }`}
               >
                 <p className="text-sm text-muted-foreground mb-2">
                   {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF here'}
@@ -730,10 +735,10 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
               <div className="flex items-center gap-3">
                 <Button
                   size="sm"
-                  onClick={handleTailor}
-                  disabled={!jdText.trim() || tailoring}
+                  onClick={handleAnalyzeJD}
+                  disabled={!jdText.trim() || analyzingJD || tailoring}
                 >
-                  {tailoring ? 'Tailoring...' : 'Analyze & Tailor'}
+                  {analyzingJD ? 'Analyzing...' : 'Analyze JD'}
                 </Button>
                 <span className="text-[10px] text-muted-foreground">
                   {jdText.length.toLocaleString()}/10,000
@@ -743,18 +748,18 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
           </Card>
         )}
 
-        {/* Tailoring spinner with step indicator */}
-        {tailoring && (
+        {/* Step indicator / spinner */}
+        {(analyzingJD || tailoring) && (
           <Card>
             <CardContent className="pt-6">
               <div className="flex flex-col items-center justify-center py-6 space-y-4">
                 <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                 <div className="text-center space-y-1">
                   <p className="text-sm font-medium">
-                    {tailorStep === 'jd' ? 'Analyzing job description...' : 'Tailoring your resume...'}
+                    {analyzingJD ? 'Analyzing job description...' : 'Tailoring your resume...'}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Step {tailorStep === 'jd' ? '1' : '2'} of 2
+                    This may take 10-20 seconds
                   </p>
                 </div>
               </div>
@@ -769,6 +774,29 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
               <p className="text-sm text-destructive">{tailorError}</p>
             </CardContent>
           </Card>
+        )}
+
+        {/* JD Analysis result + Tailor button */}
+        {jdAnalysis && !result && (
+          <>
+            <JDAnalysisCard jd={jdAnalysis} />
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex items-center gap-3">
+                  <Button
+                    size="sm"
+                    onClick={handleTailorResume}
+                    disabled={tailoring}
+                  >
+                    {tailoring ? 'Tailoring...' : 'Tailor Resume'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Generate a tailored resume based on the analyzed JD
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </>
         )}
 
         {/* Results */}
@@ -807,17 +835,15 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
             <div className="flex gap-1 border rounded-lg p-1 w-fit">
               <button
                 onClick={() => setActiveTab('preview')}
-                className={`px-4 py-1.5 text-sm rounded-md transition-colors ${
-                  activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
+                className={`px-4 py-1.5 text-sm rounded-md transition-colors ${activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
               >
                 Resume Preview
               </button>
               <button
                 onClick={() => setActiveTab('ats')}
-                className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${
-                  activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
+                className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                  }`}
               >
                 ATS Analysis
                 {atsLoading && (

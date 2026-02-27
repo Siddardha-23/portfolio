@@ -524,6 +524,7 @@ class ApiService {
 
   // ============================================
   // Resume Parser endpoints (/api/resume)
+  // — Async job pattern: submit → poll → result
   // ============================================
 
   async getResumeStatus() {
@@ -560,35 +561,81 @@ class ApiService {
     }
   }
 
+  /**
+   * Poll a resume job until it completes or fails.
+   * Returns the job result or an error.
+   */
+  private async pollJob<T>(jobId: string, maxWaitMs = 90000): Promise<ApiResponse<T>> {
+    const pollInterval = 2000; // 2 seconds
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < maxWaitMs) {
+      const resp = await this.jobRequest<{
+        status: string;
+        result?: T;
+        error?: string;
+      }>(`/resume/job/${jobId}`);
+
+      if (resp.error) return { error: resp.error };
+
+      const job = resp.data;
+      if (!job) return { error: 'Job not found' };
+
+      if (job.status === 'completed' && job.result) {
+        return { data: job.result as unknown as T };
+      }
+
+      if (job.status === 'failed') {
+        return { error: job.error || 'Job failed. Please try again.' };
+      }
+
+      // Still processing — wait and poll again
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    return { error: 'Request timed out. Please try again.' };
+  }
+
   async extractJD(
     jobDescription: string,
   ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis }>> {
-    return this.jobRequest<{ jd_analysis: import('../types/resume').JDAnalysis }>(
+    // Submit job
+    const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/extract-jd',
       { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
-      60000,
     );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+
+    // Poll for result
+    return this.pollJob<{ jd_analysis: import('../types/resume').JDAnalysis }>(submitResp.data.job_id);
   }
 
   async tailorResume(
     jdAnalysis: import('../types/resume').JDAnalysis,
   ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
-    return this.jobRequest<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
+    const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/tailor',
       { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
-      60000,
     );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+
+    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(submitResp.data.job_id);
   }
 
   async fetchATSScores(
     tailoredResume: import('../types/resume').TailoredFullResume,
     jdAnalysis: import('../types/resume').JDAnalysis,
   ): Promise<ApiResponse<{ ats_scores: import('../types/resume').ATSScores }>> {
-    return this.jobRequest<{ ats_scores: import('../types/resume').ATSScores }>(
+    const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/ats-scores',
       { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
-      60000,
     );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+
+    return this.pollJob<{ ats_scores: import('../types/resume').ATSScores }>(submitResp.data.job_id);
   }
 
   async downloadTailoredResume(

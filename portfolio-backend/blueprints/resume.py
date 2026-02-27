@@ -3,11 +3,12 @@ Resume blueprint — Resume tailoring, ATS scoring, and document generation endp
 
 Reuses the same JWT from /api/jobs/auth (job_search_token).
 
-All endpoints run synchronously. Each endpoint makes a single Gemini call
-so it finishes well within API Gateway's 30-second integration timeout:
-  1. POST /extract-jd   → extract JD fields (~5-10s)
-  2. POST /tailor       → tailor resume using JD analysis (~10-15s)
-  3. POST /ats-scores   → compute ATS scores (~10-15s)
+Async pattern: Gemini endpoints submit a job, Lambda processes it
+asynchronously, and the frontend polls GET /job/<id> for the result.
+  1. POST /extract-jd   → returns { job_id }   (instant)
+  2. POST /tailor       → returns { job_id }   (instant)
+  3. POST /ats-scores   → returns { job_id }   (instant)
+  4. GET  /job/<id>     → returns { status, result | error }
 """
 import io
 import logging
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------
-# POST /api/resume/extract-jd — Extract structured fields from JD
+# POST /api/resume/extract-jd — Submit JD extraction job
 # ------------------------------------------------------------------
 
 @resume_bp.route("/extract-jd", methods=["POST"])
@@ -43,17 +44,19 @@ def extract_jd():
         return jsonify({"error": "Invalid job description"}), 400
 
     try:
-        from services.resume_service import get_resume_service
-        jd_analysis = get_resume_service().extract_jd(jd_text)
-        return jsonify({"jd_analysis": jd_analysis}), 200
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        job_id = svc.create_job("extract_jd", {"job_description": jd_text})
+        ResumeService.invoke_async(job_id, "extract_jd", {"job_description": jd_text})
+        return jsonify({"job_id": job_id}), 202
 
     except Exception as e:
         logger.error(f"JD extraction error: {e}")
-        return jsonify({"error": "Failed to analyze job description. Please try again."}), 500
+        return jsonify({"error": "Failed to start JD analysis. Please try again."}), 500
 
 
 # ------------------------------------------------------------------
-# POST /api/resume/tailor — Tailor resume to JD (single Gemini call)
+# POST /api/resume/tailor — Submit resume tailoring job
 # ------------------------------------------------------------------
 
 @resume_bp.route("/tailor", methods=["POST"])
@@ -70,23 +73,19 @@ def tailor():
         return jsonify({"error": "jd_analysis is required"}), 400
 
     try:
-        from services.resume_service import get_resume_service
+        from services.resume_service import get_resume_service, ResumeService
         svc = get_resume_service()
-
-        resume = svc.get_base_resume()
-        if not resume or not resume.get("raw_text"):
-            return jsonify({"error": "No resume uploaded. Please upload your resume first."}), 404
-
-        tailored = svc.tailor_resume(resume["raw_text"], jd_analysis)
-        return jsonify({"tailored_resume": tailored}), 200
+        job_id = svc.create_job("tailor", {"jd_analysis": jd_analysis})
+        ResumeService.invoke_async(job_id, "tailor", {"jd_analysis": jd_analysis})
+        return jsonify({"job_id": job_id}), 202
 
     except Exception as e:
         logger.error(f"Resume tailor error: {e}")
-        return jsonify({"error": "Failed to tailor resume. Please try again."}), 500
+        return jsonify({"error": "Failed to start resume tailoring. Please try again."}), 500
 
 
 # ------------------------------------------------------------------
-# POST /api/resume/ats-scores — Compute ATS scores (synchronous)
+# POST /api/resume/ats-scores — Submit ATS scoring job
 # ------------------------------------------------------------------
 
 @resume_bp.route("/ats-scores", methods=["POST"])
@@ -107,13 +106,34 @@ def ats_scores():
         return jsonify({"error": "jd_analysis is required"}), 400
 
     try:
-        from services.resume_service import get_resume_service
-        scores = get_resume_service().compute_ats_scores(tailored, jd_analysis)
-        return jsonify({"ats_scores": scores}), 200
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        payload = {"tailored_resume": tailored, "jd_analysis": jd_analysis}
+        job_id = svc.create_job("ats_scores", payload)
+        ResumeService.invoke_async(job_id, "ats_scores", payload)
+        return jsonify({"job_id": job_id}), 202
 
     except Exception as e:
         logger.error(f"ATS scoring error: {e}")
-        return jsonify({"error": "Failed to compute ATS scores. Please try again."}), 500
+        return jsonify({"error": "Failed to start ATS scoring. Please try again."}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/job/<job_id> — Poll for job result
+# ------------------------------------------------------------------
+
+@resume_bp.route("/job/<job_id>", methods=["GET"])
+@jwt_required()
+def get_job(job_id):
+    try:
+        from services.resume_service import get_resume_service
+        job = get_resume_service().get_job(job_id)
+        if not job:
+            return jsonify({"error": "Job not found"}), 404
+        return jsonify(job), 200
+    except Exception as e:
+        logger.error(f"Job status error: {e}")
+        return jsonify({"error": "Failed to check job status"}), 500
 
 
 # ------------------------------------------------------------------

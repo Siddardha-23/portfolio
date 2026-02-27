@@ -61,6 +61,13 @@ def handler(event, context):
         dict: HTTP response in API Gateway format
     """
     try:
+        # ── Async job invocation (from Lambda invoking itself) ──
+        if event.get("async_job"):
+            from services.resume_service import process_async_job
+            process_async_job(event)
+            return {"statusCode": 200, "body": "OK"}
+
+        # ── Normal API Gateway request ──
         # Log request info (be careful about sensitive data in production)
         if os.getenv('ENVIRONMENT') != 'prod':
             logger.info(

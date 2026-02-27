@@ -10,7 +10,9 @@ Each step is a standalone method called directly from the blueprint:
 import io
 import json
 import logging
+import os
 import re
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -18,10 +20,7 @@ from utils.db_connect import DBConnect
 
 logger = logging.getLogger(__name__)
 
-# Fast model for simple structured extraction (JD parsing, ATS scoring)
-GEMINI_MODEL_FAST = "gemini-2.0-flash-lite"
-# Quality model for complex generation (resume tailoring)
-GEMINI_MODEL_QUALITY = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.0-flash"
 
 
 def _clean_json_response(text: str) -> str:
@@ -40,12 +39,7 @@ def _clean_json_response(text: str) -> str:
     return t.strip()
 
 
-def _gemini_json(
-    prompt: str,
-    max_tokens: int = 8192,
-    temperature: float = 0.3,
-    model: str = GEMINI_MODEL_FAST,
-) -> dict:
+def _gemini_json(prompt: str, max_tokens: int = 8192, temperature: float = 0.3) -> dict:
     """Call Gemini and parse JSON response. Retries once with doubled tokens on truncation."""
     from services.chat_service import _get_client
     from google.genai import types
@@ -54,7 +48,7 @@ def _gemini_json(
 
     for attempt, tokens in enumerate([max_tokens, max_tokens * 2]):
         response = client.models.generate_content(
-            model=model,
+            model=GEMINI_MODEL,
             contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -97,10 +91,81 @@ class ResumeService:
     def __init__(self):
         db = DBConnect().get_db()
         self.user_resumes = db.user_resumes
+        self.resume_jobs = db.resume_jobs
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Job management (async pattern for Lambda)
     # ------------------------------------------------------------------
+
+    def create_job(self, job_type: str, payload: dict) -> str:
+        """Create a pending job and return its ID."""
+        job_id = str(uuid.uuid4())
+        self.resume_jobs.insert_one({
+            "job_id": job_id,
+            "job_type": job_type,
+            "status": "processing",
+            "payload": payload,
+            "result": None,
+            "error": None,
+            "created_at": datetime.now(timezone.utc),
+            "completed_at": None,
+        })
+        return job_id
+
+    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """Get job status and result."""
+        job = self.resume_jobs.find_one({"job_id": job_id})
+        if not job:
+            return None
+        job.pop("_id", None)
+        job.pop("payload", None)  # Don't send payload back to client
+        return job
+
+    def complete_job(self, job_id: str, result: dict):
+        """Mark a job as completed with its result."""
+        self.resume_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {
+                "status": "completed",
+                "result": result,
+                "completed_at": datetime.now(timezone.utc),
+            }},
+        )
+
+    def fail_job(self, job_id: str, error: str):
+        """Mark a job as failed."""
+        self.resume_jobs.update_one(
+            {"job_id": job_id},
+            {"$set": {
+                "status": "failed",
+                "error": error,
+                "completed_at": datetime.now(timezone.utc),
+            }},
+        )
+
+    @staticmethod
+    def invoke_async(job_id: str, job_type: str, payload: dict):
+        """Invoke Lambda asynchronously to process a job.
+        Falls back to synchronous processing when not running on Lambda."""
+        func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+        if not func_name:
+            # Local dev — process synchronously
+            _process_job(job_id, job_type, payload)
+            return
+
+        import boto3
+        client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+        client.invoke(
+            FunctionName=func_name,
+            InvocationType="Event",  # async — returns immediately
+            Payload=json.dumps({
+                "async_job": True,
+                "job_id": job_id,
+                "job_type": job_type,
+                "payload": payload,
+            }),
+        )
+        logger.info(f"Async job {job_id} ({job_type}) dispatched to Lambda")
 
     def get_base_resume(self) -> Optional[Dict[str, Any]]:
         resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
@@ -130,7 +195,7 @@ class ResumeService:
             '- "keywords": list of strings (ATS-critical keywords from the JD)\n\n'
             f"=== JOB DESCRIPTION ===\n{jd_text[:5000]}"
         )
-        return _gemini_json(prompt, max_tokens=4096, model=GEMINI_MODEL_FAST)
+        return _gemini_json(prompt, max_tokens=4096)
 
     # ------------------------------------------------------------------
     # Step 2 — Tailor resume
@@ -222,7 +287,7 @@ class ResumeService:
             f"=== ORIGINAL RESUME TEXT ===\n{raw_resume_text[:5000]}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=8192, temperature=0.4, model=GEMINI_MODEL_QUALITY)
+        return _gemini_json(prompt, max_tokens=8192, temperature=0.4)
 
     # ------------------------------------------------------------------
     # Step 3 — ATS & AI screener scoring
@@ -279,7 +344,7 @@ class ResumeService:
             f"=== TAILORED RESUME ===\n{tailored_json}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
-        return _gemini_json(prompt, max_tokens=4096, temperature=0.3, model=GEMINI_MODEL_FAST)
+        return _gemini_json(prompt, max_tokens=4096, temperature=0.3)
 
 
     # ------------------------------------------------------------------
@@ -717,6 +782,51 @@ class ResumeService:
         segments = [clean(first), clean(last), clean(job_title), date_str]
         segments = [s for s in segments if s]
         return "_".join(segments) + f".{ext}"
+
+
+# ---------------------------------------------------------------------------
+# Async job processor (called by Lambda async invocation)
+# ---------------------------------------------------------------------------
+
+def _process_job(job_id: str, job_type: str, payload: dict):
+    """Execute the Gemini call for a job and store the result in MongoDB."""
+    svc = get_resume_service()
+    try:
+        if job_type == "extract_jd":
+            result = svc.extract_jd(payload["job_description"])
+            svc.complete_job(job_id, {"jd_analysis": result})
+
+        elif job_type == "tailor":
+            resume = svc.get_base_resume()
+            if not resume or not resume.get("raw_text"):
+                svc.fail_job(job_id, "No resume uploaded.")
+                return
+            result = svc.tailor_resume(resume["raw_text"], payload["jd_analysis"])
+            svc.complete_job(job_id, {"tailored_resume": result})
+
+        elif job_type == "ats_scores":
+            result = svc.compute_ats_scores(
+                payload["tailored_resume"], payload["jd_analysis"]
+            )
+            svc.complete_job(job_id, {"ats_scores": result})
+
+        else:
+            svc.fail_job(job_id, f"Unknown job type: {job_type}")
+
+        logger.info(f"Job {job_id} ({job_type}) completed successfully")
+
+    except Exception as e:
+        logger.error(f"Job {job_id} ({job_type}) failed: {e}")
+        svc.fail_job(job_id, str(e))
+
+
+def process_async_job(event: dict):
+    """Entry point called by lambda_handler for async job events."""
+    job_id = event["job_id"]
+    job_type = event["job_type"]
+    payload = event["payload"]
+    logger.info(f"Processing async job {job_id} ({job_type})")
+    _process_job(job_id, job_type, payload)
 
 
 # Singleton

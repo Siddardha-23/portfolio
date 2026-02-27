@@ -143,12 +143,7 @@ data "archive_file" "lambda_placeholder" {
   }
 }
 
-# Lambda Function URL — bypasses API Gateway's 30-second hard timeout.
-# Used by CloudFront for /api/resume/* routes (Gemini AI calls need 30-60s).
-resource "aws_lambda_function_url" "backend" {
-  function_name      = aws_lambda_function.backend.function_name
-  authorization_type = "NONE"  # JWT auth is handled by Flask
-}
+# All traffic goes through CloudFront -> API Gateway; no direct Lambda Function URL.
 
 # =============================================================================
 # API Gateway HTTP API

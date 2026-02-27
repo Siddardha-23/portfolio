@@ -124,21 +124,6 @@ resource "aws_cloudfront_distribution" "frontend" {
     }
   }
 
-  # ==========================================================================
-  # Origin 3: Lambda Function URL (bypasses API Gateway 30s timeout)
-  # ==========================================================================
-  origin {
-    domain_name = replace(replace(aws_lambda_function_url.backend.function_url, "https://", ""), "/", "")
-    origin_id   = "Lambda-FunctionURL"
-
-    custom_origin_config {
-      http_port              = 80
-      https_port             = 443
-      origin_protocol_policy = "https-only"
-      origin_ssl_protocols   = ["TLSv1.2"]
-      origin_read_timeout    = 60
-    }
-  }
 
   # ==========================================================================
   # Default Behavior: S3 Frontend
@@ -154,23 +139,7 @@ resource "aws_cloudfront_distribution" "frontend" {
   }
 
   # ==========================================================================
-  # Resume API: /api/resume/* -> Lambda Function URL (60s timeout)
-  # Must appear BEFORE the general /api/* behavior so it matches first.
-  # ==========================================================================
-  ordered_cache_behavior {
-    path_pattern               = "/api/resume/*"
-    allowed_methods            = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
-    cached_methods             = ["GET", "HEAD"]
-    target_origin_id           = "Lambda-FunctionURL"
-    cache_policy_id            = local.cloudfront_cache_policy_caching_disabled
-    origin_request_policy_id   = local.cloudfront_origin_request_policy_all_viewer
-    response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
-
-    viewer_protocol_policy = "https-only"
-  }
-
-  # ==========================================================================
-  # API Behavior: /api/* -> API Gateway (30s timeout)
+  # API Behavior: /api/* -> API Gateway
   # ==========================================================================
   ordered_cache_behavior {
     path_pattern               = "/api/*"

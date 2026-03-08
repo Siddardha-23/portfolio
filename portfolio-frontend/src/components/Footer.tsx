@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Github, Linkedin, Mail, Phone } from 'lucide-react';
 import { PERSONAL_INFO } from '@/lib/constants';
+import DeployBadge from '@/components/DeployBadge';
 
 export default function Footer() {
   const currentYear = new Date().getFullYear();
@@ -98,6 +99,9 @@ export default function Footer() {
             </ul>
           </div>
         </div>
+
+        {/* CI/CD Deploy Provenance Badge */}
+        <DeployBadge />
 
         <div className="border-t border-border mt-8 pt-6 text-center">
           <p className="gradient-text font-medium">

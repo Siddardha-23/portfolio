@@ -41,8 +41,17 @@ jobs:
         run: |
           echo "VITE_API_URL=https://${{ secrets.DOMAIN_NAME }}/api" > .env.production
 
+      - name: ⏱️ Record build start time
+        run: echo "BUILD_START=$(date +%s)" >> $GITHUB_ENV
+
       - name: 🏗️ Build frontend
         run: npm run build
+
+      - name: 🔐 Compute build artifact hash
+        id: artifact_hash
+        run: |
+          HASH=$(find dist -type f -print0 | sort -z | xargs -0 cat | sha256sum | awk '{print $1}')
+          echo "hash=${HASH}" >> $GITHUB_OUTPUT
 
       - name: 🔑 Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -70,10 +79,43 @@ jobs:
             --cache-control "public, max-age=60"
 
       - name: 🔄 Invalidate CloudFront cache
+        id: cf_invalidation
         run: |
-          aws cloudfront create-invalidation \
+          INVALIDATION_OUTPUT=$(aws cloudfront create-invalidation \
             --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
+            --paths "/*" 2>&1)
+          echo "status=completed" >> $GITHUB_OUTPUT
+          echo "$INVALIDATION_OUTPUT"
+
+      - name: 📋 Generate deploy manifest
+        run: |
+          BUILD_END=$(date +%s)
+          BUILD_DURATION=$((BUILD_END - BUILD_START))
+          COMMIT_MSG=$(git log -1 --pretty=format:'%s' | head -c 120 | sed 's/"/\\"/g')
+          cat > deploy-manifest.json << EOF
+          {
+            "commit_sha": "${{ github.sha }}",
+            "commit_short": "$(echo ${{ github.sha }} | cut -c1-7)",
+            "commit_message": "${COMMIT_MSG}",
+            "branch": "${{ github.ref_name }}",
+            "run_id": "${{ github.run_id }}",
+            "run_number": ${{ github.run_number }},
+            "repository": "${{ github.repository }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "build_duration_seconds": ${BUILD_DURATION},
+            "environment": "production",
+            "deployer": "github-actions",
+            "frontend_status": "deployed",
+            "cloudfront_invalidation": "${{ steps.cf_invalidation.outputs.status }}",
+            "artifact_hash": "sha256:${{ steps.artifact_hash.outputs.hash }}"
+          }
+          EOF
+
+      - name: 📤 Upload deploy manifest to S3
+        run: |
+          aws s3 cp deploy-manifest.json s3://${{ secrets.S3_BUCKET_NAME }}/deploy-manifest.json \
+            --cache-control "no-cache, no-store, must-revalidate" \
+            --content-type "application/json"
 
   # ===========================================================================
   # Backend Test (smoke check before deploy)

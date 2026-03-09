@@ -5,6 +5,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
+import { UnderTheHoodProvider } from './contexts/UnderTheHoodContext';
+import UnderTheHoodDrawer from './components/UnderTheHoodDrawer';
 import Welcome from './pages/Welcome';
 import Home from './pages/Home';
 import ProjectArchitecture from './pages/ProjectArchitecture';
@@ -19,20 +21,23 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system">
-        <TooltipProvider>
-          <Toaster />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Welcome />} />
-              <Route path="/welcome" element={<Welcome />} />
-              <Route path="/home" element={<Home />} />
-              <Route path="/project/:slug" element={<ProjectArchitecture />} />
-              <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
-              <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
+        <UnderTheHoodProvider>
+          <TooltipProvider>
+            <Toaster />
+            <UnderTheHoodDrawer />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Welcome />} />
+                <Route path="/welcome" element={<Welcome />} />
+                <Route path="/home" element={<Home />} />
+                <Route path="/project/:slug" element={<ProjectArchitecture />} />
+                <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
+                <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </UnderTheHoodProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>

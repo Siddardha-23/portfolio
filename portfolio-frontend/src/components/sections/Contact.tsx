@@ -14,6 +14,8 @@ import {
 import { PERSONAL_INFO } from '@/lib/constants';
 import { toast } from 'sonner';
 import { apiService } from '@/lib/api';
+import UnderTheHoodChips from '@/components/UnderTheHoodChips';
+import { FEATURES } from '@/lib/underTheHoodData';
 
 type FormErrors = {
   name?: string;
@@ -247,6 +249,15 @@ export default function Contact() {
             </p>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>
+          {/* Under the Hood chips */}
+          {(() => {
+            const feature = FEATURES.find(f => f.featureId === 'contact');
+            return feature ? (
+              <div className="flex justify-center mt-4">
+                <UnderTheHoodChips featureId="contact" chips={feature.chips} />
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Quick connect buttons */}

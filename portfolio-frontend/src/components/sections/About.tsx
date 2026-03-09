@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PERSONAL_INFO } from '@/lib/constants';
 import { ResumeViewer } from '@/components/ResumeViewer';
+import UnderTheHoodChips from '@/components/UnderTheHoodChips';
+import { FEATURES } from '@/lib/underTheHoodData';
 
 // Animated stat counter
 function AnimatedStat({ value, label, suffix = '', icon: Icon }: { value: number; label: string; suffix?: string; icon: React.ElementType }) {
@@ -152,6 +154,17 @@ export default function About() {
             </h2>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>
+          {/* Under the Hood chips */}
+          {(() => {
+            const aboutFeatures = FEATURES.filter(f => ['welcome-terminal', 'infrastructure'].includes(f.featureId));
+            return aboutFeatures.length > 0 ? (
+              <div className="flex flex-wrap justify-center gap-2 mt-4">
+                {aboutFeatures.map(f => (
+                  <UnderTheHoodChips key={f.featureId} featureId={f.featureId} chips={f.chips} />
+                ))}
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Main content */}

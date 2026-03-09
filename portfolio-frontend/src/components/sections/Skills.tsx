@@ -3,6 +3,8 @@ import { useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SKILLS } from '@/lib/constants';
+import UnderTheHoodChips from '@/components/UnderTheHoodChips';
+import { FEATURES } from '@/lib/underTheHoodData';
 import {
   Code2,
   Cloud,
@@ -433,6 +435,15 @@ export default function Skills() {
             </p>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>
+          {/* Under the Hood chips */}
+          {(() => {
+            const feature = FEATURES.find(f => f.featureId === 'infrastructure');
+            return feature ? (
+              <div className="flex justify-center mt-4">
+                <UnderTheHoodChips featureId="infrastructure" chips={feature.chips} />
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Stats overview */}

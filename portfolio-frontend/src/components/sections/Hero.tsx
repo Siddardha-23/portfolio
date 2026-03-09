@@ -8,6 +8,8 @@ import { PERSONAL_INFO, ROLES } from '@/lib/constants';
 import { apiService } from '@/lib/api';
 import { VisitorMapTrigger } from '@/components/VisitorMapTrigger';
 import { ResumeViewer } from '@/components/ResumeViewer';
+import UnderTheHoodChips from '@/components/UnderTheHoodChips';
+import { FEATURES } from '@/lib/underTheHoodData';
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -495,6 +497,14 @@ export default function Hero() {
               </span>
               <span>Available for opportunities starting May 2026</span>
             </motion.div>
+
+            {/* Under the Hood chips */}
+            {(() => {
+              const feature = FEATURES.find(f => f.featureId === 'hero');
+              return feature ? (
+                <UnderTheHoodChips featureId="hero" chips={feature.chips} className="mt-4 justify-center lg:justify-start" />
+              ) : null;
+            })()}
           </div>
 
           {/* RIGHT SIDE - Recruiter Panel */}

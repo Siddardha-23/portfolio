@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { PROJECTS } from '@/lib/constants';
+import UnderTheHoodChips from '@/components/UnderTheHoodChips';
+import { FEATURES } from '@/lib/underTheHoodData';
 import {
   Calendar,
   CheckCircle2,
@@ -560,8 +562,8 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
             {/* Project status badge */}
             <div className="absolute top-2 right-3 z-10">
               <Badge className={`backdrop-blur-sm border-0 px-2.5 py-0.5 shadow-lg text-xs ${project.status === 'Live'
-                  ? 'bg-emerald-500/90 text-white'
-                  : 'bg-amber-500/90 text-white'
+                ? 'bg-emerald-500/90 text-white'
+                : 'bg-amber-500/90 text-white'
                 }`}>
                 {project.status === 'Live' ? (
                   <Sparkles className="h-3 w-3 mr-1" />
@@ -724,6 +726,17 @@ export default function Projects() {
             </p>
             <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
           </motion.div>
+          {/* Under the Hood chips */}
+          {(() => {
+            const projectFeatures = FEATURES.filter(f => ['cicd', 'infrastructure'].includes(f.featureId));
+            return projectFeatures.length > 0 ? (
+              <div className="flex flex-wrap justify-center gap-2 mt-4">
+                {projectFeatures.map(f => (
+                  <UnderTheHoodChips key={f.featureId} featureId={f.featureId} chips={f.chips} />
+                ))}
+              </div>
+            ) : null;
+          })()}
         </div>
 
         {/* Projects grid */}

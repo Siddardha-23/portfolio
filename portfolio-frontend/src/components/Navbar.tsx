@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Menu, X, ChevronRight, Download, Mail } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { UnderTheHoodToggle } from '@/components/UnderTheHoodToggle';
 import { ResumeViewer } from '@/components/ResumeViewer';
 
 const navItems = [
@@ -188,6 +189,7 @@ export default function Navbar() {
 
             {/* Action buttons */}
             <div className="flex items-center gap-2">
+              <UnderTheHoodToggle />
               <ThemeToggle />
               <Button
                 size="sm"
@@ -204,6 +206,7 @@ export default function Navbar() {
 
           {/* Mobile Menu Button */}
           <div className="flex items-center gap-3 lg:hidden">
+            <UnderTheHoodToggle />
             <ThemeToggle />
             <Button
               variant="ghost"

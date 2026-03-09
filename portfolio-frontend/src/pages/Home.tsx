@@ -17,8 +17,6 @@ import { useLocation } from 'react-router-dom';
 // Lazy load VisitorGlobe since it imports Leaflet (~200KB) and is only shown on user action
 const VisitorGlobe = lazy(() => import('@/components/VisitorGlobe'));
 
-
-
 export default function Home() {
   const location = useLocation();
 

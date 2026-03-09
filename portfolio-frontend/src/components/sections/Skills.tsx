@@ -99,12 +99,37 @@ const categoryConfig = {
   }
 };
 
+// Deterministic skill proficiency levels (data-driven, not random)
+const skillProficiency: Record<string, number> = {
+  // Programming Languages
+  'Python': 92,
+  'Java': 80,
+  'Bash': 88,
+  'JavaScript': 82,
+  'SQL': 85,
+  'HTML': 90,
+  'CSS': 78,
+  // Cloud & DevOps
+  'AWS (EC2, S3, VPC, ECS, Lambda, CloudWatch, CloudTrail, CodePipeline)': 93,
+  'Terraform': 90,
+  'CloudFormation': 85,
+  'Docker': 88,
+  'Nginx': 78,
+  'Git': 92,
+  'GitHub': 90,
+  // Tools & Databases
+  'Flask': 88,
+  'Postgres': 82,
+  'CodeCommit': 75,
+  'Linux/Unix': 90,
+  'Windows': 80,
+};
+
 // Animated skill level bar
-function SkillLevelBar({ delay }: { delay: number }) {
+function SkillLevelBar({ skill, delay }: { skill: string; delay: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true });
-  // Random proficiency between 75-100 for demo
-  const level = 75 + Math.random() * 25;
+  const level = skillProficiency[skill] ?? 80;
 
   return (
     <div ref={ref} className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden">
@@ -147,7 +172,7 @@ function SkillCard({ skill, index, categoryIndex }: { skill: string; index: numb
           </div>
           <span className="font-medium text-foreground text-sm">{skill}</span>
         </div>
-        <SkillLevelBar delay={delay} />
+        <SkillLevelBar skill={skill} delay={delay} />
       </div>
     </motion.div>
   );

@@ -27,6 +27,7 @@ export default function VisitorShowcase() {
     const [loading, setLoading] = useState(true);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [showLinkedinTooltip, setShowLinkedinTooltip] = useState(false);
+    const [isCarouselPaused, setIsCarouselPaused] = useState(false);
     const linkedinRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -46,16 +47,16 @@ export default function VisitorShowcase() {
         fetchStats();
     }, []);
 
-    // Rotate through organizations
+    // Rotate through organizations (pauses on hover)
     useEffect(() => {
-        if (!stats?.organizations.length) return;
+        if (!stats?.organizations.length || isCarouselPaused) return;
 
         const interval = setInterval(() => {
             setCurrentIndex((prev) => (prev + 1) % stats.organizations.length);
         }, 3000);
 
         return () => clearInterval(interval);
-    }, [stats?.organizations.length]);
+    }, [stats?.organizations.length, isCarouselPaused]);
 
     if (loading) {
         return (
@@ -155,7 +156,11 @@ export default function VisitorShowcase() {
 
                     {/* Organization carousel */}
                     {stats.organizations.length > 0 && (
-                        <div className="relative overflow-hidden rounded-xl bg-secondary/30 dark:bg-secondary/20 p-4 border border-border">
+                        <div
+                            className="relative overflow-hidden rounded-xl bg-secondary/30 dark:bg-secondary/20 p-4 border border-border"
+                            onMouseEnter={() => setIsCarouselPaused(true)}
+                            onMouseLeave={() => setIsCarouselPaused(false)}
+                        >
                             <motion.div
                                 key={currentIndex}
                                 initial={{ opacity: 0, x: 50 }}

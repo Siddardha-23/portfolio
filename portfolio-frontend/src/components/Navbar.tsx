@@ -32,7 +32,7 @@ export default function Navbar() {
       // Calculate scroll progress
       const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
       const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
-      const scrolled = (winScroll / height) * 100;
+      const scrolled = height > 0 ? Math.min((winScroll / height) * 100, 100) : 0;
       setScrollProgress(scrolled);
 
       // Update active section based on scroll position
@@ -145,7 +145,7 @@ export default function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden lg:flex items-center gap-1">
-            <nav className="flex items-center bg-secondary/30 backdrop-blur-sm rounded-full p-1 mr-4 border border-border/50">
+            <nav role="navigation" aria-label="Main navigation" className="flex items-center bg-secondary/30 backdrop-blur-sm rounded-full p-1 mr-4 border border-border/50">
               {navItems.map((item, index) => {
                 const isActive = activeSection === item.href.split('#')[1] ||
                   (item.href === '/home' && !activeSection && location.pathname === '/home');

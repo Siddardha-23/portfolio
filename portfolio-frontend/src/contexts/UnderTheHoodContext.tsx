@@ -11,13 +11,20 @@ interface UnderTheHoodState {
 const UnderTheHoodContext = createContext<UnderTheHoodState | undefined>(undefined);
 
 export function UnderTheHoodProvider({ children }: { children: ReactNode }) {
-    const [enabled, setEnabled] = useState(false);
+    const [enabled, setEnabled] = useState(() => {
+        if (typeof window !== 'undefined') {
+            return localStorage.getItem('under_the_hood_enabled') === 'true';
+        }
+        return false;
+    });
     const [activeDrawer, setActiveDrawer] = useState<string | null>(null);
 
     const toggle = useCallback(() => {
         setEnabled((prev) => {
+            const next = !prev;
             if (prev) setActiveDrawer(null); // close drawer when disabling
-            return !prev;
+            localStorage.setItem('under_the_hood_enabled', String(next));
+            return next;
         });
     }, []);
 

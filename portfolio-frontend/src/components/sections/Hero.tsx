@@ -94,6 +94,7 @@ function RecruiterPanel() {
     linkedin_profiles_found: number;
   } | null>(null);
   const [currentOrgIndex, setCurrentOrgIndex] = useState(0);
+  const [isCarouselPaused, setIsCarouselPaused] = useState(false);
 
   const filteredRoles = ROLES.filter(role =>
     role.toLowerCase().includes(searchQuery.toLowerCase())
@@ -114,12 +115,12 @@ function RecruiterPanel() {
   }, []);
 
   useEffect(() => {
-    if (!stats?.organizations.length) return;
+    if (!stats?.organizations.length || isCarouselPaused) return;
     const interval = setInterval(() => {
       setCurrentOrgIndex((prev) => (prev + 1) % stats.organizations.length);
     }, 3000);
     return () => clearInterval(interval);
-  }, [stats?.organizations.length]);
+  }, [stats?.organizations.length, isCarouselPaused]);
 
   const handleRoleSelect = (role: string) => {
     setSearchQuery('');
@@ -237,7 +238,11 @@ function RecruiterPanel() {
           {/* Organization Carousel */}
           {stats && stats.organizations.length > 0 && (
             <div className="flex-1 flex flex-col justify-end">
-              <div className="p-4 rounded-xl bg-secondary/30 border border-border/50">
+              <div
+                className="p-4 rounded-xl bg-secondary/30 border border-border/50"
+                onMouseEnter={() => setIsCarouselPaused(true)}
+                onMouseLeave={() => setIsCarouselPaused(false)}
+              >
                 <div className="flex items-center gap-3">
                   <div className="flex-shrink-0 w-11 h-11 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center border border-primary/30">
                     <Building2 className="h-5 w-5 text-primary" />

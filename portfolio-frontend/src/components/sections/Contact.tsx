@@ -413,11 +413,12 @@ export default function Contact() {
                           name="message"
                           placeholder="Write your message here..."
                           rows={5}
+                          maxLength={500}
                           value={formData.message}
                           onChange={handleChange}
                           className={`resize-none bg-secondary/30 border-border/50 focus:border-primary ${formErrors.message ? 'border-red-500' : ''}`}
                         />
-                        <div className="absolute bottom-3 right-3 text-xs text-muted-foreground">
+                        <div className={`absolute bottom-3 right-3 text-xs transition-colors ${messageLength >= 450 ? (messageLength >= 490 ? 'text-red-500 font-medium' : 'text-amber-500') : 'text-muted-foreground'}`}>
                           {messageLength}/500
                         </div>
                         <AnimatePresence>

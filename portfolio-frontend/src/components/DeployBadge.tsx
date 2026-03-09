@@ -154,7 +154,27 @@ export default function DeployBadge() {
         }
     };
 
-    // Don't render anything if no manifest (dev mode or fetch failed)
+    // Loading skeleton while fetching
+    if (!manifest && !error) {
+        return (
+            <div className="w-full flex justify-center mt-6 mb-2">
+                <div className="w-full max-w-2xl rounded-xl overflow-hidden">
+                    <div className="w-full flex items-center gap-3 px-4 py-3 bg-white/60 dark:bg-white/[0.04] backdrop-blur-md border border-white/20 dark:border-white/[0.08] rounded-xl animate-pulse">
+                        <span className="relative flex h-2.5 w-2.5">
+                            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
+                        </span>
+                        <div className="flex-1 flex items-center gap-2">
+                            <div className="h-3 w-24 bg-muted-foreground/20 rounded" />
+                            <div className="h-3 w-16 bg-muted-foreground/15 rounded" />
+                            <div className="h-3 w-12 bg-muted-foreground/10 rounded" />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // Don't render anything if fetch failed (dev mode or network error)
     if (error || !manifest) return null;
 
     const runUrl = `https://github.com/${manifest.repository}/actions/runs/${manifest.run_id}`;

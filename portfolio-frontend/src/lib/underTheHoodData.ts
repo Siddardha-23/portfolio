@@ -484,6 +484,59 @@ export const FEATURES: FeatureMeta[] = [
 
     // ──────────── INFRASTRUCTURE AS CODE ────────────
     {
+        featureId: 'request-tracer',
+        title: 'Distributed Request Tracing',
+        subtitle: 'Live waterfall visualization of request lifecycle',
+        whyItExists:
+            'Most portfolios just show static pages. This feature lets recruiters fire a real HTTP request and watch it traverse CloudFront → API Gateway → Lambda → MongoDB in real time — proving production-grade observability skills.',
+        chips: [
+            { label: 'X-Ray', icon: 'chart', color: 'amber' },
+            { label: 'Resource Timing API', icon: 'globe', color: 'blue' },
+            { label: 'MongoDB Atlas', icon: 'database', color: 'green' },
+        ],
+        requestPath: [
+            { label: 'Browser', detail: 'Clears Resource Timing buffer, fires fetch with cache: no-store' },
+            { label: 'CloudFront', detail: 'Edge routing to API Gateway origin' },
+            { label: 'API Gateway', detail: 'HTTP API v2.0 proxy to Lambda' },
+            { label: 'Lambda', detail: 'Flask routing + cold start detection + metadata injection' },
+            { label: 'MongoDB Atlas', detail: 'Infra mode: db.command("ping") | Data mode: 5 real aggregation pipelines' },
+            { label: 'Response', detail: 'Server timing merged with client Resource Timing API data' },
+        ],
+        keyFiles: [
+            { path: 'portfolio-backend/blueprints/trace.py', description: 'Trace endpoints (/trace and /trace/deep)' },
+            { path: 'portfolio-frontend/src/components/RequestTracer.tsx', description: 'Waterfall chart modal with dual-mode tracing' },
+            { path: 'portfolio-frontend/src/lib/api.ts', description: 'traceRequest() + traceDeepRequest() with Resource Timing API', lines: 'L679-L780' },
+            { path: 'portfolio-backend/lambda_handler.py', description: 'Cold start detection + metadata injection into builtins' },
+        ],
+        terraformResources: [
+            { resource: 'aws_lambda_function.backend', file: 'lambda.tf', purpose: 'Lambda with X-Ray tracing enabled' },
+            { resource: 'aws_iam_role_policy.xray_write', file: 'lambda.tf', purpose: 'IAM policy allowing X-Ray PutTraceSegments' },
+        ],
+        awsServices: ['X-Ray', 'Lambda', 'API Gateway', 'CloudFront', 'CloudWatch'],
+        tradeoffs: [
+            {
+                decision: 'Two trace modes (Infra + Data Query)',
+                why: 'Infra trace shows network/infra latency with a simple ping. Data Query trace runs real aggregation pipelines that power the portfolio sections — showing realistic DB latency.',
+                alternative: 'Single trace mode would be simpler but wouldn\'t demonstrate real data layer performance',
+            },
+            {
+                decision: 'Browser Resource Timing API over server-only timing',
+                why: 'Server can\'t measure DNS, TCP/TLS, or TTFB. Combining both gives a true end-to-end picture.',
+                alternative: 'Server-only timing misses network layer; Navigation Timing only works for page loads, not XHR',
+            },
+        ],
+        failureModes: [
+            'Cross-origin Resource Timing zeroed out — Timing-Allow-Origin header needed on CloudFront',
+            'Lambda cold start inflates first trace — clearly labeled with red badge',
+            'X-Ray trace ID unavailable locally — gracefully hidden when not on Lambda',
+        ],
+        observability: [
+            'X-Ray trace ID deep-linked to AWS console in modal',
+            'Every span individually timed with performance.now() (client) and time.perf_counter() (server)',
+            'Cold start flag + init_duration_ms injected via lambda_handler.py',
+        ],
+    },
+    {
         featureId: 'infrastructure',
         title: 'Infrastructure as Code',
         subtitle: 'Terraform-managed AWS resources',
@@ -549,7 +602,7 @@ export function getFeature(id: string): FeatureMeta | undefined {
 /** Map sectionId → featureIds to show chips on each section */
 export const SECTION_CHIPS: Record<string, string[]> = {
     hero: ['hero'],
-    about: ['welcome-terminal', 'infrastructure'],
+    about: ['welcome-terminal', 'infrastructure', 'request-tracer'],
     skills: ['infrastructure'],
     education: [],
     experience: [],

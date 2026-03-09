@@ -112,7 +112,12 @@ function buildWaterfallSpans(trace: TraceResult): WaterfallSpan[] {
 }
 
 function WaterfallBar({ span, index, maxMs }: { span: WaterfallSpan; index: number; maxMs: number }) {
-    const widthPercent = Math.max(4, (span.ms / maxMs) * 100);
+    const rawPercent = (span.ms / maxMs) * 100;
+    // Ensure even tiny spans get a visible bar (min 3%)
+    const widthPercent = Math.max(3, rawPercent);
+    // If bar is small, show label outside
+    const isSmallBar = rawPercent < 15;
+    const formattedMs = span.ms < 1 ? `${(span.ms * 1000).toFixed(0)}µs` : `${span.ms.toFixed(1)}ms`;
 
     return (
         <motion.div
@@ -132,24 +137,42 @@ function WaterfallBar({ span, index, maxMs }: { span: WaterfallSpan; index: numb
                 <span className="text-xs font-medium text-foreground/80 truncate">{span.label}</span>
             </div>
 
-            {/* Bar */}
-            <div className="flex-1 relative h-7 bg-secondary/30 rounded overflow-hidden">
-                <motion.div
-                    className="absolute inset-y-0 left-0 rounded flex items-center"
-                    style={{ background: `linear-gradient(90deg, ${span.color}CC, ${span.color}90)` }}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${widthPercent}%` }}
-                    transition={{ delay: 0.2 + index * 0.08, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-                >
-                    <span className="absolute right-2 text-[10px] font-bold text-white drop-shadow-sm whitespace-nowrap">
-                        {span.ms.toFixed(1)}ms
-                    </span>
-                </motion.div>
+            {/* Bar + value */}
+            <div className="flex-1 flex items-center gap-2">
+                <div className="flex-1 relative h-7 bg-secondary/30 rounded overflow-hidden">
+                    <motion.div
+                        className="absolute inset-y-0 left-0 rounded flex items-center"
+                        style={{ background: `linear-gradient(90deg, ${span.color}CC, ${span.color}90)` }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${widthPercent}%` }}
+                        transition={{ delay: 0.2 + index * 0.08, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+                    >
+                        {/* Show ms inside bar only if bar is wide enough */}
+                        {!isSmallBar && (
+                            <span className="absolute right-2 text-[10px] font-bold text-white drop-shadow-sm whitespace-nowrap">
+                                {formattedMs}
+                            </span>
+                        )}
+                    </motion.div>
 
-                {/* Tooltip on hover */}
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center pointer-events-none">
-                    <span className="ml-2 text-[10px] text-muted-foreground">{span.description}</span>
+                    {/* Tooltip on hover */}
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center pointer-events-none">
+                        <span className="ml-2 text-[10px] text-muted-foreground">{span.description}</span>
+                    </div>
                 </div>
+
+                {/* Show ms outside bar when bar is too small */}
+                {isSmallBar && (
+                    <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.4 + index * 0.08 }}
+                        className="text-[11px] font-semibold whitespace-nowrap shrink-0"
+                        style={{ color: span.color }}
+                    >
+                        {formattedMs}
+                    </motion.span>
+                )}
             </div>
         </motion.div>
     );

@@ -17,6 +17,14 @@ import builtins
 # Cold-start detection: module loads once per Lambda container
 _module_load_time = _time.perf_counter()
 _cold_start = True
+# Persist cold start info for the /api/trace/pageload endpoint
+# (by the time a user clicks "trace", the container is warm —
+#  this preserves the original cold start timing)
+_container_birth = {
+    'cold_start_init_ms': 0,  # filled on first invocation
+    'first_request_time': None,
+    'container_id': None,
+}
 
 # Configure logging for Lambda
 logging.basicConfig(
@@ -71,15 +79,24 @@ def handler(event, context):
         _handler_start = _time.perf_counter()
 
         # Inject Lambda metadata so the /api/trace endpoint can read it
+        init_duration = round((_handler_start - _module_load_time) * 1000, 2) if _cold_start else 0
+
+        # Persist cold start info once (survives across warm invocations)
+        if _cold_start:
+            _container_birth['cold_start_init_ms'] = init_duration
+            _container_birth['first_request_time'] = _handler_start
+            _container_birth['container_id'] = getattr(context, 'aws_request_id', 'local') if context else 'local'
+
         builtins._lambda_meta = {
             'cold_start': _cold_start,
-            'init_duration_ms': round((_handler_start - _module_load_time) * 1000, 2) if _cold_start else 0,
+            'init_duration_ms': init_duration,
             'region': os.environ.get('AWS_REGION', 'local'),
             'memory_mb': int(os.environ.get('AWS_LAMBDA_MEMORY_SIZE', '0')),
             'function_name': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'local-dev'),
             'request_id': getattr(context, 'aws_request_id', 'local') if context else 'local',
             'handler_start': _handler_start,
         }
+        builtins._container_birth = _container_birth
         _cold_start = False
 
         # ── Async job invocation (from Lambda invoking itself) ──

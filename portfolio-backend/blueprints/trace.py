@@ -118,6 +118,128 @@ def trace_request():
     return resp, 200
 
 
+@trace_bp.route('/pageload', methods=['GET'])
+def trace_pageload():
+    """
+    Page-load trace: returns Lambda container lifecycle data so the frontend
+    can combine it with browser Navigation Timing + Resource Timing APIs to
+    render a full page-load waterfall:
+        Route 53 → CloudFront → S3 → Assets → Lambda (cold start?) → MongoDB
+
+    Unlike /trace which only sees the current request, this endpoint reveals
+    what happened when the Lambda container FIRST booted (possibly serving
+    the visitor-tracking POST that fired on page load).
+    """
+    t_start = time.perf_counter()
+    trace_id = str(uuid.uuid4())
+
+    import builtins
+    lambda_meta = getattr(builtins, '_lambda_meta', None)
+    container_birth = getattr(builtins, '_container_birth', None)
+
+    region = os.environ.get('AWS_REGION', 'local')
+    memory_mb = int(os.environ.get('AWS_LAMBDA_MEMORY_SIZE', '0'))
+    function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'local-dev')
+    request_id = 'local'
+
+    # Current invocation metadata
+    current_cold_start = False
+    current_init_ms = 0
+    if lambda_meta:
+        current_cold_start = lambda_meta.get('cold_start', False)
+        current_init_ms = lambda_meta.get('init_duration_ms', 0)
+        region = lambda_meta.get('region', region)
+        memory_mb = lambda_meta.get('memory_mb', memory_mb)
+        function_name = lambda_meta.get('function_name', function_name)
+        request_id = lambda_meta.get('request_id', request_id)
+
+    # Historical cold start data (from when this container first booted)
+    container_cold_start_ms = 0
+    container_first_request_id = None
+    if container_birth:
+        container_cold_start_ms = container_birth.get('cold_start_init_ms', 0)
+        container_first_request_id = container_birth.get('container_id')
+
+    # Flask routing time
+    t_after_routing = time.perf_counter()
+    flask_routing_ms = round((t_after_routing - t_start) * 1000, 2)
+
+    # MongoDB ping (shows current DB latency)
+    db_ping_ms = 0
+    db_status = 'ok'
+    try:
+        from utils.db_connect import DBConnect
+        db = DBConnect()
+        t_db_start = time.perf_counter()
+        db.get_db().command('ping')
+        t_db_end = time.perf_counter()
+        db_ping_ms = round((t_db_end - t_db_start) * 1000, 2)
+    except Exception as e:
+        db_status = f'error: {str(e)[:80]}'
+        logger.warning(f"Pageload trace DB ping failed: {e}")
+
+    # X-Ray trace ID
+    xray_trace_id = os.environ.get('_X_AMZN_TRACE_ID', '')
+    xray_trace_id_clean = ''
+    xray_console_url = ''
+    if xray_trace_id:
+        parts = dict(p.split('=', 1) for p in xray_trace_id.split(';') if '=' in p)
+        root = parts.get('Root', '')
+        if root:
+            xray_trace_id_clean = root
+            xray_console_url = (
+                f"https://console.aws.amazon.com/xray/home"
+                f"?region={region}#/traces/{root}"
+            )
+
+    t_end = time.perf_counter()
+    total_ms = round((t_end - t_start) * 1000, 2)
+
+    response_data = {
+        'trace_id': trace_id,
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'cold_start': current_cold_start,
+        'server': {
+            'total_ms': total_ms,
+            'lambda_init_ms': current_init_ms,
+            'flask_routing_ms': flask_routing_ms,
+            'db_ping_ms': db_ping_ms,
+            'db_status': db_status,
+        },
+        'container': {
+            'cold_start_init_ms': container_cold_start_ms,
+            'first_request_id': container_first_request_id,
+            'is_warm': container_cold_start_ms > 0 and not current_cold_start,
+        },
+        'lambda': {
+            'region': region,
+            'memory_mb': memory_mb,
+            'function_name': function_name,
+            'request_id': request_id,
+        },
+        'xray': {
+            'trace_id': xray_trace_id_clean,
+            'console_url': xray_console_url,
+            'enabled': bool(xray_trace_id),
+        },
+        'infrastructure': {
+            'dns': 'Route 53 (A + AAAA alias records)',
+            'cdn': 'CloudFront (PriceClass_100, TLSv1.2_2021)',
+            'static_origin': 'S3 + Origin Access Control (SigV4)',
+            'api_origin': 'API Gateway HTTP API v2.0 → Lambda',
+            'compute': f'Lambda Python 3.12 ({memory_mb}MB)',
+            'database': 'MongoDB Atlas',
+            'tracing': 'AWS X-Ray (Active mode)',
+            'security': 'HSTS + CSP + X-Frame-Options: DENY',
+        },
+    }
+
+    resp = jsonify(response_data)
+    resp.headers['X-Trace-Id'] = trace_id
+    resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate'
+    return resp, 200
+
+
 @trace_bp.route('/deep', methods=['GET'])
 def trace_deep_request():
     """

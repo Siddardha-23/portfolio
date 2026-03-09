@@ -777,6 +777,105 @@ class ApiService {
       };
     }
   }
+
+  async tracePageLoad(): Promise<ApiResponse<PageLoadTraceResult>> {
+    const url = `${this.baseURL}/trace/pageload`;
+
+    try {
+      // 1. Collect Navigation Timing (the actual page load)
+      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+      const nav = navEntries[0];
+
+      const navigation = nav ? {
+        dns_ms: Math.round((nav.domainLookupEnd - nav.domainLookupStart) * 100) / 100,
+        tcp_ms: Math.round((nav.connectEnd - nav.connectStart) * 100) / 100,
+        tls_ms: nav.secureConnectionStart > 0
+          ? Math.round((nav.connectEnd - nav.secureConnectionStart) * 100) / 100
+          : 0,
+        ttfb_ms: Math.round((nav.responseStart - nav.requestStart) * 100) / 100,
+        document_download_ms: Math.round((nav.responseEnd - nav.responseStart) * 100) / 100,
+        dom_parse_ms: Math.round((nav.domInteractive - nav.responseEnd) * 100) / 100,
+        dom_interactive_ms: Math.round(nav.domInteractive * 100) / 100,
+        page_load_ms: Math.round((nav.loadEventEnd > 0 ? nav.loadEventEnd : performance.now()) * 100) / 100,
+        redirect_ms: Math.round((nav.redirectEnd - nav.redirectStart) * 100) / 100,
+        transfer_size: nav.transferSize || 0,
+      } : {
+        dns_ms: 0, tcp_ms: 0, tls_ms: 0, ttfb_ms: 0,
+        document_download_ms: 0, dom_parse_ms: 0, dom_interactive_ms: 0,
+        page_load_ms: Math.round(performance.now() * 100) / 100,
+        redirect_ms: 0, transfer_size: 0,
+      };
+
+      // 2. Collect Resource Timing (all loaded assets)
+      const allResources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+
+      const categorize = (entries: PerformanceResourceTiming[], filter: (e: PerformanceResourceTiming) => boolean) =>
+        entries.filter(filter).map(e => ({
+          name: e.name.split('/').pop()?.split('?')[0] || e.name,
+          duration: Math.round(e.duration * 100) / 100,
+          size: e.transferSize || 0,
+        })).sort((a, b) => b.duration - a.duration).slice(0, 5);
+
+      const scripts = categorize(allResources, e => e.initiatorType === 'script' || e.name.endsWith('.js'));
+      const styles = categorize(allResources, e => e.initiatorType === 'link' && (e.name.endsWith('.css') || e.name.includes('.css')));
+      const apiCalls = categorize(allResources, e => e.name.includes('/api/'));
+      const fonts = categorize(allResources, e => e.initiatorType === 'css' || e.name.match(/\.(woff2?|ttf|otf)/) !== null);
+
+      const totalTransferKb = Math.round(allResources.reduce((sum, e) => sum + (e.transferSize || 0), 0) / 1024);
+
+      const resources = {
+        scripts,
+        styles,
+        api_calls: apiCalls,
+        fonts,
+        total_resources: allResources.length,
+        total_transfer_kb: totalTransferKb,
+      };
+
+      // 3. Fetch server-side Lambda/container data
+      performance.clearResourceTimings();
+      const fetchStart = performance.now();
+      const response = await fetch(url, { cache: 'no-store' });
+      const fetchEnd = performance.now();
+
+      if (!response.ok) {
+        return { error: `HTTP ${response.status}` };
+      }
+
+      const serverData = await response.json();
+      const totalMs = Math.round((fetchEnd - fetchStart) * 100) / 100;
+
+      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const entry = entries.find(e => e.name.includes('/trace/pageload'));
+
+      const safeDelta = (a: number, b: number, max: number) => {
+        if (!a || !b || a <= 0 || b <= 0) return 0;
+        const d = Math.round((a - b) * 100) / 100;
+        return d > 0 && d < max ? d : 0;
+      };
+
+      const client = {
+        total_ms: totalMs,
+        dns_ms: entry ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs) : 0,
+        tcp_tls_ms: entry ? safeDelta(entry.connectEnd, entry.connectStart, totalMs) : 0,
+        ttfb_ms: entry ? safeDelta(entry.responseStart, entry.requestStart, totalMs) : 0,
+        download_ms: entry ? safeDelta(entry.responseEnd, entry.responseStart, totalMs) : 0,
+      };
+
+      return {
+        data: {
+          ...serverData,
+          client,
+          navigation,
+          resources,
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Page load trace failed',
+      };
+    }
+  }
 }
 
 // Trace result type
@@ -856,6 +955,74 @@ export interface DeepTraceResult {
     tcp_tls_ms: number;
     ttfb_ms: number;
     download_ms: number;
+  };
+}
+
+// Page load trace result type
+export interface PageLoadTraceResult {
+  trace_id: string;
+  timestamp: string;
+  cold_start: boolean;
+  server: {
+    total_ms: number;
+    lambda_init_ms: number;
+    flask_routing_ms: number;
+    db_ping_ms: number;
+    db_status: string;
+  };
+  container: {
+    cold_start_init_ms: number;
+    first_request_id: string | null;
+    is_warm: boolean;
+  };
+  lambda: {
+    region: string;
+    memory_mb: number;
+    function_name: string;
+    request_id: string;
+  };
+  xray: {
+    trace_id: string;
+    console_url: string;
+    enabled: boolean;
+  };
+  infrastructure: {
+    dns: string;
+    cdn: string;
+    static_origin: string;
+    api_origin: string;
+    compute: string;
+    database: string;
+    tracing: string;
+    security: string;
+  };
+  // Added client-side
+  client: {
+    total_ms: number;
+    dns_ms: number;
+    tcp_tls_ms: number;
+    ttfb_ms: number;
+    download_ms: number;
+  };
+  navigation: {
+    dns_ms: number;
+    tcp_ms: number;
+    tls_ms: number;
+    ttfb_ms: number;
+    document_download_ms: number;
+    dom_parse_ms: number;
+    dom_interactive_ms: number;
+    page_load_ms: number;
+    redirect_ms: number;
+    transfer_size: number;
+  };
+  resources: {
+    scripts: { name: string; duration: number; size: number }[];
+    styles: { name: string; duration: number; size: number }[];
+    api_calls: { name: string; duration: number; size: number }[];
+    fonts: { name: string; duration: number; size: number }[];
+    total_resources: number;
+    total_transfer_kb: number;
   };
 }
 

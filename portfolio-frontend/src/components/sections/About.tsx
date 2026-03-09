@@ -7,6 +7,7 @@ import { PERSONAL_INFO } from '@/lib/constants';
 import { ResumeViewer } from '@/components/ResumeViewer';
 import UnderTheHoodChips from '@/components/UnderTheHoodChips';
 import { FEATURES } from '@/lib/underTheHoodData';
+import RequestTracer from '@/components/RequestTracer';
 
 // Animated stat counter
 function AnimatedStat({ value, label, suffix = '', icon: Icon }: { value: number; label: string; suffix?: string; icon: React.ElementType }) {
@@ -181,6 +182,11 @@ export default function About() {
               <AnimatedStat key={i} {...stat} />
             ))}
           </motion.div>
+
+          {/* Live Request Tracer — prominent for recruiters */}
+          <div className="mb-16">
+            <RequestTracer />
+          </div>
 
           {/* About content grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start mb-16">

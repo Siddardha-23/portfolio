@@ -26,6 +26,12 @@ resource "aws_iam_role_policy_attachment" "lambda_basic" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
+# X-Ray write access for distributed tracing
+resource "aws_iam_role_policy_attachment" "lambda_xray" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
 # Custom policy for Lambda
 resource "aws_iam_role_policy" "lambda_custom" {
   name = "${var.project_name}-lambda-policy"
@@ -68,6 +74,14 @@ resource "aws_iam_role_policy" "lambda_custom" {
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
         Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-backend"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "xray:GetTraceSummaries",
+          "xray:BatchGetTraces"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -117,9 +131,9 @@ resource "aws_lambda_function" "backend" {
     }
   }
 
-  # Enable X-Ray tracing (optional, helps debugging)
+  # Enable X-Ray active tracing for distributed tracing waterfall
   tracing_config {
-    mode = "PassThrough"
+    mode = "Active"
   }
 
   depends_on = [

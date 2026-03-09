@@ -66,12 +66,26 @@ def create_app():
             "origins": allowed_origins,
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"],
-            "expose_headers": ["Content-Disposition"],
+            "expose_headers": ["Content-Disposition", "X-Trace-Id", "X-Amzn-Trace-Id", "Server-Timing"],
             "supports_credentials": True,
             "max_age": 3600
         }
     })
     jwt = JWTManager(app)
+
+    # X-Ray instrumentation (only in Lambda / production)
+    if os.getenv('USE_SSM_SECRETS', 'false').lower() == 'true':
+        try:
+            from aws_xray_sdk.core import xray_recorder, patch_all
+            from aws_xray_sdk.ext.flask.middleware import XRayMiddleware
+            xray_recorder.configure(service='portfolio-backend')
+            XRayMiddleware(app, xray_recorder)
+            patch_all()  # Auto-instruments pymongo, boto3, requests
+            logger.info("X-Ray SDK initialized — Flask, PyMongo, boto3, requests instrumented")
+        except ImportError:
+            logger.warning("aws-xray-sdk not installed, skipping X-Ray instrumentation")
+        except Exception as e:
+            logger.warning(f"X-Ray initialization failed: {e}")
 
     # Security headers on all responses
     @app.after_request
@@ -117,6 +131,10 @@ def create_app():
     # Resume Tailor module
     from blueprints.resume import resume_bp
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
+
+    # Request tracing module
+    from blueprints.trace import trace_bp
+    app.register_blueprint(trace_bp, url_prefix='/api/trace')
 
     # Health check endpoint
     @app.route('/api/health')
@@ -167,6 +185,10 @@ def create_app():
                 'resume': {
                     'prefix': '/api/resume',
                     'description': 'Resume tailoring and ATS analysis'
+                },
+                'trace': {
+                    'prefix': '/api/trace',
+                    'description': 'Distributed request tracing with X-Ray integration'
                 }
             }
         }, 200

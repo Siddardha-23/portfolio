@@ -11,6 +11,12 @@ Architecture:
 
 import logging
 import os
+import time as _time
+import builtins
+
+# Cold-start detection: module loads once per Lambda container
+_module_load_time = _time.perf_counter()
+_cold_start = True
 
 # Configure logging for Lambda
 logging.basicConfig(
@@ -61,6 +67,21 @@ def handler(event, context):
         dict: HTTP response in API Gateway format
     """
     try:
+        global _cold_start
+        _handler_start = _time.perf_counter()
+
+        # Inject Lambda metadata so the /api/trace endpoint can read it
+        builtins._lambda_meta = {
+            'cold_start': _cold_start,
+            'init_duration_ms': round((_handler_start - _module_load_time) * 1000, 2) if _cold_start else 0,
+            'region': os.environ.get('AWS_REGION', 'local'),
+            'memory_mb': int(os.environ.get('AWS_LAMBDA_MEMORY_SIZE', '0')),
+            'function_name': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'local-dev'),
+            'request_id': getattr(context, 'aws_request_id', 'local') if context else 'local',
+            'handler_start': _handler_start,
+        }
+        _cold_start = False
+
         # ── Async job invocation (from Lambda invoking itself) ──
         if event.get("async_job"):
             from services.resume_service import process_async_job

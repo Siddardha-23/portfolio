@@ -675,6 +675,93 @@ class ApiService {
       return { error: error instanceof Error ? error.message : 'Download failed' };
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  REQUEST TRACING — distributed tracing waterfall
+  // ═══════════════════════════════════════════════════════════════
+
+  async traceRequest(): Promise<ApiResponse<TraceResult>> {
+    // baseURL already ends with /api (e.g. http://localhost:5000/api)
+    const url = `${this.baseURL}/trace`;
+
+    // Clear any stale Resource Timing entries for this URL
+    performance.clearResourceTimings();
+
+    try {
+      const fetchStart = performance.now();
+      const response = await fetch(url, { cache: 'no-store' });
+      const fetchEnd = performance.now();
+
+      if (!response.ok) {
+        return { error: `HTTP ${response.status}` };
+      }
+
+      const serverData = await response.json();
+      const totalMs = Math.round((fetchEnd - fetchStart) * 100) / 100;
+
+      // Get Resource Timing entry for this specific request
+      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const entry = entries.find(e => e.name.includes('/trace'));
+
+      // Helper: safely compute duration from Resource Timing (handles cross-origin zeroes)
+      const safeDelta = (a: number, b: number, max: number) => {
+        if (!a || !b || a <= 0 || b <= 0) return 0;
+        const d = Math.round((a - b) * 100) / 100;
+        return d > 0 && d < max ? d : 0;
+      };
+
+      const client = {
+        total_ms: totalMs,
+        dns_ms: entry ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs) : 0,
+        tcp_tls_ms: entry ? safeDelta(entry.connectEnd, entry.connectStart, totalMs) : 0,
+        ttfb_ms: entry ? safeDelta(entry.responseStart, entry.requestStart, totalMs) : 0,
+        download_ms: entry ? safeDelta(entry.responseEnd, entry.responseStart, totalMs) : 0,
+      };
+
+      return {
+        data: {
+          ...serverData,
+          client,
+        },
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Trace request failed',
+      };
+    }
+  }
+}
+
+// Trace result type
+export interface TraceResult {
+  trace_id: string;
+  timestamp: string;
+  cold_start: boolean;
+  server: {
+    total_ms: number;
+    lambda_init_ms: number;
+    flask_routing_ms: number;
+    db_ping_ms: number;
+    db_status: string;
+  };
+  lambda: {
+    region: string;
+    memory_mb: number;
+    function_name: string;
+    request_id: string;
+  };
+  xray: {
+    trace_id: string;
+    console_url: string;
+    enabled: boolean;
+  };
+  client: {
+    total_ms: number;
+    dns_ms: number;
+    tcp_tls_ms: number;
+    ttfb_ms: number;
+    download_ms: number;
+  };
 }
 
 export const apiService = new ApiService(API_BASE_URL);

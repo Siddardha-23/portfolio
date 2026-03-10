@@ -2,7 +2,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState, useCallback } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
 import { UnderTheHoodProvider } from './contexts/UnderTheHoodContext';
@@ -11,11 +11,47 @@ import Welcome from './pages/Welcome';
 import Home from './pages/Home';
 import ProjectArchitecture from './pages/ProjectArchitecture';
 import NotFound from './pages/NotFound';
+import { useKonamiCode } from './components/DeployRunner';
 
 const JobSearch = lazy(() => import('./pages/JobSearch'));
 const ResumeParser = lazy(() => import('./pages/ResumeParser'));
+const DeployRunner = lazy(() => import('./components/DeployRunner'));
 
 const queryClient = new QueryClient();
+
+// Inner component that can use hooks
+function AppContent() {
+  const [showGame, setShowGame] = useState(false);
+
+  const openGame = useCallback(() => {
+    setShowGame(true);
+  }, []);
+
+  useKonamiCode(openGame);
+
+  return (
+    <>
+      <Toaster />
+      <UnderTheHoodDrawer />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Welcome />} />
+          <Route path="/welcome" element={<Welcome />} />
+          <Route path="/home" element={<Home />} />
+          <Route path="/project/:slug" element={<ProjectArchitecture />} />
+          <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
+          <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </BrowserRouter>
+
+      {/* Easter Egg: Deploy Runner Game (Konami Code) */}
+      <Suspense fallback={null}>
+        <DeployRunner isOpen={showGame} onClose={() => setShowGame(false)} />
+      </Suspense>
+    </>
+  );
+}
 
 const App = () => (
   <ErrorBoundary>
@@ -23,19 +59,7 @@ const App = () => (
       <ThemeProvider defaultTheme="system">
         <UnderTheHoodProvider>
           <TooltipProvider>
-            <Toaster />
-            <UnderTheHoodDrawer />
-            <BrowserRouter>
-              <Routes>
-                <Route path="/" element={<Welcome />} />
-                <Route path="/welcome" element={<Welcome />} />
-                <Route path="/home" element={<Home />} />
-                <Route path="/project/:slug" element={<ProjectArchitecture />} />
-                <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
-                <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </BrowserRouter>
+            <AppContent />
           </TooltipProvider>
         </UnderTheHoodProvider>
       </ThemeProvider>
@@ -44,3 +68,4 @@ const App = () => (
 );
 
 export default App;
+

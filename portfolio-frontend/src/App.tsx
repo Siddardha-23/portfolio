@@ -16,6 +16,7 @@ import { useKonamiCode } from './components/DeployRunner';
 const JobSearch = lazy(() => import('./pages/JobSearch'));
 const ResumeParser = lazy(() => import('./pages/ResumeParser'));
 const DeployRunner = lazy(() => import('./components/DeployRunner'));
+const CloudLab = lazy(() => import('./pages/CloudLab'));
 
 const queryClient = new QueryClient();
 
@@ -45,6 +46,7 @@ function AppContent() {
           <Route path="/" element={<Welcome />} />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/home" element={<Home />} />
+          <Route path="/cloud-lab" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><CloudLab /></Suspense>} />
           <Route path="/project/:slug" element={<ProjectArchitecture />} />
           <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
           <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />

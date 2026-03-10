@@ -15,6 +15,7 @@ const navItems = [
   { label: 'Education', href: '/home#education', shortLabel: 'Edu' },
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },
   { label: 'Projects', href: '/home#projects', shortLabel: 'Projects' },
+  { label: 'Cloud Lab', href: '/cloud-lab', shortLabel: 'Lab' },
   { label: 'Contact', href: '/home#contact', shortLabel: 'Contact' },
 ];
 

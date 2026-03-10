@@ -41,22 +41,22 @@ A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, d
                            └─────────────────────┘
 ```
 
+## 🌟 Key Features
+
+- **AI-Powered Resume Tailoring**: Integrated Gemini AI to parse resumes, tailor them against Job Descriptions, calculate ATS/screener scores, and dynamically generate optimized PDFs.
+- **Interactive Cloud Lab**: Real-time cloud demonstrations including an Edge CDN Latency Tester, Infrastructure Cost Calculator, Security Header Scorecard, and Infrastructure Health Dashboard.
+- **End-to-End Request Tracing**: Built-in AWS X-Ray visualization, rendering API request waterfall charts directly on the frontend.
+- **3D Visitor Analytics Globe**: Interactive 3D globe visualizing live visitor traffic, IP geolocations, and organizations.
+- **Seamless Serverless Backend**: Flask API wrapped with Mangum for scalable AWS Lambda execution with MongoDB Atlas caching and state management.
+
 ## 📁 Project Structure
 
-```
+```text
 portfolio/
 ├── .github/workflows/       # GitHub Actions CI/CD
-│   └── deploy.yml
-├── infrastructure/          # Infrastructure as Code
-│   ├── terraform/          # AWS resources (S3, CloudFront, Lambda, etc.)
-│   └── iam-policy.json     # IAM policy for deployment
-├── portfolio-frontend/      # React/Vite frontend
-│   ├── src/
-│   └── package.json
-├── portfolio-backend/       # Flask API backend
-│   ├── blueprints/
-│   ├── services/
-│   └── requirements.txt
+├── infrastructure/          # Terraform AWS resources
+├── portfolio-frontend/      # React/Vite frontend (Cloud Lab, Globe, X-Ray UI)
+├── portfolio-backend/       # Flask API (Gemini integrations, Mangum adapter)
 └── README.md
 ```
 
@@ -67,19 +67,22 @@ portfolio/
 - **Vite** for fast builds
 - **Tailwind CSS** for styling
 - **Framer Motion** for animations
+- **Recharts** for analytics
+- **Globe.gl** for 3D interactions
 
 ### Backend
-- **Flask** (Python)
+- **Flask** (Python 3.12)
+- **Mangum** (ASGI adapter for Lambda)
+- **Gemini AI** (Generative AI integration)
+- **PyPDF2 / fpdf2 / python-docx** for document processing
 - **JWT** authentication
-- **MongoDB** database
+- **MongoDB Atlas** database
 
 ### Infrastructure (AWS)
-- **S3** - Static website hosting
-- **CloudFront** - Global CDN
-- **Lambda** - Serverless compute
-- **API Gateway** - REST API
-- **Route 53** - DNS management
-- **ACM** - SSL certificates
+- **S3 & CloudFront** - Static website & Global CDN
+- **Lambda & API Gateway** - Serverless compute & REST API
+- **AWS X-Ray** - End-to-end request tracing
+- **Route 53 & ACM** - DNS & SSL certificates
 - **SSM Parameter Store** - Secrets management
 
 ### DevOps

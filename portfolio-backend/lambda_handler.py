@@ -77,27 +77,7 @@ def handler(event, context):
     try:
         global _cold_start
         _handler_start = _time.perf_counter()
-
-        # Inject Lambda metadata so the /api/trace endpoint can read it
-        init_duration = round((_handler_start - _module_load_time) * 1000, 2) if _cold_start else 0
-
-        # Persist cold start info once (survives across warm invocations)
-        if _cold_start:
-            _container_birth['cold_start_init_ms'] = init_duration
-            _container_birth['first_request_time'] = _handler_start
-            _container_birth['container_id'] = getattr(context, 'aws_request_id', 'local') if context else 'local'
-
-        builtins._lambda_meta = {
-            'cold_start': _cold_start,
-            'init_duration_ms': init_duration,
-            'region': os.environ.get('AWS_REGION', 'local'),
-            'memory_mb': int(os.environ.get('AWS_LAMBDA_MEMORY_SIZE', '0')),
-            'function_name': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'local-dev'),
-            'request_id': getattr(context, 'aws_request_id', 'local') if context else 'local',
-            'handler_start': _handler_start,
-        }
-        builtins._container_birth = _container_birth
-        _cold_start = False
+        is_cold = _cold_start
 
         # ── Async job invocation (from Lambda invoking itself) ──
         if event.get("async_job"):
@@ -113,7 +93,34 @@ def handler(event, context):
                 f"{event.get('rawPath')}"
             )
 
-        return get_handler()(event, context)
+        # get_handler() triggers lazy Flask app init, X-Ray SDK, MongoDB
+        # connection on cold start — measure AFTER this to capture real init cost
+        wsgi_handler = get_handler()
+
+        _after_init = _time.perf_counter()
+
+        # Cold start = module load time + lazy app init (Flask, X-Ray, DB pool)
+        init_duration = round((_after_init - _module_load_time) * 1000, 2) if is_cold else 0
+
+        # Persist cold start info once (survives across warm invocations)
+        if is_cold:
+            _container_birth['cold_start_init_ms'] = init_duration
+            _container_birth['first_request_time'] = _handler_start
+            _container_birth['container_id'] = getattr(context, 'aws_request_id', 'local') if context else 'local'
+
+        builtins._lambda_meta = {
+            'cold_start': is_cold,
+            'init_duration_ms': init_duration,
+            'region': os.environ.get('AWS_REGION', 'local'),
+            'memory_mb': int(os.environ.get('AWS_LAMBDA_MEMORY_SIZE', '0')),
+            'function_name': os.environ.get('AWS_LAMBDA_FUNCTION_NAME', 'local-dev'),
+            'request_id': getattr(context, 'aws_request_id', 'local') if context else 'local',
+            'handler_start': _handler_start,
+        }
+        builtins._container_birth = _container_birth
+        _cold_start = False
+
+        return wsgi_handler(event, context)
 
     except Exception as e:
         logger.error(f"Lambda handler error: {str(e)}", exc_info=True)

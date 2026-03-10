@@ -137,16 +137,25 @@ function buildPageLoadSpans(trace: PageLoadTraceResult): WaterfallSpan[] {
         spans.push({ label: 'DOM Parse + Scripts', ms: nav.dom_parse_ms, color: '#f97316', icon: <FileCode className="h-3.5 w-3.5" />, description: 'HTML parsing, JS execution, React hydration', group: 'Render' });
     }
 
-    // Phase 3: Lambda container lifecycle (from when the page's first API call hit Lambda)
-    if (container.cold_start_init_ms > 0) {
+    // Phase 3: Lambda container lifecycle
+    if (container.is_warm) {
+        // Warm container — show a minimal span indicating reuse, not the historical cold start
         spans.push({
-            label: container.is_warm ? 'Lambda Cold Start (earlier)' : 'Lambda Cold Start',
+            label: 'Lambda Container (warm)',
+            ms: 0,
+            color: '#22c55e',
+            icon: <Zap className="h-3.5 w-3.5" />,
+            description: `Container reused — no init needed (booted ${container.cold_start_init_ms.toFixed(0)}ms ago on first request)`,
+            group: 'Lambda',
+        });
+    } else if (container.cold_start_init_ms > 0) {
+        // Actual cold start on this request
+        spans.push({
+            label: 'Lambda Cold Start',
             ms: container.cold_start_init_ms,
             color: '#ef4444',
             icon: <Cpu className="h-3.5 w-3.5" />,
-            description: container.is_warm
-                ? `Container booted on first API call (${container.cold_start_init_ms.toFixed(0)}ms init, now warm)`
-                : 'Container initialization + Flask + X-Ray SDK + PyMongo patching',
+            description: 'Container initialization + Flask + X-Ray SDK + PyMongo patching',
             group: 'Lambda',
         });
     }
@@ -160,7 +169,8 @@ function buildPageLoadSpans(trace: PageLoadTraceResult): WaterfallSpan[] {
 
 // ── Waterfall bar component ──
 function WaterfallBar({ span, index, maxMs }: { span: WaterfallSpan; index: number; maxMs: number }) {
-    const rawPercent = (span.ms / maxMs) * 100;
+    const isWarmStatus = span.ms === 0;
+    const rawPercent = isWarmStatus ? 0 : (span.ms / maxMs) * 100;
     const widthPercent = Math.max(3, rawPercent);
     const isSmallBar = rawPercent < 15;
     const formattedMs = span.ms < 1 ? `${(span.ms * 1000).toFixed(0)}µs` : `${span.ms.toFixed(1)}ms`;
@@ -179,6 +189,12 @@ function WaterfallBar({ span, index, maxMs }: { span: WaterfallSpan; index: numb
                 <span className="text-xs font-medium text-foreground/80 truncate">{span.label}</span>
             </div>
             <div className="flex-1 flex items-center gap-2">
+                {isWarmStatus ? (
+                    <div className="flex-1 relative h-7 bg-emerald-500/10 rounded overflow-hidden flex items-center px-3 border border-emerald-500/20">
+                        <span className="text-[11px] font-medium text-emerald-600 dark:text-emerald-400">{span.description}</span>
+                    </div>
+                ) : (
+                <>
                 <div className="flex-1 relative h-7 bg-secondary/30 rounded overflow-hidden">
                     <motion.div
                         className="absolute inset-y-0 left-0 rounded flex items-center"
@@ -199,6 +215,8 @@ function WaterfallBar({ span, index, maxMs }: { span: WaterfallSpan; index: numb
                     <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 + index * 0.07 }} className="text-[11px] font-semibold whitespace-nowrap shrink-0" style={{ color: span.color }}>
                         {formattedMs}
                     </motion.span>
+                )}
+                </>
                 )}
                 {span.resultValue !== undefined && (
                     <motion.span initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.4 + index * 0.07 }} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-secondary/50 text-foreground/70 shrink-0">
@@ -573,11 +591,16 @@ export default function RequestTracer() {
                                                         <Check className="h-3 w-3 mr-1" />
                                                         {totalClientMs.toFixed(0)}ms {mode === 'pageload' ? 'page load' : 'total'}
                                                     </Badge>
-                                                    {mode === 'pageload' && (activeTrace as PageLoadTraceResult).container.cold_start_init_ms > 0 && (
-                                                        <Badge className={`border-red-500/30 ${(activeTrace as PageLoadTraceResult).container.is_warm ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30' : 'bg-red-500/10 text-red-600 dark:text-red-400'}`}>
+                                                    {mode === 'pageload' && (activeTrace as PageLoadTraceResult).container.is_warm && (
+                                                        <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
+                                                            <Zap className="h-3 w-3 mr-1" />
+                                                            Warm Container
+                                                        </Badge>
+                                                    )}
+                                                    {mode === 'pageload' && !(activeTrace as PageLoadTraceResult).container.is_warm && (activeTrace as PageLoadTraceResult).container.cold_start_init_ms > 0 && (
+                                                        <Badge className="bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30">
                                                             <Cpu className="h-3 w-3 mr-1" />
-                                                            {(activeTrace as PageLoadTraceResult).container.is_warm ? 'Warm Container' : 'Cold Start'}
-                                                            {' '}({(activeTrace as PageLoadTraceResult).container.cold_start_init_ms.toFixed(0)}ms init)
+                                                            Cold Start ({(activeTrace as PageLoadTraceResult).container.cold_start_init_ms.toFixed(0)}ms)
                                                         </Badge>
                                                     )}
                                                     {mode !== 'pageload' && activeTrace.cold_start && (

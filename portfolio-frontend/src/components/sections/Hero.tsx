@@ -13,6 +13,7 @@ import { FEATURES } from '@/lib/underTheHoodData';
 
 // Lazy load analytics dashboard since it imports recharts
 const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
+const GitTimeline = lazy(() => import('@/components/GitTimeline'));
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -294,6 +295,7 @@ export default function Hero() {
   const [visitorName, setVisitorName] = useState('');
   const [isReturningVisitor, setIsReturningVisitor] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(false);
 
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
@@ -517,6 +519,29 @@ export default function Hero() {
               </button>
             </motion.div>
 
+            {/* Build Journey + Analytics row */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.85, duration: 0.5 }}
+              className="flex justify-center lg:justify-start"
+            >
+              <button
+                onClick={() => setShowTimeline(true)}
+                className="group relative inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 hover:-translate-y-0.5"
+              >
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-violet-500/20 via-purple-500/20 to-violet-500/20" />
+                <span className="absolute inset-[1px] rounded-full bg-background/90 backdrop-blur-sm" />
+                <span className="relative flex items-center gap-2">
+                  <GitBranch className="h-3.5 w-3.5 text-violet-500 group-hover:text-purple-400 transition-colors" />
+                  <span className="text-foreground/80 group-hover:text-foreground transition-colors">Build Journey</span>
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-full leading-none">
+                    Live
+                  </span>
+                </span>
+              </button>
+            </motion.div>
+
             {/* Availability */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -571,6 +596,11 @@ export default function Hero() {
       {/* Section Analytics Modal */}
       <Suspense fallback={null}>
         <SectionAnalytics isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} />
+      </Suspense>
+
+      {/* Git Timeline Modal */}
+      <Suspense fallback={null}>
+        <GitTimeline isOpen={showTimeline} onClose={() => setShowTimeline(false)} />
       </Suspense>
     </section>
   );

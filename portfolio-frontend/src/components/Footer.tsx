@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Github, Linkedin, Mail, Phone } from 'lucide-react';
+import { Github, Linkedin, Mail, Phone, Gamepad2 } from 'lucide-react';
 import { PERSONAL_INFO } from '@/lib/constants';
 import DeployBadge from '@/components/DeployBadge';
 
@@ -103,10 +103,18 @@ export default function Footer() {
         {/* CI/CD Deploy Provenance Badge */}
         <DeployBadge />
 
-        <div className="border-t border-border mt-8 pt-6 text-center">
+        <div className="border-t border-border mt-8 pt-6 flex items-center justify-center gap-3">
           <p className="gradient-text font-medium">
             © {currentYear} Harshith Siddardha Manne. All rights reserved.
           </p>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
+            className="p-1.5 rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-all duration-300 hover:scale-110"
+            title="🎮"
+            aria-label="Easter egg"
+          >
+            <Gamepad2 className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </footer>

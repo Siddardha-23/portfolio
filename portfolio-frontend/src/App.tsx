@@ -2,7 +2,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
-import { lazy, Suspense, useState, useCallback } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
 import { UnderTheHoodProvider } from './contexts/UnderTheHoodContext';
@@ -28,6 +28,13 @@ function AppContent() {
   }, []);
 
   useKonamiCode(openGame);
+
+  // Also listen for custom event from footer gamepad button
+  useEffect(() => {
+    const handler = () => setShowGame(true);
+    window.addEventListener('open-deploy-runner', handler);
+    return () => window.removeEventListener('open-deploy-runner', handler);
+  }, []);
 
   return (
     <>

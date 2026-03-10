@@ -233,6 +233,149 @@ class SessionService:
         except Exception as e:
             logger.error(f"Error storing section times: {e}")
     
+    def get_section_analytics(self) -> Dict[str, Any]:
+        """
+        Aggregate section engagement data for the analytics dashboard.
+        Returns average time, total visits, and engagement distribution per section.
+        """
+        try:
+            analytics_collection = self.db.section_analytics
+            total_docs = analytics_collection.count_documents({})
+            
+            if total_docs == 0:
+                return {
+                    "total_sessions": 0,
+                    "sections": [],
+                    "avg_total_time_ms": 0,
+                    "engagement_over_time": []
+                }
+            
+            section_ids = ['hero', 'about', 'skills', 'education', 'experience', 'projects', 'contact']
+            section_labels = {
+                'hero': 'Hero',
+                'about': 'About Me',
+                'skills': 'Skills',
+                'education': 'Education',
+                'experience': 'Experience',
+                'projects': 'Projects',
+                'contact': 'Contact'
+            }
+            
+            sections_data = []
+            total_engagement_ms = 0
+            
+            for sid in section_ids:
+                pipeline = [
+                    {"$match": {f"sections.{sid}": {"$exists": True}}},
+                    {"$group": {
+                        "_id": None,
+                        "avg_time_ms": {"$avg": f"$sections.{sid}.timeMs"},
+                        "total_time_ms": {"$sum": f"$sections.{sid}.timeMs"},
+                        "total_visits": {"$sum": f"$sections.{sid}.visits"},
+                        "session_count": {"$sum": 1},
+                        "max_time_ms": {"$max": f"$sections.{sid}.timeMs"},
+                        "min_time_ms": {"$min": f"$sections.{sid}.timeMs"}
+                    }}
+                ]
+                
+                result = list(analytics_collection.aggregate(pipeline))
+                
+                if result:
+                    r = result[0]
+                    avg_ms = round(r.get("avg_time_ms", 0) or 0)
+                    total_ms = round(r.get("total_time_ms", 0) or 0)
+                    total_engagement_ms += total_ms
+                    
+                    sections_data.append({
+                        "id": sid,
+                        "label": section_labels.get(sid, sid.title()),
+                        "avg_time_ms": avg_ms,
+                        "avg_time_sec": round(avg_ms / 1000, 1),
+                        "total_time_ms": total_ms,
+                        "total_visits": r.get("total_visits", 0),
+                        "session_count": r.get("session_count", 0),
+                        "max_time_ms": round(r.get("max_time_ms", 0) or 0),
+                        "min_time_ms": round(r.get("min_time_ms", 0) or 0),
+                    })
+                else:
+                    sections_data.append({
+                        "id": sid,
+                        "label": section_labels.get(sid, sid.title()),
+                        "avg_time_ms": 0,
+                        "avg_time_sec": 0,
+                        "total_time_ms": 0,
+                        "total_visits": 0,
+                        "session_count": 0,
+                        "max_time_ms": 0,
+                        "min_time_ms": 0,
+                    })
+            
+            # Calculate engagement percentages
+            for s in sections_data:
+                s["engagement_pct"] = round(
+                    (s["total_time_ms"] / total_engagement_ms * 100) if total_engagement_ms > 0 else 0,
+                    1
+                )
+            
+            # Average total time on page
+            avg_total_pipeline = [
+                {"$group": {
+                    "_id": None,
+                    "avg_total_ms": {"$avg": "$total_time_ms"},
+                    "total_sessions": {"$sum": 1}
+                }}
+            ]
+            avg_total_result = list(analytics_collection.aggregate(avg_total_pipeline))
+            avg_total_ms = round(avg_total_result[0].get("avg_total_ms", 0) or 0) if avg_total_result else 0
+            
+            # Engagement over time (last 7 days, grouped by day)
+            from datetime import date
+            engagement_over_time = []
+            for i in range(6, -1, -1):
+                day_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=i)
+                day_end = day_start + timedelta(days=1)
+                
+                day_pipeline = [
+                    {"$match": {
+                        "last_updated": {"$gte": day_start, "$lt": day_end}
+                    }},
+                    {"$group": {
+                        "_id": None,
+                        "sessions": {"$sum": 1},
+                        "avg_time_ms": {"$avg": "$total_time_ms"}
+                    }}
+                ]
+                day_result = list(analytics_collection.aggregate(day_pipeline))
+                
+                engagement_over_time.append({
+                    "date": day_start.strftime("%b %d"),
+                    "sessions": day_result[0].get("sessions", 0) if day_result else 0,
+                    "avg_time_sec": round((day_result[0].get("avg_time_ms", 0) or 0) / 1000, 1) if day_result else 0
+                })
+            
+            # Top section (most avg time)
+            top_section = max(sections_data, key=lambda x: x["avg_time_ms"]) if sections_data else None
+            
+            return {
+                "total_sessions": total_docs,
+                "sections": sections_data,
+                "avg_total_time_ms": avg_total_ms,
+                "avg_total_time_sec": round(avg_total_ms / 1000, 1),
+                "engagement_over_time": engagement_over_time,
+                "top_section": top_section["label"] if top_section else "N/A",
+                "total_engagement_ms": total_engagement_ms
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting section analytics: {e}")
+            return {
+                "total_sessions": 0,
+                "sections": [],
+                "avg_total_time_ms": 0,
+                "engagement_over_time": [],
+                "error": str(e)
+            }
+
     def get_session_stats(self) -> Dict[str, Any]:
         """Get overall session statistics"""
         try:

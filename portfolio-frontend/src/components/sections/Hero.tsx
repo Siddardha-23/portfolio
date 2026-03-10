@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2 } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,9 @@ import { VisitorMapTrigger } from '@/components/VisitorMapTrigger';
 import { ResumeViewer } from '@/components/ResumeViewer';
 import UnderTheHoodChips from '@/components/UnderTheHoodChips';
 import { FEATURES } from '@/lib/underTheHoodData';
+
+// Lazy load analytics dashboard since it imports recharts
+const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -290,6 +293,7 @@ function RecruiterPanel() {
 export default function Hero() {
   const [visitorName, setVisitorName] = useState('');
   const [isReturningVisitor, setIsReturningVisitor] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
@@ -489,6 +493,30 @@ export default function Hero() {
               </ResumeViewer>
             </motion.div>
 
+            {/* Analytics Beta Button */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8, duration: 0.5 }}
+              className="flex justify-center lg:justify-start mt-2"
+            >
+              <button
+                onClick={() => setShowAnalytics(true)}
+                className="group relative inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 hover:-translate-y-0.5"
+              >
+                {/* Pulsing glow background */}
+                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 animate-pulse-glow" />
+                <span className="absolute inset-[1px] rounded-full bg-background/90 backdrop-blur-sm" />
+                <span className="relative flex items-center gap-2">
+                  <BarChart3 className="h-3.5 w-3.5 text-primary group-hover:text-accent transition-colors" />
+                  <span className="text-foreground/80 group-hover:text-foreground transition-colors">Engagement Analytics</span>
+                  <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-white rounded-full leading-none">
+                    Beta
+                  </span>
+                </span>
+              </button>
+            </motion.div>
+
             {/* Availability */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -539,6 +567,11 @@ export default function Hero() {
           <ChevronDown className="h-5 w-5 md:h-6 md:w-6" />
         </Button>
       </motion.div>
+
+      {/* Section Analytics Modal */}
+      <Suspense fallback={null}>
+        <SectionAnalytics isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} />
+      </Suspense>
     </section>
   );
 }

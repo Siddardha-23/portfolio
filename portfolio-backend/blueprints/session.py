@@ -113,6 +113,23 @@ def track_section_time():
         return jsonify({'error': 'Failed to track section time'}), 500
 
 
+@session_bp.route('/section-analytics', methods=['GET'])
+def get_section_analytics():
+    """
+    Get aggregated section engagement analytics.
+    Public endpoint - returns anonymous aggregate data for the analytics dashboard.
+    """
+    try:
+        session_service = get_session_service()
+        analytics = session_service.get_section_analytics()
+        
+        return jsonify(analytics), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting section analytics: {e}")
+        return jsonify({'error': 'Failed to get section analytics'}), 500
+
+
 @session_bp.route('/stats', methods=['GET'])
 @jwt_required()
 def get_session_stats():

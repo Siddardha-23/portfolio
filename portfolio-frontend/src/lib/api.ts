@@ -298,6 +298,35 @@ class ApiService {
     });
   }
 
+  async getSectionAnalytics() {
+    return this.request<{
+      total_sessions: number;
+      sections: Array<{
+        id: string;
+        label: string;
+        avg_time_ms: number;
+        avg_time_sec: number;
+        total_time_ms: number;
+        total_visits: number;
+        session_count: number;
+        max_time_ms: number;
+        min_time_ms: number;
+        engagement_pct: number;
+      }>;
+      avg_total_time_ms: number;
+      avg_total_time_sec: number;
+      engagement_over_time: Array<{
+        date: string;
+        sessions: number;
+        avg_time_sec: number;
+      }>;
+      top_section: string;
+      total_engagement_ms: number;
+    }>('/session/section-analytics', {
+      method: 'GET',
+    });
+  }
+
   // ============================================
   // Geolocation endpoints (/api/geo)
   // ============================================

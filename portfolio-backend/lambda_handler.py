@@ -94,13 +94,13 @@ def handler(event, context):
             )
 
         # get_handler() triggers lazy Flask app init, X-Ray SDK, MongoDB
-        # connection on cold start — measure AFTER this to capture real init cost
+        # connection on cold start — measure around this call only
+        _before_init = _time.perf_counter()
         wsgi_handler = get_handler()
-
         _after_init = _time.perf_counter()
 
-        # Cold start = module load time + lazy app init (Flask, X-Ray, DB pool)
-        init_duration = round((_after_init - _module_load_time) * 1000, 2) if is_cold else 0
+        # Cold start = time spent in Flask/X-Ray/DB pool initialization
+        init_duration = round((_after_init - _before_init) * 1000, 2) if is_cold else 0
 
         # Persist cold start info once (survives across warm invocations)
         if is_cold:

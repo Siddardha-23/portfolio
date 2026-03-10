@@ -357,11 +357,11 @@ export default function RecruiterMatch({ isOpen, onClose }: {
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            transition={{ duration: 0.4, type: 'spring', damping: 25 }}
-            className="fixed inset-4 md:inset-y-8 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-full md:max-w-2xl z-[61] flex items-center justify-center"
+            transition={{ duration: 0.4, type: 'spring', damping: 25, stiffness: 300 }}
+            className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] flex items-start justify-center overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="relative w-full max-h-full flex flex-col">
+            <div className="relative w-full max-w-5xl my-4 flex flex-col">
               <div className="absolute -inset-1 bg-gradient-to-br from-violet-500/15 via-blue-500/5 to-violet-500/15 rounded-3xl blur-xl opacity-60 pointer-events-none" />
 
               <div className="relative flex flex-col max-h-[90vh] bg-background/95 backdrop-blur-2xl rounded-3xl border border-border/50 shadow-2xl overflow-hidden">

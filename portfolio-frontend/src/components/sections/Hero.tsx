@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, BarChart3 } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, BarChart3, Globe, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -14,6 +14,8 @@ import { FEATURES } from '@/lib/underTheHoodData';
 // Lazy load analytics dashboard since it imports recharts
 const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
 const GitTimeline = lazy(() => import('@/components/GitTimeline'));
+const EdgeLatencyTester = lazy(() => import('@/components/EdgeLatencyTester'));
+const SecurityScorecard = lazy(() => import('@/components/SecurityScorecard'));
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -296,6 +298,8 @@ export default function Hero() {
   const [isReturningVisitor, setIsReturningVisitor] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
+  const [showLatency, setShowLatency] = useState(false);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
@@ -495,51 +499,111 @@ export default function Hero() {
               </ResumeViewer>
             </motion.div>
 
-            {/* Analytics Beta Button */}
+            {/* ── Infrastructure Showcase Grid ── */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.8, duration: 0.5 }}
-              className="flex justify-center lg:justify-start mt-2"
+              transition={{ delay: 0.8, duration: 0.6 }}
+              className="mt-3"
             >
-              <button
-                onClick={() => setShowAnalytics(true)}
-                className="group relative inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 hover:-translate-y-0.5"
-              >
-                {/* Pulsing glow background */}
-                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-primary/20 via-accent/20 to-primary/20 animate-pulse-glow" />
-                <span className="absolute inset-[1px] rounded-full bg-background/90 backdrop-blur-sm" />
-                <span className="relative flex items-center gap-2">
-                  <BarChart3 className="h-3.5 w-3.5 text-primary group-hover:text-accent transition-colors" />
-                  <span className="text-foreground/80 group-hover:text-foreground transition-colors">Engagement Analytics</span>
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-primary to-accent text-white rounded-full leading-none">
-                    Beta
-                  </span>
+              <div className="flex items-center gap-2 mb-3 justify-center lg:justify-start">
+                <div className="h-px w-6 bg-gradient-to-r from-transparent to-primary/40" />
+                <span className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/70">
+                  Live Infrastructure
                 </span>
-              </button>
-            </motion.div>
+                <div className="h-px w-6 bg-gradient-to-l from-transparent to-primary/40" />
+              </div>
+              <div className="grid grid-cols-2 gap-2 max-w-sm mx-auto lg:mx-0">
+                {([
+                  {
+                    icon: BarChart3,
+                    label: 'Analytics',
+                    desc: 'Engagement data',
+                    badge: 'Beta',
+                    gradient: 'from-primary to-accent',
+                    glow: 'primary',
+                    iconColor: 'text-primary',
+                    onClick: () => setShowAnalytics(true),
+                  },
+                  {
+                    icon: GitBranch,
+                    label: 'Build Journey',
+                    desc: 'Git commit story',
+                    badge: 'Live',
+                    gradient: 'from-violet-500 to-purple-500',
+                    glow: 'violet-500',
+                    iconColor: 'text-violet-500',
+                    onClick: () => setShowTimeline(true),
+                  },
+                  {
+                    icon: Globe,
+                    label: 'Edge Latency',
+                    desc: 'CDN performance',
+                    badge: 'CDN',
+                    gradient: 'from-emerald-500 to-cyan-500',
+                    glow: 'emerald-500',
+                    iconColor: 'text-emerald-500',
+                    onClick: () => setShowLatency(true),
+                  },
+                  {
+                    icon: Shield,
+                    label: 'Security Scan',
+                    desc: 'Headers audit',
+                    badge: 'Live',
+                    gradient: 'from-rose-500 to-amber-500',
+                    glow: 'rose-500',
+                    iconColor: 'text-rose-500',
+                    onClick: () => setShowSecurity(true),
+                  },
+                ] as const).map((item, i) => (
+                  <motion.button
+                    key={item.label}
+                    initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      delay: 0.85 + i * 0.08,
+                      duration: 0.4,
+                      type: 'spring',
+                      stiffness: 300,
+                      damping: 25,
+                    }}
+                    whileHover={{ y: -3, transition: { duration: 0.2 } }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={item.onClick}
+                    className="group relative overflow-hidden rounded-xl text-left transition-all duration-300"
+                  >
+                    {/* Animated gradient border */}
+                    <div className={`absolute inset-0 rounded-xl bg-gradient-to-br ${item.gradient} opacity-0 group-hover:opacity-100 transition-opacity duration-500`} />
+                    <div className="absolute inset-[1px] rounded-[11px] bg-background/95 dark:bg-background/90 backdrop-blur-sm transition-colors duration-300 group-hover:bg-background/80" />
 
-            {/* Build Journey + Analytics row */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.85, duration: 0.5 }}
-              className="flex justify-center lg:justify-start"
-            >
-              <button
-                onClick={() => setShowTimeline(true)}
-                className="group relative inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300 hover:-translate-y-0.5"
-              >
-                <span className="absolute inset-0 rounded-full bg-gradient-to-r from-violet-500/20 via-purple-500/20 to-violet-500/20" />
-                <span className="absolute inset-[1px] rounded-full bg-background/90 backdrop-blur-sm" />
-                <span className="relative flex items-center gap-2">
-                  <GitBranch className="h-3.5 w-3.5 text-violet-500 group-hover:text-purple-400 transition-colors" />
-                  <span className="text-foreground/80 group-hover:text-foreground transition-colors">Build Journey</span>
-                  <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-full leading-none">
-                    Live
-                  </span>
-                </span>
-              </button>
+                    {/* Hover glow */}
+                    <div className={`absolute -inset-1 rounded-xl bg-gradient-to-br ${item.gradient} opacity-0 group-hover:opacity-[0.08] blur-xl transition-opacity duration-500`} />
+
+                    {/* Content */}
+                    <div className="relative p-3 flex items-center gap-2.5">
+                      <div className={`flex-shrink-0 p-1.5 rounded-lg bg-gradient-to-br ${item.gradient} opacity-80 group-hover:opacity-100 transition-all duration-300 group-hover:shadow-lg`}>
+                        <item.icon className="h-3.5 w-3.5 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[11px] font-semibold text-foreground/90 group-hover:text-foreground transition-colors truncate">
+                            {item.label}
+                          </span>
+                          <span className={`flex-shrink-0 px-1.5 py-px text-[8px] font-bold uppercase tracking-wider bg-gradient-to-r ${item.gradient} text-white rounded-full leading-tight`}>
+                            {item.badge}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/70 group-hover:text-muted-foreground transition-colors truncate">
+                          {item.desc}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Border fallback for non-hover */}
+                    <div className="absolute inset-0 rounded-xl border border-border/40 group-hover:border-transparent transition-colors duration-300 pointer-events-none" />
+                  </motion.button>
+                ))}
+              </div>
             </motion.div>
 
             {/* Availability */}
@@ -601,6 +665,16 @@ export default function Hero() {
       {/* Git Timeline Modal */}
       <Suspense fallback={null}>
         <GitTimeline isOpen={showTimeline} onClose={() => setShowTimeline(false)} />
+      </Suspense>
+
+      {/* Edge Latency Tester Modal */}
+      <Suspense fallback={null}>
+        <EdgeLatencyTester isOpen={showLatency} onClose={() => setShowLatency(false)} />
+      </Suspense>
+
+      {/* Security Scorecard Modal */}
+      <Suspense fallback={null}>
+        <SecurityScorecard isOpen={showSecurity} onClose={() => setShowSecurity(false)} />
       </Suspense>
     </section>
   );

@@ -406,9 +406,11 @@ def get_organization_stats():
         # Normalize country so frontend map finds it: "IN" -> "India", "United States" stays
         def country_for_map(raw_country):
             s = (raw_country or "").strip()
+            if not s or s.lower() in ('local', 'unknown', 'localhost', 'n/a', '-'):
+                return None
             if len(s) == 2:
                 return COUNTRY_CODE_TO_NAME.get(s.upper(), s)
-            return s or raw_country
+            return s
 
         def build_map_entry(m):
             cid = m["_id"]
@@ -428,17 +430,20 @@ def get_organization_stats():
                 "count": m["count"]
             }
 
+        # Junk values to exclude from map data (dev/local traffic, missing geo)
+        _EXCLUDED_COUNTRIES = [None, "", "local", "Local", "LOCAL", "unknown", "Unknown", "UNKNOWN", "localhost", "N/A", "n/a", "-"]
+
         # City-level points: unique visitors per location only (map matches "unique visitors" at top)
         # registered_visitors: one doc per person (we dedupe on insert), so count = $sum 1 is already unique
         map_locations_pipeline = [
-            {"$match": {"geo.country": {"$exists": True, "$nin": [None, ""]}}},
+            {"$match": {"geo.country": {"$exists": True, "$nin": _EXCLUDED_COUNTRIES}}},
             {"$group": {
                 "_id": {"country": "$geo.country", "city": {"$ifNull": ["$geo.city", ""]}},
                 "count": {"$sum": 1},
                 "lat": {"$first": "$ip_info.latitude"},
                 "lng": {"$first": "$ip_info.longitude"}
             }},
-            {"$match": {"_id.country": {"$ne": ""}}},
+            {"$match": {"_id.country": {"$nin": _EXCLUDED_COUNTRIES}}},
             {"$sort": {"count": -1}}
         ]
         map_locations_raw = list(collection.aggregate(map_locations_pipeline))
@@ -448,8 +453,8 @@ def get_organization_stats():
         visitor_map_pipeline = [
             {"$match": {
                 "$or": [
-                    {"geo.country": {"$exists": True, "$nin": [None, ""]}},
-                    {"geo.country_name": {"$exists": True, "$nin": [None, ""]}}
+                    {"geo.country": {"$exists": True, "$nin": _EXCLUDED_COUNTRIES}},
+                    {"geo.country_name": {"$exists": True, "$nin": _EXCLUDED_COUNTRIES}}
                 ]
             }},
             {"$group": {
@@ -485,7 +490,7 @@ def get_organization_stats():
                     "$legacy_count"
                 ]}
             }},
-            {"$match": {"_id.country": {"$ne": ""}}},
+            {"$match": {"_id.country": {"$nin": _EXCLUDED_COUNTRIES}}},
             {"$sort": {"count": -1}}
         ]
         visitor_map_raw = list(visitor_info_coll.aggregate(visitor_map_pipeline))
@@ -494,10 +499,14 @@ def get_organization_stats():
         merged = {}
         for m in map_locations_raw:
             entry = build_map_entry(m)
+            if not entry["country"]:
+                continue
             key = (entry["country"], entry["city"] or "")
             merged[key] = dict(entry)
         for m in visitor_map_raw:
             entry = build_map_entry(m)
+            if not entry["country"]:
+                continue
             key = (entry["country"], entry["city"] or "")
             if key not in merged:
                 merged[key] = dict(entry)

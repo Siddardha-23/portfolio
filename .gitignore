@@ -62,3 +62,4 @@ coverage/
 # Lock files (optional - some prefer to commit these)
 # pnpm-lock.yaml
 DEPLOYMENT_GUIDE.md
+sample.md

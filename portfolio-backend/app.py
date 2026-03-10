@@ -60,7 +60,7 @@ def create_app():
     app.config['JWT_ACCESS_TOKEN_EXPIRES'] = AppConfig.JWT_ACCESS_TOKEN_EXPIRES
     
     # Security: Restrict CORS to specific origins in production
-    allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:3000').split(',')
+    allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173,http://localhost:5174,http://localhost:3000').split(',')
     CORS(app, resources={
         r"/api/*": {
             "origins": allowed_origins,
@@ -135,6 +135,10 @@ def create_app():
     # Request tracing module
     from blueprints.trace import trace_bp
     app.register_blueprint(trace_bp, url_prefix='/api/trace')
+
+    # Infrastructure insights module (costs, health, JD match)
+    from blueprints.infra import infra_bp
+    app.register_blueprint(infra_bp, url_prefix='/api/infra')
 
     # Health check endpoint
     @app.route('/api/health')

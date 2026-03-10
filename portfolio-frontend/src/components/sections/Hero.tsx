@@ -1,6 +1,6 @@
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, BarChart3, Globe, Shield } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, BarChart3, Globe, Shield, DollarSign, Target, HeartPulse } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -16,6 +16,9 @@ const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
 const GitTimeline = lazy(() => import('@/components/GitTimeline'));
 const EdgeLatencyTester = lazy(() => import('@/components/EdgeLatencyTester'));
 const SecurityScorecard = lazy(() => import('@/components/SecurityScorecard'));
+const InfraCostCalculator = lazy(() => import('@/components/InfraCostCalculator'));
+const RecruiterMatch = lazy(() => import('@/components/RecruiterMatch'));
+const InfraHealthDashboard = lazy(() => import('@/components/InfraHealthDashboard'));
 
 // Animated role typewriter
 function RoleTypewriter() {
@@ -300,6 +303,9 @@ export default function Hero() {
   const [showTimeline, setShowTimeline] = useState(false);
   const [showLatency, setShowLatency] = useState(false);
   const [showSecurity, setShowSecurity] = useState(false);
+  const [showCosts, setShowCosts] = useState(false);
+  const [showMatch, setShowMatch] = useState(false);
+  const [showHealth, setShowHealth] = useState(false);
 
   useEffect(() => {
     const visitorInfo = localStorage.getItem('visitorInfo');
@@ -555,6 +561,36 @@ export default function Hero() {
                     iconColor: 'text-rose-500',
                     onClick: () => setShowSecurity(true),
                   },
+                  {
+                    icon: DollarSign,
+                    label: 'Infra Costs',
+                    desc: 'Real AWS pricing',
+                    badge: 'Real',
+                    gradient: 'from-green-500 to-emerald-600',
+                    glow: 'green-500',
+                    iconColor: 'text-green-500',
+                    onClick: () => setShowCosts(true),
+                  },
+                  {
+                    icon: Target,
+                    label: 'JD Match',
+                    desc: 'Skill radar chart',
+                    badge: 'AI',
+                    gradient: 'from-violet-500 to-blue-600',
+                    glow: 'violet-500',
+                    iconColor: 'text-violet-500',
+                    onClick: () => setShowMatch(true),
+                  },
+                  {
+                    icon: HeartPulse,
+                    label: 'Infra Health',
+                    desc: 'Live status check',
+                    badge: 'Live',
+                    gradient: 'from-blue-500 to-cyan-500',
+                    glow: 'blue-500',
+                    iconColor: 'text-blue-500',
+                    onClick: () => setShowHealth(true),
+                  },
                 ] as const).map((item, i) => (
                   <motion.button
                     key={item.label}
@@ -675,6 +711,21 @@ export default function Hero() {
       {/* Security Scorecard Modal */}
       <Suspense fallback={null}>
         <SecurityScorecard isOpen={showSecurity} onClose={() => setShowSecurity(false)} />
+      </Suspense>
+
+      {/* Infrastructure Cost Calculator Modal */}
+      <Suspense fallback={null}>
+        <InfraCostCalculator isOpen={showCosts} onClose={() => setShowCosts(false)} />
+      </Suspense>
+
+      {/* Recruiter Match Modal */}
+      <Suspense fallback={null}>
+        <RecruiterMatch isOpen={showMatch} onClose={() => setShowMatch(false)} />
+      </Suspense>
+
+      {/* Infra Health Dashboard Modal */}
+      <Suspense fallback={null}>
+        <InfraHealthDashboard isOpen={showHealth} onClose={() => setShowHealth(false)} />
       </Suspense>
     </section>
   );

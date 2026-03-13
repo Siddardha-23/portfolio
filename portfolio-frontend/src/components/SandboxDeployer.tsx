@@ -69,7 +69,7 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
   const fetchLatest = async () => {
     try {
       const res = await (apiService as any).getLatestSandboxMessage();
-      if (res.data) {
+      if (res.data && res.data.success) {
         setLatestMessage(res.data.data);
       }
     } catch (err) {
@@ -79,29 +79,40 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
     }
   };
 
-  const pollStatus = async () => {
-    try {
-      const res = await (apiService as any).getSandboxStatus();
-      if (res.data) {
-        const data = res.data.data as SandboxStatus;
-        setRunStatus(data);
-        
-        // If it's completed, stop polling and refresh the board
-        if (data.status === 'completed') {
-          setIsDeploying(false);
-          await fetchLatest();
-          return;
-        }
-      }
-    } catch (err) {
-      console.error("Failed to poll status:", err);
-    }
+  // Improved polling logic to avoid React stale closures
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
     
-    // Continue polling
+    const pollStatus = async () => {
+      try {
+        const res = await (apiService as any).getSandboxStatus();
+        if (res.data && res.data.success) {
+          const data = res.data.data as SandboxStatus;
+          setRunStatus(data);
+          
+          // If it's completed, stop polling and refresh the board
+          if (data.status === 'completed') {
+            setIsDeploying(false);
+            await fetchLatest();
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("Failed to poll status:", err);
+      }
+      
+      if (isDeploying) {
+        timeoutId = setTimeout(pollStatus, 2000);
+      }
+    };
+
     if (isDeploying) {
-      setTimeout(pollStatus, 2000);
+      // Delay first poll slightly to allow GitHub Actions to register the run
+      timeoutId = setTimeout(pollStatus, 3000);
     }
-  };
+
+    return () => clearTimeout(timeoutId);
+  }, [isDeploying]);
 
   const handleDeploy = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -112,10 +123,7 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
     
     try {
       const res = await (apiService as any).deploySandboxMessage(message, color);
-      if (res.data) {
-        // Start polling after a short delay since GitHub actions take a second to queue
-        setTimeout(pollStatus, 3000);
-      } else {
+      if (!res.data || !res.data.success) {
         setIsDeploying(false);
         alert("Failed to trigger deployment.");
       }

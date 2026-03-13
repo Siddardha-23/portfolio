@@ -120,3 +120,12 @@ class JobSearchAuthConfig(object):
     @property
     def JOB_SEARCH_PASSWORD_HASH(cls):
         return _get_config_value('JOB_SEARCH_PASSWORD_HASH', '')
+
+
+class SandboxConfig(object):
+    """Configuration for GitHub Actions CI/CD Sandbox"""
+
+    @classmethod
+    @property
+    def GITHUB_PAT(cls):
+        return _get_config_value('GITHUB_PAT', '')

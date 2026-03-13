@@ -1055,4 +1055,59 @@ export interface PageLoadTraceResult {
   };
 }
 
+// ============================================
+// CI/CD Sandbox Endpoints
+// ============================================
+
+interface SandboxStatus {
+  status: string;
+  conclusion: string | null;
+  run_id: number;
+  jobs: {
+    name: string;
+    status: string;
+    conclusion: string | null;
+    steps: {
+      name: string;
+      status: string;
+      conclusion: string | null;
+    }[];
+  }[];
+}
+
+interface SandboxLatest {
+  message: string;
+  color: string;
+  timestamp: string;
+}
+
+declare module ApiService {
+  interface Prototype {
+    deploySandboxMessage(message: string, color: string): Promise<ApiResponse<any>>;
+    getSandboxStatus(): Promise<ApiResponse<SandboxStatus>>;
+    getLatestSandboxMessage(): Promise<ApiResponse<SandboxLatest>>;
+  }
+}
+
+Object.assign(ApiService.prototype, {
+  async deploySandboxMessage(this: ApiService, message: string, color: string) {
+    return this['request']('/infra/sandbox/deploy', {
+      method: 'POST',
+      body: JSON.stringify({ message, color }),
+    });
+  },
+
+  async getSandboxStatus(this: ApiService) {
+    return this['request']('/infra/sandbox/status', {
+      method: 'GET',
+    });
+  },
+
+  async getLatestSandboxMessage(this: ApiService) {
+    return this['request']('/infra/sandbox/latest', {
+      method: 'GET',
+    });
+  }
+});
+
 export const apiService = new ApiService(API_BASE_URL);

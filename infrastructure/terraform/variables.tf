@@ -70,6 +70,13 @@ variable "job_search_password_hash" {
   default     = ""
 }
 
+variable "github_pat" {
+  description = "GitHub PAT for triggering CI/CD Sandbox sandbox.yml"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "lambda_memory_size" {
   description = "Lambda function memory size in MB"
   type        = number

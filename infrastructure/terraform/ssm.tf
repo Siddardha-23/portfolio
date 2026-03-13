@@ -134,6 +134,28 @@ resource "aws_ssm_parameter" "job_search_password_hash" {
 }
 
 # -----------------------------------------------------------------------------
+# GitHub PAT (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "github_pat" {
+  count       = var.github_pat != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/github-pat"
+  description = "GitHub PAT for triggering CI/CD Sandbox sandbox.yml"
+  type        = "SecureString"
+  value       = var.github_pat
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-github-pat"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Non-sensitive Configuration (String - not encrypted)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "allowed_origins" {
@@ -175,6 +197,7 @@ output "ssm_parameter_paths" {
     gemini_api_key           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
     jsearch_api_key          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
     job_search_password_hash = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
+    github_pat               = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
     allowed_origins          = aws_ssm_parameter.allowed_origins.name
     environment              = aws_ssm_parameter.environment.name
   }

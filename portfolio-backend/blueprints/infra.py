@@ -380,3 +380,144 @@ Be honest and accurate. Only mark skills as matched if the candidate truly has t
             'error': str(e),
             'fallback': True,
         }), 500
+
+# ─────────────────────────── CI/CD Sandbox ───────────────────────────
+
+@infra_bp.route('/sandbox/latest', methods=['GET'])
+def get_latest_sandbox():
+    """Get the currently 'deployed' Sandbox message."""
+    try:
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_collection('sandbox_deployments')
+        
+        latest = db.find_one({'status': 'deployed'}, sort=[('timestamp', -1)])
+        if latest:
+            latest['_id'] = str(latest['_id'])
+            
+        return jsonify({'success': True, 'data': latest})
+    except Exception as e:
+        logger.error(f"Sandbox latest error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@infra_bp.route('/sandbox/deploy', methods=['POST'])
+def trigger_sandbox_deploy():
+    """Trigger a GitHub Action to deploy a new Sandbox message."""
+    data = request.get_json()
+    message = data.get('message', '').strip()
+    color = data.get('color', 'text-primary')
+    
+    if not message or len(message) > 50:
+        return jsonify({'success': False, 'error': 'Message must be between 1 and 50 characters'}), 400
+        
+    try:
+        from utils.config import SandboxConfig
+        import requests
+        
+        pat = SandboxConfig.GITHUB_PAT
+        if not pat:
+            return jsonify({'success': False, 'error': 'GitHub PAT not configured'}), 500
+            
+        headers = {
+            'Authorization': f'token {pat}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        url = 'https://api.github.com/repos/Siddardha-23/portfolio/actions/workflows/sandbox.yml/dispatches'
+        payload = {
+            'ref': 'main',
+            'inputs': {
+                'message': message,
+                'color': color
+            }
+        }
+        r = requests.post(url, headers=headers, json=payload)
+        if r.status_code != 204:
+            return jsonify({'success': False, 'error': 'Failed to trigger GitHub Action', 'details': r.text}), 500
+            
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_collection('sandbox_deployments')
+        doc = {
+            'message': message,
+            'color': color,
+            'status': 'queued',
+            'timestamp': datetime.utcnow()
+        }
+        result = db.insert_one(doc)
+        doc['_id'] = str(result.inserted_id)
+        
+        return jsonify({'success': True, 'data': doc})
+    except Exception as e:
+        logger.error(f"Sandbox deploy error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@infra_bp.route('/sandbox/status', methods=['GET'])
+def get_sandbox_status():
+    """Poll the status of the latest Sandbox GitHub Action."""
+    try:
+        from utils.config import SandboxConfig
+        import requests
+        
+        pat = SandboxConfig.GITHUB_PAT
+        if not pat:
+            return jsonify({'success': False, 'error': 'GitHub PAT not configured'}), 500
+            
+        headers = {
+            'Authorization': f'token {pat}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
+        
+        url = 'https://api.github.com/repos/Siddardha-23/portfolio/actions/workflows/sandbox.yml/runs?per_page=1'
+        r = requests.get(url, headers=headers)
+        if r.status_code != 200:
+            return jsonify({'success': False, 'error': 'Failed to fetch workflow runs'}), 500
+            
+        runs_data = r.json()
+        if not runs_data.get('workflow_runs'):
+            return jsonify({'success': True, 'data': {'status': 'completed', 'jobs': []}})
+            
+        latest_run = runs_data['workflow_runs'][0]
+        run_id = latest_run['id']
+        run_status = latest_run['status']
+        run_conclusion = latest_run['conclusion']
+        
+        jobs_url = latest_run['jobs_url']
+        jobs_r = requests.get(jobs_url, headers=headers)
+        if jobs_r.status_code != 200:
+            return jsonify({'success': False, 'error': 'Failed to fetch jobs'}), 500
+            
+        jobs_data = jobs_r.json().get('jobs', [])
+        
+        response_data = {
+            'status': run_status,
+            'conclusion': run_conclusion,
+            'run_id': run_id,
+            'jobs': []
+        }
+        
+        for job in jobs_data:
+            job_info = {
+                'name': job['name'],
+                'status': job['status'],
+                'conclusion': job['conclusion'],
+                'steps': []
+            }
+            for step in job.get('steps', []):
+                if step['name'] in ['Set up job', 'Complete job', 'Checkout']:
+                    continue
+                job_info['steps'].append({
+                    'name': step['name'],
+                    'status': step['status'],
+                    'conclusion': step['conclusion']
+                })
+            response_data['jobs'].append(job_info)
+            
+        if run_status == 'completed' and run_conclusion == 'success':
+            from utils.db_connect import DBConnect
+            db = DBConnect().get_collection('sandbox_deployments')
+            highest_queued = db.find_one({'status': 'queued'}, sort=[('timestamp', -1)])
+            if highest_queued:
+                db.update_one({'_id': highest_queued['_id']}, {'$set': {'status': 'deployed'}})
+                
+        return jsonify({'success': True, 'data': response_data})
+    except Exception as e:
+        logger.error(f"Sandbox status error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500

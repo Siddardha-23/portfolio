@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft 
+  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft, Play
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -15,6 +15,7 @@ const SecurityScorecard = lazy(() => import('@/components/SecurityScorecard'));
 const InfraCostCalculator = lazy(() => import('@/components/InfraCostCalculator'));
 const RecruiterMatch = lazy(() => import('@/components/RecruiterMatch'));
 const InfraHealthDashboard = lazy(() => import('@/components/InfraHealthDashboard'));
+const SandboxDeployer = lazy(() => import('@/components/SandboxDeployer'));
 
 export default function CloudLab() {
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -24,6 +25,7 @@ export default function CloudLab() {
   const [showCosts, setShowCosts] = useState(false);
   const [showMatch, setShowMatch] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
+  const [showSandbox, setShowSandbox] = useState(false);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -120,6 +122,16 @@ export default function CloudLab() {
                 iconColor: 'text-blue-500',
                 onClick: () => setShowHealth(true),
               },
+              {
+                icon: Play,
+                label: 'Deploy Pipeline',
+                desc: 'Interactive CI/CD',
+                badge: 'Live',
+                gradient: 'from-orange-500 to-rose-600',
+                glow: 'orange-500',
+                iconColor: 'text-orange-500',
+                onClick: () => setShowSandbox(true),
+              },
             ] as const).map((item, i) => (
               <motion.button
                 key={item.label}
@@ -173,6 +185,7 @@ export default function CloudLab() {
         {showCosts && <InfraCostCalculator isOpen={showCosts} onClose={() => setShowCosts(false)} />}
         {showMatch && <RecruiterMatch isOpen={showMatch} onClose={() => setShowMatch(false)} />}
         {showHealth && <InfraHealthDashboard isOpen={showHealth} onClose={() => setShowHealth(false)} />}
+        {showSandbox && <SandboxDeployer isOpen={showSandbox} onClose={() => setShowSandbox(false)} />}
       </Suspense>
     </div>
   );

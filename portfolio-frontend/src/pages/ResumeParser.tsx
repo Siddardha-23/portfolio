@@ -499,8 +499,9 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
       return;
     }
     // Set status from upload response and cache it so cloud shows "Resume Ready" like local
-    if (resp.data?.resume) {
-      const r = resp.data.resume;
+    const data = (resp as any).data;
+    if (data?.resume) {
+      const r = data.resume;
       const next: ResumeStatus = {
         has_resume: true,
         skills: r.skills,
@@ -549,10 +550,9 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     if (!jdAnalysis) return;
     setTailoring(true);
     setTailorError('');
+    const tailorResp = await apiService.tailorResumeForParser(jdAnalysis);
 
-    const tailorResp = await apiService.tailorResume(jdAnalysis);
     setTailoring(false);
-
     if (tailorResp.error) { setTailorError(tailorResp.error); return; }
     if (tailorResp.data) {
       setResult({

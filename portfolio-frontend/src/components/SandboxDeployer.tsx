@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Terminal, Play, X, Loader2, CheckCircle2, ChevronRight, Hash, 
-  Github, Cloud, Server, Database, Globe
+  Github, Cloud, Server, Globe, ExternalLink
 } from 'lucide-react';
 import { apiService } from '@/lib/api';
 
@@ -23,6 +23,7 @@ interface SandboxStatus {
   status: string;
   conclusion: string | null;
   run_id: number;
+  html_url?: string;
   jobs: Job[];
 }
 
@@ -314,15 +315,22 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
             {/* Right Column: Terminal UI */}
             <div className="flex flex-col rounded-xl overflow-hidden border border-border shadow-xl">
               {/* Terminal Header */}
-              <div className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center gap-2">
-                <div className="flex gap-1.5 flex-1">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
+              <div className="bg-slate-900 border-b border-slate-700 px-4 py-2 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1.5 mr-2">
+                    <div className="w-3 h-3 rounded-full bg-red-500" />
+                    <div className="w-3 h-3 rounded-full bg-yellow-500" />
+                    <div className="w-3 h-3 rounded-full bg-green-500" />
+                  </div>
+                  <div className="text-xs text-slate-400 font-mono flex items-center gap-2 shrink-0">
+                    <Github className="h-4 w-4" /> sandbox.yml
+                  </div>
                 </div>
-                <div className="text-xs text-slate-400 font-mono flex items-center gap-2 shrink-0">
-                  <Github className="h-4 w-4" /> sandbox.yml
-                </div>
+                {runStatus?.html_url && (
+                  <a href={runStatus.html_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors" title="View the real pipeline run directly on GitHub">
+                    View Live on GitHub <ExternalLink className="h-3 w-3" />
+                  </a>
+                )}
               </div>
               
               {/* Terminal Body */}

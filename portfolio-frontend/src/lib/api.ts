@@ -490,7 +490,7 @@ class ApiService {
     });
   }
 
-  async uploadResume(file: File) {
+  async uploadResume(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
     const formData = new FormData();
     formData.append('file', file);
     const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
@@ -560,7 +560,7 @@ class ApiService {
     return this.jobRequest<import('../types/resume').ResumeStatus>('/resume/status');
   }
 
-  async uploadResumeForParser(file: File) {
+  async uploadResumeForParser(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
     const formData = new FormData();
     formData.append('file', file);
     const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
@@ -640,7 +640,7 @@ class ApiService {
     return this.pollJob<{ jd_analysis: import('../types/resume').JDAnalysis }>(submitResp.data.job_id);
   }
 
-  async tailorResume(
+  async tailorResumeForParser(
     jdAnalysis: import('../types/resume').JDAnalysis,
   ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
     const submitResp = await this.jobRequest<{ job_id: string }>(
@@ -1063,6 +1063,7 @@ interface SandboxStatus {
   status: string;
   conclusion: string | null;
   run_id: number;
+  html_url?: string;
   jobs: {
     name: string;
     status: string;

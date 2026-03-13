@@ -478,6 +478,7 @@ def get_sandbox_status():
         run_id = latest_run['id']
         run_status = latest_run['status']
         run_conclusion = latest_run['conclusion']
+        html_url = latest_run['html_url']
         
         jobs_url = latest_run['jobs_url']
         jobs_r = requests.get(jobs_url, headers=headers)
@@ -490,6 +491,7 @@ def get_sandbox_status():
             'status': run_status,
             'conclusion': run_conclusion,
             'run_id': run_id,
+            'html_url': html_url,
             'jobs': []
         }
         

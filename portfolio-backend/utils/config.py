@@ -113,19 +113,21 @@ class JSearchConfig(object):
         return _get_config_value('JSEARCH_API_KEY', '')
 
 
-class JobSearchAuthConfig(object):
-    """Configuration for job search password authentication"""
-
-    @classmethod
+class JobSearchAuthConfigMeta(type):
     @property
     def JOB_SEARCH_PASSWORD_HASH(cls):
         return _get_config_value('JOB_SEARCH_PASSWORD_HASH', '')
 
+class JobSearchAuthConfig(object, metaclass=JobSearchAuthConfigMeta):
+    """Configuration for job search password authentication"""
+    pass
 
-class SandboxConfig(object):
-    """Configuration for GitHub Actions CI/CD Sandbox"""
 
-    @classmethod
+class SandboxConfigMeta(type):
     @property
     def GITHUB_PAT(cls):
         return _get_config_value('GITHUB_PAT', '')
+
+class SandboxConfig(object, metaclass=SandboxConfigMeta):
+    """Configuration for GitHub Actions CI/CD Sandbox"""
+    pass

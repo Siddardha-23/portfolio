@@ -1,0 +1,74 @@
+name: Sandbox CI/CD Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: 'The graffiti message to deploy'
+        required: true
+        type: string
+      color:
+        description: 'The chosen color for the message'
+        required: true
+        type: string
+        default: 'text-primary'
+
+jobs:
+  lint:
+    name: 🧹 Linting Code
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔍 Running ESLint
+        run: |
+          echo "Starting ESLint checks..."
+          sleep 3
+          echo "'src/components/SandboxDeployer.tsx' is perfectly formatted."
+          echo "Linting passed. 0 errors, 0 warnings."
+          sleep 2
+
+  build:
+    name: 🏗️ Building Application
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Installing dependencies
+        run: |
+          echo "npm pkg: npm ci"
+          sleep 2
+          echo "added 1243 packages, and audited 1244 packages in 5s"
+      
+      - name: 🚀 Compiling TypeScript & React
+        run: |
+          echo "tsc && vite build"
+          sleep 4
+          echo "vite v5.0.0 building for production..."
+          echo "✓ 125 modules transformed."
+          sleep 1
+          echo "dist/index.html    1.54 kB"
+          echo "dist/assets/index.js   402.11 kB"
+          echo "Build complete."
+
+  deploy:
+    name: ⚡ Deploying to AWS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📤 Syncing artifacts to S3
+        run: |
+          echo "aws s3 sync dist/ s3://portfolio-frontend/..."
+          sleep 3
+          echo "upload: dist/index.html to s3://portfolio-frontend/index.html"
+          echo "upload: dist/assets/index.js to s3://portfolio-frontend/assets/index.js"
+      
+      - name: 🔄 Invalidating CloudFront Cache
+        run: |
+          echo "aws cloudfront create-invalidation --paths '/*'"
+          sleep 2
+          echo "Invalidation ID: I2JXXXXXX initiated."
+          
+      - name: 📝 Updating Backend State
+        run: |
+          echo "Deploying the user message: '${{ inputs.message }}'"
+          echo "Color applied: '${{ inputs.color }}'"
+          sleep 1
+          echo "✅ Successfully deployed to production at manneharshithsiddardha.com"

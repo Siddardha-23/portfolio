@@ -7,14 +7,14 @@ Flask backend application with authentication and visitor tracking.
 - **Authentication**: Username/password authentication with JWT tokens
 - **Visitor Tracking**: Store and track visitor information
 - **Flask Blueprints**: Organized code structure with blueprints
-- **Database**: MySQL database with connection pooling
+- **Database**: MongoDB Atlas for scalable state management and caching
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.8+
-- MySQL database
+- Python 3.11+
+- MongoDB Atlas cluster
 - pip
 
 ### Installation
@@ -90,11 +90,9 @@ portfolio-backend/
 
 ## Environment Variables
 
-- `DB_HOST` - Database host (default: localhost)
-- `DB_USER` - Database user (default: root)
-- `DB_PASSWORD` - Database password
-- `DB_NAME` - Database name (default: master_db)
+- `MONGODB_URI` - MongoDB Atlas connection string
 - `JWT_SECRET_KEY` - Secret key for JWT tokens
+- `GEMINI_API_KEY` - API key for Google Gemini AI
 
 ## Notes
 

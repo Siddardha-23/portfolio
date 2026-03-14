@@ -1,6 +1,6 @@
 # 🚀 DevOps Portfolio
 
-A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, deployed on AWS using Infrastructure as Code. |
+A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, deployed on AWS using Infrastructure as Code.
 
 [![Deploy to AWS](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml/badge.svg)](https://github.com/Siddardha-23/portfolio/actions/workflows/deploy.yml)
 
@@ -47,36 +47,41 @@ A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, d
 - **Interactive Cloud Lab**: Real-time cloud demonstrations including an Edge CDN Latency Tester, Infrastructure Cost Calculator, Security Header Scorecard, and Infrastructure Health Dashboard.
 - **End-to-End Request Tracing**: Built-in AWS X-Ray visualization, rendering API request waterfall charts directly on the frontend.
 - **3D Visitor Analytics Globe**: Interactive 3D globe visualizing live visitor traffic, IP geolocations, and organizations.
+- **Project Sandbox CI/CD**: Interactive terminal simulation of code changes, commits, and multi-stage pipeline execution.
+- **"Under the Hood" Mode**: Real-time architectural insights and component-level technical details toggleable across the site.
+- **DevOps Easter Egg**: A hidden interactive "Deploy Runner" game triggered by the Konami Code.
 - **Seamless Serverless Backend**: Flask API wrapped with Mangum for scalable AWS Lambda execution with MongoDB Atlas caching and state management.
 
 ## 📁 Project Structure
 
 ```text
 portfolio/
-├── .github/workflows/       # GitHub Actions CI/CD
-├── infrastructure/          # Terraform AWS resources
-├── portfolio-frontend/      # React/Vite frontend (Cloud Lab, Globe, X-Ray UI)
-├── portfolio-backend/       # Flask API (Gemini integrations, Mangum adapter)
-└── README.md
+├── infrastructure/
+│   ├── README.md
+├── portfolio-backend/
+│   ├── app.py
+│   ├── README.md
+├── portfolio-frontend/
+│   ├── package.json
+│   ├── README.md
+├── scripts/
 ```
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React** with TypeScript
-- **Vite** for fast builds
-- **Tailwind CSS** for styling
-- **Framer Motion** for animations
-- **Recharts** for analytics
-- **Globe.gl** for 3D interactions
+- **React** (18.3.1)
+- **TypeScript** (5.5.3)
+- **Vite** (5.4.1)
+- **Tailwind CSS** (3.4.11)
+- **Framer Motion** (12.23.0)
+- **Three.js** (0.182.0)
+- **React Query** (5.56.2)
 
 ### Backend
-- **Flask** (Python 3.12)
-- **Mangum** (ASGI adapter for Lambda)
-- **Gemini AI** (Generative AI integration)
-- **PyPDF2 / fpdf2 / python-docx** for document processing
-- **JWT** authentication
-- **MongoDB Atlas** database
+- **Flask** (3.1.0)
+- **JWT Auth** (4.6.0)
+- **MongoDB** (Database client)
 
 ### Infrastructure (AWS)
 - **S3 & CloudFront** - Static website & Global CDN

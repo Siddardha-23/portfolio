@@ -58,12 +58,12 @@ A full-stack portfolio website showcasing DevOps and Cloud Engineering skills, d
 portfolio/
 ├── infrastructure/
 │   ├── README.md
-├── portfolio-backend/
-│   ├── app.py
-│   ├── README.md
 ├── portfolio-frontend/
-│   ├── package.json
 │   ├── README.md
+│   ├── package.json
+├── portfolio-backend/
+│   ├── README.md
+│   ├── app.py
 ├── scripts/
 ```
 

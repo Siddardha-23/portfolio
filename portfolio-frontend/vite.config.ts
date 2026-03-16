@@ -4,7 +4,7 @@ import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
-  base: './', // relative paths so chunks load on live (subpath or any domain)
+  base: '/', // absolute paths required for SPA routing on sub-paths like /project/aerosec
   plugins: [react()],
   resolve: {
     alias: {

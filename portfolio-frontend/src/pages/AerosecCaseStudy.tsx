@@ -12,6 +12,7 @@ import {
     Target, TrendingUp, Lightbulb, Layers, FileText,
     Network, Rocket, Eye, Zap
 } from 'lucide-react';
+import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
 // ============ SLIDE DATA ============
 const SLIDE_IMAGES: string[] = [
@@ -85,81 +86,35 @@ function StatCard({ value, label, icon }: { value: string; label: string; icon: 
     );
 }
 
-function Slideshow() {
-    const [current, setCurrent] = useState(0);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [showControls, setShowControls] = useState(true);
-    const [isTransitioning, setIsTransitioning] = useState(false);
+function PresentationViewer() {
+    const [mode, setMode] = useState<'office' | 'slides'>('office');
+    const [officeLoaded, setOfficeLoaded] = useState(false);
+    const [officeError, setOfficeError] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const controlsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const AUTOPLAY_INTERVAL = 4000; // 4 seconds per slide
+    const iframeRef = useRef<HTMLIFrameElement>(null);
+    const loadTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const total = SLIDE_IMAGES.length;
-    if (total === 0) return null;
+    // Build the Office Online embed URL from the public PPTX
+    const pptxUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}${PRESENTATION_FILE}`.replace(/ /g, '%20')
+        : '';
+    const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(pptxUrl)}`;
 
-    // Auto-play
+    // Detect load failure with timeout
     useEffect(() => {
-        if (!isPlaying) return;
-        const timer = setInterval(() => {
-            goToSlide((prev: number) => (prev + 1) % total);
-        }, AUTOPLAY_INTERVAL);
-        return () => clearInterval(timer);
-    }, [isPlaying, total]);
-
-    // Keyboard navigation
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'ArrowRight' || e.key === ' ') {
-                e.preventDefault();
-                goToSlide((prev: number) => Math.min(total - 1, prev + 1));
-            } else if (e.key === 'ArrowLeft') {
-                e.preventDefault();
-                goToSlide((prev: number) => Math.max(0, prev - 1));
-            } else if (e.key === 'f' || e.key === 'F') {
-                toggleFullscreen();
-            } else if (e.key === 'Escape' && isFullscreen) {
-                exitFullscreen();
-            } else if (e.key === 'p' || e.key === 'P') {
-                setIsPlaying(p => !p);
-            }
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [isFullscreen, total]);
-
-    // Fullscreen change detection
-    useEffect(() => {
-        const onFsChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
-        };
-        document.addEventListener('fullscreenchange', onFsChange);
-        return () => document.removeEventListener('fullscreenchange', onFsChange);
-    }, []);
-
-    // Auto-hide controls in fullscreen
-    useEffect(() => {
-        if (!isFullscreen) {
-            setShowControls(true);
-            return;
-        }
-        const onMove = () => {
-            setShowControls(true);
-            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
-            controlsTimeout.current = setTimeout(() => setShowControls(false), 3000);
-        };
-        window.addEventListener('mousemove', onMove);
-        controlsTimeout.current = setTimeout(() => setShowControls(false), 3000);
+        if (mode !== 'office' || officeLoaded) return;
+        loadTimeout.current = setTimeout(() => {
+            if (!officeLoaded) setOfficeError(true);
+        }, 15000); // 15s timeout
         return () => {
-            window.removeEventListener('mousemove', onMove);
-            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+            if (loadTimeout.current) clearTimeout(loadTimeout.current);
         };
-    }, [isFullscreen]);
+    }, [mode, officeLoaded]);
 
-    const goToSlide = (updater: number | ((prev: number) => number)) => {
-        setIsTransitioning(true);
-        setCurrent(updater);
-        setTimeout(() => setIsTransitioning(false), 300);
+    const handleIframeLoad = () => {
+        setOfficeLoaded(true);
+        setOfficeError(false);
+        if (loadTimeout.current) clearTimeout(loadTimeout.current);
     };
 
     const toggleFullscreen = () => {
@@ -171,191 +126,143 @@ function Slideshow() {
         }
     };
 
-    const exitFullscreen = () => {
-        if (document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
-        }
-    };
+    return (
+        <div className="mb-6 space-y-3">
+            {/* Mode toggle */}
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setMode('office')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            mode === 'office'
+                                ? 'bg-primary text-primary-foreground shadow-md'
+                                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
+                        }`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                        Live Presentation
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setMode('slides')}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                            mode === 'slides'
+                                ? 'bg-primary text-primary-foreground shadow-md'
+                                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
+                        }`}
+                    >
+                        <Layers className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
+                        Slide Images
+                    </button>
+                </div>
+                <Button variant="outline" size="sm" onClick={toggleFullscreen} title="Fullscreen">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                </Button>
+            </div>
 
-    const progress = ((current + 1) / total) * 100;
+            {/* Presentation container */}
+            <div ref={containerRef} className="rounded-xl overflow-hidden border border-border/50 bg-zinc-100 dark:bg-zinc-900">
+                {mode === 'office' ? (
+                    <div className="relative">
+                        {/* Loading state */}
+                        {!officeLoaded && !officeError && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100 dark:bg-zinc-900">
+                                <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
+                                <p className="text-sm text-muted-foreground">Loading PowerPoint with animations...</p>
+                                <p className="text-[10px] text-muted-foreground/60">Powered by Microsoft Office Online</p>
+                            </div>
+                        )}
+
+                        {/* Error state */}
+                        {officeError && !officeLoaded && (
+                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100 dark:bg-zinc-900 p-6">
+                                <AlertTriangle className="h-8 w-8 text-amber-500" />
+                                <p className="text-sm text-foreground font-medium text-center">Office Online viewer couldn't load</p>
+                                <p className="text-xs text-muted-foreground text-center max-w-sm">
+                                    This can happen if the file isn't accessible publicly yet. Try the Slide Images view or download the file.
+                                </p>
+                                <Button variant="outline" size="sm" onClick={() => setMode('slides')}>
+                                    <Layers className="h-4 w-4 mr-1.5" />
+                                    Switch to Slide Images
+                                </Button>
+                            </div>
+                        )}
+
+                        {/* Office Online iframe */}
+                        <iframe
+                            ref={iframeRef}
+                            src={officeEmbedUrl}
+                            className="w-full border-0"
+                            style={{ height: 'min(75vh, 600px)' }}
+                            onLoad={handleIframeLoad}
+                            title="AEROSEC Pitch Deck — PowerPoint Online"
+                            allowFullScreen
+                            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"
+                        />
+
+                        {/* Hint bar */}
+                        {officeLoaded && (
+                            <div className="flex items-center justify-center gap-3 py-2 bg-secondary/20 border-t border-border/30 text-[10px] text-muted-foreground/60">
+                                <span>Click inside to navigate slides</span>
+                                <span>|</span>
+                                <span>Animations &amp; transitions play as designed in PowerPoint</span>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <StaticSlideViewer />
+                )}
+            </div>
+        </div>
+    );
+}
+
+/** Fallback: static image viewer for when Office Online isn't available */
+function StaticSlideViewer() {
+    const [current, setCurrent] = useState(0);
+    const total = SLIDE_IMAGES.length;
+    if (total === 0) return null;
 
     return (
-        <div
-            ref={containerRef}
-            className={`relative group ${isFullscreen ? 'bg-black flex flex-col items-center justify-center h-screen w-screen' : 'mb-6'}`}
-        >
-            {/* Slide display */}
-            <div className={`relative overflow-hidden ${isFullscreen ? 'flex-1 flex items-center justify-center w-full' : 'aspect-[16/9] rounded-lg bg-zinc-100 dark:bg-zinc-800'}`}>
-                {/* Preload next slide */}
-                {current + 1 < total && (
-                    <link rel="prefetch" href={SLIDE_IMAGES[current + 1]} />
-                )}
+        <div>
+            <div className="relative aspect-[16/9] bg-zinc-100 dark:bg-zinc-800">
                 <img
                     src={SLIDE_IMAGES[current]}
                     alt={`Slide ${current + 1} of ${total}`}
-                    className={`${isFullscreen ? 'max-h-full max-w-full object-contain' : 'w-full h-full object-contain'} transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
+                    className="w-full h-full object-contain"
                     draggable={false}
                 />
-
-                {/* Click zones for prev/next */}
-                <button
-                    type="button"
-                    onClick={() => goToSlide((prev: number) => Math.max(0, prev - 1))}
-                    className="absolute inset-y-0 left-0 w-1/3 cursor-pointer opacity-0 z-10"
-                    aria-label="Previous slide"
-                    disabled={current === 0}
-                />
-                <button
-                    type="button"
-                    onClick={() => goToSlide((prev: number) => Math.min(total - 1, prev + 1))}
-                    className="absolute inset-y-0 right-0 w-1/3 cursor-pointer opacity-0 z-10"
-                    aria-label="Next slide"
-                    disabled={current === total - 1}
-                />
-
-                {/* Hover arrows */}
-                <div className={`absolute inset-y-0 left-0 flex items-center pl-2 sm:pl-4 transition-opacity duration-200 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-                    <button
-                        type="button"
-                        onClick={() => goToSlide((prev: number) => Math.max(0, prev - 1))}
-                        disabled={current === 0}
-                        className="p-2 sm:p-3 rounded-full bg-black/50 text-white/80 hover:bg-black/70 hover:text-white disabled:opacity-30 transition-all backdrop-blur-sm z-20"
-                    >
-                        <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
-                    </button>
-                </div>
-                <div className={`absolute inset-y-0 right-0 flex items-center pr-2 sm:pr-4 transition-opacity duration-200 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-                    <button
-                        type="button"
-                        onClick={() => goToSlide((prev: number) => Math.min(total - 1, prev + 1))}
-                        disabled={current === total - 1}
-                        className="p-2 sm:p-3 rounded-full bg-black/50 text-white/80 hover:bg-black/70 hover:text-white disabled:opacity-30 transition-all backdrop-blur-sm z-20"
-                    >
-                        <ChevronRight className="h-5 w-5 sm:h-6 sm:w-6" />
-                    </button>
-                </div>
-
-                {/* Slide counter (top-right) */}
-                <div className={`absolute top-3 right-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium transition-opacity duration-200 z-20 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+                {/* Slide counter */}
+                <div className="absolute top-3 right-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium">
                     {current + 1} / {total}
                 </div>
             </div>
-
-            {/* Progress bar */}
-            <div className={`${isFullscreen ? 'w-full' : 'mt-2 rounded-full overflow-hidden'} h-1 bg-zinc-200 dark:bg-zinc-700`}>
-                <div
-                    className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-300 ease-out rounded-full"
-                    style={{ width: `${progress}%` }}
-                />
+            {/* Controls */}
+            <div className="flex items-center justify-between p-3 border-t border-border/30 bg-secondary/10">
+                <Button variant="outline" size="sm" onClick={() => setCurrent(p => Math.max(0, p - 1))} disabled={current === 0}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">Slide {current + 1} of {total}</span>
+                <Button variant="outline" size="sm" onClick={() => setCurrent(p => Math.min(total - 1, p + 1))} disabled={current === total - 1}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
             </div>
-
-            {/* Controls bar */}
-            <div className={`${isFullscreen ? 'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent pt-10 pb-4 px-4' : 'mt-3'} transition-opacity duration-200 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5">
-                        {/* Play/Pause */}
-                        <Button
-                            variant={isFullscreen ? "ghost" : "outline"}
-                            size="sm"
-                            onClick={() => setIsPlaying(p => !p)}
-                            className={isFullscreen ? "text-white hover:bg-white/20" : ""}
-                            title={isPlaying ? "Pause (P)" : "Play (P)"}
-                        >
-                            {isPlaying ? (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-                                    Pause
-                                </>
-                            ) : (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                    Play
-                                </>
-                            )}
-                        </Button>
-
-                        {/* Previous */}
-                        <Button
-                            variant={isFullscreen ? "ghost" : "outline"}
-                            size="sm"
-                            onClick={() => { goToSlide((prev: number) => Math.max(0, prev - 1)); setIsPlaying(false); }}
-                            disabled={current === 0}
-                            className={isFullscreen ? "text-white hover:bg-white/20" : ""}
-                        >
-                            <ChevronLeft className="h-4 w-4" />
-                        </Button>
-
-                        {/* Next */}
-                        <Button
-                            variant={isFullscreen ? "ghost" : "outline"}
-                            size="sm"
-                            onClick={() => { goToSlide((prev: number) => Math.min(total - 1, prev + 1)); setIsPlaying(false); }}
-                            disabled={current === total - 1}
-                            className={isFullscreen ? "text-white hover:bg-white/20" : ""}
-                        >
-                            <ChevronRight className="h-4 w-4" />
-                        </Button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                        {/* Slide counter */}
-                        <span className={`text-xs font-medium tabular-nums ${isFullscreen ? 'text-white/70' : 'text-muted-foreground'}`}>
-                            Slide {current + 1} of {total}
-                        </span>
-
-                        {/* Fullscreen toggle */}
-                        <Button
-                            variant={isFullscreen ? "ghost" : "outline"}
-                            size="sm"
-                            onClick={toggleFullscreen}
-                            className={isFullscreen ? "text-white hover:bg-white/20" : ""}
-                            title={isFullscreen ? "Exit fullscreen (Esc)" : "Fullscreen (F)"}
-                        >
-                            {isFullscreen ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                            )}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Keyboard hints */}
-                {!isFullscreen && (
-                    <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-muted-foreground/60">
-                        <span>← → Navigate</span>
-                        <span>Space Next</span>
-                        <span>P Play/Pause</span>
-                        <span>F Fullscreen</span>
-                    </div>
-                )}
-            </div>
-
             {/* Thumbnail strip */}
-            {!isFullscreen && (
-                <div className="mt-3 flex gap-1 overflow-x-auto pb-2 scrollbar-thin">
-                    {SLIDE_IMAGES.map((src, i) => (
-                        <button
-                            key={i}
-                            type="button"
-                            onClick={() => { goToSlide(i); setIsPlaying(false); }}
-                            className={`shrink-0 rounded-md overflow-hidden border-2 transition-all ${
-                                i === current
-                                    ? 'border-primary ring-1 ring-primary/30 scale-105'
-                                    : 'border-transparent opacity-60 hover:opacity-100'
-                            }`}
-                            title={`Go to slide ${i + 1}`}
-                        >
-                            <img
-                                src={src}
-                                alt={`Thumbnail ${i + 1}`}
-                                className="h-12 w-auto object-cover"
-                                loading="lazy"
-                            />
-                        </button>
-                    ))}
-                </div>
-            )}
+            <div className="flex gap-1 overflow-x-auto p-2 scrollbar-thin">
+                {SLIDE_IMAGES.map((src, i) => (
+                    <button
+                        key={i}
+                        type="button"
+                        onClick={() => setCurrent(i)}
+                        className={`shrink-0 rounded-md overflow-hidden border-2 transition-all ${
+                            i === current ? 'border-primary ring-1 ring-primary/30' : 'border-transparent opacity-50 hover:opacity-100'
+                        }`}
+                    >
+                        <img src={src} alt={`Thumbnail ${i + 1}`} className="h-12 w-auto object-cover" loading="lazy" />
+                    </button>
+                ))}
+            </div>
         </div>
     );
 }
@@ -364,6 +271,9 @@ function Slideshow() {
 
 export default function AerosecCaseStudy() {
     const navigate = useNavigate();
+
+    // Track visitors who land directly on this page
+    useVisitorTracking('aerosec-case-study');
 
     useEffect(() => { window.scrollTo(0, 0); }, []);
 
@@ -834,7 +744,7 @@ export default function AerosecCaseStudy() {
                         title="Project Pitch Deck"
                     />
 
-                    <Slideshow />
+                    <PresentationViewer />
 
                     <Card className="p-8 border-0 shadow-xl bg-gradient-to-br from-primary/5 via-card to-accent/5 text-center">
                         <div className="p-4 rounded-full bg-primary/10 w-fit mx-auto mb-4">

@@ -38,7 +38,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
     }
     content_security_policy {
       # Allow: map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview in iframe
-      content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com;"
+      content_security_policy = "default-src 'self'; frame-src 'self' blob: https://view.officeapps.live.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com;"
       override               = true
     }
   }
@@ -72,7 +72,7 @@ resource "aws_cloudfront_response_headers_policy" "security_framable" {
       override        = true
     }
     content_security_policy {
-      content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com;"
+      content_security_policy = "default-src 'self'; frame-src 'self' blob: https://view.officeapps.live.com; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com;"
       override               = true
     }
   }
@@ -171,15 +171,17 @@ resource "aws_cloudfront_distribution" "frontend" {
   # Custom Error Responses for SPA Routing
   # ==========================================================================
   custom_error_response {
-    error_code         = 403
-    response_code      = 200
-    response_page_path = "/index.html"
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
   }
 
   custom_error_response {
-    error_code         = 404
-    response_code      = 200
-    response_page_path = "/index.html"
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
   }
 
   # ==========================================================================

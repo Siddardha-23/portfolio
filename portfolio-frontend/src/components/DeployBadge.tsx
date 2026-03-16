@@ -304,7 +304,7 @@ export default function DeployBadge() {
                                         <InfoRow
                                             icon={GitCommit}
                                             label="Commit"
-                                            value={`${manifest.commit_short} — ${manifest.commit_message}`}
+                                            value={`${manifest.commit_short} - ${manifest.commit_message}`}
                                             href={commitUrl}
                                         />
                                         <InfoRow

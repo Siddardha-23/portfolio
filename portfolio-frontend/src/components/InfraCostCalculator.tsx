@@ -1,5 +1,5 @@
 /**
- * InfraCostCalculator – Live infrastructure cost breakdown
+ * InfraCostCalculator - Live infrastructure cost breakdown
  *
  * Shows real estimated AWS costs based on the actual Terraform-provisioned
  * architecture: S3 + CloudFront + Lambda + API Gateway + Route53 + ACM + CloudWatch.
@@ -94,7 +94,7 @@ const INFRA_COSTS: CostItem[] = [
     tier: 'free',
     awsFreeNote: '1M requests free tier (12 months)',
     details: [
-      'HTTP API (not REST — 70% cheaper)',
+      'HTTP API (not REST - 70% cheaper)',
       '$1.00 per million requests',
       'Burst: 100 req/s, Rate: 50 req/s',
       'Auto-deploy staging enabled',
@@ -242,14 +242,14 @@ export default function InfraCostCalculator({ isOpen, onClose }: {
         }
       })
       .catch(() => {
-        // Fallback silently — use Terraform estimates
+        // Fallback silently - use Terraform estimates
       })
       .finally(() => setAwsLoading(false));
   }, [isOpen, awsData]);
 
   const traffic = TRAFFIC_PRESETS[trafficLevel];
 
-  // Calculate costs — use real AWS data if available, otherwise static estimates
+  // Calculate costs - use real AWS data if available, otherwise static estimates
   const costs = INFRA_COSTS.map(item => {
     // If we have real AWS data, try to match services
     if (isRealData && awsData) {

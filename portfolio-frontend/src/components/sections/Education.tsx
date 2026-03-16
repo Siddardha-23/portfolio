@@ -345,7 +345,6 @@ export default function Education() {
                                   <Star className="h-4 w-4 text-amber-400" />
                                   <span className="text-sm text-foreground font-medium">{course.name}</span>
                                 </div>
-                                <GradeBadge grade={course.grade} />
                               </motion.div>
                             ))}
                           </div>

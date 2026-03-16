@@ -24,11 +24,11 @@ import { ThemeToggle } from '@/components/theme-toggle';
 // ========== SPATIAL ARCHITECTURE DATA ==========
 
 const portfolioDiagram: RefArchDiagramData = {
-    title: 'Cloud Portfolio — AWS Architecture',
+    title: 'Cloud Portfolio - AWS Architecture',
     viewBox: [1160, 600],
     regions: [
         { id: 'aws', label: 'AWS Cloud', x: 160, y: 30, width: 980, height: 540, color: '#FF9900' },
-        { id: 'vpc', label: 'VPC — Private Subnet', x: 460, y: 350, width: 380, height: 130, color: '#10B981' },
+        { id: 'vpc', label: 'VPC - Private Subnet', x: 460, y: 350, width: 380, height: 130, color: '#10B981' },
     ],
     nodes: [
         { id: 'users', label: 'End Users', icon: <Users className="h-5 w-5" />, x: 75, y: 250, accentColor: '#3B82F6' },
@@ -55,11 +55,11 @@ const portfolioDiagram: RefArchDiagramData = {
 };
 
 const slateDiagram: RefArchDiagramData = {
-    title: 'SLATE — Multi-Environment Architecture',
+    title: 'SLATE - Multi-Environment Architecture',
     viewBox: [1160, 530],
     regions: [
         { id: 'aws', label: 'AWS Cloud', x: 170, y: 40, width: 970, height: 450, color: '#FF9900' },
-        { id: 'vpc', label: 'VPC — Application Tier', x: 580, y: 85, width: 420, height: 330, color: '#10B981' },
+        { id: 'vpc', label: 'VPC - Application Tier', x: 580, y: 85, width: 420, height: 330, color: '#10B981' },
     ],
     nodes: [
         { id: 'gh', label: 'GitHub', sublabel: 'Source', icon: <Github className="h-5 w-5" />, x: 75, y: 260, accentColor: '#24292F' },
@@ -84,12 +84,12 @@ const slateDiagram: RefArchDiagramData = {
 };
 
 const microservicesDiagram: RefArchDiagramData = {
-    title: 'Microservices CI/CD — AWS Architecture',
+    title: 'Microservices CI/CD - AWS Architecture',
     viewBox: [1200, 570],
     regions: [
         { id: 'aws', label: 'AWS Account', x: 170, y: 40, width: 1010, height: 500, color: '#FF9900' },
         { id: 'cicd', label: 'CI/CD Pipeline', x: 390, y: 80, width: 230, height: 310, color: '#F59E0B' },
-        { id: 'vpc', label: 'VPC — Production', x: 810, y: 220, width: 340, height: 290, color: '#10B981' },
+        { id: 'vpc', label: 'VPC - Production', x: 810, y: 220, width: 340, height: 290, color: '#10B981' },
     ],
     nodes: [
         { id: 'commit', label: 'CodeCommit', sublabel: 'Source', icon: <GitBranch className="h-5 w-5" />, x: 90, y: 240, accentColor: '#24292F' },
@@ -117,10 +117,10 @@ const microservicesDiagram: RefArchDiagramData = {
 };
 
 const crossAccountDiagram: RefArchDiagramData = {
-    title: 'Cross-Account CI/CD — Multi-Tenancy',
+    title: 'Cross-Account CI/CD - Multi-Tenancy',
     viewBox: [1200, 680],
     regions: [
-        { id: 'main', label: 'Main Account — Build & Artifacts', x: 40, y: 30, width: 1120, height: 260, color: '#FF9900' },
+        { id: 'main', label: 'Main Account - Build & Artifacts', x: 40, y: 30, width: 1120, height: 260, color: '#FF9900' },
         { id: 'tenantA', label: 'Tenant A Account', x: 40, y: 360, width: 530, height: 280, color: '#10B981' },
         { id: 'tenantB', label: 'Tenant B Account', x: 630, y: 360, width: 530, height: 280, color: '#3B82F6' },
         { id: 'vpcA', label: 'VPC', x: 100, y: 440, width: 420, height: 150, color: '#10B981' },

@@ -356,7 +356,7 @@ function FloatingParticles() {
   );
 }
 
-// Skill radar/stats component — clickable to scroll to category
+// Skill radar/stats component - clickable to scroll to category
 function SkillsStats() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true });

@@ -21,15 +21,15 @@ export const EDUCATION = [
     campusImage: "/images/education/asu-campus.png",
     logo: "https://upload.wikimedia.org/wikipedia/en/a/a8/Arizona_State_University_seal.svg",
     coursework: [
-      { name: "Principles of Computer Information and Technology", grade: "A" },
-      { name: "Advanced Information Systems Security", grade: "A" },
-      { name: "Information Systems Development", grade: "A" },
-      { name: "Advanced Database Management Systems", grade: "A" },
-      { name: "Security Compliance", grade: "A" },
-      { name: "Cloud Architecture for IT", grade: "A" },
-      { name: "Cloud Security and Ops for IT", grade: "A" },
-      { name: "Network Forensics for IT", grade: "A" },
-      { name: "Technology Innovation Lab", grade: "A" }
+      { name: "Principles of Computer Information and Technology" },
+      { name: "Advanced Information Systems Security" },
+      { name: "Information Systems Development" },
+      { name: "Advanced Database Management Systems" },
+      { name: "Security Compliance" },
+      { name: "Cloud Architecture for IT" },
+      { name: "Cloud Security and Ops for IT" },
+      { name: "Network Forensics for IT" },
+      { name: "Technology Innovation Lab" }
     ],
     achievements: [
       "Perfect 4.0 GPA"
@@ -52,16 +52,14 @@ export const EDUCATION = [
     campusImage: "/images/education/jntu-campus.png",
     logo: "https://upload.wikimedia.org/wikipedia/en/2/2f/JNTU_Kakinada_logo.png",
     coursework: [
-      { name: "Data Structures & Algorithms", grade: "A" },
-      { name: "Database Management Systems", grade: "A" },
-      { name: "Computer Networks", grade: "A-" },
-      { name: "Operating Systems", grade: "A" },
-      { name: "Machine Learning", grade: "A-" }
+      { name: "Data Structures & Algorithms" },
+      { name: "Database Management Systems" },
+      { name: "Computer Networks" },
+      { name: "Operating Systems" },
+      { name: "Machine Learning" }
     ],
     achievements: [
-      "First Class with Distinction",
-      "Technical Club Lead",
-      "Best Project Award"
+      "First Class with Distinction"
     ],
     color: {
       primary: "#0066CC",
@@ -216,16 +214,16 @@ export const EXPERIENCE = [
 
 export const PROJECTS = [
   {
-    title: "Cybersecurity in Connected Aviation – AEROSEC",
+    title: "Cybersecurity in Connected Aviation - AEROSEC",
     slug: "aerosec",
     period: "August 2025 - December 2025",
     status: "Live",
     description: [
-      "Led a Honeywell-guided innovation project targeting aviation's most exposed attack surface — third-party integrations connecting Passenger Service Systems (PSS), payment processors, loyalty programs, and booking APIs.",
-      "Conducted 20+ stakeholder interviews with FAA officials, Air France–KLM, Delta, cybersecurity engineers, and IT security leaders, validating that passenger-facing systems face more frequent attacks than avionics, with 60%+ of breaches involving third-party or API exposure.",
-      "Developed AEROSEC — a real-time vendor cyber risk dashboard with AI-driven anomaly detection, automated compliance scoring aligned with NIST CSF 2.0, ISO 27001, DO-326A, and executive-level risk-to-revenue impact mapping.",
-      "Built comprehensive business validation including TAM–SAM–SOM analysis ($200B → $15B → $2B), SaaS tiered pricing, 5-year financial projection, and go-to-market roadmap for airline and travel technology segments.",
-      "Evolved from a DevOps engineering mindset to a systems-oriented cybersecurity strategist — framing security as business resilience and connecting technical controls to revenue protection and executive decision-making."
+      "Led a Honeywell-guided innovation project targeting aviation's most exposed attack surface - third-party integrations connecting Passenger Service Systems (PSS), payment processors, loyalty programs, and booking APIs.",
+      "Conducted 20+ stakeholder interviews with FAA officials, Air France-KLM, Delta, cybersecurity engineers, and IT security leaders, validating that passenger-facing systems face more frequent attacks than avionics, with 60%+ of breaches involving third-party or API exposure.",
+      "Developed AEROSEC - a real-time vendor cyber risk dashboard with AI-driven anomaly detection, automated compliance scoring aligned with NIST CSF 2.0, ISO 27001, DO-326A, and executive-level risk-to-revenue impact mapping.",
+      "Built comprehensive business validation including TAM-SAM-SOM analysis ($200B → $15B → $2B), SaaS tiered pricing, 5-year financial projection, and go-to-market roadmap for airline and travel technology segments.",
+      "Evolved from a DevOps engineering mindset to a systems-oriented cybersecurity strategist - framing security as business resilience and connecting technical controls to revenue protection and executive decision-making."
     ],
     technologies: ["Cybersecurity", "NIST CSF 2.0", "API Security", "AI/ML", "Aviation", "Risk Analytics"],
     github: "https://github.com/Siddardha-23",
@@ -238,7 +236,7 @@ export const PROJECTS = [
         monitoring: ["MTTD/MTTR Tracking", "API Health Monitoring", "Business Impact Scoring"]
       },
       diagram: {
-        title: "AEROSEC — Real-Time Third-Party Vendor Cyber Risk Platform",
+        title: "AEROSEC - Real-Time Third-Party Vendor Cyber Risk Platform",
         layers: [
           {
             name: "Data Ingestion",
@@ -318,7 +316,7 @@ export const PROJECTS = [
       "Implemented 4 containerized ECS Fargate services (Frontend, Backend, AI Service, Third-party API) with ALB listener routing, tiered security group isolation, and NAT Gateway for controlled private subnet outbound access.",
       "Built end-to-end CI/CD pipeline using CodeCommit, EventBridge, CodePipeline, CodeBuild, and ECR with branch-based deployments, immutable Docker images, and zero-touch production rollouts via rolling ECS updates.",
       "Enforced defense-in-depth security with chained security groups (ALB → Frontend → Backend → RDS), private-only RDS access restricted to Backend and AI service SGs, ACM-managed SSL/TLS, and no public database endpoints.",
-      "Architected for high availability with multi-AZ deployments, ECS rolling updates, ALB health checks, and full Infrastructure-as-Code reproducibility — aligned with the AWS Well-Architected Framework."
+      "Architected for high availability with multi-AZ deployments, ECS rolling updates, ALB health checks, and full Infrastructure-as-Code reproducibility - aligned with the AWS Well-Architected Framework."
     ],
     technologies: ["AWS", "ECS", "CloudFormation", "Docker", "CI/CD", "RDS"],
     github: "https://github.com/Siddardha-23",
@@ -381,11 +379,11 @@ export const PROJECTS = [
         "3-tier VPC isolation: public, private app, and private data subnets (WAF: Security Pillar)",
         "Security group chaining: ALB → Frontend → Backend → RDS",
         "RDS access restricted to Backend & AI Service security groups only",
-        "No public database endpoints — RDS deployed exclusively in private subnets",
+        "No public database endpoints - RDS deployed exclusively in private subnets",
         "NAT Gateway for controlled outbound access from private subnets",
         "ACM-managed SSL/TLS certificates with Route 53 DNS validation",
         "IAM least-privilege roles for ECS task execution",
-        "Immutable Docker images — no runtime mutations, full audit trail"
+        "Immutable Docker images - no runtime mutations, full audit trail"
       ],
       scalability: [
         "ECS Fargate auto-scales each microservice independently (WAF: Performance Efficiency)",
@@ -420,9 +418,9 @@ export const PROJECTS = [
     status: "Live",
     description: [
       "Designed a cross-account CI/CD pipeline architecture enabling centralized build in a main DevOps account with automated deployment to multiple isolated tenant AWS accounts, fully provisioned through CloudFormation.",
-      "Implemented multi-stage CodePipeline with per-tenant deployment stages — each tenant account operates its own ECS Fargate services, 3-tier VPC, and RDS, configured via environment-specific parameters and task definition variables.",
+      "Implemented multi-stage CodePipeline with per-tenant deployment stages - each tenant account operates its own ECS Fargate services, 3-tier VPC, and RDS, configured via environment-specific parameters and task definition variables.",
       "Configured cross-account ECR access through IAM inline policies allowing tenant ECS tasks to pull Docker images from the main account's shared registry, with KMS-encrypted artifact sharing via S3 for secure cross-boundary data transfer.",
-      "Built for horizontal tenant scalability — adding a new tenant requires only a new pipeline stage and deploying the CloudFormation stack to the target account, with zero impact to existing tenants.",
+      "Built for horizontal tenant scalability - adding a new tenant requires only a new pipeline stage and deploying the CloudFormation stack to the target account, with zero impact to existing tenants.",
       "Enforced account-level blast radius isolation: each tenant runs in a fully independent AWS account with its own VPC, security groups, and RDS instance, preventing cross-tenant data leakage or failure propagation."
     ],
     technologies: ["AWS", "CloudFormation", "ECS", "Docker", "CI/CD", "RDS"],
@@ -439,7 +437,7 @@ export const PROJECTS = [
         title: "Cross-Account CI/CD Multi-Tenancy Architecture",
         layers: [
           {
-            name: "Main Account — CI/CD Pipeline",
+            name: "Main Account - CI/CD Pipeline",
             color: "#F59E0B",
             components: [
               "CodeCommit branch-based source control",
@@ -461,7 +459,7 @@ export const PROJECTS = [
             ]
           },
           {
-            name: "Tenant Account — Compute & Network",
+            name: "Tenant Account - Compute & Network",
             color: "#10B981",
             components: [
               "Independent 3-tier VPC per tenant (public, private app, private data)",
@@ -471,7 +469,7 @@ export const PROJECTS = [
             ]
           },
           {
-            name: "Tenant Account — Data Tier",
+            name: "Tenant Account - Data Tier",
             color: "#3B82F6",
             components: [
               "Amazon RDS in private subnets per tenant",
@@ -483,10 +481,10 @@ export const PROJECTS = [
         ]
       },
       security: [
-        "Account-level blast radius isolation — each tenant in a separate AWS account",
+        "Account-level blast radius isolation - each tenant in a separate AWS account",
         "Cross-account ECR access via scoped IAM inline policies (least privilege)",
         "KMS-encrypted S3 artifacts with cross-account key policies",
-        "No shared databases — each tenant has its own RDS in private subnets",
+        "No shared databases - each tenant has its own RDS in private subnets",
         "Security group chaining within each tenant: ALB → Frontend → Backend → RDS",
         "CodePipeline uses assume-role for cross-account deployment (no long-lived credentials)",
         "Immutable Docker images shared from centralized ECR registry",
@@ -501,16 +499,16 @@ export const PROJECTS = [
         "Branch-based pipeline supports parallel development across environments"
       ],
       costEfficiency: [
-        "Centralized build pipeline — single CodeBuild project serves all tenants",
+        "Centralized build pipeline - single CodeBuild project serves all tenants",
         "Shared ECR registry eliminates per-tenant image build redundancy",
-        "Fargate pay-per-task in each tenant — no idle compute across accounts",
+        "Fargate pay-per-task in each tenant - no idle compute across accounts",
         "CloudFormation IaC enables repeatable tenant provisioning in minutes",
         "KMS key sharing reduces per-tenant encryption overhead",
         "Account-level cost attribution via AWS Organizations for chargeback"
       ],
       innovations: [
         "True multi-tenancy with AWS account-level isolation (strongest isolation boundary)",
-        "Single pipeline deploys to N tenants — linear stage addition, not pipeline duplication",
+        "Single pipeline deploys to N tenants - linear stage addition, not pipeline duplication",
         "Cross-account image sharing with encrypted artifact propagation",
         "Environment-specific ECS task parameters eliminate per-tenant code branches",
         "CloudFormation parameterized stacks: one template, many tenants",
@@ -524,7 +522,7 @@ export const PROJECTS = [
     period: "December 2024 - Present",
     status: "Live",
     description: [
-      "Designed and deployed a full-stack portfolio on a 3-tier serverless AWS architecture — React SPA on S3/CloudFront, Flask API on Lambda via API Gateway, and MongoDB Atlas for data persistence, all provisioned with Terraform.",
+      "Designed and deployed a full-stack portfolio on a 3-tier serverless AWS architecture - React SPA on S3/CloudFront, Flask API on Lambda via API Gateway, and MongoDB Atlas for data persistence, all provisioned with Terraform.",
       "Built automated CI/CD pipelines using GitHub Actions for continuous deployment, with S3 static hosting, CloudFront cache invalidation, and Lambda function updates on every push.",
       "Implemented visitor analytics with fingerprint-based deduplication, session tracking, organization detection, and real-time engagement metrics.",
       "Implemented visitor tracking with fingerprinting, session management, and organization detection for analytics.",

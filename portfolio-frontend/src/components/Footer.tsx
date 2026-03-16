@@ -100,18 +100,23 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-6 flex items-center justify-center gap-3">
-          <p className="gradient-text font-medium">
-            © {currentYear} Harshith Siddardha Manne. All rights reserved.
+        <div className="border-t border-border mt-8 pt-6 flex flex-col items-center gap-2">
+          <p className="text-sm text-muted-foreground">
+            Made with ❤️ and lots of ☕
           </p>
-          <button
-            onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
-            className="p-1.5 rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-all duration-300 hover:scale-110"
-            title="🎮"
-            aria-label="Easter egg"
-          >
-            <Gamepad2 className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-3">
+            <p className="gradient-text font-medium">
+              © {currentYear} Harshith Siddardha Manne. All rights reserved.
+            </p>
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
+              className="p-1.5 rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-all duration-300 hover:scale-110"
+              title="🎮"
+              aria-label="Easter egg"
+            >
+              <Gamepad2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
     </footer>

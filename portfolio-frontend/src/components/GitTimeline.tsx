@@ -692,7 +692,7 @@ export default function GitTimeline({ isOpen, onClose }: {
                                                         <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">
                                                             <Rocket className="h-4 w-4 text-primary" />
                                                             <span className="text-xs font-medium text-foreground">
-                                                                First commit — where it all began 🎉
+                                                                First commit - where it all began 🎉
                                                             </span>
                                                         </div>
                                                     </motion.div>

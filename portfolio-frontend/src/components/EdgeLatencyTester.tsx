@@ -1,5 +1,5 @@
 /**
- * EdgeLatencyTester – "Test my CDN from your location"
+ * EdgeLatencyTester - "Test my CDN from your location"
  *
  * Pings the site's CDN endpoint multiple times, measures latency,
  * identifies CloudFront POP, and visualises results with an animated chart.
@@ -63,7 +63,7 @@ function parsePOP(popHeader: string): { code: string; city: string; region: stri
     const code = popHeader.split('-')[0].toUpperCase();
     const info = POP_MAP[code];
     if (info) return { code, ...info };
-    // Unknown POP — still return the code
+    // Unknown POP - still return the code
     return { code, city: code, region: 'Unknown', flag: '🌐' };
 }
 

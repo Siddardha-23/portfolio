@@ -1,8 +1,8 @@
 /**
- * SecurityScorecard – Live security headers scan
+ * SecurityScorecard - Live security headers scan
  *
  * Fetches the site's own pages and inspects response headers to produce
- * a visual security grade – HSTS, CSP, X-Frame-Options, etc.
+ * a visual security grade - HSTS, CSP, X-Frame-Options, etc.
  */
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -30,7 +30,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: Lock,
         weight: 10,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — site allows HTTP connections', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - site allows HTTP connections', score: 0 };
             const hasMaxAge = val.includes('max-age=');
             const maxAgeMatch = val.match(/max-age=(\d+)/);
             const maxAge = maxAgeMatch ? parseInt(maxAgeMatch[1]) : 0;
@@ -52,7 +52,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: Shield,
         weight: 10,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — no XSS protection from CSP', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - no XSS protection from CSP', score: 0 };
             const hasDefault = val.includes('default-src');
             const hasScript = val.includes('script-src');
             const hasStyle = val.includes('style-src');
@@ -73,7 +73,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: ShieldCheck,
         weight: 7,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — browser may MIME-sniff responses', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - browser may MIME-sniff responses', score: 0 };
             if (val.toLowerCase() === 'nosniff')
                 return { pass: true, detail: 'nosniff ✓', score: 100 };
             return { pass: false, detail: `Unexpected value: ${val}`, score: 0 };
@@ -86,12 +86,12 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: ShieldAlert,
         weight: 7,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — site can be framed (clickjacking risk)', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - site can be framed (clickjacking risk)', score: 0 };
             const v = val.toUpperCase();
             if (v === 'DENY')
-                return { pass: true, detail: 'DENY — no framing allowed ✓', score: 100 };
+                return { pass: true, detail: 'DENY - no framing allowed ✓', score: 100 };
             if (v === 'SAMEORIGIN')
-                return { pass: true, detail: 'SAMEORIGIN — only same-origin framing ✓', score: 90 };
+                return { pass: true, detail: 'SAMEORIGIN - only same-origin framing ✓', score: 90 };
             return { pass: true, detail: `Set to: ${val}`, score: 70 };
         },
     },
@@ -102,7 +102,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: ShieldCheck,
         weight: 4,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — no legacy XSS filter', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - no legacy XSS filter', score: 0 };
             if (val.includes('1') && val.includes('mode=block'))
                 return { pass: true, detail: '1; mode=block ✓', score: 100 };
             if (val.includes('1'))
@@ -119,7 +119,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: Eye,
         weight: 5,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Missing — full URL sent as referrer', score: 0 };
+            if (!val) return { pass: false, detail: 'Missing - full URL sent as referrer', score: 0 };
             const safe = ['no-referrer', 'strict-origin', 'strict-origin-when-cross-origin', 'same-origin'];
             if (safe.some(s => val.toLowerCase().includes(s)))
                 return { pass: true, detail: `${val} ✓`, score: 100 };
@@ -135,7 +135,7 @@ const HEADER_CHECKS: HeaderCheck[] = [
         icon: Lock,
         weight: 4,
         check: (val) => {
-            if (!val) return { pass: false, detail: 'Not set — all browser features available to the page', score: 0 };
+            if (!val) return { pass: false, detail: 'Not set - all browser features available to the page', score: 0 };
             const directives = val.split(',').length;
             if (directives >= 5)
                 return { pass: true, detail: `${directives} restrictions configured ✓`, score: 100 };

@@ -553,7 +553,7 @@ class ApiService {
 
   // ============================================
   // Resume Parser endpoints (/api/resume)
-  // — Async job pattern: submit → poll → result
+  // - Async job pattern: submit -> poll -> result
   // ============================================
 
   async getResumeStatus() {
@@ -618,7 +618,7 @@ class ApiService {
         return { error: job.error || 'Job failed. Please try again.' };
       }
 
-      // Still processing — wait and poll again
+      // Still processing - wait and poll again
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
@@ -706,7 +706,7 @@ class ApiService {
   }
 
   // ═══════════════════════════════════════════════════════════════
-  //  REQUEST TRACING — distributed tracing waterfall
+  //  REQUEST TRACING - distributed tracing waterfall
   // ═══════════════════════════════════════════════════════════════
 
   async traceRequest(): Promise<ApiResponse<TraceResult>> {

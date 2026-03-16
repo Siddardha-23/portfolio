@@ -186,7 +186,7 @@ export default function AWSRefArchDiagram({ data }: { data: RefArchDiagramData }
                         </marker>
                     </defs>
 
-                    {/* Regions — sorted largest first so smaller regions render on top */}
+                    {/* Regions - sorted largest first so smaller regions render on top */}
                     {[...data.regions]
                         .sort((a, b) => b.width * b.height - a.width * a.height)
                         .map(region => (

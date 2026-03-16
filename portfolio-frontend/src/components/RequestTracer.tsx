@@ -112,7 +112,7 @@ function buildPageLoadSpans(trace: PageLoadTraceResult): WaterfallSpan[] {
     const nav = trace.navigation;
     const container = trace.container;
 
-    // Phase 1: Network (document fetch — Route 53 → CloudFront → S3)
+    // Phase 1: Network (document fetch - Route 53 -> CloudFront -> S3)
     if (nav.redirect_ms > 0.5) {
         spans.push({ label: 'Redirect', ms: nav.redirect_ms, color: '#9ca3af', icon: <Route className="h-3.5 w-3.5" />, description: 'HTTP redirect (www → root)', group: 'Document' });
     }
@@ -139,13 +139,13 @@ function buildPageLoadSpans(trace: PageLoadTraceResult): WaterfallSpan[] {
 
     // Phase 3: Lambda container lifecycle
     if (container.is_warm) {
-        // Warm container — show a minimal span indicating reuse, not the historical cold start
+        // Warm container - show a minimal span indicating reuse, not the historical cold start
         spans.push({
             label: 'Lambda Container (warm)',
             ms: 0,
             color: '#22c55e',
             icon: <Zap className="h-3.5 w-3.5" />,
-            description: `Container reused — no init needed (booted ${container.cold_start_init_ms.toFixed(0)}ms ago on first request)`,
+            description: `Container reused - no init needed (booted ${container.cold_start_init_ms.toFixed(0)}ms ago on first request)`,
             group: 'Lambda',
         });
     } else if (container.cold_start_init_ms > 0) {

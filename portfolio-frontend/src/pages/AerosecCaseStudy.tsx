@@ -87,178 +87,226 @@ function StatCard({ value, label, icon }: { value: string; label: string; icon: 
 }
 
 function PresentationViewer() {
-    const [mode, setMode] = useState<'office' | 'slides'>('office');
-    const [officeLoaded, setOfficeLoaded] = useState(false);
-    const [officeError, setOfficeError] = useState(false);
+    const [current, setCurrent] = useState(0);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showControls, setShowControls] = useState(true);
+    const [isTransitioning, setIsTransitioning] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
-    const iframeRef = useRef<HTMLIFrameElement>(null);
-    const loadTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const controlsTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const transitionLock = useRef(false);
 
-    // Build the Office Online embed URL from the public PPTX
+    const total = SLIDE_IMAGES.length;
+    if (total === 0) return null;
+
+    // PowerPoint Online full-page viewer URL (opens in new tab with animations)
     const pptxUrl = typeof window !== 'undefined'
         ? `${window.location.origin}${PRESENTATION_FILE}`.replace(/ /g, '%20')
         : '';
-    const officeEmbedUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(pptxUrl)}`;
+    const viewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(pptxUrl)}`;
 
-    // Detect load failure with timeout
+    // Auto-play
     useEffect(() => {
-        if (mode !== 'office' || officeLoaded) return;
-        loadTimeout.current = setTimeout(() => {
-            if (!officeLoaded) setOfficeError(true);
-        }, 15000); // 15s timeout
-        return () => {
-            if (loadTimeout.current) clearTimeout(loadTimeout.current);
-        };
-    }, [mode, officeLoaded]);
+        if (!isPlaying) return;
+        const timer = setInterval(() => {
+            goToSlide('next');
+        }, 4000);
+        return () => clearInterval(timer);
+    }, [isPlaying, current, total]);
 
-    const handleIframeLoad = () => {
-        setOfficeLoaded(true);
-        setOfficeError(false);
-        if (loadTimeout.current) clearTimeout(loadTimeout.current);
+    // Keyboard navigation
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); goToSlide('next'); }
+            else if (e.key === 'ArrowLeft') { e.preventDefault(); goToSlide('prev'); }
+            else if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+            else if (e.key === 'Escape' && isFullscreen) document.exitFullscreen().catch(() => {});
+            else if (e.key === 'p' || e.key === 'P') setIsPlaying(p => !p);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [isFullscreen, current, total]);
+
+    // Fullscreen change detection
+    useEffect(() => {
+        const h = () => setIsFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', h);
+        return () => document.removeEventListener('fullscreenchange', h);
+    }, []);
+
+    // Auto-hide controls in fullscreen
+    useEffect(() => {
+        if (!isFullscreen) { setShowControls(true); return; }
+        const onMove = () => {
+            setShowControls(true);
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+            controlsTimeout.current = setTimeout(() => setShowControls(false), 3000);
+        };
+        window.addEventListener('mousemove', onMove);
+        controlsTimeout.current = setTimeout(() => setShowControls(false), 3000);
+        return () => {
+            window.removeEventListener('mousemove', onMove);
+            if (controlsTimeout.current) clearTimeout(controlsTimeout.current);
+        };
+    }, [isFullscreen]);
+
+    const goToSlide = (direction: 'next' | 'prev' | number) => {
+        if (transitionLock.current) return;
+        const target = typeof direction === 'number'
+            ? direction
+            : direction === 'next'
+                ? Math.min(total - 1, current + 1)
+                : Math.max(0, current - 1);
+        if (target === current) {
+            // Loop around if auto-playing
+            if (isPlaying && direction === 'next') {
+                setCurrent(0);
+            }
+            return;
+        }
+        transitionLock.current = true;
+        setIsTransitioning(true);
+        setTimeout(() => {
+            setCurrent(target);
+            requestAnimationFrame(() => {
+                setIsTransitioning(false);
+                transitionLock.current = false;
+            });
+        }, 250);
     };
 
     const toggleFullscreen = () => {
         if (!containerRef.current) return;
-        if (!document.fullscreenElement) {
-            containerRef.current.requestFullscreen().catch(() => {});
-        } else {
-            document.exitFullscreen().catch(() => {});
-        }
+        if (!document.fullscreenElement) containerRef.current.requestFullscreen().catch(() => {});
+        else document.exitFullscreen().catch(() => {});
     };
+
+    const progress = ((current + 1) / total) * 100;
 
     return (
         <div className="mb-6 space-y-3">
-            {/* Mode toggle */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setMode('office')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            mode === 'office'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
-                        }`}
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Live Presentation
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setMode('slides')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                            mode === 'slides'
-                                ? 'bg-primary text-primary-foreground shadow-md'
-                                : 'bg-secondary/40 text-muted-foreground hover:bg-secondary/60'
-                        }`}
-                    >
-                        <Layers className="h-3.5 w-3.5 inline mr-1.5 -mt-0.5" />
-                        Slide Images
-                    </button>
-                </div>
-                <Button variant="outline" size="sm" onClick={toggleFullscreen} title="Fullscreen">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
-                </Button>
-            </div>
-
-            {/* Presentation container */}
-            <div ref={containerRef} className="rounded-xl overflow-hidden border border-border/50 bg-zinc-100 dark:bg-zinc-900">
-                {mode === 'office' ? (
-                    <div className="relative">
-                        {/* Loading state */}
-                        {!officeLoaded && !officeError && (
-                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100 dark:bg-zinc-900">
-                                <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary border-t-transparent" />
-                                <p className="text-sm text-muted-foreground">Loading PowerPoint with animations...</p>
-                                <p className="text-[10px] text-muted-foreground/60">Powered by Microsoft Office Online</p>
+            {/* Present with Animations button */}
+            <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+            >
+                <Card className="p-4 border-0 shadow-lg bg-gradient-to-r from-blue-500/5 via-card to-purple-500/5">
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 rounded-lg bg-blue-500/10">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-500"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                             </div>
-                        )}
-
-                        {/* Error state */}
-                        {officeError && !officeLoaded && (
-                            <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-zinc-100 dark:bg-zinc-900 p-6">
-                                <AlertTriangle className="h-8 w-8 text-amber-500" />
-                                <p className="text-sm text-foreground font-medium text-center">Office Online viewer couldn't load</p>
-                                <p className="text-xs text-muted-foreground text-center max-w-sm">
-                                    This can happen if the file isn't accessible publicly yet. Try the Slide Images view or download the file.
-                                </p>
-                                <Button variant="outline" size="sm" onClick={() => setMode('slides')}>
-                                    <Layers className="h-4 w-4 mr-1.5" />
-                                    Switch to Slide Images
-                                </Button>
+                            <div>
+                                <p className="text-sm font-semibold text-foreground">View with Animations & Transitions</p>
+                                <p className="text-[11px] text-muted-foreground">Opens in PowerPoint Online with all original effects</p>
                             </div>
-                        )}
-
-                        {/* Office Online iframe */}
-                        <iframe
-                            ref={iframeRef}
-                            src={officeEmbedUrl}
-                            className="w-full border-0"
-                            style={{ height: 'min(75vh, 600px)' }}
-                            onLoad={handleIframeLoad}
-                            title="AEROSEC Pitch Deck — PowerPoint Online"
-                            allowFullScreen
-                            sandbox="allow-scripts allow-same-origin allow-popups allow-forms allow-popups-to-escape-sandbox"
-                        />
-
-                        {/* Hint bar */}
-                        {officeLoaded && (
-                            <div className="flex items-center justify-center gap-3 py-2 bg-secondary/20 border-t border-border/30 text-[10px] text-muted-foreground/60">
-                                <span>Click inside to navigate slides</span>
-                                <span>|</span>
-                                <span>Animations &amp; transitions play as designed in PowerPoint</span>
-                            </div>
-                        )}
+                        </div>
+                        <Button className="btn-premium shrink-0" asChild>
+                            <a href={viewerUrl} target="_blank" rel="noopener noreferrer">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Present in PowerPoint Online
+                                <ArrowRight className="h-4 w-4 ml-2" />
+                            </a>
+                        </Button>
                     </div>
-                ) : (
-                    <StaticSlideViewer />
-                )}
-            </div>
-        </div>
-    );
-}
+                </Card>
+            </motion.div>
 
-/** Fallback: static image viewer for when Office Online isn't available */
-function StaticSlideViewer() {
-    const [current, setCurrent] = useState(0);
-    const total = SLIDE_IMAGES.length;
-    if (total === 0) return null;
+            {/* Slide viewer */}
+            <div
+                ref={containerRef}
+                className={`relative rounded-xl overflow-hidden border border-border/50 ${isFullscreen ? 'bg-black flex flex-col' : 'bg-zinc-100 dark:bg-zinc-900'}`}
+            >
+                {/* Slide display */}
+                <div className={`relative overflow-hidden ${isFullscreen ? 'flex-1 flex items-center justify-center' : 'aspect-[16/9]'}`}>
+                    {current + 1 < total && <link rel="prefetch" href={SLIDE_IMAGES[current + 1]} />}
+                    <img
+                        src={SLIDE_IMAGES[current]}
+                        alt={`Slide ${current + 1} of ${total}`}
+                        className={`${isFullscreen ? 'max-h-full max-w-full' : 'w-full h-full'} object-contain transition-opacity duration-300 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
+                        draggable={false}
+                    />
 
-    return (
-        <div>
-            <div className="relative aspect-[16/9] bg-zinc-100 dark:bg-zinc-800">
-                <img
-                    src={SLIDE_IMAGES[current]}
-                    alt={`Slide ${current + 1} of ${total}`}
-                    className="w-full h-full object-contain"
-                    draggable={false}
-                />
-                {/* Slide counter */}
-                <div className="absolute top-3 right-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium">
-                    {current + 1} / {total}
+                    {/* Click zones */}
+                    <button type="button" onClick={() => { goToSlide('prev'); setIsPlaying(false); }} className="absolute inset-y-0 left-0 w-1/3 z-10 opacity-0 cursor-pointer" aria-label="Previous" />
+                    <button type="button" onClick={() => { goToSlide('next'); setIsPlaying(false); }} className="absolute inset-y-0 right-0 w-1/3 z-10 opacity-0 cursor-pointer" aria-label="Next" />
+
+                    {/* Hover arrows */}
+                    <div className={`absolute inset-y-0 left-0 flex items-center pl-2 sm:pl-4 transition-opacity duration-200 z-20 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                        <button type="button" onClick={() => { goToSlide('prev'); setIsPlaying(false); }} disabled={current === 0}
+                            className="p-2 sm:p-3 rounded-full bg-black/50 text-white/80 hover:bg-black/70 hover:text-white disabled:opacity-30 transition-all backdrop-blur-sm">
+                            <ChevronLeft className="h-5 w-5 sm:h-6 sm:w-6" />
+                        </button>
+                    </div>
+                    <div className={`absolute inset-y-0 right-0 flex items-center pr-2 sm:pr-4 transition-opacity duration-200 z-20 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                        <button type="button" onClick={() => { goToSlide('next'); setIsPlaying(false); }} disabled={current === total - 1 && !isPlaying}
+                            className="p-2 sm:p-3 rounded-full bg-black/50 text-white/80 hover:bg-black/70 hover:text-white disabled:opacity-30 transition-all backdrop-blur-sm">
+                            <ChevronRight className="h-5 w-5 sm:h-6 sm:w-6" />
+                        </button>
+                    </div>
+
+                    {/* Slide counter overlay */}
+                    <div className={`absolute top-3 right-3 px-3 py-1.5 rounded-full bg-black/50 backdrop-blur-sm text-white text-xs font-medium transition-opacity z-20 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+                        {current + 1} / {total}
+                    </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className={`h-1 ${isFullscreen ? '' : ''} bg-zinc-200 dark:bg-zinc-700`}>
+                    <div className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />
+                </div>
+
+                {/* Controls bar */}
+                <div className={`${isFullscreen ? 'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-10 pb-4 px-4' : 'p-3 bg-secondary/10 border-t border-border/30'} transition-opacity duration-200 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => setIsPlaying(p => !p)}
+                                className={isFullscreen ? "text-white hover:bg-white/20" : ""} title={isPlaying ? "Pause (P)" : "Auto-play (P)"}>
+                                {isPlaying ? (
+                                    <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
+                                ) : (
+                                    <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><polygon points="5 3 19 12 5 21 5 3"/></svg>Play</>
+                                )}
+                            </Button>
+                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => { goToSlide('prev'); setIsPlaying(false); }} disabled={current === 0}
+                                className={isFullscreen ? "text-white hover:bg-white/20" : ""}><ChevronLeft className="h-4 w-4" /></Button>
+                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => { goToSlide('next'); setIsPlaying(false); }} disabled={current === total - 1}
+                                className={isFullscreen ? "text-white hover:bg-white/20" : ""}><ChevronRight className="h-4 w-4" /></Button>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className={`text-xs font-medium tabular-nums ${isFullscreen ? 'text-white/70' : 'text-muted-foreground'}`}>
+                                Slide {current + 1} of {total}
+                            </span>
+                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={toggleFullscreen}
+                                className={isFullscreen ? "text-white hover:bg-white/20" : ""} title={isFullscreen ? "Exit (Esc)" : "Fullscreen (F)"}>
+                                {isFullscreen ? (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                                ) : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+                    {!isFullscreen && (
+                        <div className="flex items-center justify-center gap-3 mt-2 text-[10px] text-muted-foreground/60">
+                            <span>← → Navigate</span>
+                            <span>Space Next</span>
+                            <span>P Play/Pause</span>
+                            <span>F Fullscreen</span>
+                        </div>
+                    )}
                 </div>
             </div>
-            {/* Controls */}
-            <div className="flex items-center justify-between p-3 border-t border-border/30 bg-secondary/10">
-                <Button variant="outline" size="sm" onClick={() => setCurrent(p => Math.max(0, p - 1))} disabled={current === 0}>
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Previous
-                </Button>
-                <span className="text-xs text-muted-foreground">Slide {current + 1} of {total}</span>
-                <Button variant="outline" size="sm" onClick={() => setCurrent(p => Math.min(total - 1, p + 1))} disabled={current === total - 1}>
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                </Button>
-            </div>
+
             {/* Thumbnail strip */}
-            <div className="flex gap-1 overflow-x-auto p-2 scrollbar-thin">
+            <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin">
                 {SLIDE_IMAGES.map((src, i) => (
-                    <button
-                        key={i}
-                        type="button"
-                        onClick={() => setCurrent(i)}
+                    <button key={i} type="button" onClick={() => { goToSlide(i); setIsPlaying(false); }}
                         className={`shrink-0 rounded-md overflow-hidden border-2 transition-all ${
-                            i === current ? 'border-primary ring-1 ring-primary/30' : 'border-transparent opacity-50 hover:opacity-100'
-                        }`}
-                    >
+                            i === current ? 'border-primary ring-1 ring-primary/30 scale-105' : 'border-transparent opacity-50 hover:opacity-100'
+                        }`} title={`Slide ${i + 1}`}>
                         <img src={src} alt={`Thumbnail ${i + 1}`} className="h-12 w-auto object-cover" loading="lazy" />
                     </button>
                 ))}
@@ -314,8 +362,36 @@ export default function AerosecCaseStudy() {
                     <p className="text-lg md:text-xl text-muted-foreground font-medium mb-2">
                         Securing Passenger-Facing Integrations
                     </p>
-                    <p className="text-sm text-muted-foreground">August 2025 &ndash; December 2025</p>
+                    <p className="text-sm text-muted-foreground">August 2025 - December 2025</p>
                 </motion.div>
+
+
+                {/* ===== PRESENTATION ===== */}
+                <section className="mb-20">
+                    <SectionHeading
+                        badge="Presentation"
+                        badgeIcon={<FileText className="h-3 w-3" />}
+                        title="Project Pitch Deck"
+                    />
+
+                    <PresentationViewer />
+
+                    <Card className="p-8 border-0 shadow-xl bg-gradient-to-br from-primary/5 via-card to-accent/5 text-center">
+                        <div className="p-4 rounded-full bg-primary/10 w-fit mx-auto mb-4">
+                            <FileText className="h-8 w-8 text-primary" />
+                        </div>
+                        <h3 className="text-lg font-bold text-foreground mb-2">AEROSEC Innovation Pitch</h3>
+                        <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
+                            Full presentation including problem framing, customer discovery insights, solution architecture, business model, and go-to-market strategy.
+                        </p>
+                        <Button className="btn-premium" asChild>
+                            <a href={PRESENTATION_FILE} download>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download Presentation
+                            </a>
+                        </Button>
+                    </Card>
+                </section>
 
 
                 {/* ===== EXECUTIVE SUMMARY ===== */}
@@ -328,13 +404,13 @@ export default function AerosecCaseStudy() {
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                         <div className="lg:col-span-2 space-y-4">
                             <p className="text-foreground/80 leading-relaxed">
-                                This project began as part of a structured technology innovation engagement guided and evaluated by Honeywell experts. Starting with a broad cybersecurity challenge in commercial aviation, we systematically narrowed the problem through rigorous customer discovery and stakeholder research to its most critical &mdash; and most underprotected &mdash; dimension.
+                                This project began as part of a structured technology innovation engagement guided and evaluated by Honeywell experts. Starting with a broad cybersecurity challenge in commercial aviation, we systematically narrowed the problem through rigorous customer discovery and stakeholder research to its most critical - and most underprotected - dimension.
                             </p>
                             <p className="text-foreground/80 leading-relaxed">
                                 The focus: <span className="font-semibold text-foreground">third-party integrations and Passenger Service System (PSS) APIs</span> that connect airline booking platforms, payment systems, loyalty programs, and external vendors. These systems are attacked far more frequently than avionics, yet remain disproportionately under-secured relative to their business impact.
                             </p>
                             <p className="text-foreground/80 leading-relaxed">
-                                The result is <span className="font-semibold text-foreground">AEROSEC</span> &mdash; a real-time vendor cyber risk dashboard that bridges the gap between technical security operations and executive decision-making, mapping cyber risk directly to revenue impact, regulatory compliance, and business continuity.
+                                The result is <span className="font-semibold text-foreground">AEROSEC</span> - a real-time vendor cyber risk dashboard that bridges the gap between technical security operations and executive decision-making, mapping cyber risk directly to revenue impact, regulatory compliance, and business continuity.
                             </p>
                         </div>
                         <div className="grid grid-cols-2 lg:grid-cols-1 gap-3">
@@ -353,7 +429,7 @@ export default function AerosecCaseStudy() {
                         badge="Problem Framing"
                         badgeIcon={<Eye className="h-3 w-3" />}
                         title="The Real Attack Surface in Aviation"
-                        subtitle="Aviation cybersecurity conversations default to avionics &mdash; flight control systems, cockpit networks, navigation. The real exposure sits in the systems passengers interact with every day."
+                        subtitle="Aviation cybersecurity conversations default to avionics - flight control systems, cockpit networks, navigation. The real exposure sits in the systems passengers interact with every day."
                     />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                         {[
@@ -411,7 +487,7 @@ export default function AerosecCaseStudy() {
                         badge="Systems Thinking"
                         badgeIcon={<Lightbulb className="h-3 w-3" />}
                         title="The Shift That Changed Everything"
-                        subtitle="This project fundamentally transformed how I approach cybersecurity &mdash; from tool-level thinking to systems-level strategy."
+                        subtitle="This project fundamentally transformed how I approach cybersecurity - from tool-level thinking to systems-level strategy."
                     />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         {/* BEFORE */}
@@ -493,7 +569,7 @@ export default function AerosecCaseStudy() {
                     <SectionHeading
                         badge="Solution"
                         badgeIcon={<Activity className="h-3 w-3" />}
-                        title="AEROSEC &mdash; Real-Time Third-Party Vendor Cyber Risk Dashboard"
+                        title="AEROSEC - Real-Time Third-Party Vendor Cyber Risk Dashboard"
                         subtitle="Complete visibility into the security posture of every third-party integration connected to passenger-facing airline systems."
                     />
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -626,7 +702,7 @@ export default function AerosecCaseStudy() {
                         badge="Market Validation"
                         badgeIcon={<TrendingUp className="h-3 w-3" />}
                         title="Business Model & Market Opportunity"
-                        subtitle="Engineering discipline applied to market validation &mdash; customer discovery before solution design, TAM\u2013SAM\u2013SOM before building."
+                        subtitle="Engineering discipline applied to market validation - customer discovery before solution design, TAM\u2013SAM\u2013SOM before building."
                     />
 
                     {/* TAM / SAM / SOM */}
@@ -736,34 +812,6 @@ export default function AerosecCaseStudy() {
                 </section>
 
 
-                {/* ===== PRESENTATION ===== */}
-                <section className="mb-20">
-                    <SectionHeading
-                        badge="Presentation"
-                        badgeIcon={<FileText className="h-3 w-3" />}
-                        title="Project Pitch Deck"
-                    />
-
-                    <PresentationViewer />
-
-                    <Card className="p-8 border-0 shadow-xl bg-gradient-to-br from-primary/5 via-card to-accent/5 text-center">
-                        <div className="p-4 rounded-full bg-primary/10 w-fit mx-auto mb-4">
-                            <FileText className="h-8 w-8 text-primary" />
-                        </div>
-                        <h3 className="text-lg font-bold text-foreground mb-2">AEROSEC Innovation Pitch</h3>
-                        <p className="text-sm text-muted-foreground mb-5 max-w-md mx-auto">
-                            Full presentation including problem framing, customer discovery insights, solution architecture, business model, and go-to-market strategy.
-                        </p>
-                        <Button className="btn-premium" asChild>
-                            <a href={PRESENTATION_FILE} download>
-                                <Download className="h-4 w-4 mr-2" />
-                                Download Presentation
-                            </a>
-                        </Button>
-                    </Card>
-                </section>
-
-
                 {/* ===== KEY LEARNINGS ===== */}
                 <section className="mb-20">
                     <SectionHeading
@@ -781,16 +829,16 @@ export default function AerosecCaseStudy() {
                         </div>
                         <div className="space-y-4 text-foreground/80 leading-relaxed">
                             <p>
-                                Before this project, I approached cybersecurity the way most engineers do &mdash; as a set of tools to implement, configurations to harden, and vulnerabilities to patch. Security was something you added to a system after you built it.
+                                Before this project, I approached cybersecurity the way most engineers do - as a set of tools to implement, configurations to harden, and vulnerabilities to patch. Security was something you added to a system after you built it.
                             </p>
                             <p>
-                                This engagement with Honeywell fundamentally changed that perspective. Through structured customer discovery, I learned that the most dangerous threats aren&apos;t the ones you find in a vulnerability scanner &mdash; they&apos;re the ones hidden in the dependencies between systems that no single team owns.
+                                This engagement with Honeywell fundamentally changed that perspective. Through structured customer discovery, I learned that the most dangerous threats aren&apos;t the ones you find in a vulnerability scanner - they&apos;re the ones hidden in the dependencies between systems that no single team owns.
                             </p>
                             <p>
-                                I learned to <span className="font-semibold text-foreground">quantify risk in the language executives understand</span> &mdash; time, money, and performance. I learned that compliance isn&apos;t a burden but a competitive advantage when designed into the architecture. And I learned that the strongest security posture comes not from better tools, but from better systems thinking.
+                                I learned to <span className="font-semibold text-foreground">quantify risk in the language executives understand</span> - time, money, and performance. I learned that compliance isn&apos;t a burden but a competitive advantage when designed into the architecture. And I learned that the strongest security posture comes not from better tools, but from better systems thinking.
                             </p>
                             <p>
-                                Most importantly, I learned that <span className="font-semibold text-foreground">customer discovery must precede solution design</span>. The 20+ conversations with FAA officials, airline executives, and cybersecurity leaders didn&apos;t just validate our problem &mdash; they reshaped it entirely. The project we ended with bears little resemblance to the one we started with, and that&apos;s precisely what made it valuable.
+                                Most importantly, I learned that <span className="font-semibold text-foreground">customer discovery must precede solution design</span>. The 20+ conversations with FAA officials, airline executives, and cybersecurity leaders didn&apos;t just validate our problem - they reshaped it entirely. The project we ended with bears little resemblance to the one we started with, and that&apos;s precisely what made it valuable.
                             </p>
                         </div>
                     </Card>
@@ -811,10 +859,10 @@ export default function AerosecCaseStudy() {
                             </div>
                             <h3 className="text-xl md:text-2xl font-bold text-foreground mb-4">Why This Project Matters</h3>
                             <p className="text-foreground/80 leading-relaxed mb-6">
-                                This project represents more than a cybersecurity solution. It represents a way of thinking &mdash; one that connects technical architecture to business outcomes, regulatory compliance to competitive advantage, and engineering rigor to executive strategy. It demonstrates that the most impactful security work doesn&apos;t happen in isolation &mdash; it happens at the intersection of systems, business, and trust.
+                                This project represents more than a cybersecurity solution. It represents a way of thinking - one that connects technical architecture to business outcomes, regulatory compliance to competitive advantage, and engineering rigor to executive strategy. It demonstrates that the most impactful security work doesn&apos;t happen in isolation - it happens at the intersection of systems, business, and trust.
                             </p>
                             <p className="text-foreground/90 font-semibold leading-relaxed text-lg">
-                                I am a cybersecurity professional who understands not just how to secure systems &mdash; but how to secure business ecosystems.
+                                I am a cybersecurity professional who understands not just how to secure systems - but how to secure business ecosystems.
                             </p>
 
                             <div className="flex flex-wrap gap-3 justify-center mt-8">

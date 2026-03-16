@@ -1,5 +1,5 @@
 /**
- * InfraHealthDashboard – Live infrastructure health status
+ * InfraHealthDashboard - Live infrastructure health status
  *
  * Pings real endpoints (frontend, API, DNS) and shows live status
  * with response times, uptime indicators, and service topology.
@@ -164,12 +164,12 @@ export default function InfraHealthDashboard({ isOpen, onClose }: {
               status: 'degraded',
               latency,
               statusCode: res.status,
-              detail: `HTTP ${res.status} — unexpected status`,
+              detail: `HTTP ${res.status} - unexpected status`,
               extras,
             };
           }
         } else if (check.checkType === 'ssl') {
-          // SSL check — if we loaded over HTTPS, the cert is valid
+          // SSL check - if we loaded over HTTPS, the cert is valid
           const isHttps = window.location.protocol === 'https:';
           const latency = performance.now() - pingStart;
 
@@ -178,7 +178,7 @@ export default function InfraHealthDashboard({ isOpen, onClose }: {
               check,
               status: 'healthy',
               latency,
-              detail: 'Valid TLS — loaded via HTTPS',
+              detail: 'Valid TLS - loaded via HTTPS',
               extras: {
                 'Protocol': 'TLS 1.2/1.3',
                 'Certificate': 'ACM-managed, auto-renewing',
@@ -195,13 +195,13 @@ export default function InfraHealthDashboard({ isOpen, onClose }: {
             };
           }
         } else if (check.checkType === 'dns') {
-          // DNS check — if page loaded, DNS resolved
+          // DNS check - if page loaded, DNS resolved
           const latency = performance.now() - pingStart;
           newResults[newResults.length - 1] = {
             check,
             status: 'healthy',
             latency,
-            detail: `DNS resolved — page loaded successfully`,
+            detail: `DNS resolved - page loaded successfully`,
             extras: {
               'Provider': 'Route 53',
               'Records': 'A + AAAA → CloudFront',

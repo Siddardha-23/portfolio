@@ -52,7 +52,7 @@ export function useChatbot() {
       } else {
         const errorText =
           error?.includes('429') || error?.includes('Too many')
-            ? 'Too many messages — please wait a moment and try again.'
+            ? 'Too many messages - please wait a moment and try again.'
             : 'Sorry, something went wrong. Please try again.';
         setMessages((prev) => [
           ...prev,

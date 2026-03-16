@@ -183,7 +183,7 @@ export default function About() {
             ))}
           </motion.div>
 
-          {/* Live Request Tracer — prominent for recruiters */}
+          {/* Live Request Tracer - prominent for recruiters */}
           <div className="mb-16">
             <RequestTracer />
           </div>

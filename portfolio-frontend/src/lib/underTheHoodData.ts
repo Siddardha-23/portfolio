@@ -3,7 +3,7 @@
  *
  * Each entry describes the end-to-end request path, the AWS/infra resources
  * involved, key source files, Terraform resources, tradeoffs, failure modes,
- * and observability hooks — everything a recruiter or engineer would want to
+ * and observability hooks - everything a recruiter or engineer would want to
  * see when evaluating system-thinking ability.
  */
 
@@ -64,7 +64,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Hero & Recruiter Panel',
         subtitle: 'First impression + live visitor stats',
         whyItExists:
-            'The hero section needs to hook recruiters in under 5 seconds. The recruiter panel shows live visitor analytics to demonstrate real engagement — not just a static page.',
+            'The hero section needs to hook recruiters in under 5 seconds. The recruiter panel shows live visitor analytics to demonstrate real engagement - not just a static page.',
         chips: [
             { label: 'CloudFront cache', icon: 'cache', color: 'amber' },
             { label: 'Lambda cold start', icon: 'lambda', color: 'orange' },
@@ -79,7 +79,7 @@ export const FEATURES: FeatureMeta[] = [
         ],
         keyFiles: [
             { path: 'portfolio-frontend/src/components/sections/Hero.tsx', description: 'Hero layout + RecruiterPanel with live stats', lines: 'L85-L281' },
-            { path: 'portfolio-frontend/src/lib/api.ts', description: 'API service layer — getVisitorStats()', lines: 'L179-L198' },
+            { path: 'portfolio-frontend/src/lib/api.ts', description: 'API service layer - getVisitorStats()', lines: 'L179-L198' },
             { path: 'portfolio-backend/blueprints/info.py', description: 'Visitor stats aggregation endpoint' },
             { path: 'portfolio-backend/services/visitor_service.py', description: 'MongoDB aggregation pipelines for analytics' },
         ],
@@ -103,8 +103,8 @@ export const FEATURES: FeatureMeta[] = [
         ],
         failureModes: [
             'Lambda cold start adds ~1-2s on first request after idle (mitigated by lightweight Flask app)',
-            'MongoDB Atlas connection timeout — retried with exponential backoff',
-            'CloudFront origin failover — returns cached stale content if S3 is unreachable',
+            'MongoDB Atlas connection timeout - retried with exponential backoff',
+            'CloudFront origin failover - returns cached stale content if S3 is unreachable',
         ],
         observability: [
             'CloudWatch Logs: /aws/lambda/portfolio-backend (14-day retention)',
@@ -119,7 +119,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Visitor Tracking & Analytics',
         subtitle: 'Fingerprint-based deduplication + session management',
         whyItExists:
-            'Demonstrates real observability engineering: browser fingerprinting, IP geolocation, session lifecycle management, and organization detection — not just page view counting.',
+            'Demonstrates real observability engineering: browser fingerprinting, IP geolocation, session lifecycle management, and organization detection - not just page view counting.',
         chips: [
             { label: 'Fingerprint hash', icon: 'key', color: 'violet' },
             { label: 'IP geolocation', icon: 'globe', color: 'blue' },
@@ -160,9 +160,9 @@ export const FEATURES: FeatureMeta[] = [
             },
         ],
         failureModes: [
-            'ipinfo.io rate limit or outage — falls back to cached geolocation data',
-            'Fingerprint collision — handled via compound index (fingerprint + IP)',
-            'Session TTL expiry — auto-creates new session on next visit',
+            'ipinfo.io rate limit or outage - falls back to cached geolocation data',
+            'Fingerprint collision - handled via compound index (fingerprint + IP)',
+            'Session TTL expiry - auto-creates new session on next visit',
         ],
         observability: [
             'Visitor count, unique IPs, 24h/7d/30d trends in /api/info/stats',
@@ -177,7 +177,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Contact Form',
         subtitle: 'Validated, rate-limited, XSS-safe messaging',
         whyItExists:
-            'A contact form seems simple, but production-grade means: server-side validation, XSS sanitization, rate limiting, and storing in a persistent database — not just mailto: links.',
+            'A contact form seems simple, but production-grade means: server-side validation, XSS sanitization, rate limiting, and storing in a persistent database - not just mailto: links.',
         chips: [
             { label: 'Input sanitization', icon: 'shield', color: 'red' },
             { label: 'Rate limiting', icon: 'cpu', color: 'orange' },
@@ -186,7 +186,7 @@ export const FEATURES: FeatureMeta[] = [
         requestPath: [
             { label: 'Browser', detail: 'Client-side form validation (Zod schema)' },
             { label: 'CloudFront', detail: 'HTTPS + security headers (CSP, XSS protection)' },
-            { label: 'API Gateway', detail: 'POST /api/contact — throttled at 50 req/s burst' },
+            { label: 'API Gateway', detail: 'POST /api/contact - throttled at 50 req/s burst' },
             { label: 'Lambda', detail: 'Server-side sanitization + rate limit check' },
             { label: 'MongoDB', detail: 'Insert contact message document' },
         ],
@@ -204,7 +204,7 @@ export const FEATURES: FeatureMeta[] = [
             {
                 decision: 'Server-side sanitization + client validation',
                 why: 'Client validation is for UX (instant feedback). Server validation is for security (never trust the client). Both are required for defense-in-depth.',
-                alternative: 'Client-only validation can be bypassed with curl/Postman — instant vulnerability',
+                alternative: 'Client-only validation can be bypassed with curl/Postman - instant vulnerability',
             },
             {
                 decision: 'MongoDB over email-only delivery',
@@ -245,7 +245,7 @@ export const FEATURES: FeatureMeta[] = [
         ],
         keyFiles: [
             { path: 'portfolio-frontend/src/components/Chatbot.tsx', description: 'Chat UI with typewriter effect + conversation management', lines: 'L125-L314' },
-            { path: 'portfolio-backend/blueprints/chat.py', description: 'Chat endpoint — builds prompt + calls Gemini' },
+            { path: 'portfolio-backend/blueprints/chat.py', description: 'Chat endpoint - builds prompt + calls Gemini' },
             { path: 'portfolio-backend/services/chat_service.py', description: 'Gemini integration with portfolio context injection' },
         ],
         terraformResources: [
@@ -283,7 +283,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Interactive Visitor Globe',
         subtitle: 'Real-time world map of portfolio visitors',
         whyItExists:
-            'Visual proof that the portfolio attracts real, global traffic. Leaflet map with city-level pins and country aggregation — data-driven, not decorative.',
+            'Visual proof that the portfolio attracts real, global traffic. Leaflet map with city-level pins and country aggregation - data-driven, not decorative.',
         chips: [
             { label: 'Leaflet map', icon: 'globe', color: 'blue' },
             { label: 'Geo aggregation', icon: 'chart', color: 'green' },
@@ -422,7 +422,7 @@ export const FEATURES: FeatureMeta[] = [
             },
             {
                 decision: 'Client-side polling over WebSockets',
-                why: 'Polling every 2s is simple, stateless, and works through CloudFront. WebSockets would need API Gateway WebSocket API — much more complex for a 30-90s job.',
+                why: 'Polling every 2s is simple, stateless, and works through CloudFront. WebSockets would need API Gateway WebSocket API - much more complex for a 30-90s job.',
                 alternative: 'API Gateway WebSocket API would give real-time updates but adds significant infrastructure complexity',
             },
         ],
@@ -445,7 +445,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Interactive Terminal',
         subtitle: 'CLI-style portfolio gateway',
         whyItExists:
-            'First interaction a visitor has. Simulates a real Linux terminal with tab completion, command history, and file browsing — proving real CLI/systems experience, not just a UI trick.',
+            'First interaction a visitor has. Simulates a real Linux terminal with tab completion, command history, and file browsing - proving real CLI/systems experience, not just a UI trick.',
         chips: [
             { label: 'Static render', icon: 'cache', color: 'amber' },
             { label: 'No API calls', icon: 'cloud', color: 'green' },
@@ -453,7 +453,7 @@ export const FEATURES: FeatureMeta[] = [
         ],
         requestPath: [
             { label: 'Browser', detail: 'CloudFront serves pre-built SPA' },
-            { label: 'React', detail: 'Welcome.tsx renders terminal UI — all client-side' },
+            { label: 'React', detail: 'Welcome.tsx renders terminal UI - all client-side' },
             { label: 'No backend', detail: 'Commands like ls, cat, whoami run entirely in browser' },
         ],
         keyFiles: [
@@ -462,7 +462,7 @@ export const FEATURES: FeatureMeta[] = [
             { path: 'portfolio-frontend/src/lib/constants.ts', description: 'Portfolio data used by terminal "cat" command' },
         ],
         terraformResources: [
-            { resource: 'aws_cloudfront_distribution.frontend', file: 'cloudfront.tf', purpose: 'Serves SPA from edge — no backend needed for this page' },
+            { resource: 'aws_cloudfront_distribution.frontend', file: 'cloudfront.tf', purpose: 'Serves SPA from edge - no backend needed for this page' },
         ],
         awsServices: ['CloudFront', 'S3'],
         tradeoffs: [
@@ -488,7 +488,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Distributed Request Tracing',
         subtitle: 'Live waterfall visualization of request lifecycle',
         whyItExists:
-            'Most portfolios just show static pages. This feature lets recruiters fire a real HTTP request and watch it traverse CloudFront → API Gateway → Lambda → MongoDB in real time — proving production-grade observability skills.',
+            'Most portfolios just show static pages. This feature lets recruiters fire a real HTTP request and watch it traverse CloudFront → API Gateway → Lambda → MongoDB in real time - proving production-grade observability skills.',
         chips: [
             { label: 'X-Ray', icon: 'chart', color: 'amber' },
             { label: 'Resource Timing API', icon: 'globe', color: 'blue' },
@@ -516,7 +516,7 @@ export const FEATURES: FeatureMeta[] = [
         tradeoffs: [
             {
                 decision: 'Two trace modes (Infra + Data Query)',
-                why: 'Infra trace shows network/infra latency with a simple ping. Data Query trace runs real aggregation pipelines that power the portfolio sections — showing realistic DB latency.',
+                why: 'Infra trace shows network/infra latency with a simple ping. Data Query trace runs real aggregation pipelines that power the portfolio sections - showing realistic DB latency.',
                 alternative: 'Single trace mode would be simpler but wouldn\'t demonstrate real data layer performance',
             },
             {
@@ -526,9 +526,9 @@ export const FEATURES: FeatureMeta[] = [
             },
         ],
         failureModes: [
-            'Cross-origin Resource Timing zeroed out — Timing-Allow-Origin header needed on CloudFront',
-            'Lambda cold start inflates first trace — clearly labeled with red badge',
-            'X-Ray trace ID unavailable locally — gracefully hidden when not on Lambda',
+            'Cross-origin Resource Timing zeroed out - Timing-Allow-Origin header needed on CloudFront',
+            'Lambda cold start inflates first trace - clearly labeled with red badge',
+            'X-Ray trace ID unavailable locally - gracefully hidden when not on Lambda',
         ],
         observability: [
             'X-Ray trace ID deep-linked to AWS console in modal',
@@ -541,7 +541,7 @@ export const FEATURES: FeatureMeta[] = [
         title: 'Infrastructure as Code',
         subtitle: 'Terraform-managed AWS resources',
         whyItExists:
-            'Every resource in this portfolio is code-defined and reproducible. No ClickOps. This section proves IaC fluency — the actual Terraform modules powering the site.',
+            'Every resource in this portfolio is code-defined and reproducible. No ClickOps. This section proves IaC fluency - the actual Terraform modules powering the site.',
         chips: [
             { label: 'Terraform', icon: 'terminal', color: 'violet' },
             { label: '9 AWS services', icon: 'cloud', color: 'amber' },
@@ -582,9 +582,9 @@ export const FEATURES: FeatureMeta[] = [
             },
         ],
         failureModes: [
-            'Terraform state drift — detected by plan, fixed by targeted apply or import',
-            'ACM certificate validation timeout — DNS propagation can take up to 72 hours',
-            'Lambda deployment package exceeds 250MB unzipped limit — solved by stripping bloat in CI',
+            'Terraform state drift - detected by plan, fixed by targeted apply or import',
+            'ACM certificate validation timeout - DNS propagation can take up to 72 hours',
+            'Lambda deployment package exceeds 250MB unzipped limit - solved by stripping bloat in CI',
         ],
         observability: [
             'terraform plan output shows exact resource changes before apply',

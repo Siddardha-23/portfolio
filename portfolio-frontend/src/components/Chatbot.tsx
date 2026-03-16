@@ -247,7 +247,7 @@ export default function Chatbot() {
               </div>
             </div>
 
-            {/* Messages — native scrollable div */}
+            {/* Messages - native scrollable div */}
             <div className="flex-1 overflow-y-auto overscroll-contain p-4">
               {messages.map((msg) => (
                 <MessageBubble

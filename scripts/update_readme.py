@@ -22,28 +22,41 @@ def get_frontend_stack():
     except Exception as e:
         return f"Error reading frontend stack: {e}"
 
+def parse_requirement(line):
+    """Parse a requirement line into (name, version), handling ==, >=, ~=, etc."""
+    line = line.strip()
+    if not line or line.startswith('#'):
+        return None, None
+    for sep in ['==', '>=', '~=', '<=', '!=', '>',  '<']:
+        if sep in line:
+            parts = line.split(sep, 1)
+            return parts[0].strip().lower(), parts[1].strip()
+    return line.lower(), ""
+
 def get_backend_stack():
     try:
         with open('portfolio-backend/requirements.txt', 'r', encoding='utf-8') as f:
             lines = f.readlines()
             stack = []
             for line in lines:
-                parts = line.strip().split('==')
-                name = parts[0].lower()
-                version = parts[1] if len(parts) > 1 else ""
-                
+                name, version = parse_requirement(line)
+                if name is None:
+                    continue
+
                 if name == 'flask':
                     stack.append(f"- **Flask** ({version})")
                 elif name == 'flask-jwt-extended':
                     stack.append(f"- **JWT Auth** ({version})")
-                elif name == 'google-genai' or name == 'google-generativeai':
-                    stack.append("- **Gemini AI** (GenAI integration)")
+                elif name in ('google-genai', 'google-generativeai'):
+                    stack.append(f"- **Gemini AI** ({version})" if version else "- **Gemini AI** (GenAI integration)")
                 elif name == 'pymongo':
-                    stack.append("- **MongoDB** (Database client)")
+                    stack.append(f"- **MongoDB** ({version})" if version else "- **MongoDB** (Database client)")
                 elif name == 'aws-xray-sdk':
-                    stack.append("- **AWS X-Ray** (Tracing SDK)")
+                    stack.append(f"- **AWS X-Ray** ({version})" if version else "- **AWS X-Ray** (Tracing SDK)")
                 elif name == 'apig-wsgi':
-                    stack.append("- **Mangum/WSGI** (Lambda adapter)")
+                    stack.append(f"- **WSGI Adapter** ({version})" if version else "- **WSGI Adapter** (Lambda adapter)")
+                elif name == 'boto3':
+                    stack.append(f"- **Boto3** ({version})" if version else "- **Boto3** (AWS SDK)")
             return "\n".join(stack)
     except Exception as e:
         return f"Error reading backend stack: {e}"

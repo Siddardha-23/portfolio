@@ -81,7 +81,11 @@ portfolio/
 ### Backend
 - **Flask** (3.1.0)
 - **JWT Auth** (4.6.0)
-- **MongoDB** (Database client)
+- **MongoDB** (4.10.1)
+- **WSGI Adapter** (2.18.0)
+- **Boto3** (1.34.0)
+- **Gemini AI** (1.0.0)
+- **AWS X-Ray** (2.14.0)
 
 ### Infrastructure (AWS)
 - **S3 & CloudFront** - Static website & Global CDN

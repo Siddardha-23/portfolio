@@ -3,7 +3,7 @@
  * Uses Leaflet with CARTO dark tiles, pulsing glow markers, and animated popups.
  * Triggered by custom event 'open-visitor-map'.
  */
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Globe, X, MapPin, Users, AlertCircle, Navigation } from 'lucide-react';
@@ -218,7 +218,9 @@ export default function VisitorGlobe() {
     const [totalVisitors, setTotalVisitors] = useState(0);
     const [loading, setLoading] = useState(false);
     const [flyToCountry, setFlyToCountry] = useState<string | null>(null);
-    const mapReady = useRef(false);
+    const [period, setPeriod] = useState<'all' | '24h' | '7d' | '30d' | 'custom'>('all');
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
 
     // Filter out junk entries on the frontend as a safety net
     const validMapPoints = useMemo(
@@ -233,11 +235,15 @@ export default function VisitorGlobe() {
     const maxCount = Math.max(...validMapPoints.map(p => p.count), 1);
     const countryCount = validLocations.length;
 
-    const fetchData = async () => {
-        if (mapReady.current) return;
+    const fetchData = async (selectedPeriod?: string) => {
         setLoading(true);
         try {
-            const response = await apiService.getOrgStats();
+            const p = selectedPeriod || period;
+            let queryParams = p !== 'all' ? `?period=${p}` : '';
+            if (p === 'custom' && customFrom) {
+                queryParams = `?from=${customFrom}${customTo ? `&to=${customTo}` : ''}`;
+            }
+            const response = await apiService.getOrgStats(queryParams);
             if (response.data) {
                 setTotalVisitors(response.data.total_visitors || 0);
                 const topCountries = response.data.top_countries || [];
@@ -248,12 +254,22 @@ export default function VisitorGlobe() {
                 } else {
                     setMapPoints(topCountries.map(c => ({ country: c.country, count: c.count })));
                 }
-                mapReady.current = true;
             }
         } catch {
             // Silently fail
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handlePeriodChange = (newPeriod: typeof period) => {
+        setPeriod(newPeriod);
+        fetchData(newPeriod);
+    };
+
+    const handleCustomApply = () => {
+        if (customFrom) {
+            fetchData('custom');
         }
     };
 
@@ -269,7 +285,7 @@ export default function VisitorGlobe() {
         if (window.history?.pushState) {
             window.history.pushState('', document.title, window.location.pathname + window.location.search);
         }
-        if (!mapReady.current) fetchData();
+        fetchData();
     };
 
     useEffect(() => {
@@ -378,6 +394,56 @@ export default function VisitorGlobe() {
                                                 <X className="h-4 w-4" />
                                             </Button>
                                         </div>
+                                    </div>
+
+                                    {/* Time filter bar */}
+                                    <div className="flex shrink-0 items-center gap-2 border-b border-white/[0.06] bg-slate-950/60 px-4 py-2 overflow-x-auto scrollbar-thin">
+                                        <span className="text-[10px] uppercase tracking-wider text-slate-500 shrink-0 mr-1">Period:</span>
+                                        {([
+                                            { key: 'all' as const, label: 'All Time' },
+                                            { key: '24h' as const, label: 'Last 24h' },
+                                            { key: '7d' as const, label: 'Last 7 Days' },
+                                            { key: '30d' as const, label: 'Last 30 Days' },
+                                            { key: 'custom' as const, label: 'Custom' },
+                                        ]).map(opt => (
+                                            <button
+                                                key={opt.key}
+                                                type="button"
+                                                onClick={() => handlePeriodChange(opt.key)}
+                                                className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                                                    period === opt.key
+                                                        ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                                                        : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.05] border border-transparent'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        ))}
+                                        {period === 'custom' && (
+                                            <div className="flex items-center gap-2 ml-2">
+                                                <input
+                                                    type="date"
+                                                    value={customFrom}
+                                                    onChange={e => setCustomFrom(e.target.value)}
+                                                    className="h-7 rounded-md bg-slate-800 border border-slate-600 px-2 text-xs text-slate-300 focus:border-cyan-500 focus:outline-none"
+                                                />
+                                                <span className="text-xs text-slate-500">to</span>
+                                                <input
+                                                    type="date"
+                                                    value={customTo}
+                                                    onChange={e => setCustomTo(e.target.value)}
+                                                    className="h-7 rounded-md bg-slate-800 border border-slate-600 px-2 text-xs text-slate-300 focus:border-cyan-500 focus:outline-none"
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={handleCustomApply}
+                                                    disabled={!customFrom}
+                                                    className="shrink-0 rounded-full px-3 py-1 text-xs font-medium bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                                                >
+                                                    Apply
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Map area */}

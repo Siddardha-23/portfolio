@@ -1,7 +1,7 @@
 """Visitor info blueprint - routes for visitor tracking and registration."""
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from ua_parser import user_agent_parser
 
@@ -303,6 +303,29 @@ def get_organization_stats():
     plus organizations and LinkedIn counts from form submitters only.
     """
     try:
+        # Parse time-filtering query params
+        period = request.args.get('period', 'all')
+        custom_from = request.args.get('from')
+        custom_to = request.args.get('to')
+
+        # Build time filter
+        time_filter = None
+        now = datetime.utcnow()
+        if custom_from:
+            try:
+                start = datetime.fromisoformat(custom_from.replace('Z', '+00:00').replace('+00:00', ''))
+                end = datetime.fromisoformat(custom_to.replace('Z', '+00:00').replace('+00:00', '')) if custom_to else now
+                time_filter = {'$gte': start, '$lte': end}
+            except (ValueError, TypeError):
+                pass
+        elif period == '24h':
+            time_filter = {'$gte': now - timedelta(hours=24)}
+        elif period == '7d':
+            time_filter = {'$gte': now - timedelta(days=7)}
+        elif period == '30d':
+            time_filter = {'$gte': now - timedelta(days=30)}
+        # 'all' -> no time_filter
+
         visitor_service = get_visitor_service()
         total_visitors = visitor_service.get_unique_visitor_count()
 
@@ -369,6 +392,8 @@ def get_organization_stats():
             {"$sort": {"count": -1}},
             {"$limit": 50}  # Fetch more, then filter to notable only
         ]
+        if time_filter:
+            pipeline.insert(0, {"$match": {"registered_at": time_filter}})
         org_stats_raw = list(collection.aggregate(pipeline))
 
         # Only keep notable organizations (top MNCs, universities — no small companies)
@@ -378,7 +403,10 @@ def get_organization_stats():
         ][:10]
         
         # Total registered visitors
-        total_registered = collection.count_documents({})
+        if time_filter:
+            total_registered = collection.count_documents({"registered_at": time_filter})
+        else:
+            total_registered = collection.count_documents({})
 
         # Count with LinkedIn found — check both collections (new + legacy)
         linkedin_coll = db.linkedin_profiles
@@ -397,6 +425,8 @@ def get_organization_stats():
             {"$sort": {"count": -1}},
             {"$limit": 15},
         ]
+        if time_filter:
+            notable_pipeline[0]["$match"]["created_at"] = time_filter
         notable_raw = list(linkedin_coll.aggregate(notable_pipeline))
         notable_linkedin = [
             {"name": r["display_name"], "count": r["count"]}
@@ -446,6 +476,8 @@ def get_organization_stats():
             {"$match": {"_id.country": {"$nin": _EXCLUDED_COUNTRIES}}},
             {"$sort": {"count": -1}}
         ]
+        if time_filter:
+            map_locations_pipeline.insert(0, {"$match": {"registered_at": time_filter}})
         map_locations_raw = list(collection.aggregate(map_locations_pipeline))
 
         # visitor_info: count unique by fingerprint_hash per (country, city); legacy docs (no hash) count as 1 each
@@ -493,6 +525,8 @@ def get_organization_stats():
             {"$match": {"_id.country": {"$nin": _EXCLUDED_COUNTRIES}}},
             {"$sort": {"count": -1}}
         ]
+        if time_filter:
+            visitor_map_pipeline.insert(0, {"$match": {"timestamp": time_filter}})
         visitor_map_raw = list(visitor_info_coll.aggregate(visitor_map_pipeline))
 
         # Merge: key by (country, city), sum counts, keep any non-null lat/lng
@@ -518,6 +552,9 @@ def get_organization_stats():
 
         map_locations = sorted(merged.values(), key=lambda x: -x["count"])
 
+        if time_filter:
+            total_visitors = sum(loc["count"] for loc in map_locations)
+
         # Top countries (below map): derive from same merged map data
         by_country = {}
         for loc in map_locations:
@@ -529,6 +566,7 @@ def get_organization_stats():
         ]
 
         return jsonify({
+            'period': period if not custom_from else f"{custom_from} to {custom_to or 'now'}",
             'total_visitors': total_visitors,
             'organizations': [
                 {

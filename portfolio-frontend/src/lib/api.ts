@@ -221,7 +221,7 @@ class ApiService {
     });
   }
 
-  async getOrgStats() {
+  async getOrgStats(queryParams?: string) {
     return this.request<{
       total_visitors: number;
       organizations: Array<{
@@ -240,7 +240,7 @@ class ApiService {
         longitude?: number | null;
         count: number;
       }>;
-    }>('/info/org-stats', {
+    }>(`/info/org-stats${queryParams || ''}`, {
       method: 'GET',
     });
   }

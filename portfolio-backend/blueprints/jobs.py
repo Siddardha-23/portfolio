@@ -5,6 +5,7 @@ Authentication uses a single shared password verified against a bcrypt hash.
 All other endpoints require a valid JWT obtained from the auth endpoint.
 """
 import logging
+from datetime import timedelta
 
 import bcrypt
 from flask import Blueprint, request, jsonify
@@ -42,7 +43,10 @@ def auth():
     if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
         return jsonify({"error": "Invalid password"}), 401
 
-    token = create_access_token(identity="job_search_user")
+    token = create_access_token(
+        identity="job_search_user",
+        expires_delta=timedelta(days=7),
+    )
     return jsonify({"access_token": token}), 200
 
 
@@ -205,8 +209,35 @@ def tailor_resume():
         return jsonify({"error": "Invalid job description"}), 400
 
     try:
-        from services.job_service import get_job_service
-        result = get_job_service().tailor_resume(job_description)
+        from services.resume_service import get_resume_service
+        svc = get_resume_service()
+
+        # Extract JD → get structured resume → tailor
+        jd_analysis = svc.extract_jd(job_description)
+        resume = svc.parser.get_structured_resume()
+        if not resume:
+            return jsonify({"error": "No resume uploaded"}), 404
+
+        structured = resume.get("structured")
+        if not structured:
+            raw_text = resume.get("raw_text", "")
+            if not raw_text:
+                return jsonify({"error": "Resume data unavailable. Please re-upload."}), 404
+            structured = svc.parser.parse_to_structured(raw_text)
+
+        tailored = svc.tailor.tailor(structured, jd_analysis)
+
+        # Map to the simpler format expected by the job search UI
+        from schemas.resume_schemas import flatten_skills
+        result = {
+            "summary": tailored.get("summary", ""),
+            "skills": flatten_skills(tailored),
+            "experience_bullets": [
+                b for exp in tailored.get("experience", [])
+                for b in exp.get("bullets", [])
+            ],
+            "keywords_to_add": jd_analysis.get("keywords", []),
+        }
         return jsonify({"tailored": result}), 200
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
@@ -240,24 +271,24 @@ def upload_resume():
         return jsonify({"error": "File too large (max 5 MB)"}), 400
 
     try:
-        from PyPDF2 import PdfReader
-        import io
+        from services.resume_service import get_resume_service
+        svc = get_resume_service()
+        parsed = svc.parser.upload_and_parse(file_bytes)
 
-        reader = PdfReader(io.BytesIO(file_bytes))
-        text = ""
-        for page in reader.pages:
-            text += (page.extract_text() or "") + "\n"
-        text = text.strip()
-        if not text:
-            return jsonify({"error": "Could not extract text from PDF"}), 400
-    except Exception as e:
+        # Return flat format matching the job search UI's ParsedResume type
+        return jsonify({
+            "resume": {
+                "skills": parsed.get("skills", []),
+                "experience_years": parsed.get("experience_years", 0),
+                "education": parsed.get("education", []),
+                "certifications": parsed.get("certifications", []),
+                "job_titles": parsed.get("job_titles", []),
+                "summary": parsed.get("summary", ""),
+            }
+        }), 200
+    except ValueError as e:
         logger.error(f"PDF parsing error: {e}")
-        return jsonify({"error": "Failed to read PDF"}), 400
-
-    try:
-        from services.job_service import get_job_service
-        parsed = get_job_service().parse_resume(text)
-        return jsonify({"resume": parsed}), 200
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Resume parsing error: {e}")
         return jsonify({"error": "Failed to parse resume"}), 500
@@ -267,8 +298,8 @@ def upload_resume():
 @jwt_required()
 def get_resume():
     try:
-        from services.job_service import get_job_service
-        resume = get_job_service().get_resume()
+        from services.resume_service import get_resume_service
+        resume = get_resume_service().get_base_resume()
         if not resume:
             return jsonify({"error": "No resume uploaded yet"}), 404
         return jsonify({"resume": resume}), 200

@@ -163,13 +163,13 @@ def download():
         svc = get_resume_service()
 
         if fmt == "pdf":
-            file_bytes = svc.generate_pdf(tailored)
+            file_bytes = svc.renderer.generate_pdf(tailored)
             mimetype = "application/pdf"
         else:
-            file_bytes = svc.generate_docx(tailored)
+            file_bytes = svc.renderer.generate_docx(tailored)
             mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
-        filename = svc.build_filename(tailored, jd_analysis, fmt)
+        filename = svc.renderer.build_filename(tailored, jd_analysis, fmt)
 
         return send_file(
             io.BytesIO(file_bytes),
@@ -205,22 +205,24 @@ def upload():
         return jsonify({"error": "File too large (max 5 MB)"}), 400
 
     try:
-        from PyPDF2 import PdfReader
-        reader = PdfReader(io.BytesIO(file_bytes))
-        text = ""
-        for page in reader.pages:
-            text += (page.extract_text() or "") + "\n"
-        text = text.strip()
-        if not text:
-            return jsonify({"error": "Could not extract text from PDF"}), 400
-    except Exception as e:
-        logger.error(f"PDF parsing error: {e}")
-        return jsonify({"error": "Failed to read PDF"}), 400
+        from services.resume_service import get_resume_service
+        svc = get_resume_service()
+        parsed = svc.parser.upload_and_parse(file_bytes)
 
-    try:
-        from services.job_service import get_job_service
-        parsed = get_job_service().parse_resume(text)
-        return jsonify({"resume": parsed}), 200
+        # Return flat format matching frontend ParsedResume type
+        return jsonify({
+            "resume": {
+                "skills": parsed.get("skills", []),
+                "experience_years": parsed.get("experience_years", 0),
+                "education": parsed.get("education", []),
+                "certifications": parsed.get("certifications", []),
+                "job_titles": parsed.get("job_titles", []),
+                "summary": parsed.get("summary", ""),
+            }
+        }), 200
+    except ValueError as e:
+        logger.error(f"PDF parsing error: {e}")
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         logger.error(f"Resume parsing error: {e}")
         return jsonify({"error": "Failed to parse resume"}), 500

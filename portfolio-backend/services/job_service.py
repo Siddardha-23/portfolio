@@ -363,6 +363,7 @@ class JobService:
         return jobs
 
     def _get_resume_skills(self) -> List[str]:
+        """Get flat skills list from stored resume."""
         try:
             resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
             if resume:
@@ -371,103 +372,12 @@ class JobService:
             logger.warning(f"Failed to load resume skills: {e}")
         return []
 
-    # ------------------------------------------------------------------
-    # Resume Parsing
-    # ------------------------------------------------------------------
-
-    def parse_resume(self, pdf_text: str) -> Dict[str, Any]:
-        from services.chat_service import _get_client
-        from google.genai import types
-
-        client = _get_client()
-
-        prompt = (
-            "Parse this resume text and return a JSON object with exactly these keys:\n"
-            '- "skills": list of technical skills (strings)\n'
-            '- "experience_years": estimated total years of experience (number)\n'
-            '- "education": list of objects with "degree", "institution", "year"\n'
-            '- "certifications": list of certification names (strings)\n'
-            '- "job_titles": list of previous job titles (strings)\n'
-            '- "summary": one-paragraph professional summary (string)\n\n'
-            f"Resume text:\n{pdf_text[:8000]}"
-        )
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.2,
-                max_output_tokens=2048,
-            ),
-        )
-
-        parsed = json.loads(response.text)
-
-        # Persist (store raw_text for resume tailoring later)
-        doc = {
-            **parsed,
-            "raw_text": pdf_text[:8000],
-            "raw_text_length": len(pdf_text),
-            "parsed_at": datetime.now(timezone.utc),
-        }
-        self.user_resumes.delete_many({})  # single-user, keep latest only
-        self.user_resumes.insert_one(doc)
-
-        doc.pop("_id", None)
-        return doc
-
     def get_resume(self) -> Optional[Dict[str, Any]]:
+        """Retrieve the latest stored resume (used by analyze_job)."""
         resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
         if resume:
             resume.pop("_id", None)
         return resume
-
-    # ------------------------------------------------------------------
-    # Resume Tailoring
-    # ------------------------------------------------------------------
-
-    def tailor_resume(self, job_description: str) -> Dict[str, Any]:
-        """Tailor resume to a job description using AI. Never fabricates content."""
-        from services.chat_service import _get_client
-        from google.genai import types
-
-        resume = self.get_resume()
-        if not resume:
-            raise ValueError("No resume uploaded")
-        raw_text = resume.get("raw_text")
-        if not raw_text:
-            raise ValueError("Resume raw text not available. Please re-upload your resume.")
-
-        client = _get_client()
-
-        prompt = (
-            "You are a resume tailoring assistant. Given the candidate's ACTUAL resume text "
-            "and a job description, rewrite parts of the resume to better align with the JD.\n\n"
-            "CRITICAL RULES:\n"
-            "- NEVER fabricate, invent, or add skills/experience NOT present in the resume\n"
-            "- Only reword, reorder, and emphasize EXISTING content\n"
-            "- Use JD-aligned language to describe the SAME achievements\n\n"
-            "Return a JSON object with exactly these keys:\n"
-            '- "summary": rewritten professional summary aligned with the JD (string)\n'
-            '- "skills": reordered skills list, JD-relevant ones first (list of strings, only from resume)\n'
-            '- "experience_bullets": reworded experience bullet points using JD language (list of strings)\n'
-            '- "keywords_to_add": keywords from the JD that naturally fit existing experience (list of strings)\n\n'
-            f"=== RESUME ===\n{raw_text}\n\n"
-            f"=== JOB DESCRIPTION ===\n{job_description[:6000]}"
-        )
-
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                temperature=0.4,
-                max_output_tokens=4096,
-            ),
-        )
-
-        return json.loads(response.text)
 
     # ------------------------------------------------------------------
     # AI Job Analysis

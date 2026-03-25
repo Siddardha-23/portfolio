@@ -66,7 +66,9 @@ class ApiService {
       ...options.headers,
     };
 
-    if (token) {
+    // Only set auth_token if the caller hasn't already provided an Authorization header
+    // (e.g. jobRequest sets job_search_token which must not be overwritten)
+    if (token && !(options.headers && (options.headers as Record<string, string>)['Authorization'])) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
 
@@ -91,7 +93,7 @@ class ApiService {
 
       if (!response.ok) {
         return {
-          error: data.error || data.message || `HTTP ${response.status}`,
+          error: data.error || data.message || data.msg || `HTTP ${response.status}`,
         };
       }
 
@@ -438,9 +440,14 @@ class ApiService {
       ...options,
       headers: { ...headers, ...options.headers as Record<string, string> },
     }, timeoutMs);
-    // Clear job-search token on 401 so resume-parser shows password gate again
-    if (result.error && typeof window !== 'undefined' && (result.error.includes('401') || result.error.includes('Session expired'))) {
-      localStorage.removeItem('job_search_token');
+    // On expired/missing token, clear job_search_token so resume-parser shows password gate.
+    // Only clear on explicit token errors — not on transient network issues.
+    if (result.error && typeof window !== 'undefined') {
+      const err = result.error.toLowerCase();
+      if (err.includes('token has expired') || err.includes('missing authorization') || err.includes('session expired')) {
+        localStorage.removeItem('job_search_token');
+        return { error: 'Session expired. Please enter the password again.' };
+      }
     }
     return result;
   }
@@ -592,21 +599,41 @@ class ApiService {
 
   /**
    * Poll a resume job until it completes or fails.
-   * Returns the job result or an error.
+   * - 30s timeout per individual poll request (handles cold Lambda starts)
+   * - Retries up to 3 consecutive transient errors before bailing
+   * - 120s hard limit total
+   * - Respects AbortSignal for cancellation
    */
-  private async pollJob<T>(jobId: string, maxWaitMs = 90000): Promise<ApiResponse<T>> {
-    const pollInterval = 2000; // 2 seconds
+  private async pollJob<T>(
+    jobId: string,
+    maxWaitMs = 120000,
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<T>> {
+    const pollInterval = 2000;
     const startTime = Date.now();
+    let consecutiveErrors = 0;
+    const maxConsecutiveErrors = 3;
 
     while (Date.now() - startTime < maxWaitMs) {
+      if (signal?.aborted) return { error: 'Cancelled' };
+
       const resp = await this.jobRequest<{
         status: string;
         result?: T;
         error?: string;
-      }>(`/resume/job/${jobId}`);
+      }>(`/resume/job/${jobId}`, {}, 30000);
 
-      if (resp.error) return { error: resp.error };
+      if (resp.error) {
+        consecutiveErrors++;
+        if (consecutiveErrors >= maxConsecutiveErrors) {
+          return { error: resp.error };
+        }
+        // Transient error (cold start / brief timeout) — wait and retry
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        continue;
+      }
 
+      consecutiveErrors = 0;
       const job = resp.data;
       if (!job) return { error: 'Job not found' };
 
@@ -628,43 +655,50 @@ class ApiService {
   async extractJD(
     jobDescription: string,
   ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis }>> {
-    // Submit job
     const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/extract-jd',
       { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
+      30000,
     );
     if (submitResp.error) return { error: submitResp.error };
     if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
 
-    // Poll for result
     return this.pollJob<{ jd_analysis: import('../types/resume').JDAnalysis }>(submitResp.data.job_id);
   }
 
   async tailorResumeForParser(
     jdAnalysis: import('../types/resume').JDAnalysis,
+    signal?: AbortSignal,
   ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
     const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/tailor',
       { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
+      30000,
     );
     if (submitResp.error) return { error: submitResp.error };
     if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
 
-    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(submitResp.data.job_id);
+    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
+      submitResp.data.job_id, 120000, signal,
+    );
   }
 
   async fetchATSScores(
     tailoredResume: import('../types/resume').TailoredFullResume,
     jdAnalysis: import('../types/resume').JDAnalysis,
+    signal?: AbortSignal,
   ): Promise<ApiResponse<{ ats_scores: import('../types/resume').ATSScores }>> {
     const submitResp = await this.jobRequest<{ job_id: string }>(
       '/resume/ats-scores',
       { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
+      30000,
     );
     if (submitResp.error) return { error: submitResp.error };
     if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
 
-    return this.pollJob<{ ats_scores: import('../types/resume').ATSScores }>(submitResp.data.job_id);
+    return this.pollJob<{ ats_scores: import('../types/resume').ATSScores }>(
+      submitResp.data.job_id, 120000, signal,
+    );
   }
 
   async downloadTailoredResume(

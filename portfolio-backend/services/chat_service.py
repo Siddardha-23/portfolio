@@ -127,24 +127,10 @@ Guidelines:
 
 {PORTFOLIO_CONTEXT}"""
 
-# Lazy-loaded client instance
-_client = None
-
-
 def _get_client():
-    """Lazy-load the Gemini client to avoid cold-start penalty for non-chat requests."""
-    global _client
-    if _client is not None:
-        return _client
-
-    from utils.config import _get_config_value
-    api_key = _get_config_value('GEMINI_API_KEY', '')
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY is not configured")
-
-    from google import genai
-    _client = genai.Client(api_key=api_key)
-    return _client
+    """Delegate to shared Gemini client singleton."""
+    from services.gemini_client import get_gemini_client
+    return get_gemini_client()
 
 
 def generate_response(message: str, history: Optional[List[Dict[str, str]]] = None) -> str:

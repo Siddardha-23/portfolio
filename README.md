@@ -174,3 +174,7 @@ MIT License - feel free to use this as a template for your own portfolio!
 - LinkedIn: [linkedin.com/in/harshith-siddardha](https://linkedin.com/in/harshith-siddardha)
 - GitHub: [github.com/Siddardha-23](https://github.com/Siddardha-23)
 - Email: harshith.siddardha@gmail.com
+
+
+
+-----------------------------------------------

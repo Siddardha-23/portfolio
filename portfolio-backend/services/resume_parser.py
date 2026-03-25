@@ -30,35 +30,39 @@ class ResumeParser:
     def extract_text_from_pdf(file_bytes: bytes) -> str:
         """Extract text from PDF bytes using PyPDF2.
 
-        Raises ValueError if no text can be extracted.
+        Raises ValueError if no text can be extracted or if the PDF is invalid.
         """
         from PyPDF2 import PdfReader
         import io
 
-        reader = PdfReader(io.BytesIO(file_bytes))
-        text = ""
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            text += page_text + "\n"
-            
-            # Extract clickable URLs from annotations (so AI can see hidden links)
-            if "/Annots" in page:
-                for annot_ref in page["/Annots"]:
-                    try:
-                        annot = annot_ref.get_object()
-                        if annot.get("/Subtype") == "/Link":
-                            action = annot.get("/A")
-                            if action and action.get("/S") == "/URI":
-                                uri = action.get("/URI")
-                                if uri:
-                                    text += f"[Extracted Link: {uri}]\n"
-                    except Exception:
-                        pass
-                        
-        text = text.strip()
-        if not text:
-            raise ValueError("Could not extract text from PDF")
-        return text
+        try:
+            reader = PdfReader(io.BytesIO(file_bytes))
+            text = ""
+            for page in reader.pages:
+                page_text = page.extract_text() or ""
+                text += page_text + "\n"
+                
+                # Extract clickable URLs from annotations (so AI can see hidden links)
+                if "/Annots" in page:
+                    for annot_ref in page["/Annots"]:
+                        try:
+                            annot = annot_ref.get_object()
+                            if annot.get("/Subtype") == "/Link":
+                                action = annot.get("/A")
+                                if action and action.get("/S") == "/URI":
+                                    uri = action.get("/URI")
+                                    if uri:
+                                        text += f"[Extracted Link: {uri}]\n"
+                        except Exception:
+                            pass
+                            
+            text = text.strip()
+            if not text:
+                raise ValueError("Could not extract text from PDF")
+            return text
+        except Exception as e:
+            # Handle PyPDF2 errors (e.g., PdfReadError) gracefully
+            raise ValueError(f"Invalid or corrupted PDF file: {str(e)}")
 
     # ------------------------------------------------------------------
     # Gemini structured parsing

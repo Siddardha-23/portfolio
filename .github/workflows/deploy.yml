@@ -184,6 +184,7 @@ jobs:
           cp -r *.py package/ 2>/dev/null || true
           cp -r blueprints package/
           cp -r models package/
+          cp -r schemas package/
           cp -r services package/
           cp -r utils package/
 

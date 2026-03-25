@@ -223,6 +223,9 @@ def upload():
     except ValueError as e:
         logger.error(f"PDF parsing error: {e}")
         return jsonify({"error": str(e)}), 400
+    except RuntimeError as e:
+        logger.error(f"Configuration error: {e}")
+        return jsonify({"error": f"AI service is not configured: {str(e)}"}), 503
     except Exception as e:
         logger.error(f"Resume parsing error: {e}")
         return jsonify({"error": "Failed to parse resume"}), 500

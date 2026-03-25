@@ -830,10 +830,13 @@ def normalize_keywords(keywords: List[str]) -> List[str]:
     """Normalize a list of keywords, deduplicating while preserving order.
 
     First occurrence wins for ordering. Returns canonical forms.
+    Ignores non-string items (e.g., bad AI outputs).
     """
     seen: set = set()
     result: List[str] = []
     for kw in keywords:
+        if not isinstance(kw, str):
+            continue
         canonical = normalize_single(kw)
         canonical_lower = canonical.lower()
         if canonical_lower not in seen:

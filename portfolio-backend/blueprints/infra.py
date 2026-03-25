@@ -393,7 +393,9 @@ def get_latest_sandbox():
         latest = db.find_one({'status': 'deployed'}, sort=[('timestamp', -1)])
         if latest:
             latest['_id'] = str(latest['_id'])
-            
+            if hasattr(latest.get('timestamp'), 'isoformat'):
+                latest['timestamp'] = latest['timestamp'].isoformat()
+
         return jsonify({'success': True, 'data': latest})
     except Exception as e:
         logger.error(f"Sandbox latest error: {e}")
@@ -435,15 +437,17 @@ def trigger_sandbox_deploy():
             
         from utils.db_connect import DBConnect
         db = DBConnect().get_collection('sandbox_deployments')
+        now = datetime.utcnow()
         doc = {
             'message': message,
             'color': color,
             'status': 'queued',
-            'timestamp': datetime.utcnow()
+            'timestamp': now
         }
         result = db.insert_one(doc)
         doc['_id'] = str(result.inserted_id)
-        
+        doc['timestamp'] = now.isoformat()
+
         return jsonify({'success': True, 'data': doc})
     except Exception as e:
         logger.error(f"Sandbox deploy error: {e}")

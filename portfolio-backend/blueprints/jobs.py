@@ -302,6 +302,8 @@ def get_resume():
         resume = get_resume_service().get_base_resume()
         if not resume:
             return jsonify({"error": "No resume uploaded yet"}), 404
+        if hasattr(resume.get('parsed_at'), 'isoformat'):
+            resume['parsed_at'] = resume['parsed_at'].isoformat()
         return jsonify({"resume": resume}), 200
     except Exception as e:
         logger.error(f"Get resume error: {e}")

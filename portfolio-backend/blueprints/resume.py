@@ -130,6 +130,9 @@ def get_job(job_id):
         job = get_resume_service().get_job(job_id)
         if not job:
             return jsonify({"error": "Job not found"}), 404
+        for key in ("created_at", "completed_at"):
+            if hasattr(job.get(key), 'isoformat'):
+                job[key] = job[key].isoformat()
         return jsonify(job), 200
     except Exception as e:
         logger.error(f"Job status error: {e}")

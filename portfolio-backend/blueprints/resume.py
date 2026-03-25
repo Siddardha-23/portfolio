@@ -240,13 +240,16 @@ def status():
         resume = get_resume_service().get_base_resume()
         if not resume:
             return jsonify({"has_resume": False}), 200
+        parsed_at = resume.get("parsed_at", "")
+        if hasattr(parsed_at, 'isoformat'):
+            parsed_at = parsed_at.isoformat()
         return jsonify({
             "has_resume": True,
             "skills": resume.get("skills", []),
             "experience_years": resume.get("experience_years"),
             "job_titles": resume.get("job_titles", []),
             "summary": resume.get("summary", ""),
-            "parsed_at": resume.get("parsed_at", ""),
+            "parsed_at": parsed_at,
         }), 200
     except Exception as e:
         logger.error(f"Resume status error: {e}")

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -439,6 +439,17 @@ function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
 }
 
 // ---------------------------------------------------------------------------
+// Tailor phase message helper
+// ---------------------------------------------------------------------------
+
+function getTailorPhase(secs: number): string {
+  if (secs < 10) return 'Analyzing job requirements...';
+  if (secs < 30) return 'Tailoring your resume...';
+  if (secs < 60) return 'Optimizing keywords...';
+  return 'Almost done, finalizing...';
+}
+
+// ---------------------------------------------------------------------------
 // Main dashboard
 // ---------------------------------------------------------------------------
 
@@ -457,6 +468,11 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
   const [tailorError, setTailorError] = useState('');
   const [result, setResult] = useState<TailorPipelineResult | null>(null);
   const [atsLoading, setAtsLoading] = useState(false);
+  const [tailorElapsed, setTailorElapsed] = useState(0);
+
+  const tailorAbortRef = useRef<AbortController | null>(null);
+  const atsAbortRef = useRef<AbortController | null>(null);
+  const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
 
@@ -477,6 +493,15 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
         if (!getCachedResumeStatus()) setResumeStatus({ has_resume: false });
       }
     });
+  }, []);
+
+  // Cleanup in-flight polls and timer on unmount
+  useEffect(() => {
+    return () => {
+      tailorAbortRef.current?.abort();
+      atsAbortRef.current?.abort();
+      if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
+    };
   }, []);
 
   // Upload handler
@@ -548,11 +573,33 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
   // Step 2: Tailor resume (only after JD is analyzed)
   const handleTailorResume = useCallback(async () => {
     if (!jdAnalysis) return;
+    // Abort any in-flight tailor before starting a new one
+    tailorAbortRef.current?.abort();
+    const controller = new AbortController();
+    tailorAbortRef.current = controller;
+
     setTailoring(true);
+    setTailorElapsed(0);
     setTailorError('');
-    const tailorResp = await apiService.tailorResumeForParser(jdAnalysis);
+
+    // Start elapsed timer (1s tick)
+    tailorTimerRef.current = setInterval(() => {
+      setTailorElapsed(prev => prev + 1);
+    }, 1000);
+
+    const tailorResp = await apiService.tailorResumeForParser(jdAnalysis, controller.signal);
+
+    if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
+    tailorTimerRef.current = null;
+
+    if (controller.signal.aborted) {
+      setTailoring(false);
+      setTailorElapsed(0);
+      return; // user cancelled — no error shown
+    }
 
     setTailoring(false);
+    setTailorElapsed(0);
     if (tailorResp.error) { setTailorError(tailorResp.error); return; }
     if (tailorResp.data) {
       setResult({
@@ -562,13 +609,30 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     }
   }, [jdAnalysis]);
 
-  // Step 3: Fetch ATS scores on demand — separate synchronous call
+  // Cancel tailor (shown after soft timeout)
+  const handleCancelTailor = useCallback(() => {
+    tailorAbortRef.current?.abort();
+    if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
+    tailorTimerRef.current = null;
+    setTailoring(false);
+    setTailorElapsed(0);
+  }, []);
+
+  // Step 3: Fetch ATS scores on demand
   const handleFetchATS = useCallback(async () => {
     if (!result?.tailored_resume || !result?.jd_analysis) return;
+    atsAbortRef.current?.abort();
+    const controller = new AbortController();
+    atsAbortRef.current = controller;
+
     setAtsLoading(true);
     setTailorError('');
 
-    const resp = await apiService.fetchATSScores(result.tailored_resume, result.jd_analysis);
+    const resp = await apiService.fetchATSScores(
+      result.tailored_resume, result.jd_analysis, controller.signal,
+    );
+
+    if (controller.signal.aborted) return;
     setAtsLoading(false);
 
     if (resp.error) {
@@ -756,12 +820,22 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
                 <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
                 <div className="text-center space-y-1">
                   <p className="text-sm font-medium">
-                    {analyzingJD ? 'Analyzing job description...' : 'Tailoring your resume...'}
+                    {analyzingJD ? 'Analyzing job description...' : getTailorPhase(tailorElapsed)}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    This may take 10-20 seconds
+                    {tailoring && tailorElapsed >= 90
+                      ? 'Taking longer than expected — you can wait or cancel.'
+                      : 'This may take 30–60 seconds'}
                   </p>
+                  {tailoring && tailorElapsed > 0 && (
+                    <p className="text-xs text-muted-foreground tabular-nums">{tailorElapsed}s</p>
+                  )}
                 </div>
+                {tailoring && tailorElapsed >= 90 && (
+                  <Button type="button" variant="outline" size="sm" onClick={handleCancelTailor}>
+                    Cancel
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

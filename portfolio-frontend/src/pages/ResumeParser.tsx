@@ -295,7 +295,7 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
                 <ul className="mt-1 space-y-0.5">
                   {exp.bullets?.map((b, j) => (
                     <li key={j} className="text-[11px] text-muted-foreground flex gap-1.5">
-                      <span className="shrink-0 mt-0.5">-</span>
+                      <span className="shrink-0 mt-0.5">&bull;</span>
                       <span>{b}</span>
                     </li>
                   ))}
@@ -319,7 +319,7 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
                 <ul className="mt-1 space-y-0.5">
                   {proj.bullets?.map((b, j) => (
                     <li key={j} className="text-[11px] text-muted-foreground flex gap-1.5">
-                      <span className="shrink-0 mt-0.5">-</span><span>{b}</span>
+                      <span className="shrink-0 mt-0.5">&bull;</span><span>{b}</span>
                     </li>
                   ))}
                 </ul>
@@ -355,14 +355,29 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
             <CardTitle className="text-xs uppercase tracking-wider">Education</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {resume.education.map((edu, i) => (
-              <div key={i} className="flex justify-between items-start">
-                <p className="text-xs font-medium">
-                  {edu.institution}{edu.degree ? ` | ${edu.degree}` : ''}
-                </p>
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">{edu.dates}</span>
-              </div>
-            ))}
+            {resume.education.map((edu, i) => {
+              // Strip date patterns and duplicate text baked into degree field
+              const cleanDegree = (d: string) => {
+                if (!d) return '';
+                // Remove date-like segments after pipe separators
+                let cleaned = d.split('|').map(s => s.trim())
+                  .filter(s => !/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|\d{1,2}\/\d{4})/i.test(s))
+                  .join(' | ');
+                // Deduplicate if same text repeated
+                const parts = cleaned.split('|').map(s => s.trim()).filter(Boolean);
+                const unique = [...new Set(parts)];
+                return unique.join(' | ').trim();
+              };
+              const degree = cleanDegree(edu.degree);
+              return (
+                <div key={i} className="flex justify-between items-start">
+                  <p className="text-xs font-medium">
+                    {edu.institution}{degree ? ` | ${degree}` : ''}
+                  </p>
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">{edu.dates}</span>
+                </div>
+              );
+            })}
           </CardContent>
         </Card>
       )}
@@ -523,10 +538,10 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
       if (resp.error.includes('Session expired') && onSessionExpired) onSessionExpired();
       return;
     }
-    // Set status from upload response and cache it so cloud shows "Resume Ready" like local
+    // Handle both async poll result (parsed_resume) and legacy sync response (resume)
     const data = (resp as any).data;
-    if (data?.resume) {
-      const r = data.resume;
+    const r = data?.parsed_resume || data?.resume;
+    if (r) {
       const next: ResumeStatus = {
         has_resume: true,
         skills: r.skills,

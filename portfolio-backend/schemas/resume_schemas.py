@@ -154,6 +154,19 @@ def _coerce(value, spec):
     # dict with "_dict_of" marker → Record<string, T>
     if isinstance(spec, dict) and "_dict_of" in spec:
         if not isinstance(value, dict):
+            # Safety net: if value is a list of strings, wrap as {"General": value}
+            # instead of silently dropping all data
+            if isinstance(value, list) and all(isinstance(v, str) for v in value):
+                logger.warning(
+                    "Schema coercion: skills was a flat list (%d items), "
+                    "auto-wrapping as {\"General\": [...]}",
+                    len(value),
+                )
+                return {"General": value}
+            logger.warning(
+                "Schema coercion: expected dict for _dict_of field, got %s — returning empty dict",
+                type(value).__name__,
+            )
             return {}
         inner_spec = spec["_dict_of"]
         return {str(k): _coerce(v, inner_spec) for k, v in value.items()}
@@ -197,7 +210,23 @@ def validate_and_coerce(data: Any, schema: dict) -> dict:
     # Log any keys that were missing or coerced
     missing = [k for k in schema if k not in data]
     if missing:
-        logger.warning(f"Schema validation filled missing keys: {missing}")
+        logger.warning("Schema validation filled missing keys: %s", missing)
+
+    # Log type mismatches for critical sections (helps debug silent coercion)
+    for key, spec in schema.items():
+        value = data.get(key)
+        if value is None:
+            continue  # Already logged as missing above
+        if isinstance(spec, dict) and "_dict_of" in spec and not isinstance(value, dict):
+            logger.warning(
+                "Schema coercion: '%s' was %s, expected dict — data may be lost",
+                key, type(value).__name__,
+            )
+        elif isinstance(spec, list) and not isinstance(value, list):
+            logger.warning(
+                "Schema coercion: '%s' was %s, expected list — coerced to []",
+                key, type(value).__name__,
+            )
 
     return result
 

@@ -169,6 +169,9 @@ def download():
             file_bytes = svc.renderer.generate_docx(tailored)
             mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
+        if not file_bytes or len(file_bytes) < 100:
+            return jsonify({"error": "Failed to generate document"}), 500
+
         filename = svc.renderer.build_filename(tailored, jd_analysis, fmt)
 
         return send_file(
@@ -203,23 +206,27 @@ def upload():
     file_bytes = file.read()
     if len(file_bytes) > 5 * 1024 * 1024:
         return jsonify({"error": "File too large (max 5 MB)"}), 400
+    if not file_bytes[:5].startswith(b'%PDF'):
+        return jsonify({"error": "File is not a valid PDF"}), 400
 
     try:
-        from services.resume_service import get_resume_service
-        svc = get_resume_service()
-        parsed = svc.parser.upload_and_parse(file_bytes)
+        from services.resume_service import get_resume_service, ResumeService
+        from services.resume_parser import ResumeParser
 
-        # Return flat format matching frontend ParsedResume type
-        return jsonify({
-            "resume": {
-                "skills": parsed.get("skills", []),
-                "experience_years": parsed.get("experience_years", 0),
-                "education": parsed.get("education", []),
-                "certifications": parsed.get("certifications", []),
-                "job_titles": parsed.get("job_titles", []),
-                "summary": parsed.get("summary", ""),
-            }
-        }), 200
+        # Synchronous: extract text from PDF (fast, pure Python, no AI)
+        raw_text = ResumeParser.extract_text_from_pdf(file_bytes)
+
+        # Async: create a job for Gemini parsing and return job_id immediately
+        import base64
+        pdf_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        
+        svc = get_resume_service()
+        payload = {"raw_text": raw_text, "pdf_base64": pdf_b64}
+        job_id = svc.create_job("upload_parse", payload)
+        ResumeService.invoke_async(job_id, "upload_parse", payload)
+
+        return jsonify({"job_id": job_id}), 202
+
     except ValueError as e:
         logger.error(f"PDF parsing error: {e}")
         return jsonify({"error": str(e)}), 400
@@ -227,8 +234,8 @@ def upload():
         logger.error(f"Configuration error: {e}")
         return jsonify({"error": f"AI service is not configured: {str(e)}"}), 503
     except Exception as e:
-        logger.error(f"Resume parsing error: {e}")
-        return jsonify({"error": "Failed to parse resume"}), 500
+        logger.error(f"Resume upload error: {e}")
+        return jsonify({"error": "Failed to process resume upload"}), 500
 
 
 # ------------------------------------------------------------------

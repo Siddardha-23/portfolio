@@ -13,6 +13,7 @@ Pure Python, zero AI calls, stateless.
 """
 import copy
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 IMMUTABLE_CONTACT_FIELDS = ("name", "email", "phone", "linkedin", "github")
 IMMUTABLE_EXPERIENCE_FIELDS = ("company", "title", "dates", "location")
-IMMUTABLE_EDUCATION_FIELDS = ("degree", "institution", "dates", "location", "gpa")
+IMMUTABLE_EDUCATION_FIELDS = ("degree", "institution", "dates", "location", "gpa", "coursework")
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,27 @@ class IntegrityGuard:
                 if _edu_key(e) in valid_keys
             ]
 
+        # Clean degree fields: strip baked-in dates and duplicates
+        for edu in tailored.get("education", []):
+            degree = edu.get("degree", "")
+            if degree and "|" in degree:
+                segments = [s.strip() for s in degree.split("|")]
+                cleaned = [
+                    s for s in segments
+                    if not re.match(
+                        r'^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4}|\d{1,2}/\d{4})',
+                        s, re.IGNORECASE,
+                    )
+                ]
+                # Deduplicate
+                seen = set()
+                unique = []
+                for s in cleaned:
+                    if s.lower() not in seen:
+                        seen.add(s.lower())
+                        unique.append(s)
+                edu["degree"] = " | ".join(unique) if unique else degree
+
         return tailored, overwrites
 
     # ------------------------------------------------------------------
@@ -336,12 +358,15 @@ class IntegrityGuard:
         if report.hallucinated_experience:
             return "needs_retry"
 
+        # Persistent count mismatch after re-injection means data was lost
+        if report.experience_count_mismatch:
+            return "needs_retry"
+
         has_any_fix = (
             report.immutable_overwrites
             or report.hallucinated_projects
             or report.missing_experience_reinjected
             or report.project_cap_enforced
-            or report.experience_count_mismatch
         )
 
         if has_any_fix:

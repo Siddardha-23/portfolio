@@ -261,6 +261,45 @@ def verify_token():
     return jsonify({'email': current_email, 'valid': True}), 200
 
 
+@auth_bp.route('/validate-password', methods=['POST'])
+def validate_password():
+    """Real-time password validation for UX (dodging button).
+    Returns whether the password matches, without logging the user in.
+    Strictly rate-limited to prevent brute force.
+    """
+    try:
+        client_ip = get_client_ip(request)
+        rate_limiter = get_rate_limiter()
+        if rate_limiter.is_rate_limited(f"validate_pw:{client_ip}", max_requests=30, window_seconds=60):
+            return jsonify({'error': 'Too many attempts'}), 429
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'valid': False}), 200
+
+        email = InputSanitizer.sanitize_email(data.get('email', ''))
+        password = data.get('password', '').strip()
+
+        if not email or not password:
+            return jsonify({'valid': False}), 200
+
+        if InputSanitizer.check_nosql_injection(data.get('email', '')):
+            return jsonify({'valid': False}), 200
+
+        db = DBConnect().get_db()
+        user = db.users.find_one({'email': email})
+
+        if not user:
+            return jsonify({'valid': False}), 200
+
+        is_valid = User.verify_password(password, user['password_hash'])
+        return jsonify({'valid': is_valid}), 200
+
+    except Exception as e:
+        logger.error(f"Validate-password error: {e}")
+        return jsonify({'valid': False}), 200
+
+
 @auth_bp.route('/check-user', methods=['POST'])
 def check_user():
     """Check if a user exists by fingerprint hash for welcome-back UX"""

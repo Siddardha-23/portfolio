@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { apiService } from '@/lib/api';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -201,6 +202,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [role, setRole] = useState('');
   const [sector, setSector] = useState('');
   const [error, setError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [welcomeBack, setWelcomeBack] = useState<string | null>(null);
   const [fadeIn, setFadeIn] = useState(false);
@@ -208,11 +210,12 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [news, setNews] = useState<NewsStory[]>(FALLBACK_NEWS);
 
-  // Dodging button state
+  // Real-time password validation + dodging button
+  const [passwordValid, setPasswordValid] = useState<boolean | null>(null); // null = not checked yet
   const [dodgeCount, setDodgeCount] = useState(0);
   const [dodgeOffset, setDodgeOffset] = useState({ x: 0, y: 0 });
-  const [loginFailed, setLoginFailed] = useState(false);
-  const maxDodges = 4;
+  const maxDodges = 5;
+  const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Typing effect
   const typedTitle = useTypingEffect(title || 'Welcome', 80);
@@ -260,20 +263,40 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Reset dodge when password changes
+  // Real-time password validation with debounce
   useEffect(() => {
+    // Reset dodge state on any password change
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0 });
-    setLoginFailed(false);
-  }, [password]);
 
+    if (activeTab !== 'login' || !email || !password || password.length < 3) {
+      setPasswordValid(null);
+      return;
+    }
+
+    if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
+    validateTimerRef.current = setTimeout(async () => {
+      try {
+        const resp = await apiService.validatePassword(email, password);
+        if (resp.data) setPasswordValid(resp.data.valid);
+      } catch {
+        setPasswordValid(null);
+      }
+    }, 500); // 500ms debounce
+
+    return () => {
+      if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
+    };
+  }, [password, email, activeTab]);
+
+  // Dodging button: dodges when password is explicitly invalid
   const handleButtonHover = useCallback(() => {
-    if (!loginFailed || dodgeCount >= maxDodges) return;
-    const x = (Math.random() - 0.5) * 200;
-    const y = (Math.random() - 0.5) * 80;
+    if (passwordValid !== false || dodgeCount >= maxDodges) return;
+    const x = (Math.random() - 0.5) * 220;
+    const y = (Math.random() - 0.5) * 100;
     setDodgeOffset({ x, y });
     setDodgeCount(prev => prev + 1);
-  }, [loginFailed, dodgeCount]);
+  }, [passwordValid, dodgeCount]);
 
   if (isLoading) {
     return (
@@ -301,9 +324,6 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     setSubmitting(false);
     if (result.error) {
       setError(result.error);
-      setLoginFailed(true);
-      setDodgeCount(0);
-      setDodgeOffset({ x: 0, y: 0 });
     }
   };
 
@@ -336,6 +356,14 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     setSubmitting(false);
     if (result.error) {
       setError(result.error);
+    } else {
+      // Registration successful — switch to login tab
+      setSuccessMsg('Account created! Please log in with your credentials.');
+      setError('');
+      setConfirmPassword('');
+      setRole('');
+      setSector('');
+      setActiveTab('login');
     }
   };
 
@@ -350,7 +378,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     'w-full pl-4 pr-10 py-2.5 bg-gray-800/80 border border-gray-700/80 rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-pink-500/50 focus:border-pink-500/50 transition-all duration-200 appearance-none cursor-pointer';
   const labelClasses = 'block text-sm font-medium text-gray-300 mb-1.5';
 
-  const dodgeButtonText = loginFailed
+  const dodgeButtonText = passwordValid === false
     ? dodgeCount >= maxDodges
       ? 'Fine, try again...'
       : 'Login'
@@ -483,7 +511,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                     type="button"
                     onClick={() => {
                       setActiveTab('login');
-                      setError('');
+                      setError(''); setSuccessMsg('');
                     }}
                     className={`flex-1 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
                       activeTab === 'login'
@@ -497,7 +525,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                     type="button"
                     onClick={() => {
                       setActiveTab('register');
-                      setError('');
+                      setError(''); setSuccessMsg('');
                     }}
                     className={`flex-1 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
                       activeTab === 'register'
@@ -508,6 +536,16 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                     Create Account
                   </button>
                 </div>
+
+                {/* Success banner */}
+                {successMsg && (
+                  <div className="mb-5 px-4 py-3 bg-emerald-900/20 border border-emerald-500/30 rounded-lg flex items-start gap-2">
+                    <svg className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-emerald-300 text-sm">{successMsg}</p>
+                  </div>
+                )}
 
                 {/* Error banner */}
                 {error && (
@@ -559,6 +597,22 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
+                      {/* Real-time validation indicator */}
+                      {password.length >= 3 && passwordValid !== null && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          {passwordValid ? (
+                            <>
+                              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                              <span className="text-xs text-emerald-400">Password correct</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5 text-pink-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                              <span className="text-xs text-pink-400">Incorrect password</span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Dodging login button */}

@@ -119,19 +119,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: response.error };
       }
 
-      if (response.data) {
-        // Token is already set by apiService.register
-        const profileResponse = await apiService.getProfile();
-        if (profileResponse.data) {
-          setUser({
-            email: profileResponse.data.email,
-            role: profileResponse.data.role,
-            sector: profileResponse.data.sector,
-          });
-        }
-      }
+      // Don't auto-login — clear any token set by the API call
+      // and let the user log in explicitly
+      apiService.logout();
 
-      return {};
+      return { success: true };
     } catch {
       return { error: 'Registration failed. Please try again.' };
     }

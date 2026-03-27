@@ -182,6 +182,13 @@ class ApiService {
     });
   }
 
+  async validatePassword(email: string, password: string) {
+    return this.request<{ valid: boolean }>('/auth/validate-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
   // ============================================
   // Visitor info endpoints (/api/info)
   // ============================================

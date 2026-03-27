@@ -161,11 +161,25 @@ class ApiService {
   async getProfile() {
     return this.request<{
       email: string;
+      name?: string;
       role?: string;
       sector?: string;
       created_at?: string;
     }>('/auth/profile', {
       method: 'GET',
+    });
+  }
+
+  async updateProfile(data: { name?: string; role?: string; sector?: string }) {
+    return this.request<{
+      email: string;
+      name?: string;
+      role?: string;
+      sector?: string;
+      created_at?: string;
+    }>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
     });
   }
 

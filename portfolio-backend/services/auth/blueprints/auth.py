@@ -243,6 +243,7 @@ def get_profile():
         # Don't expose sensitive fields
         return jsonify({
             'email': user['email'],
+            'name': user.get('name'),
             'role': user.get('role'),
             'sector': user.get('sector'),
             'created_at': user.get('created_at').isoformat() if user.get('created_at') else None
@@ -250,6 +251,53 @@ def get_profile():
 
     except Exception as e:
         logger.error(f"Profile error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@auth_bp.route('/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    """Update current user profile"""
+    try:
+        current_email = get_jwt_identity()
+        data = request.get_json()
+
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        db = DBConnect().get_db()
+        user = db.users.find_one({'email': current_email})
+
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+
+        update_fields = {}
+        for field in ('name', 'role', 'sector'):
+            if field in data:
+                value = data[field]
+                if value is not None:
+                    if InputSanitizer.check_nosql_injection(str(value)):
+                        return jsonify({'error': 'Invalid input'}), 400
+                    update_fields[field] = str(value).strip()[:200]
+                else:
+                    update_fields[field] = None
+
+        if not update_fields:
+            return jsonify({'error': 'No valid fields to update'}), 400
+
+        db.users.update_one({'_id': user['_id']}, {'$set': update_fields})
+
+        updated = db.users.find_one({'_id': user['_id']})
+        return jsonify({
+            'email': updated['email'],
+            'name': updated.get('name'),
+            'role': updated.get('role'),
+            'sector': updated.get('sector'),
+            'created_at': updated.get('created_at').isoformat() if updated.get('created_at') else None
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Update profile error: {e}")
         return jsonify({'error': 'Internal server error'}), 500
 
 

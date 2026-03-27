@@ -1,8 +1,9 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { apiService } from '@/lib/api';
 
 export interface AuthUser {
   email: string;
+  name?: string;
   role?: string;
   sector?: string;
 }
@@ -26,6 +27,7 @@ interface AuthContextType {
     fingerprint_hash?: string
   ) => Promise<{ error?: string }>;
   checkUser: (fingerprint_hash: string) => Promise<{ exists: boolean; email?: string } | null>;
+  updateProfile: (data: { name?: string; role?: string; sector?: string }) => Promise<{ error?: string }>;
   logout: () => void;
 }
 
@@ -53,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (profileResponse.data) {
             setUser({
               email: profileResponse.data.email,
+              name: profileResponse.data.name,
               role: profileResponse.data.role,
               sector: profileResponse.data.sector,
             });
@@ -86,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profileResponse.data) {
           setUser({
             email: profileResponse.data.email,
+            name: profileResponse.data.name,
             role: profileResponse.data.role,
             sector: profileResponse.data.sector,
           });
@@ -141,6 +145,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateProfile = useCallback(async (data: { name?: string; role?: string; sector?: string }) => {
+    try {
+      const response = await apiService.updateProfile(data);
+      if (response.error) {
+        return { error: response.error };
+      }
+      if (response.data) {
+        setUser({
+          email: response.data.email,
+          name: response.data.name,
+          role: response.data.role,
+          sector: response.data.sector,
+        });
+      }
+      return {};
+    } catch {
+      return { error: 'Failed to update profile.' };
+    }
+  }, []);
+
   const logout = () => {
     apiService.logout();
     setUser(null);
@@ -155,6 +179,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         checkUser,
+        updateProfile,
         logout,
       }}
     >

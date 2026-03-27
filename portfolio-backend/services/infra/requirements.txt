@@ -1,2 +1,2 @@
 # Service-specific dependencies (common deps provided by Lambda Layer)
-aws-xray-sdk>=2.14.0
+# aws-xray-sdk is in the shared layer

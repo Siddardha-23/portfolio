@@ -1,9 +1,7 @@
-import boto3
 import logging
 import os
 import re
 from datetime import datetime
-from botocore.exceptions import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +21,7 @@ class ResumeStorageService:
     @property
     def client(self):
         if self._client is None:
+            import boto3
             self._client = boto3.client('s3')
         return self._client
 
@@ -58,7 +57,7 @@ class ResumeStorageService:
 
             logger.info("Uploaded base resume for user %s: %s", user_id, s3_key)
             return s3_key
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to upload base resume for user %s: %s", user_id, e)
             raise
         except Exception as e:
@@ -95,7 +94,7 @@ class ResumeStorageService:
 
             logger.info("Uploaded generated resume for user %s: %s", user_id, s3_key)
             return s3_key
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to upload generated resume for user %s: %s", user_id, e)
             raise
         except Exception as e:
@@ -146,7 +145,7 @@ class ResumeStorageService:
             resumes.sort(key=lambda r: r['uploaded_at'] or '', reverse=True)
             logger.info("Listed %d base resumes for user %s", len(resumes), user_id)
             return resumes
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to list base resumes for user %s: %s", user_id, e)
             raise
         except Exception as e:
@@ -201,7 +200,7 @@ class ResumeStorageService:
             resumes.sort(key=lambda r: r['generated_at'] or '', reverse=True)
             logger.info("Listed %d generated resumes for user %s", len(resumes), user_id)
             return resumes
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to list generated resumes for user %s: %s", user_id, e)
             raise
         except Exception as e:
@@ -228,7 +227,7 @@ class ResumeStorageService:
             data = response['Body'].read()
             logger.info("Downloaded resume: %s (%d bytes)", s3_key, len(data))
             return data
-        except ClientError as e:
+        except Exception as e:
             if e.response['Error']['Code'] == 'NoSuchKey':
                 logger.error("Resume not found: %s", s3_key)
             else:
@@ -254,7 +253,7 @@ class ResumeStorageService:
             self.client.delete_object(Bucket=self.bucket, Key=s3_key)
             logger.info("Deleted resume: %s", s3_key)
             return True
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to delete resume %s: %s", s3_key, e)
             raise
         except Exception as e:
@@ -282,7 +281,7 @@ class ResumeStorageService:
             )
             logger.info("Generated presigned URL for %s (expiry=%ds)", s3_key, expiry)
             return url
-        except ClientError as e:
+        except Exception as e:
             logger.error("Failed to generate presigned URL for %s: %s", s3_key, e)
             raise
         except Exception as e:

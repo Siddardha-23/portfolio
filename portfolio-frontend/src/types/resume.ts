@@ -74,9 +74,11 @@ export interface AIScreenerScores {
 export interface ATSScores {
   overall: number;
   keyword_match: number;
+  keyword_frequency: number;
   skills_alignment: number;
   experience_relevance: number;
   quantifiable_impact: number;
+  bullet_quality: number;
   format_score: number;
   section_completeness: number;
   scanners: ATSScannerScores;

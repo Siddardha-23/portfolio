@@ -294,9 +294,10 @@ class IntegrityGuard:
 
         tailored["experience"] = rebuilt_exp
 
-        # --- Projects (handled separately in enforce_project_rules for the
-        # zero-projects case; here we only remove hallucinated projects when
-        # original had projects) ---
+        # --- Projects: remove AI-hallucinated projects when original had projects.
+        # ContentAugmenter adds generated projects AFTER this guard runs
+        # (guard runs inside ResumeTailor.tailor(), augmenter runs after),
+        # so augmenter-generated projects are never stripped here. ---
         hallucinated_proj: List[Dict] = []
         orig_projects = original.get("projects", [])
         if orig_projects:
@@ -323,9 +324,9 @@ class IntegrityGuard:
     ) -> Tuple[Dict[str, Any], bool]:
         """Enforce project generation limits.
 
-        - If original has projects: tailored must be a subset (already filtered
-          in detect_hallucinations). Re-inject any dropped originals.
-        - If original has NO projects: allow exactly 1 generated project, cap rest.
+        - If original has projects: re-inject any dropped originals.
+        - Universal cap: max 3 total projects (original + generated).
+          When trimming, originals are kept first, generated are trimmed.
 
         Returns (tailored, cap_enforced).
         """
@@ -339,13 +340,20 @@ class IntegrityGuard:
             for op in orig_projects:
                 if _proj_key(op) not in tail_proj_keys:
                     tail_projects.append(copy.deepcopy(op))
-            tailored["projects"] = tail_projects
-        else:
-            # Original had zero projects — allow at most 1 generated
-            if len(tail_projects) > 1:
-                tailored["projects"] = tail_projects[:1]
-                cap_enforced = True
 
+        # Universal cap: max 3 total projects (original + generated)
+        if len(tail_projects) > 3:
+            if orig_projects:
+                # Keep originals first, trim generated
+                orig_keys = {_proj_key(p) for p in orig_projects}
+                originals = [p for p in tail_projects if _proj_key(p) in orig_keys]
+                generated = [p for p in tail_projects if _proj_key(p) not in orig_keys]
+                tail_projects = originals + generated[:max(0, 3 - len(originals))]
+            else:
+                tail_projects = tail_projects[:3]
+            cap_enforced = True
+
+        tailored["projects"] = tail_projects
         return tailored, cap_enforced
 
     # ------------------------------------------------------------------

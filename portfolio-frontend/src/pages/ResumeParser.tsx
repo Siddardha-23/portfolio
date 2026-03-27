@@ -120,9 +120,11 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
           <p className="text-sm font-semibold text-gray-200 mb-4">Score Breakdown</p>
           <div className="space-y-3">
             <ScoreBar label="Keyword Match" score={scores.keyword_match} />
+            <ScoreBar label="Keyword Frequency" score={scores.keyword_frequency} />
             <ScoreBar label="Skills Alignment" score={scores.skills_alignment} />
             <ScoreBar label="Experience Relevance" score={scores.experience_relevance} />
             <ScoreBar label="Quantifiable Impact" score={scores.quantifiable_impact} />
+            <ScoreBar label="Bullet Quality" score={scores.bullet_quality} />
             <ScoreBar label="Format Score" score={scores.format_score} />
             <ScoreBar label="Section Completeness" score={scores.section_completeness} />
           </div>

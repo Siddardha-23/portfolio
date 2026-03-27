@@ -201,21 +201,19 @@ class TestProjectGenerator:
         assert result is not None
         assert len(result["bullets"]) == 3
 
-    def test_generate_skipped_when_original_has_projects(
+    def test_generate_allowed_regardless_of_existing_projects(
         self, original_resume, jd_analysis, monkeypatch
     ):
-        """ProjectGenerator.generate should not be called when original has projects.
+        """ProjectGenerator.generate can be called even when original has projects.
 
-        This test verifies the service-level guard: the tailor job in
-        resume_service only calls generate() when structured["projects"] == [].
-        Here we verify the guard condition directly.
+        ContentAugmenter calls generate() whenever project count < 3 and
+        page fill is below threshold, regardless of whether the original
+        resume already has projects.
         """
-        # original_resume has 1 project — the service skips generator
+        # original_resume has 1 project — augmenter can still generate more
         assert len(original_resume.get("projects", [])) > 0
-        # No Gemini call made — if we called generate() it would fail without API key.
-        # The integration guard is: `if not structured.get("projects")`
-        # We verify the condition evaluates correctly:
-        assert not (not original_resume.get("projects"))
+        # The generator itself has no guard — it generates unconditionally.
+        # The ContentAugmenter controls when to call it based on project count.
 
     def test_generate_allowed_when_no_projects(self, original_resume_no_projects):
         """Service condition allows generation when projects is empty list."""

@@ -385,7 +385,12 @@ class ResumeRenderer:
         avail = self._AVAIL_H
         slots = self._count_spacing_slots(tailored)
 
-        # --- Pass 1: measure with minimum spacing ---
+        # --- Pass 1: measure with minimum spacing at the base render font size (10pt) ---
+        # Always render at 10pt (not the 11pt default) so measurement matches actual output.
+        body_size = 10.0
+        lh = 3.8
+        lh_s = 3.6
+
         _, min_height = self._render_pdf(
             tailored,
             section_gap=self._MIN_SECTION_GAP,
@@ -393,14 +398,11 @@ class ResumeRenderer:
             post_header=self._MIN_POST_HEADER,
             header_gap=self._MIN_HEADER_GAP,
             skill_gap=self._MIN_SKILL_GAP,
+            body_size=body_size, lh=lh, lh_s=lh_s,
             measure_only=True,
         )
 
         # --- Overflow protection: shrink if content exceeds one page at min spacing ---
-        body_size = 10.0
-        lh = 3.8
-        lh_s = 3.6
-
         if min_height > avail:
             # Try smaller font first
             body_size = 9.5
@@ -778,7 +780,7 @@ class ResumeRenderer:
 
     @staticmethod
     def build_filename(tailored: Dict[str, Any], jd_analysis: Dict[str, Any], ext: str) -> str:
-        """Build filename: Firstname_Lastname_JobTitle_YYYY-MM-DD.ext"""
+        """Build ATS-friendly filename: Firstname_Lastname_JobTitle_Resume.ext"""
         contact = tailored.get("contact", {})
         name = contact.get("name", "").strip()
         parts = name.split()
@@ -791,8 +793,6 @@ class ResumeRenderer:
             s = re.sub(r"[^a-zA-Z0-9]+", "_", s).strip("_")
             return s[:30]
 
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        segments = [clean(first), clean(last), clean(job_title), date_str]
+        segments = [clean(first), clean(last), clean(job_title), "Resume"]
         segments = [s for s in segments if s]
         return "_".join(segments) + f".{ext}"

@@ -162,15 +162,15 @@ class TestProjectGenerationLimits:
         assert len(corrected["projects"]) == 1
         assert not report.project_cap_enforced
 
-    def test_zero_original_caps_at_one(self, original_resume_no_projects, excess_generated_projects):
+    def test_zero_original_caps_at_three(self, original_resume_no_projects, excess_generated_projects):
         guard = IntegrityGuard()
         corrected, report = guard.enforce(
             original_resume_no_projects, excess_generated_projects
         )
 
-        assert len(corrected["projects"]) == 1
-        assert corrected["projects"][0]["name"] == "GenProject1"
-        assert report.project_cap_enforced
+        # 3 projects is within the cap of 3 — no enforcement needed
+        assert len(corrected["projects"]) == 3
+        assert not report.project_cap_enforced
 
     def test_original_projects_preserved_as_subset(self, original_resume, hallucinated_project):
         guard = IntegrityGuard()
@@ -284,13 +284,28 @@ class TestSeverityClassification:
         _, report = guard.enforce(original_resume, dropped_experience)
         assert report.severity == "auto_fixed"
 
-    def test_auto_fixed_for_project_cap(
+    def test_clean_for_three_generated_projects(
         self, original_resume_no_projects, excess_generated_projects
     ):
         guard = IntegrityGuard()
         _, report = guard.enforce(
             original_resume_no_projects, excess_generated_projects
         )
+        # 3 projects is within the new cap of 3 — should be clean
+        assert report.severity == "clean"
+
+    def test_auto_fixed_for_project_cap_exceeded(
+        self, original_resume_no_projects
+    ):
+        tailored = copy.deepcopy(original_resume_no_projects)
+        tailored["projects"] = [
+            {"name": f"GenProject{i}", "dates": "", "bullets": ["..."], "tech": "Python"}
+            for i in range(4)
+        ]
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume_no_projects, tailored)
+        assert len(corrected["projects"]) == 3
+        assert report.project_cap_enforced
         assert report.severity == "auto_fixed"
 
 
@@ -358,3 +373,190 @@ class TestEdgeCases:
 
         assert corrected["experience"][0]["company"] == "Acme Corp"
         assert len(corrected["experience"]) == 2
+
+
+# ======================================================================
+# 8. Mixed Original + Generated Projects (Pipeline Behavior)
+# ======================================================================
+
+class TestMixedOriginalAndGeneratedProjects:
+    """Tests verifying project behavior in different pipeline scenarios.
+
+    The IntegrityGuard runs INSIDE ResumeTailor.tailor() — BEFORE ContentAugmenter.
+    During the tailor phase, the guard correctly strips non-original projects
+    (Gemini should not fabricate projects). ContentAugmenter then generates
+    projects AFTER the guard, so those are never stripped.
+
+    These tests verify:
+    1. Guard correctly strips hallucinated projects during tailor phase
+    2. Guard preserves originals and enforces universal cap
+    3. For zero-original cases, generated projects pass through the cap
+    """
+
+    def test_guard_strips_non_original_projects_during_tailor(self, original_resume):
+        """Guard strips projects Gemini fabricated (not in original) — correct tailor behavior."""
+        tailored = copy.deepcopy(original_resume)
+        tailored["projects"].extend([
+            {"name": "FabricatedByAI", "dates": "", "bullets": ["..."], "tech": "Go"},
+        ])
+
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume, tailored)
+
+        # During tailor phase, non-original projects are stripped as hallucinated
+        assert len(corrected["projects"]) == 1
+        assert corrected["projects"][0]["name"] == "CloudDeploy"
+        assert len(report.hallucinated_projects) == 1
+
+    def test_zero_original_plus_three_generated_all_survive(
+        self, original_resume_no_projects, excess_generated_projects
+    ):
+        """0 original + 3 generated = all survive (within cap)."""
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(
+            original_resume_no_projects, excess_generated_projects
+        )
+
+        assert len(corrected["projects"]) == 3
+        assert not report.project_cap_enforced
+
+    def test_zero_original_cap_at_three(self, original_resume_no_projects):
+        """0 original + 4 generated = capped at 3."""
+        tailored = copy.deepcopy(original_resume_no_projects)
+        tailored["projects"] = [
+            {"name": f"GenProject{i}", "dates": "", "bullets": ["..."], "tech": "Python"}
+            for i in range(4)
+        ]
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume_no_projects, tailored)
+
+        assert len(corrected["projects"]) == 3
+        assert report.project_cap_enforced
+
+    def test_dropped_original_reinjected(self, original_resume):
+        """AI drops original project — guard re-injects it."""
+        tailored = copy.deepcopy(original_resume)
+        tailored["projects"] = []
+
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume, tailored)
+
+        assert len(corrected["projects"]) == 1
+        assert corrected["projects"][0]["name"] == "CloudDeploy"
+
+    def test_two_originals_both_preserved(self, original_resume_two_projects):
+        """Both original projects survive tailoring."""
+        tailored = copy.deepcopy(original_resume_two_projects)
+
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume_two_projects, tailored)
+
+        assert len(corrected["projects"]) == 2
+        names = [p["name"] for p in corrected["projects"]]
+        assert "CloudDeploy" in names
+        assert "LogAggregator" in names
+
+    def test_augmenter_generated_projects_not_affected_by_guard(
+        self, original_resume_no_projects
+    ):
+        """Simulates full pipeline: guard runs on tailor output (0 projects),
+        then augmenter would add projects after. Guard should leave empty list
+        intact for augmenter to populate."""
+        tailored = copy.deepcopy(original_resume_no_projects)
+        # Tailor returns empty projects (as instructed by prompt)
+        tailored["projects"] = []
+
+        guard = IntegrityGuard()
+        corrected, report = guard.enforce(original_resume_no_projects, tailored)
+
+        # Empty list preserved — augmenter will add projects after this
+        assert corrected["projects"] == []
+        assert report.severity == "clean"
+
+
+# ======================================================================
+# 9. Augmenter: _augment_projects no longer blocked by fill
+# ======================================================================
+
+class TestAugmenterProjectGeneration:
+    """Verify _augment_projects generates projects regardless of fill level.
+
+    These tests mock the renderer so no real PDF rendering is needed, and
+    mock ProjectGenerator to return deterministic projects without Gemini.
+    """
+
+    def _make_augmenter(self, fill_ratio=0.85):
+        """Create a ContentAugmenter with a mocked renderer returning a fixed fill."""
+        from unittest.mock import MagicMock
+        renderer = MagicMock()
+        # _render_pdf returns (None, content_height_mm) in measure_only mode
+        # fill = content_h / _AVAIL_H, so content_h = fill * _AVAIL_H
+        avail_h = 274.14  # matches ResumeRenderer._AVAIL_H
+        renderer._render_pdf.return_value = (None, fill_ratio * avail_h)
+        renderer._AVAIL_H = avail_h
+        renderer._MIN_SECTION_GAP = 0.5
+        renderer._MIN_ENTRY_GAP = 0.5
+        renderer._MIN_POST_HEADER = 0.5
+        renderer._MIN_HEADER_GAP = 0.5
+        renderer._MIN_SKILL_GAP = 0.0
+
+        project_gen = MagicMock()
+        call_count = {"n": 0}
+        # Each project gets unique tech to avoid dedup (>70% tech overlap check)
+        tech_variants = ["Python, AWS", "Go, Docker", "React, Node.js", "Kafka, Redis"]
+        def _gen_side_effect(original, jd_analysis):
+            call_count["n"] += 1
+            return {
+                "name": f"GenProject{call_count['n']}",
+                "dates": "",
+                "bullets": [f"Built feature {call_count['n']}"],
+                "tech": tech_variants[(call_count["n"] - 1) % len(tech_variants)],
+            }
+        project_gen.generate.side_effect = _gen_side_effect
+
+        from services.content_augmenter import ContentAugmenter
+        augmenter = ContentAugmenter(renderer, project_gen)
+        return augmenter, project_gen
+
+    def test_augment_projects_generates_when_fill_high_but_projects_low(
+        self, original_resume
+    ):
+        """Even at 85% fill (above old 80% threshold), projects are generated
+        because the inner fill check was removed."""
+        augmenter, project_gen = self._make_augmenter(fill_ratio=0.85)
+        tailored = copy.deepcopy(original_resume)
+        # original_resume has 1 project — should generate 2 more to reach 3
+        assert len(tailored["projects"]) == 1
+
+        jd_analysis = {"job_title": "SWE", "required_skills": ["Python"]}
+        result = augmenter._augment_projects(tailored, original_resume, jd_analysis)
+
+        assert len(result["projects"]) == 3
+        assert project_gen.generate.call_count == 2
+
+    def test_augment_projects_stops_at_max(self, original_resume_no_projects):
+        """Loop stops after reaching 3 projects."""
+        augmenter, project_gen = self._make_augmenter(fill_ratio=0.50)
+        tailored = copy.deepcopy(original_resume_no_projects)
+        assert len(tailored["projects"]) == 0
+
+        jd_analysis = {"job_title": "SWE", "required_skills": ["Python"]}
+        result = augmenter._augment_projects(tailored, original_resume_no_projects, jd_analysis)
+
+        assert len(result["projects"]) == 3
+        assert project_gen.generate.call_count == 3
+
+    def test_augment_projects_no_gen_when_already_at_cap(self, original_resume):
+        """No generation calls when already at 3 projects."""
+        augmenter, project_gen = self._make_augmenter(fill_ratio=0.60)
+        tailored = copy.deepcopy(original_resume)
+        tailored["projects"] = [
+            {"name": f"Proj{i}", "dates": "", "bullets": ["..."], "tech": "Go"}
+            for i in range(3)
+        ]
+
+        jd_analysis = {"job_title": "SWE", "required_skills": ["Python"]}
+        result = augmenter._augment_projects(tailored, original_resume, jd_analysis)
+
+        assert len(result["projects"]) == 3
+        assert project_gen.generate.call_count == 0

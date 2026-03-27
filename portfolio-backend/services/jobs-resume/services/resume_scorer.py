@@ -291,12 +291,13 @@ class ResumeScorer:
         """Merge deterministic and AI scores into the full ATS_SCORES_SCHEMA.
 
         Overall score weights:
-          keyword_match (det):       20%
+          keyword_match (det):       25%
           keyword_frequency (det):    5%
           skills_alignment (det):    20%
-          experience_relevance (ai): 20%
-          ai_screener.overall (ai):  15%
+          experience_relevance (ai): 15%
+          ai_screener.overall (ai):  10%
           quantifiable_impact (det): 10%
+          bullet_quality (det):       5%
           format_score (det):         5%
           section_completeness (det): 5%
         """
@@ -305,15 +306,17 @@ class ResumeScorer:
         scanners = ai.get("scanners", {})
         experience_relevance = ai.get("experience_relevance", 70)
         ai_overall = ai_screener.get("overall", 70)
+        bullet_quality = det.get("impact_score_detail", 70)
 
         # Compute weighted overall
         overall = round(
-            det["keyword_match"] * 0.20
+            det["keyword_match"] * 0.25
             + det.get("keyword_frequency", 70) * 0.05
             + det["skills_alignment"] * 0.20
-            + experience_relevance * 0.20
-            + ai_overall * 0.15
+            + experience_relevance * 0.15
+            + ai_overall * 0.10
             + det["quantifiable_impact"] * 0.10
+            + bullet_quality * 0.05
             + det["format_score"] * 0.05
             + det["section_completeness"] * 0.05
         )
@@ -336,9 +339,11 @@ class ResumeScorer:
         combined = {
             "overall": max(0, min(100, overall)),
             "keyword_match": det["keyword_match"],
+            "keyword_frequency": det.get("keyword_frequency", 0),
             "skills_alignment": det["skills_alignment"],
             "experience_relevance": experience_relevance,
             "quantifiable_impact": det["quantifiable_impact"],
+            "bullet_quality": bullet_quality,
             "format_score": det["format_score"],
             "section_completeness": det["section_completeness"],
             "scanners": scanners,

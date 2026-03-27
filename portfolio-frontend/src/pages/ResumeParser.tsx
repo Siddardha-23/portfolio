@@ -250,15 +250,16 @@ function JDAnalysisCard({ jd, defaultOpen = true }: { jd: JDAnalysis; defaultOpe
 }
 
 // ─── Phase / Progress ───────────────────────────────────────────────────────
-function getTailorPhase(s: number): { text: string; step: number } {
-  if (s < 10) return { text: 'Analyzing job requirements...', step: 1 };
-  if (s < 30) return { text: 'Tailoring your resume...', step: 2 };
-  if (s < 60) return { text: 'Optimizing keywords...', step: 3 };
-  return { text: 'Almost done, finalizing...', step: 4 };
+function getPhaseInfo(analyzing: boolean, tailoring: boolean, elapsed: number): { text: string; step: number; total: number } {
+  if (analyzing) return { text: 'Extracting job requirements...', step: 1, total: 4 };
+  if (!tailoring) return { text: 'Processing...', step: 0, total: 4 };
+  if (elapsed < 15) return { text: 'Tailoring your resume...', step: 2, total: 4 };
+  if (elapsed < 40) return { text: 'Optimizing keywords and skills...', step: 3, total: 4 };
+  return { text: 'Finalizing tailored resume...', step: 4, total: 4 };
 }
 
-function ProgressCard({ tailoring, elapsed, onCancel }: { tailoring: boolean; elapsed: number; onCancel: () => void }) {
-  const phase = tailoring ? getTailorPhase(elapsed) : { text: 'Processing...', step: 0 };
+function ProgressCard({ analyzing, tailoring, elapsed, onCancel }: { analyzing?: boolean; tailoring: boolean; elapsed: number; onCancel: () => void }) {
+  const phase = getPhaseInfo(!!analyzing, tailoring, elapsed);
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
       <div className="flex flex-col items-center justify-center space-y-5">
@@ -630,6 +631,32 @@ function TailorTab() {
   useEffect(() => { checkResumes(); }, [checkResumes]);
   useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
 
+  // Auto-start ATS scoring when tailoring completes
+  const atsAutoTriggered = useRef(false);
+  useEffect(() => {
+    if (result && !result.ats_scores && !atsLoading && !atsAutoTriggered.current) {
+      atsAutoTriggered.current = true;
+      const t = setTimeout(() => {
+        const ctrl = new AbortController();
+        atsAbortRef.current = ctrl;
+        setAtsLoading(true);
+        apiService.fetchATSScores(result.tailored_resume, result.jd_analysis, ctrl.signal)
+          .then(r => {
+            if (ctrl.signal.aborted) return;
+            setAtsLoading(false);
+            if (r.data?.ats_scores) {
+              setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
+              updateRecordATS(r.data.ats_scores);
+              // Auto-switch to ATS tab so user sees the score
+              setActiveTab('ats');
+            }
+          })
+          .catch(() => setAtsLoading(false));
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [result, atsLoading, updateRecordATS]);
+
   // Save tailoring record to backend (fire-and-forget)
   const saveRecord = useCallback(async (
     jdAnalysisData: JDAnalysis,
@@ -661,51 +688,47 @@ function TailorTab() {
     } catch { /* silent */ }
   }, []);
 
-  const handleAnalyzeJD = useCallback(async () => {
+  // Combined analyze + tailor in one action (like Jobscan / Teal)
+  const handleTailoring = useCallback(async () => {
     if (!jdText.trim()) return;
-    setAnalyzingJD(true); setTailorError(''); setJdAnalysis(null); setResult(null);
-    const r = await apiService.extractJD(jdText.trim());
-    setAnalyzingJD(false);
-    if (r.error) { setTailorError(r.error); return; }
-    if (!r.data?.jd_analysis) { setTailorError('Failed to analyze job description.'); return; }
-    setJdAnalysis(r.data.jd_analysis);
-  }, [jdText]);
-
-  const handleTailor = useCallback(async () => {
-    if (!jdAnalysis) return;
     tailorAbortRef.current?.abort();
     const ctrl = new AbortController(); tailorAbortRef.current = ctrl;
-    setTailoring(true); setTailorElapsed(0); setTailorError('');
+
+    // Phase 1: Analyze JD
+    setAnalyzingJD(true); setTailorError(''); setJdAnalysis(null); setResult(null);
+    setTailorElapsed(0);
     tailorTimerRef.current = setInterval(() => setTailorElapsed(p => p + 1), 1000);
-    const r = await apiService.tailorResumeForParser(jdAnalysis, ctrl.signal);
-    if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); tailorTimerRef.current = null;
-    if (ctrl.signal.aborted) { setTailoring(false); setTailorElapsed(0); return; }
-    setTailoring(false); setTailorElapsed(0);
-    if (r.error) { setTailorError(r.error); return; }
-    if (r.data) {
-      setResult({ jd_analysis: jdAnalysis, tailored_resume: r.data.tailored_resume });
-      // Save analytics record in background
-      saveRecord(jdAnalysis, r.data.tailored_resume, jdText);
-      // Auto-generate PDF in background so it appears in "Tailored Resumes" tab
-      apiService.downloadTailoredResume(r.data.tailored_resume, jdAnalysis, 'pdf').catch(() => {});
+
+    const jdResp = await apiService.extractJD(jdText.trim());
+    if (ctrl.signal.aborted) { cleanup(); return; }
+    if (jdResp.error) { cleanup(); setTailorError(jdResp.error); return; }
+    if (!jdResp.data?.jd_analysis) { cleanup(); setTailorError('Failed to analyze job description.'); return; }
+
+    const analysis = jdResp.data.jd_analysis;
+    setJdAnalysis(analysis);
+    setAnalyzingJD(false);
+
+    // Phase 2: Tailor resume
+    setTailoring(true);
+    const tailorResp = await apiService.tailorResumeForParser(analysis, ctrl.signal);
+    if (ctrl.signal.aborted) { cleanup(); return; }
+
+    cleanup();
+    if (tailorResp.error) { setTailorError(tailorResp.error); return; }
+    if (tailorResp.data) {
+      setResult({ jd_analysis: analysis, tailored_resume: tailorResp.data.tailored_resume });
+      saveRecord(analysis, tailorResp.data.tailored_resume, jdText);
+      apiService.downloadTailoredResume(tailorResp.data.tailored_resume, analysis, 'pdf').catch(() => {});
     }
-  }, [jdAnalysis, jdText, saveRecord]);
+
+    function cleanup() {
+      if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
+      tailorTimerRef.current = null;
+      setAnalyzingJD(false); setTailoring(false); setTailorElapsed(0);
+    }
+  }, [jdText, saveRecord]);
 
   const handleCancel = useCallback(() => { tailorAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); tailorTimerRef.current = null; setTailoring(false); setTailorElapsed(0); }, []);
-
-  const handleATS = useCallback(async () => {
-    if (!result?.tailored_resume || !result?.jd_analysis) return;
-    atsAbortRef.current?.abort(); const ctrl = new AbortController(); atsAbortRef.current = ctrl;
-    setAtsLoading(true); setTailorError('');
-    const r = await apiService.fetchATSScores(result.tailored_resume, result.jd_analysis, ctrl.signal);
-    if (ctrl.signal.aborted) return; setAtsLoading(false);
-    if (r.error) { setTailorError('ATS scoring failed. Resume is still available for download.'); return; }
-    if (r.data?.ats_scores) {
-      setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
-      // Update record with ATS scores in background
-      updateRecordATS(r.data.ats_scores);
-    }
-  }, [result, updateRecordATS]);
 
   const handleDownload = useCallback(async (fmt: 'pdf' | 'docx') => {
     if (!result) return; setDownloading(fmt);
@@ -718,6 +741,7 @@ function TailorTab() {
   const handleStartNew = useCallback(() => {
     setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false);
     recordIdRef.current = null;
+    atsAutoTriggered.current = false;
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   }, []);
 
@@ -728,11 +752,11 @@ function TailorTab() {
     <div className="space-y-6">
       <ResumeDashboard onStartTailoring={() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })} />
 
-      {/* Step 2: Paste JD */}
+      {/* Step 2: Paste JD + Tailor (single action) */}
       <div ref={jdRef} className="scroll-mt-20">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-white">2</span></div>
-          <div><p className="text-sm font-semibold text-gray-200">Paste a Job Description</p><p className="text-xs text-gray-500">We'll extract the requirements and tailor your resume to match</p></div>
+          <div><p className="text-sm font-semibold text-gray-200">Paste a Job Description</p><p className="text-xs text-gray-500">We'll analyze requirements and tailor your resume automatically</p></div>
         </div>
         <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
           <div className="p-5 space-y-4">
@@ -742,17 +766,11 @@ function TailorTab() {
               <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">{jdText.length.toLocaleString()} / 10,000</span>
             </div>
             <div className="flex items-center gap-3">
-              {!result && !jdAnalysis ? (
-                analyzingJD ? (
-                  <div className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700">
-                    <span className="w-4 h-4 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Analyzing job description...
-                  </div>
-                ) : (
-                  <button onClick={handleAnalyzeJD} disabled={!jdText.trim()}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
-                    <MagnifyingGlassIcon className="w-4 h-4" />Analyze & Extract Requirements
-                  </button>
-                )
+              {!result && !analyzingJD && !tailoring ? (
+                <button onClick={handleTailoring} disabled={!jdText.trim()}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
+                  <SparklesIcon className="w-4 h-4" />Tailor My Resume
+                </button>
               ) : result ? (
                 <button onClick={handleStartNew} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 transition-all duration-200">
                   <ArrowPathIcon className="w-4 h-4" />Tailor for a Different Job
@@ -763,30 +781,12 @@ function TailorTab() {
         </div>
       </div>
 
-      {tailorError && <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4"><div className="flex items-start gap-3"><XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" /><p className="text-sm text-red-300">{tailorError}</p></div></div>}
-
-      {/* JD Analysis + Step 3 */}
-      {jdAnalysis && !result && (
-        <>
-          <JDAnalysisCard jd={jdAnalysis} />
-          <div className="flex items-center gap-3 mb-1">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-white">3</span></div>
-            <p className="text-sm font-semibold text-gray-200">{tailoring ? 'Tailoring your resume...' : 'Ready to tailor'}</p>
-          </div>
-          {tailoring ? (
-            <ProgressCard tailoring elapsed={tailorElapsed} onCancel={handleCancel} />
-          ) : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-              <div className="flex items-center gap-4">
-                <button onClick={handleTailor} className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200">
-                  <SparklesIcon className="w-4 h-4" />Tailor My Resume
-                </button>
-                <span className="text-xs text-gray-500">AI will rewrite your resume to match this job description</span>
-              </div>
-            </div>
-          )}
-        </>
+      {/* Progress — analyzing + tailoring combined */}
+      {(analyzingJD || tailoring) && (
+        <ProgressCard analyzing={analyzingJD} tailoring={tailoring} elapsed={tailorElapsed} onCancel={handleCancel} />
       )}
+
+      {tailorError && <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4"><div className="flex items-start gap-3"><XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" /><p className="text-sm text-red-300">{tailorError}</p></div></div>}
 
       {/* Results */}
       {result && (
@@ -809,10 +809,8 @@ function TailorTab() {
                 </div>
               </div>
             </div>
-            <div className="border-t border-emerald-500/10 bg-gray-900/40 px-5 py-3 flex items-center gap-3 flex-wrap">
+            <div className="border-t border-emerald-500/10 bg-gray-900/40 px-5 py-3 flex items-center gap-4 flex-wrap">
               <button onClick={handleStartNew} className="inline-flex items-center gap-1.5 text-xs font-medium text-pink-400 hover:text-pink-300 transition-colors"><ArrowPathIcon className="w-3.5 h-3.5" />Tailor for another job</button>
-              <span className="text-gray-700">|</span>
-              {!result.ats_scores && !atsLoading && <button onClick={handleATS} className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"><SparklesIcon className="w-3.5 h-3.5" />Run ATS compatibility check</button>}
               {result.ats_scores && <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400"><CheckCircleIcon className="w-3.5 h-3.5" />ATS Score: {result.ats_scores.overall}/100</span>}
               {atsLoading && <span className="inline-flex items-center gap-1.5 text-xs text-gray-400"><span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Computing ATS scores...</span>}
             </div>
@@ -822,21 +820,20 @@ function TailorTab() {
 
           {/* Tabs */}
           <div className="inline-flex rounded-xl bg-gray-800/60 p-1 border border-gray-800">
-            <button onClick={() => setActiveTab('preview')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${activeTab === 'preview' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>Resume Preview</button>
+            <button onClick={() => setActiveTab('preview')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${activeTab === 'preview' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>Your Tailored Resume</button>
             <button onClick={() => setActiveTab('ats')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${activeTab === 'ats' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>
-              ATS Analysis{atsLoading && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}{result.ats_scores && <span className={`text-[10px] font-bold tabular-nums ${result.ats_scores.overall >= 80 ? 'text-emerald-400' : result.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{result.ats_scores.overall}</span>}
+              ATS Score{atsLoading && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}{result.ats_scores && <span className={`ml-1 text-[10px] font-bold tabular-nums ${result.ats_scores.overall >= 80 ? 'text-emerald-400' : result.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{result.ats_scores.overall}/100</span>}
             </button>
           </div>
 
           {activeTab === 'preview' ? <ResumePreview resume={result.tailored_resume} /> : result.ats_scores ? <ATSPanel scores={result.ats_scores} /> : (
             <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
               <div className="flex flex-col items-center justify-center space-y-5">
-                {atsLoading ? (
-                  <><div className="relative"><div className="w-10 h-10 rounded-full border-2 border-gray-700" /><div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div><div className="text-center space-y-1.5"><p className="text-sm font-semibold text-gray-200">Computing ATS scores...</p><p className="text-xs text-gray-500">This takes 10-15 seconds. Your resume is ready for download above.</p></div></>
-                ) : (
-                  <><div className="w-12 h-12 rounded-full bg-violet-500/10 flex items-center justify-center"><SparklesIcon className="w-6 h-6 text-violet-400" /></div><div className="text-center space-y-1.5"><p className="text-sm font-semibold text-gray-200">Check ATS Compatibility</p><p className="text-xs text-gray-500 max-w-sm">See how your tailored resume scores against Workday, Greenhouse, Lever, and more.</p></div>
-                  <button onClick={handleATS} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"><SparklesIcon className="w-4 h-4" />Get ATS Scores</button></>
-                )}
+                <div className="relative"><div className="w-10 h-10 rounded-full border-2 border-gray-700" /><div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
+                <div className="text-center space-y-1.5">
+                  <p className="text-sm font-semibold text-gray-200">Analyzing ATS compatibility...</p>
+                  <p className="text-xs text-gray-500">Checking against Workday, Greenhouse, Lever, and more. Your resume is ready for download above.</p>
+                </div>
               </div>
             </div>
           )}

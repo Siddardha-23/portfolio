@@ -1,0 +1,2 @@
+# Service-specific dependencies (common deps provided by Lambda Layer)
+google-genai>=1.0.0

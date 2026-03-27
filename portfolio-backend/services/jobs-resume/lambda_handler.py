@@ -1,10 +1,13 @@
 """
-AWS Lambda Handler for Flask Application
+AWS Lambda Handler for Jobs-Resume Microservice
 
 Industry-standard cold start pattern:
   - All initialization at module level (Lambda INIT phase)
   - Handler is thin — just forwards to WSGI + sets metadata
   - Init duration measured once, matches CloudWatch's "Init Duration"
+
+This is the ONLY service that includes the async_job dispatch branch,
+used for Gemini-powered resume processing (JD extraction, tailoring, ATS scoring).
 
 Architecture:
     API Gateway (HTTP API) -> Lambda -> apig-wsgi -> Flask App -> MongoDB Atlas
@@ -45,14 +48,6 @@ logger.info(f"INIT phase complete: {_init_duration_ms}ms "
 # Cold start flag — True only for the first invocation
 _cold_start = True
 
-# Persist cold start info so /api/trace/pageload can report it later
-# (by the time a user clicks "trace", the container is already warm)
-_container_birth = {
-    'cold_start_init_ms': _init_duration_ms,
-    'first_request_time': None,
-    'container_id': None,
-}
-
 # ── END INIT PHASE ───────────────────────────────────────────────────
 
 
@@ -62,19 +57,15 @@ def handler(event, context):
 
     All heavy initialization already happened at module level (INIT phase).
     This handler just sets metadata and delegates to the WSGI handler.
+
+    Includes the async_job dispatch branch for Gemini-powered resume processing.
     """
     try:
         global _cold_start
         is_cold = _cold_start
+        _cold_start = False
 
-        # Record first invocation metadata
-        if is_cold:
-            _container_birth['first_request_time'] = _time.perf_counter()
-            _container_birth['container_id'] = (
-                getattr(context, 'aws_request_id', 'local') if context else 'local'
-            )
-
-        # Inject metadata for the /api/trace endpoints to read
+        # Inject metadata for observability
         builtins._lambda_meta = {
             'cold_start': is_cold,
             'init_duration_ms': _init_duration_ms if is_cold else 0,
@@ -85,8 +76,6 @@ def handler(event, context):
                 getattr(context, 'aws_request_id', 'local') if context else 'local'
             ),
         }
-        builtins._container_birth = _container_birth
-        _cold_start = False
 
         # ── Async job invocation (from Lambda invoking itself) ──
         if event.get("async_job"):

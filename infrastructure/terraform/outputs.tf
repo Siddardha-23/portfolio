@@ -24,15 +24,20 @@ output "cloudfront_domain_name" {
   value       = aws_cloudfront_distribution.frontend.domain_name
 }
 
-# Lambda
-output "lambda_function_name" {
-  description = "Lambda function name"
-  value       = aws_lambda_function.backend.function_name
+# Lambda Functions (microservices)
+output "lambda_function_names" {
+  description = "Lambda function names for all services"
+  value       = { for k, v in aws_lambda_function.service : k => v.function_name }
 }
 
-output "lambda_function_arn" {
-  description = "Lambda function ARN"
-  value       = aws_lambda_function.backend.arn
+output "lambda_function_arns" {
+  description = "Lambda function ARNs for all services"
+  value       = { for k, v in aws_lambda_function.service : k => v.arn }
+}
+
+output "lambda_layer_arn" {
+  description = "Shared Lambda Layer ARN"
+  value       = aws_lambda_layer_version.shared.arn
 }
 
 # API Gateway
@@ -62,29 +67,25 @@ output "deployment_summary" {
   description = "Deployment summary"
   value = <<-EOT
 
-    ╔══════════════════════════════════════════════════════════════╗
-    ║              PORTFOLIO DEPLOYMENT COMPLETE                     ║
-    ╠══════════════════════════════════════════════════════════════╣
-    ║                                                                ║
-    ║  🌐 Website:     https://${var.domain_name}
-    ║  🔗 API:         https://${var.domain_name}/api
-    ║  📊 Health:      https://${var.domain_name}/api/health
-    ║                                                                ║
-    ║  📦 S3 Bucket:   ${aws_s3_bucket.frontend.id}
-    ║  ⚡ Lambda:      ${aws_lambda_function.backend.function_name}
-    ║  🚀 CloudFront:  ${aws_cloudfront_distribution.frontend.id}
-    ║                                                                ║
-    ║  🔐 Secrets:     AWS SSM Parameter Store                       ║
-    ║     Path:        /${var.project_name}/${var.environment}/*
-    ║                                                                ║
-    ╚══════════════════════════════════════════════════════════════╝
+    Portfolio Deployment Complete (Microservices Architecture)
+    =========================================================
 
-    📋 Bitbucket Variables Needed:
-    ────────────────────────────────────────────────────────────────
-    S3_BUCKET_NAME=${aws_s3_bucket.frontend.id}
-    CLOUDFRONT_DISTRIBUTION_ID=${aws_cloudfront_distribution.frontend.id}
-    LAMBDA_FUNCTION_NAME=${aws_lambda_function.backend.function_name}
-    DOMAIN_NAME=${var.domain_name}
+    Website:     https://${var.domain_name}
+    API:         https://${var.domain_name}/api
+    Health:      https://${var.domain_name}/api/health
+
+    S3 Bucket:   ${aws_s3_bucket.frontend.id}
+    CloudFront:  ${aws_cloudfront_distribution.frontend.id}
+
+    Lambda Functions:
+    %{for k, v in aws_lambda_function.service~}
+      - ${v.function_name} (${local.services[k].description})
+    %{endfor~}
+
+    Shared Layer: ${aws_lambda_layer_version.shared.layer_name} v${aws_lambda_layer_version.shared.version}
+
+    Secrets: AWS SSM Parameter Store
+    Path:    /${var.project_name}/${var.environment}/*
 
   EOT
 }

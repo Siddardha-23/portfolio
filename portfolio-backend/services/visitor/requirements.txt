@@ -1,0 +1,2 @@
+# Service-specific dependencies (common deps provided by Lambda Layer)
+ddgs>=9.0.0

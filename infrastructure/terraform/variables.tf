@@ -77,17 +77,7 @@ variable "github_pat" {
   default     = ""
 }
 
-variable "lambda_memory_size" {
-  description = "Lambda function memory size in MB"
-  type        = number
-  default     = 512
-}
-
-variable "lambda_timeout" {
-  description = "Lambda function timeout in seconds"
-  type        = number
-  default     = 90
-}
+# Lambda memory/timeout are configured per-service in lambda.tf locals.services
 
 # =============================================================================
 # Feature Flags

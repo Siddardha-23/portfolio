@@ -5,7 +5,7 @@
 variable "aws_region" {
   description = "AWS region for deploying resources"
   type        = string
-  default     = "us-east-1"  # Required for CloudFront ACM certificates
+  default     = "us-east-1" # Required for CloudFront ACM certificates
 }
 
 variable "project_name" {
@@ -86,11 +86,21 @@ variable "github_pat" {
 variable "enable_waf" {
   description = "Enable AWS WAF for additional security"
   type        = bool
-  default     = false  # Set to true for additional security (adds cost)
+  default     = false # Set to true for additional security (adds cost)
 }
 
 variable "enable_logging" {
   description = "Enable CloudWatch logging for Lambda and API Gateway"
   type        = bool
   default     = true
+}
+
+# =============================================================================
+# Grafana (GCP-hosted) Integration
+# =============================================================================
+
+variable "enable_grafana" {
+  description = "Create IAM user with read-only CloudWatch/X-Ray access for Grafana on GCP"
+  type        = bool
+  default     = false
 }

@@ -55,3 +55,17 @@ enable_waf = false
 
 # Enable CloudWatch logging
 enable_logging = true
+
+# =============================================================================
+# Grafana on GCP (optional)
+# =============================================================================
+# Creates an IAM user with read-only CloudWatch/X-Ray access.
+# Credentials are used by the Grafana instance on GCP (see infrastructure/terraform-gcp/).
+#
+# 1. Set enable_grafana = true
+# 2. terraform apply
+# 3. terraform output -raw grafana_aws_access_key_id
+# 4. terraform output -raw grafana_aws_secret_access_key
+# 5. Use these in infrastructure/terraform-gcp/terraform.tfvars
+
+enable_grafana = false

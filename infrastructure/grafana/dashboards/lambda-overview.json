@@ -1,0 +1,307 @@
+{
+  "dashboard": {
+    "title": "Portfolio - Lambda Overview",
+    "description": "Metrics for all 5 portfolio Lambda microservices",
+    "tags": ["portfolio", "lambda", "aws"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "service",
+          "type": "custom",
+          "current": { "text": "All", "value": "$__all" },
+          "options": [
+            { "text": "All", "value": "$__all", "selected": true },
+            { "text": "visitor", "value": "portfolio-visitor" },
+            { "text": "auth", "value": "portfolio-auth" },
+            { "text": "jobs-resume", "value": "portfolio-jobs-resume" },
+            { "text": "chat", "value": "portfolio-chat" },
+            { "text": "infra", "value": "portfolio-infra" }
+          ],
+          "includeAll": true,
+          "multi": true,
+          "label": "Service"
+        },
+        {
+          "name": "region",
+          "type": "custom",
+          "current": { "text": "us-east-1", "value": "us-east-1" },
+          "options": [
+            { "text": "us-east-1", "value": "us-east-1", "selected": true }
+          ],
+          "label": "Region"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Invocations",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Invocations",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "fillOpacity": 15 }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Errors",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Errors",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "fillOpacity": 15 },
+            "color": { "mode": "fixed", "fixedColor": "red" }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Duration (p50 / p90 / p99)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Duration",
+            "statistics": ["p50"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p50"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Duration",
+            "statistics": ["p90"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p90"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Duration",
+            "statistics": ["p99"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Throttles",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Throttles",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "fillOpacity": 15 },
+            "color": { "mode": "fixed", "fixedColor": "orange" }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Concurrent Executions",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "ConcurrentExecutions",
+            "statistics": ["Maximum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "short" }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Cold Starts (Init Duration)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Duration",
+            "statistics": ["Maximum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "MaxDuration"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        },
+        "description": "Spikes here often correlate with cold starts. For precise Init Duration, use CloudWatch Logs Insights with: filter @type = 'REPORT' | stats avg(@initDuration) by bin(5m)"
+      },
+      {
+        "id": 7,
+        "title": "Error Rate (%)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Errors",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "3600",
+            "region": "$region",
+            "refId": "errors"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Invocations",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "3600",
+            "region": "$region",
+            "refId": "invocations"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1 },
+                { "color": "red", "value": 5 }
+              ]
+            }
+          }
+        },
+        "description": "Calculated as (Errors / Invocations) * 100. Configure math expression in Grafana: $errors / $invocations * 100"
+      },
+      {
+        "id": 8,
+        "title": "Total Invocations (24h)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 6, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Invocations",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "86400",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "short" }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Avg Duration (24h)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 12, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Duration",
+            "statistics": ["Average"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "86400",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Total Errors (24h)",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 18, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/Lambda",
+            "metricName": "Errors",
+            "statistics": ["Sum"],
+            "dimensions": { "FunctionName": ["$service"] },
+            "period": "86400",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "red", "value": 1 }
+              ]
+            }
+          }
+        }
+      }
+    ]
+  }
+}

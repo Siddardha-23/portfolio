@@ -50,6 +50,13 @@ infrastructure/terraform/*.tfplan
 infrastructure/terraform/tfplan
 infrastructure/terraform/placeholder.zip
 
+infrastructure/terraform-gcp/.terraform/
+infrastructure/terraform-gcp/*.tfstate
+infrastructure/terraform-gcp/*.tfstate.*
+infrastructure/terraform-gcp/terraform.tfvars
+infrastructure/terraform-gcp/*.tfplan
+infrastructure/terraform-gcp/tfplan
+
 # Python
 *.pyc
 package/

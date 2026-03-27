@@ -65,7 +65,7 @@ output "api_url" {
 # Summary
 output "deployment_summary" {
   description = "Deployment summary"
-  value = <<-EOT
+  value       = <<-EOT
 
     Portfolio Deployment Complete (Microservices Architecture)
     =========================================================
@@ -88,4 +88,17 @@ output "deployment_summary" {
     Path:    /${var.project_name}/${var.environment}/*
 
   EOT
+}
+
+# Grafana on GCP
+output "grafana_aws_access_key_id" {
+  description = "AWS access key ID for Grafana CloudWatch data source"
+  value       = var.enable_grafana ? aws_iam_access_key.grafana[0].id : ""
+  sensitive   = true
+}
+
+output "grafana_aws_secret_access_key" {
+  description = "AWS secret access key for Grafana CloudWatch data source"
+  value       = var.enable_grafana ? aws_iam_access_key.grafana[0].secret : ""
+  sensitive   = true
 }

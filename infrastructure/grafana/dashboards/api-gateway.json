@@ -1,0 +1,214 @@
+{
+  "dashboard": {
+    "title": "Portfolio - API Gateway",
+    "description": "HTTP API Gateway metrics and access log analysis",
+    "tags": ["portfolio", "api-gateway", "aws"],
+    "timezone": "browser",
+    "refresh": "1m",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "region",
+          "type": "custom",
+          "current": { "text": "us-east-1", "value": "us-east-1" },
+          "options": [
+            { "text": "us-east-1", "value": "us-east-1", "selected": true }
+          ],
+          "label": "Region"
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Count",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "Count",
+            "statistics": ["Sum"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "custom": { "fillOpacity": 20 }
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "4xx Errors",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "4xx",
+            "statistics": ["Sum"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "fixed", "fixedColor": "yellow" }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "5xx Errors",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "5xx",
+            "statistics": ["Sum"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "color": { "mode": "fixed", "fixedColor": "red" }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Latency (p50 / p90 / p99)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "Latency",
+            "statistics": ["p50"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p50"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "Latency",
+            "statistics": ["p90"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p90"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "Latency",
+            "statistics": ["p99"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Integration Latency (p50 / p90 / p99)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "IntegrationLatency",
+            "statistics": ["p50"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p50"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "IntegrationLatency",
+            "statistics": ["p90"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p90"
+          },
+          {
+            "datasource": { "type": "cloudwatch" },
+            "namespace": "AWS/ApiGateway",
+            "metricName": "IntegrationLatency",
+            "statistics": ["p99"],
+            "dimensions": { "ApiId": ["portfolio-api"] },
+            "period": "300",
+            "region": "$region",
+            "refId": "p99"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "ms" }
+        },
+        "description": "Time spent in Lambda (integration) vs total request latency. Large gap = API Gateway overhead."
+      },
+      {
+        "id": 6,
+        "title": "Requests by Route (Access Logs)",
+        "type": "table",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "queryMode": "Logs",
+            "logGroups": [
+              { "name": "/aws/apigateway/portfolio-api" }
+            ],
+            "expression": "stats count(*) as requests, count_distinct(ip) as unique_ips by routeKey | sort requests desc",
+            "region": "$region"
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Error Responses (Access Logs)",
+        "type": "table",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+        "targets": [
+          {
+            "datasource": { "type": "cloudwatch" },
+            "queryMode": "Logs",
+            "logGroups": [
+              { "name": "/aws/apigateway/portfolio-api" }
+            ],
+            "expression": "filter status >= 400 | stats count(*) as errors by routeKey, status | sort errors desc",
+            "region": "$region"
+          }
+        ]
+      }
+    ]
+  }
+}

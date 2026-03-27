@@ -1,0 +1,39 @@
+# =============================================================================
+# GCP Grafana - Variables Configuration
+# =============================================================================
+# Copy this file to terraform.tfvars and fill in your values.
+# NEVER commit terraform.tfvars to version control!
+#
+# Prerequisites:
+#   1. GCP project with billing enabled
+#   2. gcloud CLI authenticated: gcloud auth application-default login
+#   3. AWS credentials from the main Terraform:
+#      cd ../terraform
+#      terraform output -raw grafana_aws_access_key_id
+#      terraform output -raw grafana_aws_secret_access_key
+# =============================================================================
+
+# GCP Configuration
+gcp_project_id = "high-mountain-488306-m2"
+gcp_region     = "us-east1"
+gcp_zone       = "us-east1-b"
+
+# Project naming (should match AWS side)
+project_name = "portfolio"
+
+# =============================================================================
+# AWS Credentials (from main Terraform outputs)
+# =============================================================================
+# Run these in infrastructure/terraform/ to get the values:
+#   terraform output -raw grafana_aws_access_key_id
+#   terraform output -raw grafana_aws_secret_access_key
+
+aws_access_key_id     = ""
+aws_secret_access_key = ""
+aws_region            = "us-east-1"
+
+# =============================================================================
+# Grafana
+# =============================================================================
+
+grafana_admin_password = "Sidd@rdha@23"

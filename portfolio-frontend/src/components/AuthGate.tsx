@@ -154,6 +154,22 @@ function generateSummary(title: string, text?: string): string {
   return 'A notable development capturing the attention of the developer community and shaping industry discourse.';
 }
 
+function canFetchHackerNews(): boolean {
+  if (typeof document === 'undefined') return true;
+  const cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+  const content = cspMeta?.getAttribute('content') || '';
+  if (!content) return true;
+
+  const connectSrcMatch = content.match(/connect-src\s+([^;]+)/i);
+  if (!connectSrcMatch) return true;
+  const connectSrc = connectSrcMatch[1];
+  return (
+    connectSrc.includes('*') ||
+    connectSrc.includes('https://hacker-news.firebaseio.com') ||
+    connectSrc.includes('https://*.firebaseio.com')
+  );
+}
+
 function formatScore(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return String(n);
@@ -336,6 +352,15 @@ function useTechNewsFeed() {
     let cancelled = false;
     const init = async () => {
       try {
+        if (!canFetchHackerNews()) {
+          if (!cancelled) {
+            setArticles(FALLBACK_ARTICLES);
+            setHasMore(false);
+            setLoading(false);
+          }
+          return;
+        }
+
         const resp = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
         const ids: number[] = await resp.json();
         if (cancelled) return;

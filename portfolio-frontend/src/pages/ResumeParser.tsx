@@ -631,32 +631,6 @@ function TailorTab() {
   useEffect(() => { checkResumes(); }, [checkResumes]);
   useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
 
-  // Auto-start ATS scoring when tailoring completes
-  const atsAutoTriggered = useRef(false);
-  useEffect(() => {
-    if (result && !result.ats_scores && !atsLoading && !atsAutoTriggered.current) {
-      atsAutoTriggered.current = true;
-      const t = setTimeout(() => {
-        const ctrl = new AbortController();
-        atsAbortRef.current = ctrl;
-        setAtsLoading(true);
-        apiService.fetchATSScores(result.tailored_resume, result.jd_analysis, ctrl.signal)
-          .then(r => {
-            if (ctrl.signal.aborted) return;
-            setAtsLoading(false);
-            if (r.data?.ats_scores) {
-              setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
-              updateRecordATS(r.data.ats_scores);
-              // Auto-switch to ATS tab so user sees the score
-              setActiveTab('ats');
-            }
-          })
-          .catch(() => setAtsLoading(false));
-      }, 500);
-      return () => clearTimeout(t);
-    }
-  }, [result, atsLoading, updateRecordATS]);
-
   // Save tailoring record to backend (fire-and-forget)
   const saveRecord = useCallback(async (
     jdAnalysisData: JDAnalysis,
@@ -687,6 +661,32 @@ function TailorTab() {
       });
     } catch { /* silent */ }
   }, []);
+
+  // Auto-start ATS scoring when tailoring completes
+  const atsAutoTriggered = useRef(false);
+  useEffect(() => {
+    if (result && !result.ats_scores && !atsLoading && !atsAutoTriggered.current) {
+      atsAutoTriggered.current = true;
+      const t = setTimeout(() => {
+        const ctrl = new AbortController();
+        atsAbortRef.current = ctrl;
+        setAtsLoading(true);
+        apiService.fetchATSScores(result.tailored_resume, result.jd_analysis, ctrl.signal)
+          .then(r => {
+            if (ctrl.signal.aborted) return;
+            setAtsLoading(false);
+            if (r.data?.ats_scores) {
+              setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
+              updateRecordATS(r.data.ats_scores);
+              // Auto-switch to ATS tab so user sees the score
+              setActiveTab('ats');
+            }
+          })
+          .catch(() => setAtsLoading(false));
+      }, 500);
+      return () => clearTimeout(t);
+    }
+  }, [result, atsLoading, updateRecordATS]);
 
   // Combined analyze + tailor in one action (like Jobscan / Teal)
   const handleTailoring = useCallback(async () => {

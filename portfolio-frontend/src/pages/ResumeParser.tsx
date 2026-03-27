@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import AuthGate from '@/components/AuthGate';
+import { useAuth } from '@/contexts/AuthContext';
 import ResumeDashboard from '@/components/resume/ResumeDashboard';
 import type {
   TailorPipelineResult,
@@ -877,6 +878,7 @@ function Dashboard() {
 // ---------------------------------------------------------------------------
 
 export default function ResumeParser() {
+  const { logout } = useAuth();
   return (
     <AuthGate
       title="AI Resume Parser"
@@ -888,11 +890,11 @@ export default function ResumeParser() {
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
             <h1 className="text-xl font-bold">Resume Tailor</h1>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => window.location.href = '/job-search'}>
-                Job Search
-              </Button>
               <Button variant="ghost" size="sm" onClick={() => window.location.href = '/home'}>
                 Home
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => { logout(); window.location.href = '/home'; }}>
+                Logout
               </Button>
             </div>
           </div>

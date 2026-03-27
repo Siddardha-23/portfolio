@@ -483,7 +483,7 @@ function TailoredResumesTab() {
                 <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-200 truncate">{r.job_title || r.filename || 'Tailored Resume'}</p>
-                  <p className="text-xs text-gray-500">{formatDate(r.created_at)}</p>
+                  <p className="text-xs text-gray-500">{formatDate(r.generated_at || r.created_at || '')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">

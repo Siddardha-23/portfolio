@@ -13,7 +13,8 @@ export interface GeneratedResume {
   s3_key: string;
   job_title?: string;
   filename?: string;
-  created_at: string;
+  created_at?: string;
+  generated_at?: string;
 }
 
 interface ResumeDashboardProps {
@@ -28,15 +29,14 @@ export function formatBytes(bytes?: number): string {
 }
 
 export function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  return d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 // SVG icons

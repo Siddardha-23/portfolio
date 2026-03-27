@@ -978,7 +978,7 @@ function Dashboard() {
                 onChange={e => setJdText(e.target.value)}
                 rows={8}
                 maxLength={10000}
-                disabled={tailoring || !!result}
+                disabled={analyzingJD || tailoring || !!result}
                 className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50"
               />
               <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">
@@ -986,16 +986,25 @@ function Dashboard() {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {!result ? (
-                <button
-                  onClick={handleAnalyzeJD}
-                  disabled={!jdText.trim() || analyzingJD || tailoring}
-                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
-                >
-                  <MagnifyingGlassIcon className="w-4 h-4" />
-                  {analyzingJD ? 'Analyzing...' : 'Analyze & Extract Requirements'}
-                </button>
-              ) : (
+              {!result && !jdAnalysis ? (
+                /* No analysis yet — show Analyze button or analyzing spinner */
+                analyzingJD ? (
+                  <div className="inline-flex items-center gap-2.5 px-5 py-2.5 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700">
+                    <span className="w-4 h-4 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />
+                    Analyzing job description...
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleAnalyzeJD}
+                    disabled={!jdText.trim()}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+                  >
+                    <MagnifyingGlassIcon className="w-4 h-4" />
+                    Analyze & Extract Requirements
+                  </button>
+                )
+              ) : result ? (
+                /* Has result — show Start New button */
                 <button
                   onClick={handleStartNew}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 transition-all duration-200"
@@ -1003,21 +1012,11 @@ function Dashboard() {
                   <ArrowPathIcon className="w-4 h-4" />
                   Tailor for a Different Job
                 </button>
-              )}
+              ) : null /* jdAnalysis exists but no result — button is in step 3 below */}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Progress */}
-      {(analyzingJD || tailoring) && (
-        <ProgressCard
-          analyzing={analyzingJD}
-          tailoring={tailoring}
-          elapsed={tailorElapsed}
-          onCancel={handleCancelTailor}
-        />
-      )}
 
       {/* Error */}
       {tailorError && (
@@ -1029,33 +1028,46 @@ function Dashboard() {
         </div>
       )}
 
-      {/* JD Analysis + Tailor button */}
+      {/* JD Analysis card — visible once analysis is done (during tailoring too, as context) */}
       {jdAnalysis && !result && (
         <>
           <JDAnalysisCard jd={jdAnalysis} />
 
-          {/* Step 3: Tailor */}
+          {/* Step 3: Tailor button OR tailoring progress */}
           <div className="flex items-center gap-3 mb-1">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0">
               <span className="text-xs font-bold text-white">3</span>
             </div>
-            <p className="text-sm font-semibold text-gray-200">Ready to tailor</p>
+            <p className="text-sm font-semibold text-gray-200">
+              {tailoring ? 'Tailoring your resume...' : 'Ready to tailor'}
+            </p>
           </div>
-          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-            <div className="flex items-center gap-4">
-              <button
-                onClick={handleTailorResume}
-                disabled={tailoring}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
-              >
-                <SparklesIcon className="w-4 h-4" />
-                {tailoring ? 'Tailoring...' : 'Tailor My Resume'}
-              </button>
-              <span className="text-xs text-gray-500">
-                AI will rewrite your resume to match this job description
-              </span>
+
+          {tailoring ? (
+            /* Tailoring in progress — show progress card here */
+            <ProgressCard
+              analyzing={false}
+              tailoring={true}
+              elapsed={tailorElapsed}
+              onCancel={handleCancelTailor}
+            />
+          ) : (
+            /* Ready to tailor — show the button */
+            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleTailorResume}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"
+                >
+                  <SparklesIcon className="w-4 h-4" />
+                  Tailor My Resume
+                </button>
+                <span className="text-xs text-gray-500">
+                  AI will rewrite your resume to match this job description
+                </span>
+              </div>
             </div>
-          </div>
+          )}
         </>
       )}
 

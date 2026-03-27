@@ -50,7 +50,6 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
   const [error, setError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const [dragOver, setDragOver] = useState(false);
   const [settingActive, setSettingActive] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -59,7 +58,6 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
   const [showGenerated, setShowGenerated] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const uploadAreaRef = useRef<HTMLInputElement>(null);
 
   const fetchResumes = useCallback(async () => {
     setError('');
@@ -143,13 +141,6 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
     setDownloading(null);
   }, []);
 
-  const onDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
-  }, [handleUpload]);
-
   const activeResume = baseResumes.find(r => r.is_active);
 
   if (loading) {
@@ -167,6 +158,32 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
         <Card className="border-destructive">
           <CardContent className="pt-4 pb-4">
             <p className="text-sm text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No Active Resume - Upload Prompt */}
+      {!activeResume && (
+        <Card>
+          <CardContent className="pt-6 pb-6">
+            <div className="text-center space-y-3">
+              <p className="text-sm text-muted-foreground">No active resume. Upload one to get started.</p>
+              <label>
+                <Button size="sm" asChild disabled={uploading}>
+                  <span>{uploading ? 'Uploading...' : 'Upload Resume (PDF)'}</span>
+                </Button>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleUpload(file);
+                  }}
+                />
+              </label>
+              {uploadError && <p className="text-sm text-destructive">{uploadError}</p>}
+            </div>
           </CardContent>
         </Card>
       )}
@@ -335,52 +352,6 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
         </Card>
       )}
 
-      {/* Upload area (drag-and-drop) */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Upload Resume</CardTitle>
-          <p className="text-xs text-muted-foreground">Upload a new base resume (PDF, max 5 MB)</p>
-        </CardHeader>
-        <CardContent>
-          <div
-            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
-              dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-            }`}
-          >
-            <p className="text-sm text-muted-foreground mb-2">
-              {uploading ? 'Uploading and parsing resume...' : 'Drag & drop your resume PDF here'}
-            </p>
-            {uploading && (
-              <div className="w-full max-w-xs mx-auto mt-2">
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
-                </div>
-              </div>
-            )}
-            {!uploading && (
-              <label>
-                <Button variant="outline" size="sm" asChild>
-                  <span>Or click to browse</span>
-                </Button>
-                <input
-                  ref={uploadAreaRef}
-                  type="file"
-                  accept=".pdf"
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) handleUpload(file);
-                  }}
-                />
-              </label>
-            )}
-            {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

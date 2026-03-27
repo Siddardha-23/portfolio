@@ -1,10 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Textarea } from '@/components/ui/textarea';
-import { Skeleton } from '@/components/ui/skeleton';
 import AuthGate from '@/components/AuthGate';
 import { useAuth } from '@/contexts/AuthContext';
 import ResumeDashboard from '@/components/resume/ResumeDashboard';
@@ -13,27 +8,113 @@ import type {
   TailoredFullResume,
   JDAnalysis,
   ATSScores,
-  ResumeStatus,
 } from '@/types/resume';
 
-// ---------------------------------------------------------------------------
-// Score bar component
-// ---------------------------------------------------------------------------
+// ─── Icons ──────────────────────────────────────────────────────────────────
+
+function SparklesIcon({ className = 'w-5 h-5' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+    </svg>
+  );
+}
+
+function UploadCloudIcon({ className = 'w-6 h-6' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+    </svg>
+  );
+}
+
+function DocumentArrowDownIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m.75 12l3 3m0 0l3-3m-3 3v-6m-1.5-9H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+    </svg>
+  );
+}
+
+function MagnifyingGlassIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+    </svg>
+  );
+}
+
+function ClipboardIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" />
+    </svg>
+  );
+}
+
+function BriefcaseIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0M12 12.75h.008v.008H12v-.008z" />
+    </svg>
+  );
+}
+
+function CheckCircleIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function ExclamationIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+    </svg>
+  );
+}
+
+function XCircleIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  );
+}
+
+function HomeIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+    </svg>
+  );
+}
+
+function ArrowRightOnRectIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+    </svg>
+  );
+}
+
+// ─── Score bar component ────────────────────────────────────────────────────
 
 function ScoreBar({ label, score, color }: { label: string; score: number; color?: string }) {
-  const bg =
-    score >= 80 ? 'bg-green-500' :
-      score >= 60 ? 'bg-yellow-500' :
-        'bg-red-500';
+  const bg = score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-red-500';
   return (
-    <div className="space-y-1">
-      <div className="flex justify-between text-xs">
-        <span className="text-muted-foreground">{label}</span>
-        <span className="font-medium">{score}</span>
+    <div className="space-y-1.5">
+      <div className="flex justify-between items-baseline">
+        <span className="text-xs text-gray-400">{label}</span>
+        <span className={`text-xs font-semibold tabular-nums ${
+          score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400'
+        }`}>{score}</span>
       </div>
-      <div className="h-2 rounded-full bg-muted overflow-hidden">
+      <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
         <div
-          className={`h-full rounded-full transition-all duration-700 ${color || bg}`}
+          className={`h-full rounded-full transition-all duration-700 ease-out ${color || bg}`}
           style={{ width: `${Math.min(score, 100)}%` }}
         />
       </div>
@@ -41,362 +122,470 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
   );
 }
 
-// ---------------------------------------------------------------------------
-// ATS Scores panel
-// ---------------------------------------------------------------------------
+// ─── Overall score ring ─────────────────────────────────────────────────────
+
+function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
+  const radius = (size - 10) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+  const color = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#ef4444';
+
+  return (
+    <div className="relative" style={{ width: size, height: size }}>
+      <svg className="transform -rotate-90" width={size} height={size}>
+        <circle cx={size / 2} cy={size / 2} r={radius}
+          stroke="rgb(31,41,55)" strokeWidth="5" fill="none" />
+        <circle cx={size / 2} cy={size / 2} r={radius}
+          stroke={color} strokeWidth="5" fill="none"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-all duration-1000 ease-out"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-2xl font-bold tabular-nums" style={{ color }}>{score}</span>
+      </div>
+    </div>
+  );
+}
+
+// ─── ATS Panel ──────────────────────────────────────────────────────────────
 
 function ATSPanel({ scores }: { scores: ATSScores }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Overall score */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <p className="text-sm font-medium">Overall ATS Score</p>
-              <p className="text-xs text-muted-foreground">Weighted across all dimensions</p>
-            </div>
-            <div className={`text-4xl font-bold ${scores.overall >= 80 ? 'text-green-500' :
-                scores.overall >= 60 ? 'text-yellow-500' :
-                  'text-red-500'
-              }`}>
-              {scores.overall}
-            </div>
-          </div>
-          <div className="h-3 rounded-full bg-muted overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all duration-1000 ${scores.overall >= 80 ? 'bg-green-500' :
-                  scores.overall >= 60 ? 'bg-yellow-500' :
-                    'bg-red-500'
+      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-6">
+        <div className="flex items-center gap-6">
+          <ScoreRing score={scores.overall} />
+          <div className="flex-1">
+            <p className="text-base font-semibold text-gray-100">Overall ATS Score</p>
+            <p className="text-xs text-gray-500 mt-0.5">Weighted score across all dimensions</p>
+            <div className="mt-3 h-2 rounded-full bg-gray-800 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-1000 ${
+                  scores.overall >= 80 ? 'bg-emerald-500' : scores.overall >= 60 ? 'bg-amber-500' : 'bg-red-500'
                 }`}
-              style={{ width: `${scores.overall}%` }}
-            />
+                style={{ width: `${scores.overall}%` }}
+              />
+            </div>
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      {/* Dimension scores */}
+      {/* Score breakdown + Scanner scores */}
       <div className="grid gap-4 md:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Score Breakdown</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-200 mb-4">Score Breakdown</p>
+          <div className="space-y-3">
             <ScoreBar label="Keyword Match" score={scores.keyword_match} />
             <ScoreBar label="Skills Alignment" score={scores.skills_alignment} />
             <ScoreBar label="Experience Relevance" score={scores.experience_relevance} />
             <ScoreBar label="Quantifiable Impact" score={scores.quantifiable_impact} />
             <ScoreBar label="Format Score" score={scores.format_score} />
             <ScoreBar label="Section Completeness" score={scores.section_completeness} />
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">ATS Scanner Scores</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
+        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-200 mb-4">ATS Scanner Scores</p>
+          <div className="space-y-3">
             {scores.scanners && Object.entries(scores.scanners).map(([name, score]) => (
               <ScoreBar key={name} label={name.charAt(0).toUpperCase() + name.slice(1)} score={score} />
             ))}
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       {/* AI Screener */}
       {scores.ai_screener && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">AI Screener Analysis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <ScoreBar label="Overall" score={scores.ai_screener.overall} color="bg-purple-500" />
-            <ScoreBar label="Relevance" score={scores.ai_screener.relevance} color="bg-purple-500" />
-            <ScoreBar label="Seniority Fit" score={scores.ai_screener.seniority_fit} color="bg-purple-500" />
-            <ScoreBar label="Culture Fit" score={scores.ai_screener.culture_fit} color="bg-purple-500" />
-          </CardContent>
-        </Card>
+        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-200 mb-4">AI Screener Analysis</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <ScoreBar label="Overall" score={scores.ai_screener.overall} color="bg-violet-500" />
+            <ScoreBar label="Relevance" score={scores.ai_screener.relevance} color="bg-violet-500" />
+            <ScoreBar label="Seniority Fit" score={scores.ai_screener.seniority_fit} color="bg-violet-500" />
+            <ScoreBar label="Culture Fit" score={scores.ai_screener.culture_fit} color="bg-violet-500" />
+          </div>
+        </div>
       )}
 
       {/* Strengths & Suggestions */}
       <div className="grid gap-4 md:grid-cols-2">
         {scores.strengths?.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-green-600 dark:text-green-400">Strengths</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-1">
-                {scores.strengths.map((s, i) => (
-                  <li key={i} className="text-xs text-muted-foreground flex gap-1.5">
-                    <span className="text-green-500 mt-0.5 shrink-0">+</span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-
-        {scores.suggestions?.length > 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm text-yellow-600 dark:text-yellow-400">Suggestions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="space-y-1">
-                {scores.suggestions.map((s, i) => (
-                  <li key={i} className="text-xs text-muted-foreground flex gap-1.5">
-                    <span className="text-yellow-500 mt-0.5 shrink-0">!</span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Missing keywords */}
-      {scores.missing_keywords?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm">Missing Keywords</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-1.5">
-              {scores.missing_keywords.map(kw => (
-                <Badge key={kw} variant="destructive" className="text-[10px]">{kw}</Badge>
-              ))}
+          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <CheckCircleIcon className="w-4 h-4 text-emerald-400" />
+              <p className="text-sm font-semibold text-emerald-400">Strengths</p>
             </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tailored resume preview
-// ---------------------------------------------------------------------------
-
-function ResumePreview({ resume }: { resume: TailoredFullResume }) {
-  return (
-    <div className="space-y-4">
-      {/* Contact */}
-      <div className="text-center space-y-1">
-        <h2 className="text-lg font-bold">{resume.contact?.name}</h2>
-        <p className="text-xs text-muted-foreground">
-          {[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github]
-            .filter(Boolean)
-            .join(' | ')}
-        </p>
-      </div>
-
-      {/* Summary */}
-      {resume.summary && (
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs uppercase tracking-wider">Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-xs text-muted-foreground leading-relaxed">{resume.summary}</p>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Experience */}
-      {resume.experience?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs uppercase tracking-wider">Experience</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {resume.experience.map((exp, i) => (
-              <div key={i}>
-                <div className="flex justify-between items-start">
-                  <p className="text-xs font-bold">
-                    {exp.company}{exp.location ? `, ${exp.location}` : ''}
-                  </p>
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">
-                    {exp.dates}
-                  </span>
-                </div>
-                {exp.title && (
-                  <p className="text-xs italic text-muted-foreground">{exp.title}</p>
-                )}
-                <ul className="mt-1 space-y-0.5">
-                  {exp.bullets?.map((b, j) => (
-                    <li key={j} className="text-[11px] text-muted-foreground flex gap-1.5">
-                      <span className="shrink-0 mt-0.5">&bull;</span>
-                      <span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Projects */}
-      {resume.projects?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs uppercase tracking-wider">Projects</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {resume.projects.map((proj, i) => (
-              <div key={i}>
-                <p className="text-xs font-bold">{proj.name}</p>
-                <ul className="mt-1 space-y-0.5">
-                  {proj.bullets?.map((b, j) => (
-                    <li key={j} className="text-[11px] text-muted-foreground flex gap-1.5">
-                      <span className="shrink-0 mt-0.5">&bull;</span><span>{b}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Technical Skills */}
-      {resume.skills && Object.keys(resume.skills).length > 0 && (
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs uppercase tracking-wider">Technical Skills</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {Object.entries(resume.skills).map(([cat, skills]) => (
-              <div key={cat} className="text-xs">
-                <span className="font-medium">{cat}: </span>
-                <span className="text-muted-foreground">
-                  {Array.isArray(skills) ? skills.join(', ') : String(skills)}
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Education */}
-      {resume.education?.length > 0 && (
-        <Card>
-          <CardHeader className="pb-1">
-            <CardTitle className="text-xs uppercase tracking-wider">Education</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {resume.education.map((edu, i) => {
-              const cleanDegree = (d: string) => {
-                if (!d) return '';
-                let cleaned = d.split('|').map(s => s.trim())
-                  .filter(s => !/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|\d{1,2}\/\d{4})/i.test(s))
-                  .join(' | ');
-                const parts = cleaned.split('|').map(s => s.trim()).filter(Boolean);
-                const unique = [...new Set(parts)];
-                return unique.join(' | ').trim();
-              };
-              const degree = cleanDegree(edu.degree);
-              return (
-                <div key={i} className="flex justify-between items-start">
-                  <p className="text-xs font-medium">
-                    {edu.institution}{degree ? ` | ${degree}` : ''}
-                  </p>
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap ml-2">{edu.dates}</span>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// JD Analysis card
-// ---------------------------------------------------------------------------
-
-function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm">Extracted Job Requirements</CardTitle>
-        <p className="text-xs text-muted-foreground">
-          {jd.job_title}{jd.company && jd.company !== 'Not specified' ? ` at ${jd.company}` : ''}
-          {jd.location && jd.location !== 'Not specified' ? ` - ${jd.location}` : ''}
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Required Skills</p>
-            <div className="flex flex-wrap gap-1">
-              {jd.required_skills?.map(s => (
-                <Badge key={s} variant="default" className="text-[10px]">{s}</Badge>
-              ))}
-            </div>
-          </div>
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Preferred Skills</p>
-            <div className="flex flex-wrap gap-1">
-              {jd.preferred_skills?.map(s => (
-                <Badge key={s} variant="secondary" className="text-[10px]">{s}</Badge>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {jd.responsibilities?.length > 0 && (
-          <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">Key Responsibilities</p>
-            <ul className="space-y-0.5">
-              {jd.responsibilities.slice(0, 5).map((r, i) => (
-                <li key={i} className="text-xs text-muted-foreground flex gap-1.5">
-                  <span className="shrink-0">-</span><span>{r}</span>
+            <ul className="space-y-2">
+              {scores.strengths.map((s, i) => (
+                <li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed">
+                  <span className="text-emerald-500 mt-0.5 shrink-0">+</span>
+                  <span>{s}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
 
-        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-          {jd.experience_years && <span>Exp: {jd.experience_years}</span>}
-          {jd.employment_type && <span>Type: {jd.employment_type}</span>}
-          {jd.industry && <span>Industry: {jd.industry}</span>}
-        </div>
+        {scores.suggestions?.length > 0 && (
+          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <ExclamationIcon className="w-4 h-4 text-amber-400" />
+              <p className="text-sm font-semibold text-amber-400">Suggestions</p>
+            </div>
+            <ul className="space-y-2">
+              {scores.suggestions.map((s, i) => (
+                <li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed">
+                  <span className="text-amber-500 mt-0.5 shrink-0">!</span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
 
-        {jd.keywords?.length > 0 && (
+      {/* Missing keywords */}
+      {scores.missing_keywords?.length > 0 && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <XCircleIcon className="w-4 h-4 text-red-400" />
+            <p className="text-sm font-semibold text-gray-200">Missing Keywords</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {scores.missing_keywords.map(kw => (
+              <span key={kw} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">
+                {kw}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Resume preview ─────────────────────────────────────────────────────────
+
+function ResumePreview({ resume }: { resume: TailoredFullResume }) {
+  const SectionTitle = ({ children }: { children: React.ReactNode }) => (
+    <div className="flex items-center gap-3 mb-3">
+      <h3 className="text-xs font-bold uppercase tracking-widest text-pink-400/80">{children}</h3>
+      <div className="flex-1 h-px bg-gray-800" />
+    </div>
+  );
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+      {/* Contact header */}
+      <div className="bg-gradient-to-r from-gray-800/80 to-gray-900 px-6 py-5 border-b border-gray-800">
+        <h2 className="text-lg font-bold text-gray-100">{resume.contact?.name}</h2>
+        <p className="text-xs text-gray-400 mt-1">
+          {[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github]
+            .filter(Boolean)
+            .join('  \u00B7  ')}
+        </p>
+      </div>
+
+      <div className="px-6 py-5 space-y-5">
+        {/* Summary */}
+        {resume.summary && (
           <div>
-            <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground mb-1">ATS Keywords</p>
-            <div className="flex flex-wrap gap-1">
-              {jd.keywords.map(kw => (
-                <Badge key={kw} variant="outline" className="text-[10px]">{kw}</Badge>
+            <SectionTitle>Summary</SectionTitle>
+            <p className="text-[13px] text-gray-300 leading-relaxed">{resume.summary}</p>
+          </div>
+        )}
+
+        {/* Experience */}
+        {resume.experience?.length > 0 && (
+          <div>
+            <SectionTitle>Experience</SectionTitle>
+            <div className="space-y-4">
+              {resume.experience.map((exp, i) => (
+                <div key={i}>
+                  <div className="flex justify-between items-start gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-200">
+                        {exp.company}{exp.location ? `, ${exp.location}` : ''}
+                      </p>
+                      {exp.title && (
+                        <p className="text-xs text-gray-400 italic mt-0.5">{exp.title}</p>
+                      )}
+                    </div>
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{exp.dates}</span>
+                  </div>
+                  <ul className="mt-1.5 space-y-1">
+                    {exp.bullets?.map((b, j) => (
+                      <li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed">
+                        <span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span>
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+
+        {/* Projects */}
+        {resume.projects?.length > 0 && (
+          <div>
+            <SectionTitle>Projects</SectionTitle>
+            <div className="space-y-3">
+              {resume.projects.map((proj, i) => (
+                <div key={i}>
+                  <p className="text-sm font-semibold text-gray-200">{proj.name}</p>
+                  <ul className="mt-1 space-y-1">
+                    {proj.bullets?.map((b, j) => (
+                      <li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed">
+                        <span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span>
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Technical Skills */}
+        {resume.skills && Object.keys(resume.skills).length > 0 && (
+          <div>
+            <SectionTitle>Technical Skills</SectionTitle>
+            <div className="space-y-2">
+              {Object.entries(resume.skills).map(([cat, skills]) => (
+                <div key={cat} className="text-[12.5px]">
+                  <span className="font-semibold text-gray-300">{cat}: </span>
+                  <span className="text-gray-400">
+                    {Array.isArray(skills) ? skills.join(', ') : String(skills)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Education */}
+        {resume.education?.length > 0 && (
+          <div>
+            <SectionTitle>Education</SectionTitle>
+            <div className="space-y-2">
+              {resume.education.map((edu, i) => {
+                const cleanDegree = (d: string) => {
+                  if (!d) return '';
+                  const parts = d.split('|').map(s => s.trim())
+                    .filter(s => !/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|\d{1,2}\/\d{4})/i.test(s));
+                  return [...new Set(parts.filter(Boolean))].join(' | ').trim();
+                };
+                const degree = cleanDegree(edu.degree);
+                return (
+                  <div key={i} className="flex justify-between items-start gap-2">
+                    <p className="text-[12.5px] text-gray-300">
+                      <span className="font-semibold">{edu.institution}</span>
+                      {degree ? ` \u2014 ${degree}` : ''}
+                    </p>
+                    <span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{edu.dates}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Certifications */}
+        {resume.certifications?.length > 0 && (
+          <div>
+            <SectionTitle>Certifications</SectionTitle>
+            <div className="flex flex-wrap gap-2">
+              {resume.certifications.map((cert, i) => (
+                <span key={i} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-sky-500/10 text-sky-300 border border-sky-500/15">
+                  {cert}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tailor phase message helper
-// ---------------------------------------------------------------------------
+// ─── JD Analysis card ───────────────────────────────────────────────────────
 
-function getTailorPhase(secs: number): string {
-  if (secs < 10) return 'Analyzing job requirements...';
-  if (secs < 30) return 'Tailoring your resume...';
-  if (secs < 60) return 'Optimizing keywords...';
-  return 'Almost done, finalizing...';
+function JDAnalysisCard({ jd }: { jd: JDAnalysis }) {
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-800/60">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0">
+            <BriefcaseIcon className="w-4 h-4 text-violet-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-gray-100">Extracted Job Requirements</p>
+            <p className="text-xs text-gray-500 truncate">
+              {jd.job_title}{jd.company && jd.company !== 'Not specified' ? ` at ${jd.company}` : ''}
+              {jd.location && jd.location !== 'Not specified' ? ` \u2014 ${jd.location}` : ''}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-5 space-y-5">
+        {/* Skills */}
+        <div className="grid gap-5 sm:grid-cols-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Required Skills</p>
+            <div className="flex flex-wrap gap-1.5">
+              {jd.required_skills?.map(s => (
+                <span key={s} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/15">
+                  {s}
+                </span>
+              ))}
+              {(!jd.required_skills || jd.required_skills.length === 0) && (
+                <span className="text-xs text-gray-600">None extracted</span>
+              )}
+            </div>
+          </div>
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Preferred Skills</p>
+            <div className="flex flex-wrap gap-1.5">
+              {jd.preferred_skills?.map(s => (
+                <span key={s} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-teal-500/10 text-teal-300 border border-teal-500/15">
+                  {s}
+                </span>
+              ))}
+              {(!jd.preferred_skills || jd.preferred_skills.length === 0) && (
+                <span className="text-xs text-gray-600">None extracted</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Responsibilities */}
+        {jd.responsibilities?.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Key Responsibilities</p>
+            <ul className="space-y-1.5">
+              {jd.responsibilities.slice(0, 5).map((r, i) => (
+                <li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed">
+                  <span className="text-gray-600 shrink-0 mt-0.5">&bull;</span>
+                  <span>{r}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Metadata */}
+        <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs pt-1 border-t border-gray-800/60">
+          {jd.experience_years && (
+            <span className="text-gray-500">
+              <span className="text-gray-400 font-medium">Experience:</span> {jd.experience_years}
+            </span>
+          )}
+          {jd.employment_type && (
+            <span className="text-gray-500">
+              <span className="text-gray-400 font-medium">Type:</span> {jd.employment_type}
+            </span>
+          )}
+          {jd.industry && (
+            <span className="text-gray-500">
+              <span className="text-gray-400 font-medium">Industry:</span> {jd.industry}
+            </span>
+          )}
+        </div>
+
+        {/* ATS Keywords */}
+        {jd.keywords?.length > 0 && (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">ATS Keywords</p>
+            <div className="flex flex-wrap gap-1.5">
+              {jd.keywords.map(kw => (
+                <span key={kw} className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400 border border-gray-700/60">
+                  {kw}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-// ---------------------------------------------------------------------------
-// Upload area for first-time users (no resumes yet)
-// ---------------------------------------------------------------------------
+// ─── Phase helper ───────────────────────────────────────────────────────────
+
+function getTailorPhase(secs: number): { text: string; step: number } {
+  if (secs < 10) return { text: 'Analyzing job requirements...', step: 1 };
+  if (secs < 30) return { text: 'Tailoring your resume...', step: 2 };
+  if (secs < 60) return { text: 'Optimizing keywords...', step: 3 };
+  return { text: 'Almost done, finalizing...', step: 4 };
+}
+
+// ─── Progress card ──────────────────────────────────────────────────────────
+
+function ProgressCard({ analyzing, tailoring, elapsed, onCancel }: {
+  analyzing: boolean;
+  tailoring: boolean;
+  elapsed: number;
+  onCancel: () => void;
+}) {
+  const phase = tailoring ? getTailorPhase(elapsed) : { text: 'Analyzing job description...', step: 0 };
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
+      <div className="flex flex-col items-center justify-center space-y-5">
+        {/* Spinner */}
+        <div className="relative">
+          <div className="w-12 h-12 rounded-full border-2 border-gray-700" />
+          <div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" />
+        </div>
+
+        {/* Text */}
+        <div className="text-center space-y-1.5">
+          <p className="text-sm font-semibold text-gray-200">{phase.text}</p>
+          <p className="text-xs text-gray-500">
+            {tailoring && elapsed >= 90
+              ? 'Taking longer than expected \u2014 you can wait or cancel.'
+              : 'This may take 30\u201360 seconds'}
+          </p>
+          {tailoring && elapsed > 0 && (
+            <p className="text-xs text-gray-600 tabular-nums">{elapsed}s elapsed</p>
+          )}
+        </div>
+
+        {/* Phase dots */}
+        {tailoring && (
+          <div className="flex items-center gap-2">
+            {[1, 2, 3, 4].map(s => (
+              <div key={s} className={`w-2 h-2 rounded-full transition-all duration-500 ${
+                s <= phase.step ? 'bg-pink-400 scale-110' : 'bg-gray-700'
+              }`} />
+            ))}
+          </div>
+        )}
+
+        {/* Cancel */}
+        {tailoring && elapsed >= 90 && (
+          <button
+            type="button"
+            onClick={onCancel}
+            className="px-4 py-1.5 text-xs font-medium text-gray-400 border border-gray-700 rounded-lg hover:border-gray-600 hover:text-gray-300 transition-all"
+          >
+            Cancel
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Upload area (no resumes) ───────────────────────────────────────────────
 
 function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
   const [uploading, setUploading] = useState(false);
@@ -416,10 +605,7 @@ function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
     setUploadError('');
     const resp = await apiService.uploadResumeForParser(file);
     setUploading(false);
-    if (resp.error) {
-      setUploadError(resp.error);
-      return;
-    }
+    if (resp.error) { setUploadError(resp.error); return; }
     onUploaded();
   }, [onUploaded]);
 
@@ -431,66 +617,53 @@ function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
   }, [handleUpload]);
 
   return (
-    <Card>
-      <CardHeader className="text-center">
-        <CardTitle>Upload Your Resume</CardTitle>
-        <p className="text-sm text-muted-foreground mt-1">
-          Upload your base resume PDF to get started with AI-powered tailoring
-        </p>
-      </CardHeader>
-      <CardContent>
-        <div
-          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
-            dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-          }`}
-        >
-          <div className="space-y-3">
-            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
-              <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF here'}
-            </p>
-            {uploading && (
-              <div className="w-full max-w-xs mx-auto">
-                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
-                </div>
-              </div>
-            )}
-            {!uploading && (
-              <label>
-                <Button variant="outline" size="sm" asChild>
-                  <span>Or click to browse</span>
-                </Button>
-                <input
-                  type="file"
-                  accept=".pdf"
-                  className="hidden"
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) handleUpload(file);
-                  }}
-                />
-              </label>
-            )}
-            <p className="text-[10px] text-muted-foreground">PDF only, max 5 MB</p>
+    <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/60 overflow-hidden">
+      <div
+        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        className={`p-12 transition-colors ${dragOver ? 'bg-pink-500/5 border-pink-500/30' : ''}`}
+      >
+        <div className="flex flex-col items-center text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-pink-500/10 flex items-center justify-center">
+            <UploadCloudIcon className="w-7 h-7 text-pink-400" />
           </div>
-          {uploadError && <p className="text-sm text-destructive mt-3">{uploadError}</p>}
+          <div>
+            <p className="text-base font-semibold text-gray-200">Upload Your Resume</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Upload your base resume PDF to get started with AI-powered tailoring
+            </p>
+          </div>
+          {uploading ? (
+            <div className="w-full max-w-xs space-y-2">
+              <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+              </div>
+              <p className="text-xs text-gray-500">Parsing resume...</p>
+            </div>
+          ) : (
+            <label className="cursor-pointer">
+              <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200">
+                <UploadCloudIcon className="w-4 h-4" />
+                Choose PDF File
+              </span>
+              <input
+                type="file"
+                accept=".pdf"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+              />
+            </label>
+          )}
+          <p className="text-[10px] text-gray-600">PDF only, max 5 MB</p>
+          {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Main dashboard (tailoring flow)
-// ---------------------------------------------------------------------------
+// ─── Dashboard (main tailoring flow) ────────────────────────────────────────
 
 function Dashboard() {
   const [hasResumes, setHasResumes] = useState<boolean | null>(null);
@@ -513,14 +686,12 @@ function Dashboard() {
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
 
-  // Check if user has any base resumes
   const checkResumes = useCallback(async () => {
     setLoadingCheck(true);
     const resp = await apiService.listBaseResumes();
     if (resp.data) {
       setHasResumes((resp.data.versions || []).length > 0);
     } else {
-      // Fallback: try resume status
       const statusResp = await apiService.getResumeStatus();
       if (statusResp.data) {
         setHasResumes(statusResp.data.has_resume === true);
@@ -531,11 +702,8 @@ function Dashboard() {
     setLoadingCheck(false);
   }, []);
 
-  useEffect(() => {
-    checkResumes();
-  }, [checkResumes]);
+  useEffect(() => { checkResumes(); }, [checkResumes]);
 
-  // Cleanup in-flight requests on unmount
   useEffect(() => {
     return () => {
       tailorAbortRef.current?.abort();
@@ -544,7 +712,6 @@ function Dashboard() {
     };
   }, []);
 
-  // Step 1: Analyze JD
   const handleAnalyzeJD = useCallback(async () => {
     if (!jdText.trim()) return;
     setAnalyzingJD(true);
@@ -561,7 +728,6 @@ function Dashboard() {
     setJdAnalysis(analysis);
   }, [jdText]);
 
-  // Step 2: Tailor resume
   const handleTailorResume = useCallback(async () => {
     if (!jdAnalysis) return;
     tailorAbortRef.current?.abort();
@@ -598,7 +764,6 @@ function Dashboard() {
     }
   }, [jdAnalysis]);
 
-  // Cancel tailor
   const handleCancelTailor = useCallback(() => {
     tailorAbortRef.current?.abort();
     if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
@@ -607,7 +772,6 @@ function Dashboard() {
     setTailorElapsed(0);
   }, []);
 
-  // Step 3: Fetch ATS scores
   const handleFetchATS = useCallback(async () => {
     if (!result?.tailored_resume || !result?.jd_analysis) return;
     atsAbortRef.current?.abort();
@@ -633,20 +797,14 @@ function Dashboard() {
     }
   }, [result]);
 
-  // Download handler
   const handleDownload = useCallback(async (format: 'pdf' | 'docx') => {
     if (!result) return;
     setDownloading(format);
     const resp = await apiService.downloadTailoredResume(
-      result.tailored_resume,
-      result.jd_analysis,
-      format,
+      result.tailored_resume, result.jd_analysis, format,
     );
     setDownloading(null);
-    if (resp.error) {
-      setTailorError(resp.error);
-      return;
-    }
+    if (resp.error) { setTailorError(resp.error); return; }
     if (resp.data) {
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement('a');
@@ -657,16 +815,17 @@ function Dashboard() {
     }
   }, [result]);
 
+  // Loading skeleton
   if (loadingCheck) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-32 w-full" />
+      <div className="space-y-4 animate-pulse">
+        <div className="h-28 rounded-xl bg-gray-800/40" />
+        <div className="h-16 rounded-xl bg-gray-800/30" />
+        <div className="h-48 rounded-xl bg-gray-800/20" />
       </div>
     );
   }
 
-  // No resumes yet: show upload UI
   if (!hasResumes) {
     return <InitialUpload onUploaded={() => { setHasResumes(true); }} />;
   }
@@ -678,229 +837,248 @@ function Dashboard() {
 
       {/* Tailoring Flow */}
       {showTailoringFlow && (
-        <>
-          {/* JD input */}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Paste Job Description</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Paste the full job description to tailor your resume and get ATS scores
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Textarea
-                placeholder="Paste the complete job description here..."
-                value={jdText}
-                onChange={e => setJdText(e.target.value)}
-                rows={6}
-                className="text-xs resize-none"
-                maxLength={10000}
-                disabled={tailoring}
-              />
-              <div className="flex items-center gap-3">
-                <Button
-                  size="sm"
-                  onClick={handleAnalyzeJD}
-                  disabled={!jdText.trim() || analyzingJD || tailoring}
-                >
-                  {analyzingJD ? 'Analyzing...' : 'Analyze JD'}
-                </Button>
-                <span className="text-[10px] text-muted-foreground">
-                  {jdText.length.toLocaleString()}/10,000
+        <div className="space-y-5">
+          {/* JD Input */}
+          <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+            <div className="px-5 py-4 border-b border-gray-800/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
+                  <ClipboardIcon className="w-4 h-4 text-pink-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-100">Paste Job Description</p>
+                  <p className="text-xs text-gray-500">Paste the full JD to tailor your resume and get ATS scores</p>
+                </div>
+              </div>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="relative">
+                <textarea
+                  placeholder="Paste the complete job description here..."
+                  value={jdText}
+                  onChange={e => setJdText(e.target.value)}
+                  rows={8}
+                  maxLength={10000}
+                  disabled={tailoring}
+                  className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50"
+                />
+                <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">
+                  {jdText.length.toLocaleString()} / 10,000
                 </span>
               </div>
-            </CardContent>
-          </Card>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleAnalyzeJD}
+                  disabled={!jdText.trim() || analyzingJD || tailoring}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+                >
+                  <MagnifyingGlassIcon className="w-4 h-4" />
+                  {analyzingJD ? 'Analyzing...' : 'Analyze JD'}
+                </button>
+              </div>
+            </div>
+          </div>
 
-          {/* Step indicator / spinner */}
+          {/* Progress */}
           {(analyzingJD || tailoring) && (
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col items-center justify-center py-6 space-y-4">
-                  <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                  <div className="text-center space-y-1">
-                    <p className="text-sm font-medium">
-                      {analyzingJD ? 'Analyzing job description...' : getTailorPhase(tailorElapsed)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {tailoring && tailorElapsed >= 90
-                        ? 'Taking longer than expected -- you can wait or cancel.'
-                        : 'This may take 30-60 seconds'}
-                    </p>
-                    {tailoring && tailorElapsed > 0 && (
-                      <p className="text-xs text-muted-foreground tabular-nums">{tailorElapsed}s</p>
-                    )}
-                  </div>
-                  {tailoring && tailorElapsed >= 90 && (
-                    <Button type="button" variant="outline" size="sm" onClick={handleCancelTailor}>
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+            <ProgressCard
+              analyzing={analyzingJD}
+              tailoring={tailoring}
+              elapsed={tailorElapsed}
+              onCancel={handleCancelTailor}
+            />
           )}
 
           {/* Error */}
           {tailorError && (
-            <Card className="border-destructive">
-              <CardContent className="pt-6">
-                <p className="text-sm text-destructive">{tailorError}</p>
-              </CardContent>
-            </Card>
+            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4">
+              <div className="flex items-start gap-3">
+                <XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-sm text-red-300">{tailorError}</p>
+              </div>
+            </div>
           )}
 
-          {/* JD Analysis result + Tailor button */}
+          {/* JD Analysis + Tailor button */}
           {jdAnalysis && !result && (
             <>
               <JDAnalysisCard jd={jdAnalysis} />
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex items-center gap-3">
-                    <Button
-                      size="sm"
-                      onClick={handleTailorResume}
-                      disabled={tailoring}
-                    >
-                      {tailoring ? 'Tailoring...' : 'Tailor Resume'}
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      Generate a tailored resume based on the analyzed JD
-                    </span>
-                  </div>
-                </CardContent>
-              </Card>
+              <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleTailorResume}
+                    disabled={tailoring}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+                  >
+                    <SparklesIcon className="w-4 h-4" />
+                    {tailoring ? 'Tailoring...' : 'Tailor Resume'}
+                  </button>
+                  <span className="text-xs text-gray-500">
+                    Generate a tailored resume based on the analyzed JD
+                  </span>
+                </div>
+              </div>
             </>
           )}
 
           {/* Results */}
           {result && (
-            <>
-              {/* JD Analysis */}
+            <div className="space-y-5">
+              {/* JD Analysis (collapsed context) */}
               <JDAnalysisCard jd={result.jd_analysis} />
 
               {/* Download bar */}
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <p className="text-sm font-medium">Download Tailored Resume</p>
-                    <div className="flex gap-2 ml-auto">
-                      <Button
-                        size="sm"
-                        onClick={() => handleDownload('pdf')}
-                        disabled={downloading !== null}
-                      >
-                        {downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleDownload('docx')}
-                        disabled={downloading !== null}
-                      >
-                        {downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
-                      </Button>
+              <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+                <div className="flex flex-wrap items-center gap-4">
+                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                      <CheckCircleIcon className="w-4 h-4 text-emerald-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-gray-100">Resume Tailored Successfully</p>
+                      <p className="text-xs text-gray-500">Download in your preferred format</p>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => handleDownload('pdf')}
+                      disabled={downloading !== null}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+                    >
+                      <DocumentArrowDownIcon className="w-4 h-4" />
+                      {downloading === 'pdf' ? 'Generating...' : 'PDF'}
+                    </button>
+                    <button
+                      onClick={() => handleDownload('docx')}
+                      disabled={downloading !== null}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                    >
+                      <DocumentArrowDownIcon className="w-4 h-4" />
+                      {downloading === 'docx' ? 'Generating...' : 'DOCX'}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
               {/* Tab toggle */}
-              <div className="flex gap-1 border rounded-lg p-1 w-fit">
+              <div className="inline-flex rounded-xl bg-gray-800/60 p-1 border border-gray-800">
                 <button
                   onClick={() => setActiveTab('preview')}
-                  className={`px-4 py-1.5 text-sm rounded-md transition-colors ${activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                  className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                    activeTab === 'preview'
+                      ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
+                      : 'text-gray-500 hover:text-gray-300 border border-transparent'
+                  }`}
                 >
                   Resume Preview
                 </button>
                 <button
                   onClick={() => setActiveTab('ats')}
-                  className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                    }`}
+                  className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                    activeTab === 'ats'
+                      ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
+                      : 'text-gray-500 hover:text-gray-300 border border-transparent'
+                  }`}
                 >
                   ATS Analysis
                   {atsLoading && (
-                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
                   )}
                 </button>
               </div>
 
-              {/* Tabbed content */}
+              {/* Tab content */}
               {activeTab === 'preview' ? (
                 <ResumePreview resume={result.tailored_resume} />
               ) : result.ats_scores ? (
                 <ATSPanel scores={result.ats_scores} />
               ) : (
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                      {atsLoading ? (
-                        <>
-                          <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                          <div className="text-center space-y-1">
-                            <p className="text-sm font-medium">Computing ATS scores</p>
-                            <p className="text-xs text-muted-foreground">
-                              This takes 10-15 seconds. Your resume is ready for download in the meantime.
-                            </p>
-                          </div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="text-center space-y-2">
-                            <p className="text-sm font-medium">ATS scores not yet loaded</p>
-                            <p className="text-xs text-muted-foreground">
-                              Click below to analyze your tailored resume against ATS systems.
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            onClick={handleFetchATS}
-                          >
-                            Get ATS Scores
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
+                <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
+                  <div className="flex flex-col items-center justify-center space-y-5">
+                    {atsLoading ? (
+                      <>
+                        <div className="relative">
+                          <div className="w-10 h-10 rounded-full border-2 border-gray-700" />
+                          <div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" />
+                        </div>
+                        <div className="text-center space-y-1.5">
+                          <p className="text-sm font-semibold text-gray-200">Computing ATS scores...</p>
+                          <p className="text-xs text-gray-500">
+                            This takes 10\u201315 seconds. Your resume is ready for download.
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-12 h-12 rounded-full bg-violet-500/10 flex items-center justify-center">
+                          <SparklesIcon className="w-6 h-6 text-violet-400" />
+                        </div>
+                        <div className="text-center space-y-1.5">
+                          <p className="text-sm font-semibold text-gray-200">ATS scores not yet loaded</p>
+                          <p className="text-xs text-gray-500">
+                            Analyze your tailored resume against major ATS systems
+                          </p>
+                        </div>
+                        <button
+                          onClick={handleFetchATS}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"
+                        >
+                          <SparklesIcon className="w-4 h-4" />
+                          Get ATS Scores
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
               )}
-            </>
+            </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page export with AuthGate
-// ---------------------------------------------------------------------------
+// ─── Page export ────────────────────────────────────────────────────────────
 
 export default function ResumeParser() {
   const { logout } = useAuth();
   return (
     <AuthGate
-      title="AI Resume Parser"
+      title="AI Resume Tailor"
       description="Upload your resume, tailor it to any job description, and get ATS compatibility scores powered by AI."
     >
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-gray-950">
         {/* Header */}
-        <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-10">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-            <h1 className="text-xl font-bold">Resume Tailor</h1>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => window.location.href = '/home'}>
+        <header className="sticky top-0 z-20 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-md">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-pink-500/40 to-transparent" />
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+                <SparklesIcon className="w-4 h-4 text-white" />
+              </div>
+              <h1 className="text-lg font-bold text-gray-100">Resume Tailor</h1>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => window.location.href = '/home'}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all"
+              >
+                <HomeIcon className="w-4 h-4" />
                 Home
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => { logout(); window.location.href = '/home'; }}>
+              </button>
+              <button
+                onClick={() => { logout(); window.location.href = '/home'; }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all"
+              >
+                <ArrowRightOnRectIcon className="w-4 h-4" />
                 Logout
-              </Button>
+              </button>
             </div>
           </div>
         </header>
 
-        <main className="max-w-6xl mx-auto px-4 py-6">
+        <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
           <Dashboard />
         </main>
       </div>

@@ -652,11 +652,13 @@ export default function AuthGate({ children, title, description }: AuthGateProps
 
   // Real-time password validation + dodging button
   const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
+  const [passwordChecking, setPasswordChecking] = useState(false);
   const [dodgeCount, setDodgeCount] = useState(0);
   const [dodgeOffset, setDodgeOffset] = useState({ x: 0, y: 0, rotation: 0 });
   const [shaking, setShaking] = useState(false);
   const maxDodges = 5;
   const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastValidatedRef = useRef('');
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // News feed
@@ -678,26 +680,43 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     }
   }, [step]);
 
-  // Real-time password validation — validate each keystroke, no auto-login
+  // Real-time password validation — debounced, min-length gated, no auto-login
   useEffect(() => {
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0, rotation: 0 });
 
-    if (step !== 'login' || !email || !password || password.length < 1) {
+    if (step !== 'login' || !email || !password) {
       setPasswordValid(null);
+      setPasswordChecking(false);
       return;
     }
+
+    // Don't hit the API until the user has typed at least 8 chars (min password length)
+    if (password.length < 8) {
+      setPasswordValid(null);
+      setPasswordChecking(false);
+      return;
+    }
+
+    // Skip if we already validated this exact password
+    if (lastValidatedRef.current === password) return;
+
+    // Clear stale result immediately so the UI doesn't show old incorrect/correct
+    setPasswordValid(null);
+    setPasswordChecking(true);
 
     if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
     validateTimerRef.current = setTimeout(async () => {
       try {
         const resp = await apiService.validatePassword(email, password);
-        if (!resp.data) return;
+        if (!resp.data) { setPasswordChecking(false); return; }
+        lastValidatedRef.current = password;
         setPasswordValid(resp.data.valid);
       } catch {
         setPasswordValid(null);
       }
-    }, 300);
+      setPasswordChecking(false);
+    }, 500);
 
     return () => {
       if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
@@ -832,8 +851,10 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     setError('');
     setSuccessMsg('');
     setPasswordValid(null);
+    setPasswordChecking(false);
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0, rotation: 0 });
+    lastValidatedRef.current = '';
   };
 
   if (isLoading) {
@@ -1084,19 +1105,24 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
-                      {password.length >= 1 && passwordValid !== null && !submitting && (
+                      {password.length >= 8 && !submitting && (
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          {passwordValid ? (
+                          {passwordChecking ? (
+                            <>
+                              <span className="animate-spin rounded-full h-3 w-3 border-2 border-gray-500 border-t-transparent" />
+                              <span className="text-xs text-gray-500">Checking...</span>
+                            </>
+                          ) : passwordValid === true ? (
                             <>
                               <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                               <span className="text-xs text-emerald-400">Password matched — click Login to continue</span>
                             </>
-                          ) : (
+                          ) : passwordValid === false ? (
                             <>
                               <svg className="w-3.5 h-3.5 text-pink-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                               <span className="text-xs text-pink-400">Incorrect password{dodgeCount > 0 ? ' — good luck clicking that button' : ''}</span>
                             </>
-                          )}
+                          ) : null}
                         </div>
                       )}
                       {submitting && (
@@ -1107,7 +1133,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                       )}
                     </div>
                     {/* Dancing login button */}
-                    <div className="relative" style={{ height: '52px', overflow: passwordValid === false ? 'visible' : 'hidden' }}>
+                    <div className="relative h-[44px]" style={{ overflow: passwordValid === false ? 'visible' : 'hidden' }}>
                       <button
                         type={passwordValid === false ? 'button' : 'submit'}
                         disabled={submitting}
@@ -1115,7 +1141,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                         onMouseDown={handleButtonInteraction}
                         onTouchStart={handleButtonInteraction}
                         onClick={passwordValid === false ? (e) => { e.preventDefault(); handleButtonInteraction(); } : undefined}
-                        className={`absolute inset-x-0 py-2.5 font-medium rounded-lg flex items-center justify-center gap-2 select-none ${
+                        className={`absolute top-0 left-0 w-full py-2.5 font-medium rounded-lg flex items-center justify-center gap-2 select-none ${
                           shaking ? 'animate-shake' : ''
                         } ${
                           passwordValid === true

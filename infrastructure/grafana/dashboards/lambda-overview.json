@@ -17,38 +17,52 @@
       {
         "name": "service",
         "type": "custom",
+        "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
         "current": {
-          "text": "All",
-          "value": "$__all"
+          "text": [
+            "visitor",
+            "auth",
+            "jobs-resume",
+            "chat",
+            "infra"
+          ],
+          "value": [
+            "portfolio-visitor",
+            "portfolio-auth",
+            "portfolio-jobs-resume",
+            "portfolio-chat",
+            "portfolio-infra"
+          ]
         },
         "options": [
           {
-            "text": "All",
-            "value": "$__all",
+            "text": "portfolio-visitor",
+            "value": "portfolio-visitor",
             "selected": true
           },
           {
-            "text": "visitor",
-            "value": "portfolio-visitor"
+            "text": "portfolio-auth",
+            "value": "portfolio-auth",
+            "selected": true
           },
           {
-            "text": "auth",
-            "value": "portfolio-auth"
+            "text": "portfolio-jobs-resume",
+            "value": "portfolio-jobs-resume",
+            "selected": true
           },
           {
-            "text": "jobs-resume",
-            "value": "portfolio-jobs-resume"
+            "text": "portfolio-chat",
+            "value": "portfolio-chat",
+            "selected": true
           },
           {
-            "text": "chat",
-            "value": "portfolio-chat"
-          },
-          {
-            "text": "infra",
-            "value": "portfolio-infra"
+            "text": "portfolio-infra",
+            "value": "portfolio-infra",
+            "selected": true
           }
         ],
         "includeAll": true,
+        "allValue": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
         "multi": true,
         "label": "Service"
       },
@@ -96,8 +110,9 @@
               "$service"
             ]
           },
-          "period": "300",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -134,8 +149,9 @@
               "$service"
             ]
           },
-          "period": "300",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -176,9 +192,10 @@
               "$service"
             ]
           },
-          "period": "300",
+          "period": "",
           "region": "$region",
-          "refId": "p50"
+          "refId": "p50",
+          "matchExact": true
         },
         {
           "datasource": {
@@ -194,9 +211,10 @@
               "$service"
             ]
           },
-          "period": "300",
+          "period": "",
           "region": "$region",
-          "refId": "p90"
+          "refId": "p90",
+          "matchExact": true
         },
         {
           "datasource": {
@@ -212,9 +230,10 @@
               "$service"
             ]
           },
-          "period": "300",
+          "period": "",
           "region": "$region",
-          "refId": "p99"
+          "refId": "p99",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -248,8 +267,9 @@
               "$service"
             ]
           },
-          "period": "300",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -290,8 +310,9 @@
               "$service"
             ]
           },
-          "period": "300",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -325,9 +346,10 @@
               "$service"
             ]
           },
-          "period": "300",
+          "period": "",
           "region": "$region",
-          "refId": "MaxDuration"
+          "refId": "MaxDuration",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -362,9 +384,10 @@
               "$service"
             ]
           },
-          "period": "3600",
+          "period": "",
           "region": "$region",
-          "refId": "errors"
+          "refId": "errors",
+          "matchExact": true
         },
         {
           "datasource": {
@@ -380,9 +403,10 @@
               "$service"
             ]
           },
-          "period": "3600",
+          "period": "",
           "region": "$region",
-          "refId": "invocations"
+          "refId": "invocations",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -433,8 +457,9 @@
               "$service"
             ]
           },
-          "period": "86400",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -468,8 +493,9 @@
               "$service"
             ]
           },
-          "period": "86400",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {
@@ -503,8 +529,9 @@
               "$service"
             ]
           },
-          "period": "86400",
-          "region": "$region"
+          "period": "",
+          "region": "$region",
+          "matchExact": true
         }
       ],
       "fieldConfig": {

@@ -51,10 +51,17 @@ resource "aws_iam_user_policy" "grafana_readonly" {
         Resource = "*"
       },
       {
+        Sid    = "CloudWatchLogsDescribe"
+        Effect = "Allow"
+        Action = [
+          "logs:DescribeLogGroups"
+        ]
+        Resource = "*"
+      },
+      {
         Sid    = "CloudWatchLogsRead"
         Effect = "Allow"
         Action = [
-          "logs:DescribeLogGroups",
           "logs:GetLogGroupFields",
           "logs:StartQuery",
           "logs:StopQuery",

@@ -48,6 +48,8 @@ const FALLBACK_NEWS: NewsStory[] = [
   { title: 'PostgreSQL 18 Introduces Native Vector Search for AI Workloads', url: '#', by: 'pgfoundation', score: 689 },
 ];
 
+type Step = 'email' | 'login' | 'register';
+
 function maskEmail(email: string): string {
   const [local, domain] = email.split('@');
   if (!domain) return email;
@@ -88,6 +90,14 @@ function LockIcon() {
   );
 }
 
+function UserIcon() {
+  return (
+    <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+    </svg>
+  );
+}
+
 function EyeIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
@@ -101,6 +111,22 @@ function EyeSlashIcon() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
       <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+    </svg>
+  );
+}
+
+function ArrowRightIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
     </svg>
   );
 }
@@ -146,7 +172,7 @@ function useTypingEffect(text: string, speed: number = 80) {
   return displayed;
 }
 
-// Newspaper-style tech news board — static layout, no scrolling ticker
+// Newspaper-style tech news board
 function TechNewspaper({ stories }: { stories: NewsStory[] }) {
   if (!stories.length) return null;
 
@@ -176,12 +202,7 @@ function TechNewspaper({ stories }: { stories: NewsStory[] }) {
       </div>
 
       {/* Headline story */}
-      <a
-        href={headline.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group block mb-4"
-      >
+      <a href={headline.url} target="_blank" rel="noopener noreferrer" className="group block mb-4">
         <h3 className="text-lg font-bold text-gray-100 group-hover:text-pink-300 transition-colors leading-tight"
             style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
           {headline.title}
@@ -199,16 +220,10 @@ function TechNewspaper({ stories }: { stories: NewsStory[] }) {
 
       {/* Two-column: secondary stories + sidebar */}
       <div className="grid grid-cols-5 gap-4 mb-4">
-        {/* Secondary stories — left 3 cols */}
         <div className="col-span-3 space-y-3">
           {secondary.map((story, i) => (
-            <a
-              key={story.title}
-              href={story.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group block pb-3 border-b border-gray-800/60 last:border-0"
-            >
+            <a key={story.title} href={story.url} target="_blank" rel="noopener noreferrer"
+               className="group block pb-3 border-b border-gray-800/60 last:border-0">
               <div className="flex gap-2.5 items-start">
                 <span className="shrink-0 text-2xl font-black text-pink-500/20 leading-none mt-px"
                       style={{ fontFamily: "'Georgia', serif" }}>
@@ -229,18 +244,11 @@ function TechNewspaper({ stories }: { stories: NewsStory[] }) {
           ))}
         </div>
 
-        {/* Sidebar stories — right 2 cols */}
         <div className="col-span-2 border-l border-gray-800/60 pl-4">
           <p className="text-[9px] uppercase tracking-[0.2em] text-pink-400/60 font-semibold mb-2">Trending</p>
           <div className="space-y-2.5">
             {sidebar.map((story) => (
-              <a
-                key={story.title}
-                href={story.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group block"
-              >
+              <a key={story.title} href={story.url} target="_blank" rel="noopener noreferrer" className="group block">
                 <p className="text-xs text-gray-300 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2">
                   {story.title}
                 </p>
@@ -259,13 +267,7 @@ function TechNewspaper({ stories }: { stories: NewsStory[] }) {
           <div className="h-px bg-gray-800 mb-3" />
           <div className="grid grid-cols-3 gap-3">
             {bottom.map((story) => (
-              <a
-                key={story.title}
-                href={story.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group block"
-              >
+              <a key={story.title} href={story.url} target="_blank" rel="noopener noreferrer" className="group block">
                 <p className="text-[11px] text-gray-400 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2"
                    style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
                   {story.title}
@@ -281,9 +283,10 @@ function TechNewspaper({ stories }: { stories: NewsStory[] }) {
 }
 
 export default function AuthGate({ children, title, description }: AuthGateProps) {
-  const { isAuthenticated, isLoading, login, register, checkUser } = useAuth();
+  const { isAuthenticated, isLoading, login, register } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'login' | 'register'>('register');
+  // Step flow: email → login | register
+  const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -292,18 +295,20 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [welcomeBack, setWelcomeBack] = useState<string | null>(null);
+  const [checkingEmail, setCheckingEmail] = useState(false);
   const [fadeIn, setFadeIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [news, setNews] = useState<NewsStory[]>(FALLBACK_NEWS);
 
   // Real-time password validation + dodging button
-  const [passwordValid, setPasswordValid] = useState<boolean | null>(null); // null = not checked yet
+  const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
   const [dodgeCount, setDodgeCount] = useState(0);
   const [dodgeOffset, setDodgeOffset] = useState({ x: 0, y: 0 });
+  const [shaking, setShaking] = useState(false);
   const maxDodges = 5;
   const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // Typing effect
   const typedTitle = useTypingEffect(title || 'Welcome', 80);
@@ -331,33 +336,25 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     fetchTechNews();
   }, []);
 
-  // Returning user detection
-  useEffect(() => {
-    if (isAuthenticated) return;
-    const fingerprint = localStorage.getItem('portfolio_fingerprint_hash');
-    if (!fingerprint) return;
-
-    checkUser(fingerprint).then((result) => {
-      if (result?.exists && result.email) {
-        setActiveTab('login');
-        setWelcomeBack(maskEmail(result.email));
-      }
-    });
-  }, [isAuthenticated, checkUser]);
-
   // Trigger fade-in on mount
   useEffect(() => {
     const id = requestAnimationFrame(() => setFadeIn(true));
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Real-time password validation — auto-login on correct password
+  // Focus password input when transitioning to login step
   useEffect(() => {
-    // Reset dodge on every keystroke
+    if (step === 'login') {
+      setTimeout(() => passwordInputRef.current?.focus(), 350);
+    }
+  }, [step]);
+
+  // Real-time password validation for login — auto-login on correct password
+  useEffect(() => {
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0 });
 
-    if (activeTab !== 'login' || !email || !password || password.length < 1) {
+    if (step !== 'login' || !email || !password || password.length < 1) {
       setPasswordValid(null);
       return;
     }
@@ -369,7 +366,6 @@ export default function AuthGate({ children, title, description }: AuthGateProps
         if (!resp.data) return;
 
         if (resp.data.valid) {
-          // Password correct → auto-login immediately
           setPasswordValid(true);
           setSubmitting(true);
           const sessionId = sessionStorage.getItem('portfolio_session_id') || undefined;
@@ -380,46 +376,78 @@ export default function AuthGate({ children, title, description }: AuthGateProps
             setError(result.error);
             setPasswordValid(null);
           }
-          // If login succeeds, isAuthenticated will become true and children render
         } else {
           setPasswordValid(false);
         }
       } catch {
         setPasswordValid(null);
       }
-    }, 300); // 300ms debounce — fast feedback
+    }, 300);
 
     return () => {
       if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
     };
-  }, [password, email, activeTab, login]);
+  }, [password, email, step, login]);
 
-  // Dodging button: dances when password is wrong, stays put when correct or unknown
-  const handleButtonHover = useCallback(() => {
-    if (passwordValid !== false || dodgeCount >= maxDodges) return;
+  // Dodging button handler
+  const handleButtonInteraction = useCallback(() => {
+    if (passwordValid !== false) return;
+    if (dodgeCount >= maxDodges) {
+      // After max dodges, shake instead
+      setShaking(true);
+      setTimeout(() => setShaking(false), 600);
+      return;
+    }
     const x = (Math.random() - 0.5) * 240;
     const y = (Math.random() - 0.5) * 100;
     setDodgeOffset({ x, y });
     setDodgeCount(prev => prev + 1);
   }, [passwordValid, dodgeCount]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500" />
-      </div>
-    );
-  }
-
-  if (isAuthenticated) {
-    return <>{children}</>;
-  }
-
-  const handleLogin = async (e: React.FormEvent) => {
+  // Handle "Next" — check if email exists
+  const handleEmailNext = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email || !password) {
-      setError('Please fill in all fields.');
+    if (!email) {
+      setError('Please enter your email.');
+      return;
+    }
+    // Basic email format check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    setCheckingEmail(true);
+    try {
+      const resp = await apiService.checkEmail(email);
+      if (resp.error) {
+        setError(resp.error);
+        setCheckingEmail(false);
+        return;
+      }
+      if (resp.data?.exists) {
+        setStep('login');
+      } else {
+        setStep('register');
+      }
+    } catch {
+      setError('Something went wrong. Please try again.');
+    }
+    setCheckingEmail(false);
+  };
+
+  // Handle login submit (fallback for when dodge stops)
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordValid === false) {
+      setShaking(true);
+      setTimeout(() => setShaking(false), 600);
+      return;
+    }
+    setError('');
+    if (!password) {
+      setError('Please enter your password.');
       return;
     }
     setSubmitting(true);
@@ -432,10 +460,11 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     }
   };
 
+  // Handle register submit
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email || !password) {
+    if (!password) {
       setError('Please fill in all required fields.');
       return;
     }
@@ -462,15 +491,48 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     if (result.error) {
       setError(result.error);
     } else {
-      // Registration successful — switch to login tab
-      setSuccessMsg('Account created! Please log in with your credentials.');
+      setSuccessMsg('Account created! Logging you in...');
       setError('');
-      setConfirmPassword('');
-      setRole('');
-      setSector('');
-      setActiveTab('login');
+      // Auto-login after registration
+      setSubmitting(true);
+      const loginResult = await login(email, password, sessionId, fingerprint);
+      setSubmitting(false);
+      if (loginResult.error) {
+        setSuccessMsg('Account created! Please log in.');
+        setStep('login');
+        setPassword('');
+        setConfirmPassword('');
+        setRole('');
+        setSector('');
+      }
     }
   };
+
+  // Go back to email step
+  const handleBack = () => {
+    setStep('email');
+    setPassword('');
+    setConfirmPassword('');
+    setRole('');
+    setSector('');
+    setError('');
+    setSuccessMsg('');
+    setPasswordValid(null);
+    setDodgeCount(0);
+    setDodgeOffset({ x: 0, y: 0 });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-pink-500" />
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <>{children}</>;
+  }
 
   const passwordStrength = getPasswordStrength(password);
 
@@ -489,13 +551,15 @@ export default function AuthGate({ children, title, description }: AuthGateProps
       : 'Login'
     : 'Login';
 
+  // Step indicator
+  const stepLabel = step === 'email' ? 'Get Started' : step === 'login' ? 'Welcome Back' : 'Create Account';
+
   return (
     <div
       className={`min-h-screen bg-gray-950 transition-opacity duration-700 ${
         fadeIn ? 'opacity-100' : 'opacity-0'
       }`}
     >
-      {/* CSS for ticker animation and sparkles */}
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -516,6 +580,19 @@ export default function AuthGate({ children, title, description }: AuthGateProps
           0%, 100% { box-shadow: 0 0 20px rgba(236, 72, 153, 0.1); }
           50% { box-shadow: 0 0 40px rgba(236, 72, 153, 0.2); }
         }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          10%, 30%, 50%, 70%, 90% { transform: translateX(-6px); }
+          20%, 40%, 60%, 80% { transform: translateX(6px); }
+        }
+        @keyframes slide-in-right {
+          from { opacity: 0; transform: translateX(30px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes slide-in-left {
+          from { opacity: 0; transform: translateX(-30px); }
+          to { opacity: 1; transform: translateX(0); }
+        }
         .gradient-border {
           background: linear-gradient(135deg, #ec4899, #8b5cf6, #ec4899);
           background-size: 200% 200%;
@@ -527,9 +604,18 @@ export default function AuthGate({ children, title, description }: AuthGateProps
           -webkit-box-orient: vertical;
           overflow: hidden;
         }
+        .animate-shake {
+          animation: shake 0.6s cubic-bezier(.36,.07,.19,.97) both;
+        }
+        .animate-slide-right {
+          animation: slide-in-right 0.35s ease-out both;
+        }
+        .animate-slide-left {
+          animation: slide-in-left 0.35s ease-out both;
+        }
       `}</style>
 
-      {/* Sparkle particles (CSS only) */}
+      {/* Sparkle particles */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
         {[...Array(8)].map((_, i) => (
           <div
@@ -574,7 +660,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
           </div>
         </div>
 
-        {/* Right Side: Auth Form — always centered in viewport */}
+        {/* Right Side: Unified Auth Form */}
         <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-8 min-h-screen">
           <div className="w-full max-w-md">
             {/* Title with typing effect */}
@@ -588,49 +674,26 @@ export default function AuthGate({ children, title, description }: AuthGateProps
               )}
             </div>
 
-            {/* Auth card with animated gradient border */}
+            {/* Auth card */}
             <div className="relative rounded-2xl p-[1px] gradient-border" style={{ animation: 'pulse-glow 3s ease-in-out infinite, gradient-rotate 4s ease infinite' }}>
               <div className="bg-gray-900 rounded-2xl p-6 sm:p-8">
-                {/* Welcome back banner */}
-                {welcomeBack && activeTab === 'login' && (
-                  <div className="mb-5 px-4 py-3 bg-pink-900/20 border border-pink-500/20 rounded-lg text-center">
-                    <p className="text-pink-300 text-sm">
-                      Welcome back! <span className="font-medium text-pink-200">{welcomeBack}</span>
-                    </p>
+                {/* Step indicator pill */}
+                <div className="flex items-center justify-center mb-6">
+                  <div className="flex items-center gap-2">
+                    {/* Step dots */}
+                    <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step === 'email' ? 'bg-pink-400 scale-125' : 'bg-pink-400/40'
+                    }`} />
+                    <div className={`w-8 h-0.5 transition-all duration-300 ${
+                      step !== 'email' ? 'bg-pink-400' : 'bg-gray-700'
+                    }`} />
+                    <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                      step !== 'email' ? 'bg-pink-400 scale-125' : 'bg-gray-700'
+                    }`} />
                   </div>
-                )}
-
-                {/* Pill tabs */}
-                <div className="flex mb-6 bg-gray-800/60 rounded-full p-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('login');
-                      setError(''); setSuccessMsg('');
-                    }}
-                    className={`flex-1 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
-                      activeTab === 'login'
-                        ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg shadow-pink-500/20'
-                        : 'text-gray-400 hover:text-gray-300'
-                    }`}
-                  >
-                    Login
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActiveTab('register');
-                      setError(''); setSuccessMsg('');
-                    }}
-                    className={`flex-1 py-2 text-sm font-medium rounded-full transition-all duration-300 ${
-                      activeTab === 'register'
-                        ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg shadow-pink-500/20'
-                        : 'text-gray-400 hover:text-gray-300'
-                    }`}
-                  >
-                    Create Account
-                  </button>
                 </div>
+
+                <p className="text-center text-sm text-gray-400 mb-5 font-medium">{stepLabel}</p>
 
                 {/* Success banner */}
                 {successMsg && (
@@ -652,29 +715,71 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                   </div>
                 )}
 
-                {/* Login Form */}
-                {activeTab === 'login' && (
-                  <form onSubmit={handleLogin} className="space-y-4">
+                {/* ===== STEP 1: Email ===== */}
+                {step === 'email' && (
+                  <form onSubmit={handleEmailNext} className="space-y-4 animate-slide-right">
                     <div>
-                      <label htmlFor="login-email" className={labelClasses}>Email</label>
+                      <label htmlFor="auth-email" className={labelClasses}>Email</label>
                       <div className={inputWrapperClasses}>
                         <span className="absolute left-3 z-10"><EnvelopeIcon /></span>
                         <input
-                          id="login-email"
+                          id="auth-email"
                           type="email"
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
                           placeholder="you@example.com"
                           className={inputClasses}
                           autoComplete="email"
+                          autoFocus
                         />
                       </div>
                     </div>
+
+                    <button
+                      type="submit"
+                      disabled={checkingEmail}
+                      className="w-full py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-pink-800 disabled:to-purple-900 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/30"
+                    >
+                      {checkingEmail ? (
+                        <>
+                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                          Checking...
+                        </>
+                      ) : (
+                        <>
+                          Next
+                          <ArrowRightIcon />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
+
+                {/* ===== STEP 2A: Login (password) ===== */}
+                {step === 'login' && (
+                  <form onSubmit={handleLogin} className="space-y-4 animate-slide-right">
+                    {/* Email display with back button */}
+                    <div className="flex items-center gap-3 mb-2">
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="shrink-0 p-1.5 rounded-lg bg-gray-800/60 hover:bg-gray-700/60 text-gray-400 hover:text-gray-200 transition-all"
+                        title="Change email"
+                      >
+                        <ArrowLeftIcon />
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <EnvelopeIcon />
+                        <span className="text-sm text-gray-300 truncate">{maskEmail(email)}</span>
+                      </div>
+                    </div>
+
                     <div>
                       <label htmlFor="login-password" className={labelClasses}>Password</label>
                       <div className={inputWrapperClasses}>
                         <span className="absolute left-3 z-10"><LockIcon /></span>
                         <input
+                          ref={passwordInputRef}
                           id="login-password"
                           type={showPassword ? 'text' : 'password'}
                           value={password}
@@ -716,14 +821,16 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                       )}
                     </div>
 
-                    {/* Dancing login button — dodges on hover when password is wrong */}
+                    {/* Dancing login button */}
                     <div className="relative overflow-hidden" style={{ height: '52px' }}>
                       <button
                         type="submit"
                         disabled={submitting || passwordValid === true}
-                        onMouseEnter={handleButtonHover}
-                        onTouchStart={handleButtonHover}
+                        onMouseEnter={handleButtonInteraction}
+                        onTouchStart={handleButtonInteraction}
                         className={`absolute inset-x-0 py-2.5 font-medium rounded-lg flex items-center justify-center gap-2 transition-all duration-300 ${
+                          shaking ? 'animate-shake' : ''
+                        } ${
                           passwordValid === true
                             ? 'bg-emerald-500 text-white cursor-default shadow-lg shadow-emerald-500/20'
                             : passwordValid === false
@@ -732,7 +839,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                         }`}
                         style={{
                           transform: `translate(${dodgeOffset.x}px, ${dodgeOffset.y}px)`,
-                          transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                          transition: shaking ? 'none' : 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
                         }}
                       >
                         {submitting ? (
@@ -753,24 +860,26 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                   </form>
                 )}
 
-                {/* Register Form */}
-                {activeTab === 'register' && (
-                  <form onSubmit={handleRegister} className="space-y-4">
-                    <div>
-                      <label htmlFor="reg-email" className={labelClasses}>Email</label>
-                      <div className={inputWrapperClasses}>
-                        <span className="absolute left-3 z-10"><EnvelopeIcon /></span>
-                        <input
-                          id="reg-email"
-                          type="email"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
-                          placeholder="you@example.com"
-                          className={inputClasses}
-                          autoComplete="email"
-                        />
+                {/* ===== STEP 2B: Register ===== */}
+                {step === 'register' && (
+                  <form onSubmit={handleRegister} className="space-y-4 animate-slide-right">
+                    {/* Email display with back button */}
+                    <div className="flex items-center gap-3 mb-2">
+                      <button
+                        type="button"
+                        onClick={handleBack}
+                        className="shrink-0 p-1.5 rounded-lg bg-gray-800/60 hover:bg-gray-700/60 text-gray-400 hover:text-gray-200 transition-all"
+                        title="Change email"
+                      >
+                        <ArrowLeftIcon />
+                      </button>
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <EnvelopeIcon />
+                        <span className="text-sm text-gray-300 truncate">{email}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-medium">New</span>
                       </div>
                     </div>
+
                     <div>
                       <label htmlFor="reg-password" className={labelClasses}>Password</label>
                       <div className={inputWrapperClasses}>
@@ -783,6 +892,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           placeholder="At least 6 characters"
                           className={inputWithToggleClasses}
                           autoComplete="new-password"
+                          autoFocus
                         />
                         <button
                           type="button"
@@ -793,7 +903,6 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
-                      {/* Password strength indicator */}
                       {password && (
                         <div className="mt-2">
                           <div className="flex gap-1">

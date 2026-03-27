@@ -300,6 +300,37 @@ def validate_password():
         return jsonify({'valid': False}), 200
 
 
+@auth_bp.route('/check-email', methods=['POST'])
+def check_email():
+    """Check if an email is already registered — used by the unified auth flow
+    to decide whether to show login or registration fields."""
+    try:
+        client_ip = get_client_ip(request)
+        rate_limiter = get_rate_limiter()
+        if rate_limiter.is_rate_limited(f"check_email:{client_ip}", max_requests=20, window_seconds=300):
+            return jsonify({'error': 'Too many attempts. Please try again later.'}), 429
+
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        email = InputSanitizer.sanitize_email(data.get('email', ''))
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+
+        if InputSanitizer.check_nosql_injection(data.get('email', '')):
+            return jsonify({'error': 'Invalid input'}), 400
+
+        db = DBConnect().get_db()
+        user = db.users.find_one({'email': email})
+
+        return jsonify({'exists': bool(user)}), 200
+
+    except Exception as e:
+        logger.error(f"Check-email error: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @auth_bp.route('/check-user', methods=['POST'])
 def check_user():
     """Check if a user exists by fingerprint hash for welcome-back UX"""

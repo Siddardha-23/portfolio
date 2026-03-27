@@ -182,6 +182,13 @@ class ApiService {
     });
   }
 
+  async checkEmail(email: string) {
+    return this.request<{ exists: boolean }>('/auth/check-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
   async validatePassword(email: string, password: string) {
     return this.request<{ valid: boolean }>('/auth/validate-password', {
       method: 'POST',

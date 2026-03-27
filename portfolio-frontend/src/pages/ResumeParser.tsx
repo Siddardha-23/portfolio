@@ -684,8 +684,10 @@ function TailorTab() {
     if (r.error) { setTailorError(r.error); return; }
     if (r.data) {
       setResult({ jd_analysis: jdAnalysis, tailored_resume: r.data.tailored_resume });
-      // Save record in background (no await — don't block UI)
+      // Save analytics record in background
       saveRecord(jdAnalysis, r.data.tailored_resume, jdText);
+      // Auto-generate PDF in background so it appears in "Tailored Resumes" tab
+      apiService.downloadTailoredResume(r.data.tailored_resume, jdAnalysis, 'pdf').catch(() => {});
     }
   }, [jdAnalysis, jdText, saveRecord]);
 
@@ -908,7 +910,10 @@ export default function ResumeParser() {
         </header>
 
         <main className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
-          {activeNav === 'tailor' && <TailorTab />}
+          {/* TailorTab stays mounted (hidden via CSS) so in-flight API calls survive tab switches */}
+          <div className={activeNav === 'tailor' ? '' : 'hidden'}>
+            <TailorTab />
+          </div>
           {activeNav === 'my-resumes' && <MyResumesTab />}
           {activeNav === 'tailored' && <TailoredResumesTab />}
           {activeNav === 'profile' && <ProfileTab />}

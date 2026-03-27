@@ -797,6 +797,7 @@ class ApiService {
           tailored_resume: tailoredResume,
           jd_analysis: jdAnalysis,
           format,
+          job_title: jdAnalysis.job_title || 'untitled',
         }),
         signal: controller.signal,
       });

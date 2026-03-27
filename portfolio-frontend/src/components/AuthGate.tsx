@@ -146,48 +146,136 @@ function useTypingEffect(text: string, speed: number = 80) {
   return displayed;
 }
 
-// News board component — fixed-height container with internal scroll only
-function TechNewsBoard({ stories }: { stories: NewsStory[] }) {
-  const [paused, setPaused] = useState(false);
-  const doubled = [...stories, ...stories];
+// Newspaper-style tech news board — static layout, no scrolling ticker
+function TechNewspaper({ stories }: { stories: NewsStory[] }) {
+  if (!stories.length) return null;
+
+  const headline = stories[0];
+  const secondary = stories.slice(1, 3);
+  const sidebar = stories.slice(3, 7);
+  const bottom = stories.slice(7, 10);
+
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
 
   return (
-    <div
-      className="relative overflow-hidden"
-      style={{ height: 'calc(100vh - 120px)' }}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-    >
-      <div
-        className="flex flex-col"
-        style={{
-          animation: paused ? 'none' : 'ticker 60s linear infinite',
-        }}
-      >
-        {doubled.map((story, i) => (
-          <a
-            key={`${story.title}-${i}`}
-            href={story.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group block px-5 py-3.5 border-b border-pink-500/10 hover:bg-pink-500/5 transition-colors duration-200"
-          >
-            <p className="text-sm text-gray-300 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2">
-              {story.title}
-            </p>
-            <div className="flex items-center gap-3 mt-1.5">
-              <span className="text-xs text-gray-500">by {story.by}</span>
-              <span className="flex items-center gap-0.5 text-xs text-pink-400/70">
-                <ArrowUpIcon />
-                {story.score}
-              </span>
-            </div>
-          </a>
-        ))}
+    <div className="flex-1 overflow-y-auto px-5 py-5 custom-scrollbar">
+      {/* Masthead */}
+      <div className="text-center border-b-2 border-pink-500/20 pb-3 mb-4">
+        <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500">{today}</p>
+        <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-300 via-white to-purple-300 tracking-tight mt-0.5"
+            style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+          THE TECH CHRONICLE
+        </h2>
+        <div className="flex items-center justify-center gap-2 mt-1">
+          <div className="h-px flex-1 bg-gradient-to-r from-transparent to-pink-500/30" />
+          <span className="text-[9px] text-gray-500 uppercase tracking-widest">Top Stories</span>
+          <div className="h-px flex-1 bg-gradient-to-l from-transparent to-pink-500/30" />
+        </div>
       </div>
-      {/* Fade edges */}
-      <div className="pointer-events-none absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-gray-950 to-transparent z-10" />
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-950 to-transparent z-10" />
+
+      {/* Headline story */}
+      <a
+        href={headline.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="group block mb-4"
+      >
+        <h3 className="text-lg font-bold text-gray-100 group-hover:text-pink-300 transition-colors leading-tight"
+            style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+          {headline.title}
+        </h3>
+        <div className="flex items-center gap-3 mt-2">
+          <span className="text-[10px] font-medium text-pink-400 uppercase tracking-wider">Breaking</span>
+          <span className="text-[10px] text-gray-500">by {headline.by}</span>
+          <span className="flex items-center gap-0.5 text-[10px] text-pink-400/60">
+            <ArrowUpIcon /> {headline.score}
+          </span>
+        </div>
+      </a>
+
+      <div className="h-px bg-gray-800 mb-4" />
+
+      {/* Two-column: secondary stories + sidebar */}
+      <div className="grid grid-cols-5 gap-4 mb-4">
+        {/* Secondary stories — left 3 cols */}
+        <div className="col-span-3 space-y-3">
+          {secondary.map((story, i) => (
+            <a
+              key={story.title}
+              href={story.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group block pb-3 border-b border-gray-800/60 last:border-0"
+            >
+              <div className="flex gap-2.5 items-start">
+                <span className="shrink-0 text-2xl font-black text-pink-500/20 leading-none mt-px"
+                      style={{ fontFamily: "'Georgia', serif" }}>
+                  {i + 2}
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-gray-200 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2"
+                     style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+                    {story.title}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-[10px] text-gray-500">{story.by}</span>
+                    <span className="flex items-center gap-0.5 text-[10px] text-pink-400/50"><ArrowUpIcon /> {story.score}</span>
+                  </div>
+                </div>
+              </div>
+            </a>
+          ))}
+        </div>
+
+        {/* Sidebar stories — right 2 cols */}
+        <div className="col-span-2 border-l border-gray-800/60 pl-4">
+          <p className="text-[9px] uppercase tracking-[0.2em] text-pink-400/60 font-semibold mb-2">Trending</p>
+          <div className="space-y-2.5">
+            {sidebar.map((story) => (
+              <a
+                key={story.title}
+                href={story.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group block"
+              >
+                <p className="text-xs text-gray-300 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2">
+                  {story.title}
+                </p>
+                <span className="flex items-center gap-0.5 text-[10px] text-gray-600 mt-0.5">
+                  <ArrowUpIcon /> {story.score}
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Bottom row */}
+      {bottom.length > 0 && (
+        <>
+          <div className="h-px bg-gray-800 mb-3" />
+          <div className="grid grid-cols-3 gap-3">
+            {bottom.map((story) => (
+              <a
+                key={story.title}
+                href={story.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group block"
+              >
+                <p className="text-[11px] text-gray-400 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2"
+                   style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+                  {story.title}
+                </p>
+                <span className="text-[9px] text-gray-600 mt-0.5 block">{story.by}</span>
+              </a>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -409,10 +497,10 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     >
       {/* CSS for ticker animation and sparkles */}
       <style>{`
-        @keyframes ticker {
-          0% { transform: translateY(0); }
-          100% { transform: translateY(-50%); }
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(236,72,153,0.15); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(236,72,153,0.3); }
         @keyframes sparkle-float {
           0%, 100% { transform: translateY(0px) rotate(0deg); opacity: 0.3; }
           25% { transform: translateY(-15px) rotate(90deg); opacity: 0.8; }
@@ -470,29 +558,19 @@ export default function AuthGate({ children, title, description }: AuthGateProps
       </div>
 
       <div className="relative z-10 min-h-screen flex flex-col lg:flex-row">
-        {/* Left Side: Tech News Board — fixed height, internal scroll only */}
-        <div className="hidden lg:flex lg:w-[42%] xl:w-[38%] flex-col h-screen sticky top-0 bg-gray-950 border-r border-pink-500/10">
-          {/* News header */}
-          <div className="shrink-0 px-6 py-5 border-b border-pink-500/10">
-            <div className="flex items-center gap-2.5">
-              <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-pink-500/10">
-                <span className="text-pink-400"><ZapIcon /></span>
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-white tracking-tight">Tech Pulse</h2>
-                <p className="text-xs text-gray-500">Live from Hacker News</p>
-              </div>
-            </div>
-          </div>
-
-          {/* News board — scrolls only inside this box */}
-          <TechNewsBoard stories={news} />
+        {/* Left Side: Newspaper-style tech news board */}
+        <div className="hidden lg:flex lg:w-[42%] xl:w-[40%] flex-col h-screen sticky top-0 bg-gray-950 border-r border-pink-500/10">
+          <TechNewspaper stories={news} />
 
           {/* Footer */}
-          <div className="shrink-0 px-6 py-3 border-t border-pink-500/10">
-            <p className="text-[10px] text-gray-600 text-center">
-              Powered by Hacker News API
-            </p>
+          <div className="shrink-0 px-5 py-2.5 border-t border-gray-800/60">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <span className="text-pink-400"><ZapIcon /></span>
+                <span className="text-[10px] text-gray-500">Powered by Hacker News</span>
+              </div>
+              <span className="text-[9px] text-gray-600">Updates live</span>
+            </div>
           </div>
         </div>
 

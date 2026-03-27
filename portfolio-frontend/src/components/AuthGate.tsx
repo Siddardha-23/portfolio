@@ -356,19 +356,18 @@ function useTechNewsFeed() {
 // ─── Skeleton loader ────────────────────────────────────────────────────────
 function ArticleSkeleton({ hero = false }: { hero?: boolean }) {
   return (
-    <div className={`animate-pulse ${hero ? 'pb-5' : 'py-4'}`}>
+    <div className={`animate-pulse rounded-xl bg-gray-800/40 border border-gray-700/30 p-4 ${hero ? 'col-span-2' : ''}`}>
       <div className="flex gap-2 mb-2.5">
-        <div className="h-4 w-10 rounded-full bg-gray-800/80" />
-        <div className="h-4 w-14 rounded-full bg-gray-800/80" />
+        <div className="h-4 w-10 rounded-full bg-gray-700/60" />
+        <div className="h-4 w-14 rounded-full bg-gray-700/60" />
       </div>
-      <div className={`${hero ? 'h-6' : 'h-5'} w-full rounded bg-gray-800/80 mb-2`} />
-      <div className={`${hero ? 'h-6' : 'h-5'} w-3/4 rounded bg-gray-800/80 mb-3`} />
-      <div className="h-3.5 w-full rounded bg-gray-800/50 mb-1.5" />
-      <div className="h-3.5 w-2/3 rounded bg-gray-800/50 mb-3" />
+      <div className={`${hero ? 'h-5' : 'h-4'} w-full rounded bg-gray-700/60 mb-2`} />
+      <div className={`${hero ? 'h-5' : 'h-4'} w-3/4 rounded bg-gray-700/60 mb-3`} />
+      <div className="h-3 w-full rounded bg-gray-700/40 mb-1.5" />
+      <div className="h-3 w-2/3 rounded bg-gray-700/40 mb-3" />
       <div className="flex gap-3">
-        <div className="h-3 w-20 rounded bg-gray-800/40" />
-        <div className="h-3 w-12 rounded bg-gray-800/40" />
-        <div className="h-3 w-16 rounded bg-gray-800/40" />
+        <div className="h-3 w-16 rounded bg-gray-700/30" />
+        <div className="h-3 w-10 rounded bg-gray-700/30" />
       </div>
     </div>
   );
@@ -391,28 +390,25 @@ function ArticleCard({ article, index, hero = false }: { article: NewsArticle; i
       href={article.url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`group block transition-colors duration-200 ${
+      className={`group block rounded-xl border transition-all duration-250 hover:scale-[1.02] hover:shadow-lg hover:shadow-pink-500/5 ${
         hero
-          ? 'pb-5'
-          : 'py-4 border-t border-gray-800/50'
+          ? 'col-span-2 bg-gradient-to-br from-gray-800/60 via-gray-800/40 to-pink-900/10 border-pink-500/15 p-5'
+          : 'bg-gray-800/30 border-gray-700/30 hover:border-pink-500/20 hover:bg-gray-800/50 p-4'
       }`}
-      style={{ animation: `article-fade-in 0.4s ease-out ${Math.min(index * 0.05, 0.3)}s both` }}
+      style={{ animation: `article-fade-in 0.4s ease-out ${Math.min(index * 0.06, 0.4)}s both` }}
     >
       {/* Tags */}
       <div className="flex items-center gap-1.5 mb-2">
-        {!hero && (
-          <span className="text-xs font-bold text-pink-500/30 mr-1 tabular-nums min-w-[1.25rem]"
-                style={{ fontFamily: "'Georgia', serif" }}>
-            {index + 1}
-          </span>
-        )}
         {article.tags.map(tag => <TagPill key={tag} tag={tag} />)}
+        {hero && (
+          <span className="ml-auto text-[9px] uppercase tracking-wider text-pink-400/50 font-semibold">Top Story</span>
+        )}
       </div>
 
       {/* Title */}
       <h3
         className={`font-bold text-gray-100 group-hover:text-pink-300 transition-colors leading-snug ${
-          hero ? 'text-[1.2rem]' : 'text-[0.9rem]'
+          hero ? 'text-[1.1rem]' : 'text-[0.82rem]'
         }`}
         style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
       >
@@ -421,15 +417,15 @@ function ArticleCard({ article, index, hero = false }: { article: NewsArticle; i
 
       {/* Summary */}
       {article.summary && (
-        <p className={`mt-1.5 text-gray-400 leading-relaxed line-clamp-2 ${
-          hero ? 'text-[0.82rem]' : 'text-[0.78rem]'
+        <p className={`mt-1.5 text-gray-400 leading-relaxed ${
+          hero ? 'text-[0.8rem] line-clamp-2' : 'text-[0.72rem] line-clamp-2'
         }`}>
           {article.summary}
         </p>
       )}
 
       {/* Metadata */}
-      <div className="flex items-center gap-2.5 mt-2.5 text-[10px] text-gray-500 flex-wrap">
+      <div className="flex items-center gap-2 mt-3 text-[10px] text-gray-500 flex-wrap">
         {article.source && (
           <span className="flex items-center gap-1 text-gray-400">
             <GlobeIcon />
@@ -445,7 +441,6 @@ function ArticleCard({ article, index, hero = false }: { article: NewsArticle; i
             <ChatBubbleIcon /> {article.descendants}
           </span>
         )}
-        <span className="text-gray-600">by {article.by}</span>
       </div>
     </a>
   );
@@ -528,11 +523,12 @@ function TechNewsFeed({ articles, loading, loadingMore, hasMore, loadMore }: {
         </div>
       </div>
 
-      {/* Scrollable feed */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 custom-scrollbar">
+      {/* Scrollable feed — card grid */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 custom-scrollbar">
         {loading ? (
-          <div className="pt-4">
+          <div className="grid grid-cols-2 gap-3 pt-4 pb-4">
             <ArticleSkeleton hero />
+            <ArticleSkeleton />
             <ArticleSkeleton />
             <ArticleSkeleton />
             <ArticleSkeleton />
@@ -549,31 +545,29 @@ function TechNewsFeed({ articles, loading, loadingMore, hasMore, loadMore }: {
             </button>
           </div>
         ) : (
-          <>
-            {/* Hero article */}
-            <div className="pt-4">
-              <ArticleCard article={filtered[0]} index={0} hero />
-            </div>
+          <div className="grid grid-cols-2 gap-3 pt-4 pb-4">
+            {/* Hero article — spans full width */}
+            <ArticleCard article={filtered[0]} index={0} hero />
 
-            {/* Remaining articles */}
+            {/* Remaining articles — 2-column grid */}
             {filtered.slice(1).map((article, i) => (
               <ArticleCard key={article.id} article={article} index={i + 1} />
             ))}
 
-            {/* Infinite scroll sentinel + loader */}
-            <div ref={sentinelRef} className="h-1" />
+            {/* Infinite scroll sentinel */}
+            <div ref={sentinelRef} className="col-span-2 h-1" />
             {loadingMore && (
-              <div className="py-4">
+              <>
                 <ArticleSkeleton />
                 <ArticleSkeleton />
-              </div>
+              </>
             )}
             {!hasMore && filtered.length > 5 && (
-              <div className="py-6 text-center border-t border-gray-800/40">
+              <div className="col-span-2 py-4 text-center">
                 <p className="text-[11px] text-gray-600 uppercase tracking-wider">End of feed</p>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
 

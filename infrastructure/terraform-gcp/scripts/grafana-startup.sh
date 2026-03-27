@@ -1,17 +1,20 @@
 #!/bin/bash
-set -euo pipefail
+
+exec > /var/log/grafana-startup.log 2>&1
+set -x
 
 GRAFANA_ADMIN_PASSWORD="${grafana_admin_password}"
 AWS_ACCESS_KEY="${aws_access_key_id}"
 AWS_SECRET_KEY="${aws_secret_access_key}"
 AWS_REGION="${aws_region}"
 
-# Skip if Grafana is already installed (idempotent on reboot)
 if systemctl is-active --quiet grafana-server 2>/dev/null; then
+  echo "Grafana already running, skipping install"
   exit 0
 fi
 
-# Install Grafana OSS
+echo "Installing Grafana OSS..."
+
 apt-get update -y
 apt-get install -y apt-transport-https software-properties-common wget gnupg2
 
@@ -22,13 +25,12 @@ echo "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com st
 apt-get update -y
 apt-get install -y grafana
 
-# Set admin password
 sed -i "s/^;admin_password = admin/admin_password = $GRAFANA_ADMIN_PASSWORD/" /etc/grafana/grafana.ini
 
-# Install CloudWatch and X-Ray plugins
+echo "Installing X-Ray plugin..."
 grafana-cli plugins install grafana-x-ray-datasource
 
-# Provision CloudWatch data source
+echo "Provisioning data sources..."
 mkdir -p /etc/grafana/provisioning/datasources
 cat > /etc/grafana/provisioning/datasources/aws-cloudwatch.yaml <<DSEOF
 apiVersion: 1
@@ -59,7 +61,9 @@ DSEOF
 
 chown -R grafana:grafana /etc/grafana/provisioning/datasources/
 
-# Enable and start Grafana
+echo "Starting Grafana..."
 systemctl daemon-reload
 systemctl enable grafana-server
 systemctl start grafana-server
+
+echo "Grafana startup complete"

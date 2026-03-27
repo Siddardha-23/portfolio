@@ -31,12 +31,12 @@ resource "google_compute_instance" "grafana" {
     }
   }
 
-  metadata_startup_script = templatefile("${path.module}/scripts/grafana-startup.sh", {
+  metadata_startup_script = replace(templatefile("${path.module}/scripts/grafana-startup.sh", {
     grafana_admin_password = var.grafana_admin_password
     aws_access_key_id      = var.aws_access_key_id
     aws_secret_access_key  = var.aws_secret_access_key
     aws_region             = var.aws_region
-  })
+  }), "\r", "")
 
   labels = {
     project = var.project_name

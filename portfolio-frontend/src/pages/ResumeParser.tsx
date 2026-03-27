@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
 import AuthGate from '@/components/AuthGate';
 import { useAuth } from '@/contexts/AuthContext';
+import { ThemeToggle } from '@/components/theme-toggle';
 import ResumeDashboard, {
   type BaseResume, type GeneratedResume,
   formatDate, formatBytes,
@@ -874,6 +875,7 @@ export default function ResumeParser() {
                 <h1 className="text-lg font-bold text-gray-100">Resume Tailor</h1>
               </div>
               <div className="flex items-center gap-2">
+                <ThemeToggle />
                 <button onClick={() => window.location.href = '/home'}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all">
                   <HomeIcon className="w-4 h-4" />Home

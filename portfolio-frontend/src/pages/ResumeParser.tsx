@@ -611,12 +611,14 @@ function TailorTab() {
   const recordIdRef = useRef<string | null>(null);
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
+  const [resumeLoadError, setResumeLoadError] = useState('');
 
   // Fetch active resume info for record storage
   const activeResumeRef = useRef<{ filename: string; s3_key: string } | null>(null);
 
   const checkResumes = useCallback(async () => {
     setLoadingCheck(true);
+    setResumeLoadError('');
     const resp = await apiService.listBaseResumes();
     if (resp.data) {
       const versions = resp.data.versions || [];
@@ -624,8 +626,14 @@ function TailorTab() {
       const active = versions.find((v: any) => v.is_active);
       if (active) activeResumeRef.current = { filename: active.filename, s3_key: active.s3_key };
     } else {
-      const s = await apiService.getResumeStatus();
-      setHasResumes(s.data?.has_resume === true);
+      const isAuthError = (resp.error || '').toLowerCase().includes('session expired') || (resp.error || '').includes('401');
+      if (isAuthError) {
+        setResumeLoadError('Your session expired. Please log in again.');
+      } else {
+        const s = await apiService.getResumeStatus();
+        if (s.data) setHasResumes(s.data.has_resume === true);
+        else setResumeLoadError(s.error || resp.error || 'Unable to load your resumes right now.');
+      }
     }
     setLoadingCheck(false);
   }, []);
@@ -747,7 +755,22 @@ function TailorTab() {
   }, []);
 
   if (loadingCheck) return <div className="space-y-4 animate-pulse"><div className="h-28 rounded-xl bg-gray-800/40" /><div className="h-48 rounded-xl bg-gray-800/20" /></div>;
-  if (!hasResumes) return <OnboardingHero onUploaded={() => setHasResumes(true)} />;
+  if (resumeLoadError) {
+    return (
+      <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 space-y-3">
+        <p className="text-sm text-red-300">{resumeLoadError}</p>
+        <button
+          type="button"
+          onClick={checkResumes}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-200 bg-gray-800 border border-gray-700 hover:border-gray-600 transition-all duration-200"
+        >
+          <ArrowPathIcon className="w-4 h-4" />
+          Retry
+        </button>
+      </div>
+    );
+  }
+  if (hasResumes === false) return <OnboardingHero onUploaded={() => setHasResumes(true)} />;
 
   return (
     <div className="space-y-6">

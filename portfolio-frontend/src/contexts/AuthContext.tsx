@@ -70,6 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     verifyAuth();
+
+    const onSessionExpired = () => {
+      setUser(null);
+      setIsLoading(false);
+    };
+
+    window.addEventListener('auth:session-expired', onSessionExpired);
+    return () => {
+      window.removeEventListener('auth:session-expired', onSessionExpired);
+    };
   }, []);
 
   const login = async (

@@ -86,6 +86,9 @@ class ApiService {
 
       if (response.status === 401 && token) {
         this.logout();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
+        }
         return { error: 'Session expired. Please sign in again.' };
       }
 

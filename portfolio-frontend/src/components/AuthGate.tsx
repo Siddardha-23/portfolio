@@ -66,24 +66,24 @@ const BATCH_SIZE = 12;
 // ─── Fallback articles ─────────────────────────────────────────────────────
 const now = Math.floor(Date.now() / 1000);
 const FALLBACK_ARTICLES: NewsArticle[] = [
-  { id: 1, title: 'Claude 4 Achieves State-of-the-Art on Complex Reasoning Benchmarks', url: '#', by: 'anthropic', score: 2841, time: now - 1800, descendants: 1432, tags: ['AI'], summary: 'Anthropic\'s latest model demonstrates breakthrough performance in multi-step reasoning, code generation, and scientific analysis across all major evaluation suites.', source: 'anthropic.com' },
-  { id: 2, title: 'Kubernetes 2.0 Preview: Simplified Cluster Management and Auto-Scaling', url: '#', by: 'k8s_team', score: 1923, time: now - 5400, descendants: 876, tags: ['Cloud', 'DevOps'], summary: 'The next major version promises to dramatically reduce operational complexity for container orchestration with an entirely redesigned control plane.', source: 'kubernetes.io' },
-  { id: 3, title: 'GitHub Actions Introduces Native GPU Runners for ML Pipelines', url: '#', by: 'natfriedman', score: 1756, time: now - 9000, descendants: 643, tags: ['DevOps', 'AI'], summary: 'Developers can now train and evaluate ML models directly in CI/CD workflows with A100 and H100 GPU support built into GitHub-hosted runners.', source: 'github.blog' },
-  { id: 4, title: 'Rust Foundation Announces Rust 2.0 Roadmap with Major Async Improvements', url: '#', by: 'rustlang', score: 1648, time: now - 14400, descendants: 921, tags: ['Languages'], summary: 'A complete overhaul of the async runtime, improved error handling ergonomics, and a new edition system that smooths the migration path for existing codebases.', source: 'blog.rust-lang.org' },
-  { id: 5, title: 'AWS Introduces Graviton5 Instances with 2x Performance per Watt', url: '#', by: 'jeffbarr', score: 1534, time: now - 18000, descendants: 534, tags: ['Cloud', 'Systems'], summary: 'The fifth-generation Arm-based processors deliver unprecedented compute efficiency, targeting AI inference and high-throughput database workloads.', source: 'aws.amazon.com' },
-  { id: 6, title: 'Critical OpenSSL Vulnerability Discovered Affecting TLS 1.3 Handshake', url: '#', by: 'securityresearch', score: 1487, time: now - 21600, descendants: 789, tags: ['Security'], summary: 'A buffer overflow in the TLS handshake process could allow remote code execution. Patches are available and immediate updates are recommended.', source: 'openssl.org' },
-  { id: 7, title: 'PostgreSQL 18 Ships with Native Vector Search and HNSW Indexing', url: '#', by: 'pgfoundation', score: 1423, time: now - 25200, descendants: 612, tags: ['Data', 'AI'], summary: 'Built-in vector similarity search eliminates the need for pgvector extensions, with HNSW indexes that match dedicated vector database performance.', source: 'postgresql.org' },
-  { id: 8, title: 'Docker Desktop 5.0 Adds WebAssembly Container Support', url: '#', by: 'solomonstre', score: 1312, time: now - 28800, descendants: 445, tags: ['DevOps', 'Web'], summary: 'WASM containers run alongside traditional Linux containers, enabling polyglot microservices with near-native performance and a fraction of the image size.', source: 'docker.com' },
-  { id: 9, title: 'TypeScript 6.0 Introduces Pattern Matching and the Pipe Operator', url: '#', by: 'typescript', score: 1289, time: now - 32400, descendants: 567, tags: ['Web', 'Languages'], summary: 'The two most-requested features finally land in TypeScript, bringing expressive data processing patterns familiar to functional programming.', source: 'devblogs.microsoft.com' },
-  { id: 10, title: 'Terraform 2.0 Rewrites State Management with Conflict-Free Collaboration', url: '#', by: 'hashicorp', score: 1198, time: now - 36000, descendants: 389, tags: ['DevOps', 'Cloud'], summary: 'A CRDT-based state backend enables teams to apply infrastructure changes concurrently without lock contention or state corruption.', source: 'hashicorp.com' },
-  { id: 11, title: 'React 20 Server Components Now Handle 90% of Rendering by Default', url: '#', by: 'dan_abramov', score: 1156, time: now - 43200, descendants: 823, tags: ['Web'], summary: 'The latest React release shifts the default rendering model, dramatically reducing client bundle sizes and improving Time to Interactive metrics.', source: 'react.dev' },
-  { id: 12, title: 'Linux Kernel 7.0 Merges io_uring Improvements for 40% I/O Throughput Gain', url: '#', by: 'torvalds', score: 1089, time: now - 50400, descendants: 456, tags: ['Systems'], summary: 'Major io_uring optimizations reduce syscall overhead and unlock significant throughput gains for database and network-heavy workloads.', source: 'lkml.org' },
-  { id: 13, title: 'Grafana 12 Unifies Logs, Metrics, and Traces in a Single Query Language', url: '#', by: 'grafana', score: 987, time: now - 57600, descendants: 312, tags: ['DevOps'], summary: 'A new unified query language replaces PromQL, LogQL, and TraceQL, simplifying observability across the entire monitoring stack.', source: 'grafana.com' },
-  { id: 14, title: 'Deno 4.0 Achieves Full Node.js Compatibility with npm Workspace Support', url: '#', by: 'ry', score: 945, time: now - 64800, descendants: 534, tags: ['Web', 'Languages'], summary: 'The runtime now seamlessly runs existing Node.js projects including monorepos, removing the last major barrier to adoption.', source: 'deno.land' },
-  { id: 15, title: 'Show HN: Open-Source Alternative to Datadog Built on ClickHouse', url: '#', by: 'ossdev', score: 876, time: now - 72000, descendants: 267, tags: ['Open Source', 'DevOps'], summary: 'A fully open-source observability platform that handles logs, metrics, and traces at 10x lower cost than commercial alternatives.', source: 'github.com' },
-  { id: 16, title: 'Google Cloud Announces TPU v6 with 4x Training Performance', url: '#', by: 'google_cloud', score: 834, time: now - 82800, descendants: 398, tags: ['Cloud', 'AI'], summary: 'The sixth-generation TPU delivers massive speedups for large model training, available through GKE with automatic pod scheduling.', source: 'cloud.google.com' },
-  { id: 17, title: 'Mozilla Releases Firefox 140 with Encrypted Client Hello by Default', url: '#', by: 'mozilla', score: 756, time: now - 90000, descendants: 234, tags: ['Security', 'Web'], summary: 'ECH encryption prevents ISPs and middleboxes from seeing which sites users visit, a major step forward for web privacy.', source: 'blog.mozilla.org' },
-  { id: 18, title: 'Supabase Launches Realtime Database Branching for Preview Environments', url: '#', by: 'supabase', score: 712, time: now - 100800, descendants: 189, tags: ['Data', 'Cloud'], summary: 'Each pull request gets an isolated database branch with automatic schema migration, enabling true preview environments.', source: 'supabase.com' },
+  { id: 1, title: 'Claude 4 Achieves State-of-the-Art on Complex Reasoning Benchmarks', url: 'https://www.anthropic.com/news', by: 'anthropic', score: 2841, time: now - 1800, descendants: 1432, tags: ['AI'], summary: 'Anthropic\'s latest model demonstrates breakthrough performance in multi-step reasoning, code generation, and scientific analysis across all major evaluation suites.', source: 'anthropic.com' },
+  { id: 2, title: 'Kubernetes 2.0 Preview: Simplified Cluster Management and Auto-Scaling', url: 'https://kubernetes.io/blog/', by: 'k8s_team', score: 1923, time: now - 5400, descendants: 876, tags: ['Cloud', 'DevOps'], summary: 'The next major version promises to dramatically reduce operational complexity for container orchestration with an entirely redesigned control plane.', source: 'kubernetes.io' },
+  { id: 3, title: 'GitHub Actions Introduces Native GPU Runners for ML Pipelines', url: 'https://github.blog/changelog/', by: 'natfriedman', score: 1756, time: now - 9000, descendants: 643, tags: ['DevOps', 'AI'], summary: 'Developers can now train and evaluate ML models directly in CI/CD workflows with A100 and H100 GPU support built into GitHub-hosted runners.', source: 'github.blog' },
+  { id: 4, title: 'Rust Foundation Announces Rust 2.0 Roadmap with Major Async Improvements', url: 'https://blog.rust-lang.org/', by: 'rustlang', score: 1648, time: now - 14400, descendants: 921, tags: ['Languages'], summary: 'A complete overhaul of the async runtime, improved error handling ergonomics, and a new edition system that smooths the migration path for existing codebases.', source: 'blog.rust-lang.org' },
+  { id: 5, title: 'AWS Introduces Graviton5 Instances with 2x Performance per Watt', url: 'https://aws.amazon.com/blogs/aws/', by: 'jeffbarr', score: 1534, time: now - 18000, descendants: 534, tags: ['Cloud', 'Systems'], summary: 'The fifth-generation Arm-based processors deliver unprecedented compute efficiency, targeting AI inference and high-throughput database workloads.', source: 'aws.amazon.com' },
+  { id: 6, title: 'Critical OpenSSL Vulnerability Discovered Affecting TLS 1.3 Handshake', url: 'https://www.openssl.org/news/', by: 'securityresearch', score: 1487, time: now - 21600, descendants: 789, tags: ['Security'], summary: 'A buffer overflow in the TLS handshake process could allow remote code execution. Patches are available and immediate updates are recommended.', source: 'openssl.org' },
+  { id: 7, title: 'PostgreSQL 18 Ships with Native Vector Search and HNSW Indexing', url: 'https://www.postgresql.org/about/news/', by: 'pgfoundation', score: 1423, time: now - 25200, descendants: 612, tags: ['Data', 'AI'], summary: 'Built-in vector similarity search eliminates the need for pgvector extensions, with HNSW indexes that match dedicated vector database performance.', source: 'postgresql.org' },
+  { id: 8, title: 'Docker Desktop 5.0 Adds WebAssembly Container Support', url: 'https://www.docker.com/blog/', by: 'solomonstre', score: 1312, time: now - 28800, descendants: 445, tags: ['DevOps', 'Web'], summary: 'WASM containers run alongside traditional Linux containers, enabling polyglot microservices with near-native performance and a fraction of the image size.', source: 'docker.com' },
+  { id: 9, title: 'TypeScript 6.0 Introduces Pattern Matching and the Pipe Operator', url: 'https://devblogs.microsoft.com/typescript/', by: 'typescript', score: 1289, time: now - 32400, descendants: 567, tags: ['Web', 'Languages'], summary: 'The two most-requested features finally land in TypeScript, bringing expressive data processing patterns familiar to functional programming.', source: 'devblogs.microsoft.com' },
+  { id: 10, title: 'Terraform 2.0 Rewrites State Management with Conflict-Free Collaboration', url: 'https://www.hashicorp.com/blog/products/terraform', by: 'hashicorp', score: 1198, time: now - 36000, descendants: 389, tags: ['DevOps', 'Cloud'], summary: 'A CRDT-based state backend enables teams to apply infrastructure changes concurrently without lock contention or state corruption.', source: 'hashicorp.com' },
+  { id: 11, title: 'React 20 Server Components Now Handle 90% of Rendering by Default', url: 'https://react.dev/blog', by: 'dan_abramov', score: 1156, time: now - 43200, descendants: 823, tags: ['Web'], summary: 'The latest React release shifts the default rendering model, dramatically reducing client bundle sizes and improving Time to Interactive metrics.', source: 'react.dev' },
+  { id: 12, title: 'Linux Kernel 7.0 Merges io_uring Improvements for 40% I/O Throughput Gain', url: 'https://lkml.org/', by: 'torvalds', score: 1089, time: now - 50400, descendants: 456, tags: ['Systems'], summary: 'Major io_uring optimizations reduce syscall overhead and unlock significant throughput gains for database and network-heavy workloads.', source: 'lkml.org' },
+  { id: 13, title: 'Grafana 12 Unifies Logs, Metrics, and Traces in a Single Query Language', url: 'https://grafana.com/blog/', by: 'grafana', score: 987, time: now - 57600, descendants: 312, tags: ['DevOps'], summary: 'A new unified query language replaces PromQL, LogQL, and TraceQL, simplifying observability across the entire monitoring stack.', source: 'grafana.com' },
+  { id: 14, title: 'Deno 4.0 Achieves Full Node.js Compatibility with npm Workspace Support', url: 'https://deno.com/blog', by: 'ry', score: 945, time: now - 64800, descendants: 534, tags: ['Web', 'Languages'], summary: 'The runtime now seamlessly runs existing Node.js projects including monorepos, removing the last major barrier to adoption.', source: 'deno.land' },
+  { id: 15, title: 'Show HN: Open-Source Alternative to Datadog Built on ClickHouse', url: 'https://github.com/trending', by: 'ossdev', score: 876, time: now - 72000, descendants: 267, tags: ['Open Source', 'DevOps'], summary: 'A fully open-source observability platform that handles logs, metrics, and traces at 10x lower cost than commercial alternatives.', source: 'github.com' },
+  { id: 16, title: 'Google Cloud Announces TPU v6 with 4x Training Performance', url: 'https://cloud.google.com/blog/', by: 'google_cloud', score: 834, time: now - 82800, descendants: 398, tags: ['Cloud', 'AI'], summary: 'The sixth-generation TPU delivers massive speedups for large model training, available through GKE with automatic pod scheduling.', source: 'cloud.google.com' },
+  { id: 17, title: 'Mozilla Releases Firefox 140 with Encrypted Client Hello by Default', url: 'https://blog.mozilla.org/', by: 'mozilla', score: 756, time: now - 90000, descendants: 234, tags: ['Security', 'Web'], summary: 'ECH encryption prevents ISPs and middleboxes from seeing which sites users visit, a major step forward for web privacy.', source: 'blog.mozilla.org' },
+  { id: 18, title: 'Supabase Launches Realtime Database Branching for Preview Environments', url: 'https://supabase.com/blog', by: 'supabase', score: 712, time: now - 100800, descendants: 189, tags: ['Data', 'Cloud'], summary: 'Each pull request gets an isolated database branch with automatic schema migration, enabling true preview environments.', source: 'supabase.com' },
 ];
 
 // ─── Utility functions ──────────────────────────────────────────────────────
@@ -102,6 +102,24 @@ function inferTags(title: string): string[] {
 function extractDomain(url: string): string {
   try { return new URL(url).hostname.replace(/^www\./, ''); }
   catch { return ''; }
+}
+
+function normalizeExternalUrl(url: string | undefined, source?: string, id?: number): string {
+  const raw = (url || '').trim();
+  const hnFallback = id ? `https://news.ycombinator.com/item?id=${id}` : 'https://news.ycombinator.com';
+
+  if (!raw || raw === '#' || raw.startsWith('/')) return hnFallback;
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  if (raw.startsWith('//')) return `https:${raw}`;
+
+  // Some feeds return domains without a protocol (e.g. "example.com/path").
+  if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(raw)) return `https://${raw}`;
+
+  // Keep any non-http scheme valid (mailto:, tel:, etc).
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw;
+
+  if (source) return `https://${source.replace(/^https?:\/\//, '')}`;
+  return hnFallback;
 }
 
 function timeAgo(unixTime: number): string {
@@ -385,9 +403,10 @@ function TagPill({ tag }: { tag: string }) {
 
 // ─── Article card ───────────────────────────────────────────────────────────
 function ArticleCard({ article, index, hero = false }: { article: NewsArticle; index: number; hero?: boolean }) {
+  const href = normalizeExternalUrl(article.url, article.source, article.id);
   return (
     <a
-      href={article.url}
+      href={href}
       target="_blank"
       rel="noopener noreferrer"
       className={`group block rounded-xl border transition-all duration-250 hover:scale-[1.02] hover:shadow-lg hover:shadow-pink-500/5 ${
@@ -603,10 +622,12 @@ function MobileNewsTeaser({ articles }: { articles: NewsArticle[] }) {
         <h3 className="text-sm font-semibold text-gray-400">Tech Pulse</h3>
       </div>
       <div className="space-y-2">
-        {articles.slice(0, 4).map((article) => (
+        {articles.slice(0, 4).map((article) => {
+          const href = normalizeExternalUrl(article.url, article.source, article.id);
+          return (
           <a
             key={article.id}
-            href={article.url}
+            href={href}
             target="_blank"
             rel="noopener noreferrer"
             className="block px-3 py-2.5 bg-gray-900/50 border border-pink-500/10 rounded-lg hover:bg-pink-500/5 transition-colors"
@@ -625,7 +646,8 @@ function MobileNewsTeaser({ articles }: { articles: NewsArticle[] }) {
               </span>
             </div>
           </a>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

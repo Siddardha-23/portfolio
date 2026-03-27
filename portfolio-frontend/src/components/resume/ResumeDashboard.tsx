@@ -102,7 +102,7 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [showBaseResumes, setShowBaseResumes] = useState(false);
-  const [showGenerated, setShowGenerated] = useState(false);
+  const [showGenerated, setShowGenerated] = useState(true);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 

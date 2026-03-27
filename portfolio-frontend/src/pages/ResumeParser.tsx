@@ -585,9 +585,31 @@ function ProgressCard({ analyzing, tailoring, elapsed, onCancel }: {
   );
 }
 
-// ─── Upload area (no resumes) ───────────────────────────────────────────────
+// ─── Step icon for onboarding ───────────────────────────────────────────────
 
-function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
+function StepCircle({ num, icon, label, desc, active = false }: {
+  num: number; icon: React.ReactNode; label: string; desc: string; active?: boolean;
+}) {
+  return (
+    <div className="flex flex-col items-center text-center flex-1 min-w-0">
+      <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-2.5 transition-all ${
+        active
+          ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20'
+          : 'bg-gray-800 border border-gray-700'
+      }`}>
+        <span className={active ? 'text-white' : 'text-gray-500'}>{icon}</span>
+      </div>
+      <p className={`text-xs font-semibold mb-0.5 ${active ? 'text-gray-100' : 'text-gray-400'}`}>
+        Step {num}: {label}
+      </p>
+      <p className="text-[11px] text-gray-500 leading-snug max-w-[160px]">{desc}</p>
+    </div>
+  );
+}
+
+// ─── Onboarding hero (no resumes yet) ───────────────────────────────────────
+
+function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
@@ -617,33 +639,90 @@ function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
   }, [handleUpload]);
 
   return (
-    <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/60 overflow-hidden">
+    <div className="space-y-8">
+      {/* Hero */}
+      <div className="text-center pt-4 pb-2">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 mb-4">
+          <SparklesIcon className="w-3.5 h-3.5 text-pink-400" />
+          <span className="text-xs font-medium text-pink-300">AI-Powered Resume Tailoring</span>
+        </div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-100 mb-3">
+          Land more interviews with a<br />
+          <span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+            perfectly tailored resume
+          </span>
+        </h2>
+        <p className="text-sm text-gray-400 max-w-lg mx-auto leading-relaxed">
+          Upload your resume once, paste any job description, and get an
+          ATS-optimized version tailored to that specific role in seconds.
+        </p>
+      </div>
+
+      {/* How it works — 3 steps */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-center mb-5">How it works</p>
+        <div className="flex items-start gap-3 sm:gap-6">
+          <StepCircle num={1} active
+            icon={<UploadCloudIcon className="w-5 h-5" />}
+            label="Upload"
+            desc="Upload your existing resume PDF"
+          />
+          <div className="flex items-center pt-5 shrink-0">
+            <div className="w-6 sm:w-10 h-px bg-gray-700" />
+            <svg className="w-3 h-3 text-gray-600 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </div>
+          <StepCircle num={2}
+            icon={<ClipboardIcon className="w-5 h-5" />}
+            label="Paste JD"
+            desc="Paste the job description you're targeting"
+          />
+          <div className="flex items-center pt-5 shrink-0">
+            <div className="w-6 sm:w-10 h-px bg-gray-700" />
+            <svg className="w-3 h-3 text-gray-600 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </div>
+          <StepCircle num={3}
+            icon={<DocumentArrowDownIcon className="w-5 h-5" />}
+            label="Download"
+            desc="Get your ATS-optimized resume instantly"
+          />
+        </div>
+      </div>
+
+      {/* Upload area */}
       <div
         onDragOver={e => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
-        className={`p-12 transition-colors ${dragOver ? 'bg-pink-500/5 border-pink-500/30' : ''}`}
+        className={`rounded-xl border-2 border-dashed transition-all duration-200 ${
+          dragOver
+            ? 'border-pink-500/50 bg-pink-500/5'
+            : 'border-gray-700/60 bg-gray-900/40 hover:border-gray-600/60'
+        }`}
       >
-        <div className="flex flex-col items-center text-center space-y-4">
-          <div className="w-14 h-14 rounded-full bg-pink-500/10 flex items-center justify-center">
-            <UploadCloudIcon className="w-7 h-7 text-pink-400" />
+        <div className="flex flex-col items-center text-center py-12 px-6">
+          <div className="w-16 h-16 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-4">
+            <UploadCloudIcon className="w-8 h-8 text-pink-400" />
           </div>
-          <div>
-            <p className="text-base font-semibold text-gray-200">Upload Your Resume</p>
-            <p className="text-sm text-gray-500 mt-1">
-              Upload your base resume PDF to get started with AI-powered tailoring
-            </p>
-          </div>
+          <p className="text-base font-semibold text-gray-200 mb-1">
+            Get started — upload your resume
+          </p>
+          <p className="text-sm text-gray-500 mb-5 max-w-sm">
+            Drop your PDF here or click below. We'll parse it and prepare it for tailoring.
+          </p>
           {uploading ? (
             <div className="w-full max-w-xs space-y-2">
               <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} />
               </div>
-              <p className="text-xs text-gray-500">Parsing resume...</p>
+              <p className="text-xs text-gray-400">Parsing your resume...</p>
             </div>
           ) : (
             <label className="cursor-pointer">
-              <span className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200">
+              <span className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200">
                 <UploadCloudIcon className="w-4 h-4" />
                 Choose PDF File
               </span>
@@ -655,11 +734,38 @@ function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
               />
             </label>
           )}
-          <p className="text-[10px] text-gray-600">PDF only, max 5 MB</p>
-          {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
+          <p className="text-[10px] text-gray-600 mt-3">PDF only, max 5 MB</p>
+          {uploadError && <p className="text-sm text-red-400 mt-2">{uploadError}</p>}
         </div>
       </div>
+
+      {/* Social proof / features */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { icon: <MagnifyingGlassIcon className="w-4 h-4 text-blue-400" />, label: 'ATS Keyword Matching', desc: 'Scanned against 6+ ATS systems' },
+          { icon: <SparklesIcon className="w-4 h-4 text-violet-400" />, label: 'AI-Powered Tailoring', desc: 'Optimizes content for the role' },
+          { icon: <DocumentArrowDownIcon className="w-4 h-4 text-emerald-400" />, label: 'PDF & DOCX Export', desc: 'Download in any format' },
+        ].map(f => (
+          <div key={f.label} className="rounded-lg border border-gray-800/60 bg-gray-900/40 p-4 text-center">
+            <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center mx-auto mb-2">
+              {f.icon}
+            </div>
+            <p className="text-xs font-semibold text-gray-300 mb-0.5">{f.label}</p>
+            <p className="text-[10px] text-gray-500">{f.desc}</p>
+          </div>
+        ))}
+      </div>
     </div>
+  );
+}
+
+// ─── Restart arrow icon ─────────────────────────────────────────────────────
+
+function ArrowPathIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.656v4.992" />
+    </svg>
   );
 }
 
@@ -668,7 +774,6 @@ function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
 function Dashboard() {
   const [hasResumes, setHasResumes] = useState<boolean | null>(null);
   const [loadingCheck, setLoadingCheck] = useState(true);
-  const [showTailoringFlow, setShowTailoringFlow] = useState(false);
 
   const [jdText, setJdText] = useState('');
   const [analyzingJD, setAnalyzingJD] = useState(false);
@@ -682,6 +787,7 @@ function Dashboard() {
   const tailorAbortRef = useRef<AbortController | null>(null);
   const atsAbortRef = useRef<AbortController | null>(null);
   const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const jdSectionRef = useRef<HTMLDivElement>(null);
 
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
@@ -815,6 +921,19 @@ function Dashboard() {
     }
   }, [result]);
 
+  // Reset for new tailoring
+  const handleStartNew = useCallback(() => {
+    setJdText('');
+    setJdAnalysis(null);
+    setResult(null);
+    setTailorError('');
+    setActiveTab('preview');
+    setAtsLoading(false);
+    setTimeout(() => {
+      jdSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }, []);
+
   // Loading skeleton
   if (loadingCheck) {
     return (
@@ -827,210 +946,274 @@ function Dashboard() {
   }
 
   if (!hasResumes) {
-    return <InitialUpload onUploaded={() => { setHasResumes(true); }} />;
+    return <OnboardingHero onUploaded={() => { setHasResumes(true); }} />;
   }
 
   return (
     <div className="space-y-6">
-      {/* Resume Dashboard */}
-      <ResumeDashboard onStartTailoring={() => setShowTailoringFlow(true)} />
+      {/* Resume Dashboard (active resume card + resume lists) */}
+      <ResumeDashboard onStartTailoring={() => {
+        jdSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }} />
 
-      {/* Tailoring Flow */}
-      {showTailoringFlow && (
-        <div className="space-y-5">
-          {/* JD Input */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-800/60">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
-                  <ClipboardIcon className="w-4 h-4 text-pink-400" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-100">Paste Job Description</p>
-                  <p className="text-xs text-gray-500">Paste the full JD to tailor your resume and get ATS scores</p>
-                </div>
-              </div>
+      {/* ── Step 2: Job Description Input (always visible) ── */}
+      <div ref={jdSectionRef} className="scroll-mt-20">
+        {/* Section header with step indicator */}
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0">
+            <span className="text-xs font-bold text-white">2</span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-200">Paste a Job Description</p>
+            <p className="text-xs text-gray-500">We'll extract the requirements and tailor your resume to match</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+          <div className="p-5 space-y-4">
+            <div className="relative">
+              <textarea
+                placeholder="Paste the complete job description here...&#10;&#10;Example: We are looking for a Senior Software Engineer with 5+ years of experience in distributed systems, cloud infrastructure (AWS/GCP), and Python..."
+                value={jdText}
+                onChange={e => setJdText(e.target.value)}
+                rows={8}
+                maxLength={10000}
+                disabled={tailoring || !!result}
+                className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50"
+              />
+              <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">
+                {jdText.length.toLocaleString()} / 10,000
+              </span>
             </div>
-            <div className="p-5 space-y-4">
-              <div className="relative">
-                <textarea
-                  placeholder="Paste the complete job description here..."
-                  value={jdText}
-                  onChange={e => setJdText(e.target.value)}
-                  rows={8}
-                  maxLength={10000}
-                  disabled={tailoring}
-                  className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50"
-                />
-                <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">
-                  {jdText.length.toLocaleString()} / 10,000
-                </span>
-              </div>
-              <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3">
+              {!result ? (
                 <button
                   onClick={handleAnalyzeJD}
                   disabled={!jdText.trim() || analyzingJD || tailoring}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
                 >
                   <MagnifyingGlassIcon className="w-4 h-4" />
-                  {analyzingJD ? 'Analyzing...' : 'Analyze JD'}
+                  {analyzingJD ? 'Analyzing...' : 'Analyze & Extract Requirements'}
                 </button>
+              ) : (
+                <button
+                  onClick={handleStartNew}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 transition-all duration-200"
+                >
+                  <ArrowPathIcon className="w-4 h-4" />
+                  Tailor for a Different Job
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Progress */}
+      {(analyzingJD || tailoring) && (
+        <ProgressCard
+          analyzing={analyzingJD}
+          tailoring={tailoring}
+          elapsed={tailorElapsed}
+          onCancel={handleCancelTailor}
+        />
+      )}
+
+      {/* Error */}
+      {tailorError && (
+        <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
+            <p className="text-sm text-red-300">{tailorError}</p>
+          </div>
+        </div>
+      )}
+
+      {/* JD Analysis + Tailor button */}
+      {jdAnalysis && !result && (
+        <>
+          <JDAnalysisCard jd={jdAnalysis} />
+
+          {/* Step 3: Tailor */}
+          <div className="flex items-center gap-3 mb-1">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0">
+              <span className="text-xs font-bold text-white">3</span>
+            </div>
+            <p className="text-sm font-semibold text-gray-200">Ready to tailor</p>
+          </div>
+          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={handleTailorResume}
+                disabled={tailoring}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+              >
+                <SparklesIcon className="w-4 h-4" />
+                {tailoring ? 'Tailoring...' : 'Tailor My Resume'}
+              </button>
+              <span className="text-xs text-gray-500">
+                AI will rewrite your resume to match this job description
+              </span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Results ── */}
+      {result && (
+        <div className="space-y-5">
+          {/* Success banner with download + actions */}
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
+            <div className="p-5">
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0">
+                    <CheckCircleIcon className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-gray-100">Resume tailored successfully!</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {result.jd_analysis.job_title}
+                      {result.jd_analysis.company && result.jd_analysis.company !== 'Not specified'
+                        ? ` at ${result.jd_analysis.company}` : ''}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Download buttons */}
+                <div className="flex gap-2 shrink-0">
+                  <button
+                    onClick={() => handleDownload('pdf')}
+                    disabled={downloading !== null}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
+                  >
+                    <DocumentArrowDownIcon className="w-4 h-4" />
+                    {downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={() => handleDownload('docx')}
+                    disabled={downloading !== null}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+                  >
+                    <DocumentArrowDownIcon className="w-4 h-4" />
+                    {downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
+                  </button>
+                </div>
               </div>
+            </div>
+
+            {/* Quick actions bar */}
+            <div className="border-t border-emerald-500/10 bg-gray-900/40 px-5 py-3 flex items-center gap-3">
+              <button
+                onClick={handleStartNew}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-pink-400 hover:text-pink-300 transition-colors"
+              >
+                <ArrowPathIcon className="w-3.5 h-3.5" />
+                Tailor for another job
+              </button>
+              <span className="text-gray-700">|</span>
+              {!result.ats_scores && !atsLoading && (
+                <button
+                  onClick={handleFetchATS}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"
+                >
+                  <SparklesIcon className="w-3.5 h-3.5" />
+                  Run ATS compatibility check
+                </button>
+              )}
+              {result.ats_scores && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400">
+                  <CheckCircleIcon className="w-3.5 h-3.5" />
+                  ATS Score: {result.ats_scores.overall}/100
+                </span>
+              )}
+              {atsLoading && (
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-400">
+                  <span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />
+                  Computing ATS scores...
+                </span>
+              )}
             </div>
           </div>
 
-          {/* Progress */}
-          {(analyzingJD || tailoring) && (
-            <ProgressCard
-              analyzing={analyzingJD}
-              tailoring={tailoring}
-              elapsed={tailorElapsed}
-              onCancel={handleCancelTailor}
-            />
-          )}
+          {/* JD Analysis (context) */}
+          <JDAnalysisCard jd={result.jd_analysis} />
 
-          {/* Error */}
-          {tailorError && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4">
-              <div className="flex items-start gap-3">
-                <XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" />
-                <p className="text-sm text-red-300">{tailorError}</p>
-              </div>
-            </div>
-          )}
-
-          {/* JD Analysis + Tailor button */}
-          {jdAnalysis && !result && (
-            <>
-              <JDAnalysisCard jd={jdAnalysis} />
-              <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-                <div className="flex items-center gap-4">
-                  <button
-                    onClick={handleTailorResume}
-                    disabled={tailoring}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
-                  >
-                    <SparklesIcon className="w-4 h-4" />
-                    {tailoring ? 'Tailoring...' : 'Tailor Resume'}
-                  </button>
-                  <span className="text-xs text-gray-500">
-                    Generate a tailored resume based on the analyzed JD
-                  </span>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* Results */}
-          {result && (
-            <div className="space-y-5">
-              {/* JD Analysis (collapsed context) */}
-              <JDAnalysisCard jd={result.jd_analysis} />
-
-              {/* Download bar */}
-              <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex items-center gap-2.5 flex-1 min-w-0">
-                    <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
-                      <CheckCircleIcon className="w-4 h-4 text-emerald-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-gray-100">Resume Tailored Successfully</p>
-                      <p className="text-xs text-gray-500">Download in your preferred format</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <button
-                      onClick={() => handleDownload('pdf')}
-                      disabled={downloading !== null}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
-                    >
-                      <DocumentArrowDownIcon className="w-4 h-4" />
-                      {downloading === 'pdf' ? 'Generating...' : 'PDF'}
-                    </button>
-                    <button
-                      onClick={() => handleDownload('docx')}
-                      disabled={downloading !== null}
-                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-                    >
-                      <DocumentArrowDownIcon className="w-4 h-4" />
-                      {downloading === 'docx' ? 'Generating...' : 'DOCX'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Tab toggle */}
-              <div className="inline-flex rounded-xl bg-gray-800/60 p-1 border border-gray-800">
-                <button
-                  onClick={() => setActiveTab('preview')}
-                  className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
-                    activeTab === 'preview'
-                      ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
-                      : 'text-gray-500 hover:text-gray-300 border border-transparent'
-                  }`}
-                >
-                  Resume Preview
-                </button>
-                <button
-                  onClick={() => setActiveTab('ats')}
-                  className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                    activeTab === 'ats'
-                      ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
-                      : 'text-gray-500 hover:text-gray-300 border border-transparent'
-                  }`}
-                >
-                  ATS Analysis
-                  {atsLoading && (
-                    <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  )}
-                </button>
-              </div>
-
-              {/* Tab content */}
-              {activeTab === 'preview' ? (
-                <ResumePreview resume={result.tailored_resume} />
-              ) : result.ats_scores ? (
-                <ATSPanel scores={result.ats_scores} />
-              ) : (
-                <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
-                  <div className="flex flex-col items-center justify-center space-y-5">
-                    {atsLoading ? (
-                      <>
-                        <div className="relative">
-                          <div className="w-10 h-10 rounded-full border-2 border-gray-700" />
-                          <div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" />
-                        </div>
-                        <div className="text-center space-y-1.5">
-                          <p className="text-sm font-semibold text-gray-200">Computing ATS scores...</p>
-                          <p className="text-xs text-gray-500">
-                            This takes 10\u201315 seconds. Your resume is ready for download.
-                          </p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-12 h-12 rounded-full bg-violet-500/10 flex items-center justify-center">
-                          <SparklesIcon className="w-6 h-6 text-violet-400" />
-                        </div>
-                        <div className="text-center space-y-1.5">
-                          <p className="text-sm font-semibold text-gray-200">ATS scores not yet loaded</p>
-                          <p className="text-xs text-gray-500">
-                            Analyze your tailored resume against major ATS systems
-                          </p>
-                        </div>
-                        <button
-                          onClick={handleFetchATS}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"
-                        >
-                          <SparklesIcon className="w-4 h-4" />
-                          Get ATS Scores
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+          {/* Tab toggle */}
+          <div className="inline-flex rounded-xl bg-gray-800/60 p-1 border border-gray-800">
+            <button
+              onClick={() => setActiveTab('preview')}
+              className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${
+                activeTab === 'preview'
+                  ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
+                  : 'text-gray-500 hover:text-gray-300 border border-transparent'
+              }`}
+            >
+              Resume Preview
+            </button>
+            <button
+              onClick={() => setActiveTab('ats')}
+              className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                activeTab === 'ats'
+                  ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20'
+                  : 'text-gray-500 hover:text-gray-300 border border-transparent'
+              }`}
+            >
+              ATS Analysis
+              {atsLoading && (
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               )}
+              {result.ats_scores && (
+                <span className={`text-[10px] font-bold tabular-nums ${
+                  result.ats_scores.overall >= 80 ? 'text-emerald-400' :
+                  result.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'
+                }`}>{result.ats_scores.overall}</span>
+              )}
+            </button>
+          </div>
+
+          {/* Tab content */}
+          {activeTab === 'preview' ? (
+            <ResumePreview resume={result.tailored_resume} />
+          ) : result.ats_scores ? (
+            <ATSPanel scores={result.ats_scores} />
+          ) : (
+            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
+              <div className="flex flex-col items-center justify-center space-y-5">
+                {atsLoading ? (
+                  <>
+                    <div className="relative">
+                      <div className="w-10 h-10 rounded-full border-2 border-gray-700" />
+                      <div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" />
+                    </div>
+                    <div className="text-center space-y-1.5">
+                      <p className="text-sm font-semibold text-gray-200">Computing ATS scores...</p>
+                      <p className="text-xs text-gray-500">
+                        This takes 10\u201315 seconds. Your resume is ready for download above.
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-violet-500/10 flex items-center justify-center">
+                      <SparklesIcon className="w-6 h-6 text-violet-400" />
+                    </div>
+                    <div className="text-center space-y-1.5">
+                      <p className="text-sm font-semibold text-gray-200">Check ATS Compatibility</p>
+                      <p className="text-xs text-gray-500 max-w-sm">
+                        See how your tailored resume scores against Workday, Greenhouse, Lever, and other major ATS systems.
+                      </p>
+                    </div>
+                    <button
+                      onClick={handleFetchATS}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"
+                    >
+                      <SparklesIcon className="w-4 h-4" />
+                      Get ATS Scores
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>

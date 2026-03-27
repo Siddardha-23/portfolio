@@ -672,15 +672,12 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  // Real-time password validation + dodging button
+  // Password feedback + dodging button (after failed submit)
   const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
-  const [passwordChecking, setPasswordChecking] = useState(false);
   const [dodgeCount, setDodgeCount] = useState(0);
   const [dodgeOffset, setDodgeOffset] = useState({ x: 0, y: 0, rotation: 0 });
   const [shaking, setShaking] = useState(false);
   const maxDodges = 5;
-  const validateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastValidatedRef = useRef('');
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // News feed
@@ -702,48 +699,14 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     }
   }, [step]);
 
-  // Real-time password validation — debounced, min-length gated, no auto-login
+  // Reset login feedback while user edits password
   useEffect(() => {
+    if (step !== 'login') return;
+    setPasswordValid(null);
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0, rotation: 0 });
-
-    if (step !== 'login' || !email || !password) {
-      setPasswordValid(null);
-      setPasswordChecking(false);
-      return;
-    }
-
-    // Don't hit the API until the user has typed at least 8 chars (min password length)
-    if (password.length < 8) {
-      setPasswordValid(null);
-      setPasswordChecking(false);
-      return;
-    }
-
-    // Skip if we already validated this exact password
-    if (lastValidatedRef.current === password) return;
-
-    // Clear stale result immediately so the UI doesn't show old incorrect/correct
-    setPasswordValid(null);
-    setPasswordChecking(true);
-
-    if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
-    validateTimerRef.current = setTimeout(async () => {
-      try {
-        const resp = await apiService.validatePassword(email, password);
-        if (!resp.data) { setPasswordChecking(false); return; }
-        lastValidatedRef.current = password;
-        setPasswordValid(resp.data.valid);
-      } catch {
-        setPasswordValid(null);
-      }
-      setPasswordChecking(false);
-    }, 500);
-
-    return () => {
-      if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
-    };
-  }, [password, email, step]);
+    setShaking(false);
+  }, [password, step]);
 
   // Dodging button handler — escalates with each attempt
   const handleButtonInteraction = useCallback((e?: React.MouseEvent | React.TouchEvent) => {
@@ -798,7 +761,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     setCheckingEmail(false);
   };
 
-  // Handle login submit — only works when password is validated correct
+  // Handle login submit — verify password only on submit for better UX and security
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (passwordValid === false) {
@@ -806,7 +769,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
       setTimeout(() => setShaking(false), 800);
       return;
     }
-    if (passwordValid === null && !password) {
+    if (!password) {
       setError('Please enter your password.');
       return;
     }
@@ -817,7 +780,10 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     const result = await login(email, password, sessionId, fingerprint);
     setSubmitting(false);
     if (result.error) {
+      setPasswordValid(false);
       setError(result.error);
+    } else {
+      setPasswordValid(true);
     }
   };
 
@@ -873,10 +839,8 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     setError('');
     setSuccessMsg('');
     setPasswordValid(null);
-    setPasswordChecking(false);
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0, rotation: 0 });
-    lastValidatedRef.current = '';
   };
 
   if (isLoading) {
@@ -1127,24 +1091,18 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
-                      {password.length >= 8 && !submitting && (
+                      {password.length > 0 && !submitting && (
                         <div className="flex items-center gap-1.5 mt-1.5">
-                          {passwordChecking ? (
-                            <>
-                              <span className="animate-spin rounded-full h-3 w-3 border-2 border-gray-500 border-t-transparent" />
-                              <span className="text-xs text-gray-500">Checking...</span>
-                            </>
-                          ) : passwordValid === true ? (
-                            <>
-                              <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                              <span className="text-xs text-emerald-400">Password matched — click Login to continue</span>
-                            </>
-                          ) : passwordValid === false ? (
+                          {passwordValid === false ? (
                             <>
                               <svg className="w-3.5 h-3.5 text-pink-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                               <span className="text-xs text-pink-400">Incorrect password{dodgeCount > 0 ? ' — good luck clicking that button' : ''}</span>
                             </>
-                          ) : null}
+                          ) : (
+                            <>
+                              <span className="text-xs text-gray-500">Password will be verified when you click Login</span>
+                            </>
+                          )}
                         </div>
                       )}
                       {submitting && (

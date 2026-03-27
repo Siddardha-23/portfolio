@@ -132,6 +132,64 @@ def ats_scores():
 
 
 # ------------------------------------------------------------------
+# POST /api/resume/save-record — Store complete tailoring session
+# ------------------------------------------------------------------
+
+@resume_bp.route("/save-record", methods=["POST"])
+@jwt_required()
+def save_record():
+    """Store a complete tailoring session record for admin analytics.
+    Called automatically by the frontend after tailoring completes,
+    and updated again after ATS scoring (if performed)."""
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+
+    record_id = data.get("record_id")  # None on first save, provided for ATS update
+    jd_text = data.get("jd_text", "")
+    jd_analysis = data.get("jd_analysis")
+    tailored_resume = data.get("tailored_resume")
+    ats_scores = data.get("ats_scores")
+    base_resume_filename = data.get("base_resume_filename", "")
+    base_resume_s3_key = data.get("base_resume_s3_key", "")
+
+    if not record_id and (not jd_analysis or not tailored_resume):
+        return jsonify({"error": "jd_analysis and tailored_resume are required"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        col = db.tailoring_records
+
+        if record_id:
+            # Update existing record with ATS scores
+            update = {"$set": {"ats_scores": ats_scores, "ats_scored_at": datetime.utcnow()}}
+            col.update_one({"record_id": record_id, "user_email": user_email}, update)
+            return jsonify({"record_id": record_id, "updated": True}), 200
+
+        # Create new record
+        import uuid as _uuid
+        rid = str(_uuid.uuid4())
+        record = {
+            "record_id": rid,
+            "user_email": user_email,
+            "base_resume_filename": base_resume_filename,
+            "base_resume_s3_key": base_resume_s3_key,
+            "jd_text": jd_text[:15000] if jd_text else "",
+            "jd_analysis": jd_analysis,
+            "tailored_resume": tailored_resume,
+            "ats_scores": ats_scores,
+            "created_at": datetime.utcnow(),
+            "ats_scored_at": datetime.utcnow() if ats_scores else None,
+        }
+        col.insert_one(record)
+        logger.info(f"Tailoring record saved: {rid} for {user_email}")
+        return jsonify({"record_id": rid}), 201
+
+    except Exception as e:
+        logger.error(f"Save record error: {e}")
+        return jsonify({"error": "Failed to save record"}), 500
+
+
+# ------------------------------------------------------------------
 # GET /api/resume/job/<job_id> — Poll for job result
 # ------------------------------------------------------------------
 

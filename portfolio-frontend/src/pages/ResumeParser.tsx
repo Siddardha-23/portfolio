@@ -179,14 +179,14 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
     <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
       <div className="bg-gradient-to-r from-gray-800/80 to-gray-900 px-6 py-5 border-b border-gray-800">
         <h2 className="text-lg font-bold text-gray-100">{resume.contact?.name}</h2>
-        <p className="text-xs text-gray-400 mt-1">{[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github].filter(Boolean).join('  \u00B7  ')}</p>
+        <p className="text-xs text-gray-400 mt-1">{[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github].filter(Boolean).join('  &middot;  ')}</p>
       </div>
       <div className="px-6 py-5 space-y-5">
         {resume.summary && <div><ST>Summary</ST><p className="text-[13px] text-gray-300 leading-relaxed">{resume.summary}</p></div>}
         {resume.experience?.length > 0 && <div><ST>Experience</ST><div className="space-y-4">{resume.experience.map((exp, i) => (<div key={i}><div className="flex justify-between items-start gap-2"><div><p className="text-sm font-semibold text-gray-200">{exp.company}{exp.location ? `, ${exp.location}` : ''}</p>{exp.title && <p className="text-xs text-gray-400 italic mt-0.5">{exp.title}</p>}</div><span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{exp.dates}</span></div><ul className="mt-1.5 space-y-1">{exp.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
         {resume.projects?.length > 0 && <div><ST>Projects</ST><div className="space-y-3">{resume.projects.map((p, i) => (<div key={i}><p className="text-sm font-semibold text-gray-200">{p.name}</p><ul className="mt-1 space-y-1">{p.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
         {resume.skills && Object.keys(resume.skills).length > 0 && <div><ST>Technical Skills</ST><div className="space-y-2">{Object.entries(resume.skills).map(([c, s]) => (<div key={c} className="text-[12.5px]"><span className="font-semibold text-gray-300">{c}: </span><span className="text-gray-400">{Array.isArray(s) ? s.join(', ') : String(s)}</span></div>))}</div></div>}
-        {resume.education?.length > 0 && <div><ST>Education</ST><div className="space-y-2">{resume.education.map((edu, i) => { const d = edu.degree ? [...new Set(edu.degree.split('|').map(s=>s.trim()).filter(s=>!/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(s)).filter(Boolean))].join(' | ') : ''; return (<div key={i} className="flex justify-between items-start gap-2"><p className="text-[12.5px] text-gray-300"><span className="font-semibold">{edu.institution}</span>{d ? ` \u2014 ${d}` : ''}</p><span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{edu.dates}</span></div>);})}</div></div>}
+        {resume.education?.length > 0 && <div><ST>Education</ST><div className="space-y-2">{resume.education.map((edu, i) => { const d = edu.degree ? [...new Set(edu.degree.split('|').map(s=>s.trim()).filter(s=>!/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(s)).filter(Boolean))].join(' | ') : ''; return (<div key={i} className="flex justify-between items-start gap-2"><p className="text-[12.5px] text-gray-300"><span className="font-semibold">{edu.institution}</span>{d ? `  — ${d}` : ''}</p><span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{edu.dates}</span></div>);})}</div></div>}
         {resume.certifications?.length > 0 && <div><ST>Certifications</ST><div className="flex flex-wrap gap-2">{resume.certifications.map((c, i) => (<span key={i} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-sky-500/10 text-sky-300 border border-sky-500/15">{c}</span>))}</div></div>}
       </div>
     </div>
@@ -265,7 +265,7 @@ function ProgressCard({ tailoring, elapsed, onCancel }: { tailoring: boolean; el
         <div className="relative"><div className="w-12 h-12 rounded-full border-2 border-gray-700" /><div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
         <div className="text-center space-y-1.5">
           <p className="text-sm font-semibold text-gray-200">{phase.text}</p>
-          <p className="text-xs text-gray-500">{elapsed >= 90 ? 'Taking longer than expected \u2014 you can wait or cancel.' : 'This may take 30\u201360 seconds'}</p>
+          <p className="text-xs text-gray-500">{elapsed >= 90 ? 'Taking longer than expected  — you can wait or cancel.' : 'This may take 30–60 seconds'}</p>
           {elapsed > 0 && <p className="text-xs text-gray-600 tabular-nums">{elapsed}s elapsed</p>}
         </div>
         {tailoring && <div className="flex items-center gap-2">{[1,2,3,4].map(s => (<div key={s} className={`w-2 h-2 rounded-full transition-all duration-500 ${s <= phase.step ? 'bg-pink-400 scale-110' : 'bg-gray-700'}`} />))}</div>}
@@ -408,7 +408,7 @@ function MyResumesTab() {
                     <p className="text-sm text-gray-200 truncate">{r.filename}</p>
                     {r.is_active && <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Active</span>}
                   </div>
-                  <p className="text-xs text-gray-500">{formatDate(r.uploaded_at)}{r.size ? ` \u00B7 ${formatBytes(r.size)}` : ''}</p>
+                  <p className="text-xs text-gray-500">{formatDate(r.uploaded_at)}{r.size ? ` &middot; ${formatBytes(r.size)}` : ''}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">
@@ -606,18 +606,60 @@ function TailorTab() {
   const atsAbortRef = useRef<AbortController | null>(null);
   const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const jdRef = useRef<HTMLDivElement>(null);
+  const recordIdRef = useRef<string | null>(null);
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
+
+  // Fetch active resume info for record storage
+  const activeResumeRef = useRef<{ filename: string; s3_key: string } | null>(null);
 
   const checkResumes = useCallback(async () => {
     setLoadingCheck(true);
     const resp = await apiService.listBaseResumes();
-    if (resp.data) setHasResumes((resp.data.versions || []).length > 0);
-    else { const s = await apiService.getResumeStatus(); setHasResumes(s.data?.has_resume === true); }
+    if (resp.data) {
+      const versions = resp.data.versions || [];
+      setHasResumes(versions.length > 0);
+      const active = versions.find((v: any) => v.is_active);
+      if (active) activeResumeRef.current = { filename: active.filename, s3_key: active.s3_key };
+    } else {
+      const s = await apiService.getResumeStatus();
+      setHasResumes(s.data?.has_resume === true);
+    }
     setLoadingCheck(false);
   }, []);
   useEffect(() => { checkResumes(); }, [checkResumes]);
   useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
+
+  // Save tailoring record to backend (fire-and-forget)
+  const saveRecord = useCallback(async (
+    jdAnalysisData: JDAnalysis,
+    tailoredResume: TailoredFullResume,
+    jdRawText: string,
+    atsScores?: ATSScores,
+  ) => {
+    try {
+      const resp = await apiService.saveTailoringRecord({
+        jd_text: jdRawText,
+        jd_analysis: jdAnalysisData,
+        tailored_resume: tailoredResume,
+        ats_scores: atsScores || undefined,
+        base_resume_filename: activeResumeRef.current?.filename || '',
+        base_resume_s3_key: activeResumeRef.current?.s3_key || '',
+      });
+      if (resp.data?.record_id) recordIdRef.current = resp.data.record_id;
+    } catch { /* silent — analytics only */ }
+  }, []);
+
+  // Update existing record with ATS scores
+  const updateRecordATS = useCallback(async (atsScores: ATSScores) => {
+    if (!recordIdRef.current) return;
+    try {
+      await apiService.saveTailoringRecord({
+        record_id: recordIdRef.current,
+        ats_scores: atsScores,
+      });
+    } catch { /* silent */ }
+  }, []);
 
   const handleAnalyzeJD = useCallback(async () => {
     if (!jdText.trim()) return;
@@ -640,8 +682,12 @@ function TailorTab() {
     if (ctrl.signal.aborted) { setTailoring(false); setTailorElapsed(0); return; }
     setTailoring(false); setTailorElapsed(0);
     if (r.error) { setTailorError(r.error); return; }
-    if (r.data) setResult({ jd_analysis: jdAnalysis, tailored_resume: r.data.tailored_resume });
-  }, [jdAnalysis]);
+    if (r.data) {
+      setResult({ jd_analysis: jdAnalysis, tailored_resume: r.data.tailored_resume });
+      // Save record in background (no await — don't block UI)
+      saveRecord(jdAnalysis, r.data.tailored_resume, jdText);
+    }
+  }, [jdAnalysis, jdText, saveRecord]);
 
   const handleCancel = useCallback(() => { tailorAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); tailorTimerRef.current = null; setTailoring(false); setTailorElapsed(0); }, []);
 
@@ -652,8 +698,12 @@ function TailorTab() {
     const r = await apiService.fetchATSScores(result.tailored_resume, result.jd_analysis, ctrl.signal);
     if (ctrl.signal.aborted) return; setAtsLoading(false);
     if (r.error) { setTailorError('ATS scoring failed. Resume is still available for download.'); return; }
-    if (r.data?.ats_scores) setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
-  }, [result]);
+    if (r.data?.ats_scores) {
+      setResult(p => p ? { ...p, ats_scores: r.data!.ats_scores } : p);
+      // Update record with ATS scores in background
+      updateRecordATS(r.data.ats_scores);
+    }
+  }, [result, updateRecordATS]);
 
   const handleDownload = useCallback(async (fmt: 'pdf' | 'docx') => {
     if (!result) return; setDownloading(fmt);
@@ -665,6 +715,7 @@ function TailorTab() {
 
   const handleStartNew = useCallback(() => {
     setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false);
+    recordIdRef.current = null;
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   }, []);
 

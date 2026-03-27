@@ -727,6 +727,21 @@ class ApiService {
     );
   }
 
+  async saveTailoringRecord(data: {
+    record_id?: string;
+    jd_text?: string;
+    jd_analysis?: any;
+    tailored_resume?: any;
+    ats_scores?: any;
+    base_resume_filename?: string;
+    base_resume_s3_key?: string;
+  }): Promise<ApiResponse<{ record_id: string; updated?: boolean }>> {
+    return this.request('/resume/save-record', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ============================================
   // Resume management endpoints
   // ============================================

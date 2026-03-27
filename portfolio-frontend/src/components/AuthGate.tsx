@@ -263,13 +263,13 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     return () => cancelAnimationFrame(id);
   }, []);
 
-  // Real-time password validation with debounce
+  // Real-time password validation — auto-login on correct password
   useEffect(() => {
-    // Reset dodge state on any password change
+    // Reset dodge on every keystroke
     setDodgeCount(0);
     setDodgeOffset({ x: 0, y: 0 });
 
-    if (activeTab !== 'login' || !email || !password || password.length < 3) {
+    if (activeTab !== 'login' || !email || !password || password.length < 1) {
       setPasswordValid(null);
       return;
     }
@@ -278,21 +278,38 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     validateTimerRef.current = setTimeout(async () => {
       try {
         const resp = await apiService.validatePassword(email, password);
-        if (resp.data) setPasswordValid(resp.data.valid);
+        if (!resp.data) return;
+
+        if (resp.data.valid) {
+          // Password correct → auto-login immediately
+          setPasswordValid(true);
+          setSubmitting(true);
+          const sessionId = sessionStorage.getItem('portfolio_session_id') || undefined;
+          const fingerprint = localStorage.getItem('portfolio_fingerprint_hash') || undefined;
+          const result = await login(email, password, sessionId, fingerprint);
+          setSubmitting(false);
+          if (result.error) {
+            setError(result.error);
+            setPasswordValid(null);
+          }
+          // If login succeeds, isAuthenticated will become true and children render
+        } else {
+          setPasswordValid(false);
+        }
       } catch {
         setPasswordValid(null);
       }
-    }, 500); // 500ms debounce
+    }, 300); // 300ms debounce — fast feedback
 
     return () => {
       if (validateTimerRef.current) clearTimeout(validateTimerRef.current);
     };
-  }, [password, email, activeTab]);
+  }, [password, email, activeTab, login]);
 
-  // Dodging button: dodges when password is explicitly invalid
+  // Dodging button: dances when password is wrong, stays put when correct or unknown
   const handleButtonHover = useCallback(() => {
     if (passwordValid !== false || dodgeCount >= maxDodges) return;
-    const x = (Math.random() - 0.5) * 220;
+    const x = (Math.random() - 0.5) * 240;
     const y = (Math.random() - 0.5) * 100;
     setDodgeOffset({ x, y });
     setDodgeCount(prev => prev + 1);
@@ -598,12 +615,12 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                         </button>
                       </div>
                       {/* Real-time validation indicator */}
-                      {password.length >= 3 && passwordValid !== null && (
+                      {password.length >= 1 && passwordValid !== null && (
                         <div className="flex items-center gap-1.5 mt-1.5">
                           {passwordValid ? (
                             <>
                               <svg className="w-3.5 h-3.5 text-emerald-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                              <span className="text-xs text-emerald-400">Password correct</span>
+                              <span className="text-xs text-emerald-400">Password correct — logging you in...</span>
                             </>
                           ) : (
                             <>
@@ -613,15 +630,28 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           )}
                         </div>
                       )}
+                      {submitting && (
+                        <div className="flex items-center gap-1.5 mt-1.5">
+                          <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-pink-400 border-t-transparent" />
+                          <span className="text-xs text-pink-300">Signing you in...</span>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Dodging login button */}
-                    <div className="relative h-14 flex items-center justify-center">
+                    {/* Dancing login button — dodges on hover when password is wrong */}
+                    <div className="relative overflow-hidden" style={{ height: '52px' }}>
                       <button
                         type="submit"
-                        disabled={submitting}
+                        disabled={submitting || passwordValid === true}
                         onMouseEnter={handleButtonHover}
-                        className="w-full py-2.5 bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-pink-800 disabled:to-purple-900 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all duration-300 flex items-center justify-center gap-2 shadow-lg shadow-pink-500/20 hover:shadow-pink-500/30"
+                        onTouchStart={handleButtonHover}
+                        className={`absolute inset-x-0 py-2.5 font-medium rounded-lg flex items-center justify-center gap-2 transition-all duration-300 ${
+                          passwordValid === true
+                            ? 'bg-emerald-500 text-white cursor-default shadow-lg shadow-emerald-500/20'
+                            : passwordValid === false
+                              ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-lg shadow-pink-500/20 cursor-not-allowed'
+                              : 'bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white shadow-lg shadow-pink-500/20 hover:shadow-pink-500/30'
+                        }`}
                         style={{
                           transform: `translate(${dodgeOffset.x}px, ${dodgeOffset.y}px)`,
                           transition: 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
@@ -629,8 +659,13 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                       >
                         {submitting ? (
                           <>
-                            <span className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white" />
+                            <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                             Signing in...
+                          </>
+                        ) : passwordValid === true ? (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            Welcome!
                           </>
                         ) : (
                           dodgeButtonText

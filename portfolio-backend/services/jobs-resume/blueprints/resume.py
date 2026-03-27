@@ -9,14 +9,27 @@ asynchronously, and the frontend polls GET /job/<id> for the result.
   2. POST /tailor       → returns { job_id }   (instant)
   3. POST /ats-scores   → returns { job_id }   (instant)
   4. GET  /job/<id>     → returns { status, result | error }
+
+User-specific endpoints with S3 storage:
+  5. POST /upload       → parse PDF + store in S3
+  6. POST /download     → generate PDF/DOCX + store in S3
+  7. GET  /status       → check active base resume for user
+  8. GET  /versions     → list base resume versions
+  9. GET  /generated    → list generated/tailored resumes
+ 10. PUT  /active       → set active base resume
+ 11. GET  /download-file/<s3_key> → download resume from S3
+ 12. DELETE /file/<s3_key>        → delete resume from S3
 """
 import io
 import logging
+from datetime import datetime
 
 from flask import Blueprint, request, jsonify, send_file
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
+from utils.db_connect import DBConnect
+from services.s3_service import get_storage_service
 
 resume_bp = Blueprint("resume", __name__)
 logger = logging.getLogger(__name__)
@@ -146,6 +159,7 @@ def get_job(job_id):
 @resume_bp.route("/download", methods=["POST"])
 @jwt_required()
 def download():
+    user_email = get_jwt_identity()
     client_ip = get_client_ip(request)
     limiter = get_rate_limiter()
     if limiter.is_rate_limited(f"resume_download:{client_ip}", max_requests=20, window_seconds=300):
@@ -177,6 +191,28 @@ def download():
 
         filename = svc.renderer.build_filename(tailored, jd_analysis, fmt)
 
+        # Upload generated resume to S3 and store metadata
+        try:
+            storage = get_storage_service()
+            db = DBConnect().get_db()
+            user = db.users.find_one({'email': user_email})
+            if user:
+                user_id = str(user['_id'])
+                job_title = data.get('job_title', 'untitled')
+                s3_key = storage.upload_generated_resume(user_id, file_bytes, job_title, fmt)
+                db.user_resumes.insert_one({
+                    'user_email': user_email,
+                    'user_id': user_id,
+                    'type': 'generated',
+                    's3_key': s3_key,
+                    'filename': f"{job_title}_tailored.{fmt}",
+                    'generated_at': datetime.utcnow(),
+                    'size_bytes': len(file_bytes),
+                    'job_title': job_title
+                })
+        except Exception as s3_err:
+            logger.warning(f"Failed to save generated resume to S3: {s3_err}")
+
         return send_file(
             io.BytesIO(file_bytes),
             mimetype=mimetype,
@@ -195,6 +231,7 @@ def download():
 @resume_bp.route("/upload", methods=["POST"])
 @jwt_required()
 def upload():
+    user_email = get_jwt_identity()
     client_ip = get_client_ip(request)
     limiter = get_rate_limiter()
     if limiter.is_rate_limited(f"resume_upload:{client_ip}", max_requests=5, window_seconds=3600):
@@ -212,6 +249,8 @@ def upload():
     if not file_bytes[:5].startswith(b'%PDF'):
         return jsonify({"error": "File is not a valid PDF"}), 400
 
+    original_filename = file.filename
+
     try:
         from services.resume_service import get_resume_service, ResumeService
         from services.resume_parser import ResumeParser
@@ -219,10 +258,36 @@ def upload():
         # Synchronous: extract text from PDF (fast, pure Python, no AI)
         raw_text = ResumeParser.extract_text_from_pdf(file_bytes)
 
+        # Upload PDF to S3 and store metadata
+        try:
+            storage = get_storage_service()
+            db = DBConnect().get_db()
+            user = db.users.find_one({'email': user_email})
+            if user:
+                user_id = str(user['_id'])
+                s3_key = storage.upload_base_resume(user_id, file_bytes, original_filename)
+                db.user_resumes.insert_one({
+                    'user_email': user_email,
+                    'user_id': user_id,
+                    'type': 'base',
+                    's3_key': s3_key,
+                    'filename': original_filename,
+                    'uploaded_at': datetime.utcnow(),
+                    'size_bytes': len(file_bytes),
+                    'is_active': True
+                })
+                # Deactivate previous base resumes
+                db.user_resumes.update_many(
+                    {'user_email': user_email, 'type': 'base', 's3_key': {'$ne': s3_key}},
+                    {'$set': {'is_active': False}}
+                )
+        except Exception as s3_err:
+            logger.warning(f"Failed to save resume to S3: {s3_err}")
+
         # Async: create a job for Gemini parsing and return job_id immediately
         import base64
         pdf_b64 = base64.b64encode(file_bytes).decode('utf-8')
-        
+
         svc = get_resume_service()
         payload = {"raw_text": raw_text, "pdf_base64": pdf_b64}
         job_id = svc.create_job("upload_parse", payload)
@@ -242,13 +307,20 @@ def upload():
 
 
 # ------------------------------------------------------------------
-# GET /api/resume/status — Check if a resume is uploaded
+# GET /api/resume/status — Check if a resume is uploaded (user-specific)
 # ------------------------------------------------------------------
 
 @resume_bp.route("/status", methods=["GET"])
 @jwt_required()
 def status():
+    user_email = get_jwt_identity()
     try:
+        db = DBConnect().get_db()
+        # Check for active base resume for this user
+        active_resume = db.user_resumes.find_one(
+            {'user_email': user_email, 'type': 'base', 'is_active': True}
+        )
+
         from services.resume_service import get_resume_service
         resume = get_resume_service().get_base_resume()
         if not resume:
@@ -256,14 +328,123 @@ def status():
         parsed_at = resume.get("parsed_at", "")
         if hasattr(parsed_at, 'isoformat'):
             parsed_at = parsed_at.isoformat()
-        return jsonify({
+        response = {
             "has_resume": True,
             "skills": resume.get("skills", []),
             "experience_years": resume.get("experience_years"),
             "job_titles": resume.get("job_titles", []),
             "summary": resume.get("summary", ""),
             "parsed_at": parsed_at,
-        }), 200
+        }
+        if active_resume:
+            response["s3_key"] = active_resume.get("s3_key", "")
+            response["filename"] = active_resume.get("filename", "")
+        return jsonify(response), 200
     except Exception as e:
         logger.error(f"Resume status error: {e}")
         return jsonify({"error": "Failed to check resume status"}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/versions — List base resume versions
+# ------------------------------------------------------------------
+
+@resume_bp.route('/versions', methods=['GET'])
+@jwt_required()
+def list_versions():
+    user_email = get_jwt_identity()
+    db = DBConnect().get_db()
+    resumes = list(db.user_resumes.find(
+        {'user_email': user_email, 'type': 'base'},
+        {'_id': 0}
+    ).sort('uploaded_at', -1))
+    for r in resumes:
+        if 'uploaded_at' in r and hasattr(r['uploaded_at'], 'isoformat'):
+            r['uploaded_at'] = r['uploaded_at'].isoformat()
+    return jsonify({'versions': resumes}), 200
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/generated — List generated/tailored resumes
+# ------------------------------------------------------------------
+
+@resume_bp.route('/generated', methods=['GET'])
+@jwt_required()
+def list_generated():
+    user_email = get_jwt_identity()
+    db = DBConnect().get_db()
+    resumes = list(db.user_resumes.find(
+        {'user_email': user_email, 'type': 'generated'},
+        {'_id': 0}
+    ).sort('generated_at', -1))
+    for r in resumes:
+        if 'generated_at' in r and hasattr(r['generated_at'], 'isoformat'):
+            r['generated_at'] = r['generated_at'].isoformat()
+    return jsonify({'generated': resumes}), 200
+
+
+# ------------------------------------------------------------------
+# PUT /api/resume/active — Set active base resume
+# ------------------------------------------------------------------
+
+@resume_bp.route('/active', methods=['PUT'])
+@jwt_required()
+def set_active():
+    user_email = get_jwt_identity()
+    data = request.get_json()
+    s3_key = data.get('s3_key', '')
+    db = DBConnect().get_db()
+    # Deactivate all, then activate the chosen one
+    db.user_resumes.update_many(
+        {'user_email': user_email, 'type': 'base'},
+        {'$set': {'is_active': False}}
+    )
+    result = db.user_resumes.update_one(
+        {'user_email': user_email, 's3_key': s3_key},
+        {'$set': {'is_active': True}}
+    )
+    if result.modified_count:
+        return jsonify({'message': 'Active resume updated'}), 200
+    return jsonify({'error': 'Resume not found'}), 404
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/download-file/<s3_key> — Download resume from S3
+# ------------------------------------------------------------------
+
+@resume_bp.route('/download-file/<path:s3_key>', methods=['GET'])
+@jwt_required()
+def download_file(s3_key):
+    user_email = get_jwt_identity()
+    db = DBConnect().get_db()
+    # Verify this resume belongs to the user
+    resume = db.user_resumes.find_one({'user_email': user_email, 's3_key': s3_key})
+    if not resume:
+        return jsonify({'error': 'Resume not found'}), 404
+    storage = get_storage_service()
+    file_bytes = storage.get_resume(s3_key)
+    # Determine content type
+    content_type = 'application/pdf' if s3_key.endswith('.pdf') else 'application/octet-stream'
+    filename = resume.get('filename', 'resume.pdf')
+    return send_file(
+        io.BytesIO(file_bytes), mimetype=content_type,
+        as_attachment=True, download_name=filename
+    )
+
+
+# ------------------------------------------------------------------
+# DELETE /api/resume/file/<s3_key> — Delete a resume
+# ------------------------------------------------------------------
+
+@resume_bp.route('/file/<path:s3_key>', methods=['DELETE'])
+@jwt_required()
+def delete_file(s3_key):
+    user_email = get_jwt_identity()
+    db = DBConnect().get_db()
+    resume = db.user_resumes.find_one({'user_email': user_email, 's3_key': s3_key})
+    if not resume:
+        return jsonify({'error': 'Resume not found'}), 404
+    storage = get_storage_service()
+    storage.delete_resume(s3_key)
+    db.user_resumes.delete_one({'user_email': user_email, 's3_key': s3_key})
+    return jsonify({'message': 'Resume deleted'}), 200

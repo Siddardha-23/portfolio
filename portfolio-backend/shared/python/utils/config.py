@@ -123,6 +123,13 @@ class JobSearchAuthConfig(object, metaclass=JobSearchAuthConfigMeta):
     pass
 
 
+class ResumeStorageConfig(object):
+    @classmethod
+    @property
+    def S3_BUCKET(cls):
+        return os.getenv('RESUME_S3_BUCKET', '')
+
+
 class SandboxConfigMeta(type):
     @property
     def GITHUB_PAT(cls):

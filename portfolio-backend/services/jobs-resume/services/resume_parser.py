@@ -754,7 +754,7 @@ class ResumeParser:
     # 3. FULL UPLOAD PIPELINE
     # ======================================================================
 
-    def upload_and_parse(self, file_bytes: bytes) -> dict:
+    def upload_and_parse(self, file_bytes: bytes, user_email: str = "") -> dict:
         """Full synchronous pipeline: extract → parse → validate → store.
 
         This is the legacy synchronous path. The async path (used by the
@@ -763,6 +763,7 @@ class ResumeParser:
 
         Args:
             file_bytes: Raw PDF file content as bytes.
+            user_email: Email of the authenticated user (for scoping storage).
 
         Returns:
             The stored document dict (includes structured JSON, raw_text,
@@ -770,9 +771,9 @@ class ResumeParser:
         """
         raw_text = self.extract_text_from_pdf(file_bytes)
         structured = self.parse_to_structured(raw_text)
-        return self.save_parsed_resume(structured, raw_text)
+        return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 
-    def save_parsed_resume(self, structured: dict, raw_text: str) -> dict:
+    def save_parsed_resume(self, structured: dict, raw_text: str, user_email: str = "") -> dict:
         """Build flat status fields, persist to MongoDB, and return the document.
 
         This method is separated from upload_and_parse so the async job worker
@@ -782,11 +783,12 @@ class ResumeParser:
         alongside the full structured JSON for backward compatibility with
         the GET /api/resume/status endpoint.
 
-        Storage model: single-user — the previous resume is fully replaced.
+        Storage model: per-user — the previous resume for this user is replaced.
 
         Args:
             structured: Validated structured resume JSON.
             raw_text: Original extracted text (stored for fallback and repair).
+            user_email: Email of the authenticated user (for scoping storage).
 
         Returns:
             The stored document dict with _id removed.
@@ -798,6 +800,7 @@ class ResumeParser:
         summary = structured.get("summary", "")
 
         doc = {
+            "user_email": user_email,
             "structured": structured,
             "raw_text": raw_text[:_MAX_TEXT_CHARS],
             "raw_text_length": len(raw_text),
@@ -821,8 +824,8 @@ class ResumeParser:
             "parsed_at": datetime.now(timezone.utc),
         }
 
-        # Single-user storage: replace any existing resume
-        self.user_resumes.delete_many({})
+        # Per-user storage: replace any existing resume for this user
+        self.user_resumes.delete_many({"user_email": user_email})
         self.user_resumes.insert_one(doc)
 
         doc.pop("_id", None)
@@ -832,14 +835,18 @@ class ResumeParser:
     # 4. RETRIEVAL
     # ======================================================================
 
-    def get_structured_resume(self) -> Optional[Dict[str, Any]]:
+    def get_structured_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
         """Retrieve the latest stored structured resume from MongoDB.
+
+        Args:
+            user_email: Email of the authenticated user (for scoping retrieval).
 
         Returns:
             The resume document dict with _id removed, or None if no resume
             has been uploaded yet.
         """
-        resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
+        query = {"user_email": user_email} if user_email else {}
+        resume = self.user_resumes.find_one(query, sort=[("parsed_at", -1)])
         if resume:
             resume.pop("_id", None)
         return resume

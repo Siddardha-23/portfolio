@@ -1,53 +1,18 @@
 """
 Jobs blueprint — Job search dashboard endpoints.
 
-Authentication uses a single shared password verified against a bcrypt hash.
-All other endpoints require a valid JWT obtained from the auth endpoint.
+Authentication is handled by the unified auth service (/api/auth/login).
+All endpoints require a valid JWT whose identity is the user's email.
 """
 import logging
-from datetime import timedelta
 
-import bcrypt
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import create_access_token, jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
-from utils.config import _get_config_value
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 
 jobs_bp = Blueprint("jobs", __name__)
 logger = logging.getLogger(__name__)
-
-
-# ------------------------------------------------------------------
-# POST /api/jobs/auth — Password gate
-# ------------------------------------------------------------------
-
-@jobs_bp.route("/auth", methods=["POST"])
-def auth():
-    """Verify shared password and return a JWT (24 h expiry)."""
-    client_ip = get_client_ip(request)
-    limiter = get_rate_limiter()
-    if limiter.is_rate_limited(f"jobs_auth:{client_ip}", max_requests=5, window_seconds=900):
-        return jsonify({"error": "Too many attempts. Try again in 15 minutes."}), 429
-
-    data = request.get_json(force=True) or {}
-    password = data.get("password", "")
-    if not password or not isinstance(password, str):
-        return jsonify({"error": "Password is required"}), 400
-
-    stored_hash = _get_config_value('JOB_SEARCH_PASSWORD_HASH', '')
-    if not stored_hash:
-        logger.error("JOB_SEARCH_PASSWORD_HASH not configured")
-        return jsonify({"error": "Service not configured"}), 503
-
-    if not bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8")):
-        return jsonify({"error": "Invalid password"}), 401
-
-    token = create_access_token(
-        identity="job_search_user",
-        expires_delta=timedelta(days=7),
-    )
-    return jsonify({"access_token": token}), 200
 
 
 # ------------------------------------------------------------------
@@ -208,13 +173,15 @@ def tailor_resume():
     if not job_description:
         return jsonify({"error": "Invalid job description"}), 400
 
+    user_email = get_jwt_identity()
+
     try:
         from services.resume_service import get_resume_service
         svc = get_resume_service()
 
         # Extract JD → get structured resume → tailor
         jd_analysis = svc.extract_jd(job_description)
-        resume = svc.parser.get_structured_resume()
+        resume = svc.parser.get_structured_resume(user_email=user_email)
         if not resume:
             return jsonify({"error": "No resume uploaded"}), 404
 
@@ -270,10 +237,12 @@ def upload_resume():
     if len(file_bytes) > 5 * 1024 * 1024:
         return jsonify({"error": "File too large (max 5 MB)"}), 400
 
+    user_email = get_jwt_identity()
+
     try:
         from services.resume_service import get_resume_service
         svc = get_resume_service()
-        parsed = svc.parser.upload_and_parse(file_bytes)
+        parsed = svc.parser.upload_and_parse(file_bytes, user_email=user_email)
 
         # Return flat format matching the job search UI's ParsedResume type
         return jsonify({
@@ -297,9 +266,10 @@ def upload_resume():
 @jobs_bp.route("/resume", methods=["GET"])
 @jwt_required()
 def get_resume():
+    user_email = get_jwt_identity()
     try:
         from services.resume_service import get_resume_service
-        resume = get_resume_service().get_base_resume()
+        resume = get_resume_service().get_base_resume(user_email=user_email)
         if not resume:
             return jsonify({"error": "No resume uploaded yet"}), 404
         if hasattr(resume.get('parsed_at'), 'isoformat'):
@@ -317,9 +287,10 @@ def get_resume():
 @jobs_bp.route("/saved", methods=["GET"])
 @jwt_required()
 def list_saved():
+    user_email = get_jwt_identity()
     try:
         from services.job_service import get_job_service
-        jobs = get_job_service().get_saved_jobs()
+        jobs = get_job_service().get_saved_jobs(user_email=user_email)
         return jsonify({"jobs": jobs}), 200
     except Exception as e:
         logger.error(f"List saved jobs error: {e}")
@@ -329,13 +300,14 @@ def list_saved():
 @jobs_bp.route("/saved", methods=["POST"])
 @jwt_required()
 def save_job():
+    user_email = get_jwt_identity()
     data = request.get_json(force=True) or {}
     job = data.get("job")
     if not job or not isinstance(job, dict):
         return jsonify({"error": "Job data is required"}), 400
     try:
         from services.job_service import get_job_service
-        saved = get_job_service().save_job(job)
+        saved = get_job_service().save_job(job, user_email=user_email)
         return jsonify({"job": saved}), 201
     except Exception as e:
         logger.error(f"Save job error: {e}")
@@ -345,6 +317,7 @@ def save_job():
 @jobs_bp.route("/saved/<job_id>", methods=["PUT"])
 @jwt_required()
 def update_saved(job_id):
+    user_email = get_jwt_identity()
     data = request.get_json(force=True) or {}
     status = data.get("status")
     notes = data.get("notes")
@@ -352,7 +325,7 @@ def update_saved(job_id):
         return jsonify({"error": "Invalid status"}), 400
     try:
         from services.job_service import get_job_service
-        updated = get_job_service().update_saved_job(job_id, status=status, notes=notes)
+        updated = get_job_service().update_saved_job(job_id, status=status, notes=notes, user_email=user_email)
         if not updated:
             return jsonify({"error": "Job not found"}), 404
         return jsonify({"job": updated}), 200
@@ -364,9 +337,10 @@ def update_saved(job_id):
 @jobs_bp.route("/saved/<job_id>", methods=["DELETE"])
 @jwt_required()
 def delete_saved(job_id):
+    user_email = get_jwt_identity()
     try:
         from services.job_service import get_job_service
-        deleted = get_job_service().delete_saved_job(job_id)
+        deleted = get_job_service().delete_saved_job(job_id, user_email=user_email)
         if not deleted:
             return jsonify({"error": "Job not found"}), 404
         return jsonify({"message": "Job removed"}), 200

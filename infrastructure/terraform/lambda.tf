@@ -40,6 +40,7 @@ locals {
         SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
         SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
         SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        RESUME_S3_BUCKET             = aws_s3_bucket.resumes.id
       }
     }
     chat = {
@@ -195,6 +196,29 @@ resource "aws_iam_role_policy" "jobs_resume_invoke" {
         Effect   = "Allow"
         Action   = ["lambda:InvokeFunction"]
         Resource = aws_lambda_function.service["jobs-resume"].arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "resume_s3_access" {
+  name = "${var.project_name}-resume-s3-access"
+  role = aws_iam_role.lambda.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:PutObject",
+          "s3:GetObject",
+          "s3:ListBucket",
+          "s3:DeleteObject"
+        ]
+        Resource = [
+          aws_s3_bucket.resumes.arn,
+          "${aws_s3_bucket.resumes.arn}/*"
+        ]
       }
     ]
   })

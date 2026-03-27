@@ -1,66 +1,82 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { apiService } from '@/lib/api';
-import { useNavigate } from 'react-router-dom';
 
-interface User {
-  id: number;
-  username: string;
-  email?: string;
-  created_at?: string;
+export interface AuthUser {
+  email: string;
+  role?: string;
+  sector?: string;
 }
 
 interface AuthContextType {
-  user: User | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<{ error?: string }>;
-  register: (username: string, password: string, email?: string) => Promise<{ error?: string }>;
+  login: (
+    email: string,
+    password: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) => Promise<{ error?: string }>;
+  register: (
+    email: string,
+    password: string,
+    role?: string,
+    sector?: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) => Promise<{ error?: string }>;
+  checkUser: (fingerprint_hash: string) => Promise<{ exists: boolean; email?: string } | null>;
   logout: () => void;
-  checkAuth: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
-
-  const checkAuth = async () => {
-    try {
-      const token = apiService.getToken();
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await apiService.verifyToken();
-      if (response.error || !response.data?.valid) {
-        apiService.logout();
-        setUser(null);
-      } else {
-        // Get user profile
-        const profileResponse = await apiService.getProfile();
-        if (profileResponse.data) {
-          setUser(profileResponse.data);
-        }
-      }
-    } catch {
-      // Silently handle auth check failure
-      apiService.logout();
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   useEffect(() => {
-    checkAuth();
+    const verifyAuth = async () => {
+      try {
+        const token = apiService.getToken();
+        if (!token) {
+          setIsLoading(false);
+          return;
+        }
+
+        const response = await apiService.verifyToken();
+        if (response.error || !response.data?.valid) {
+          apiService.logout();
+          setUser(null);
+        } else {
+          const profileResponse = await apiService.getProfile();
+          if (profileResponse.data) {
+            setUser({
+              email: profileResponse.data.email,
+              role: profileResponse.data.role,
+              sector: profileResponse.data.sector,
+            });
+          }
+        }
+      } catch {
+        apiService.logout();
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    verifyAuth();
   }, []);
 
-  const login = async (username: string, password: string) => {
+  const login = async (
+    email: string,
+    password: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) => {
     try {
-      const response = await apiService.login(username, password);
+      const response = await apiService.login(email, password, session_id, fingerprint_hash);
       if (response.error) {
         return { error: response.error };
       }
@@ -68,42 +84,74 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.data) {
         const profileResponse = await apiService.getProfile();
         if (profileResponse.data) {
-          setUser(profileResponse.data);
+          setUser({
+            email: profileResponse.data.email,
+            role: profileResponse.data.role,
+            sector: profileResponse.data.sector,
+          });
         }
       }
 
       return {};
-    } catch (error) {
+    } catch {
       return { error: 'Login failed. Please try again.' };
     }
   };
 
-  const register = async (username: string, password: string, email?: string) => {
+  const register = async (
+    email: string,
+    password: string,
+    role?: string,
+    sector?: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) => {
     try {
-      const response = await apiService.register(username, password, email);
+      const response = await apiService.register(
+        email,
+        password,
+        role,
+        sector,
+        session_id,
+        fingerprint_hash
+      );
       if (response.error) {
         return { error: response.error };
       }
 
-      // Auto-login after registration
-      const loginResponse = await apiService.login(username, password);
-      if (loginResponse.data) {
+      if (response.data) {
+        // Token is already set by apiService.register
         const profileResponse = await apiService.getProfile();
         if (profileResponse.data) {
-          setUser(profileResponse.data);
+          setUser({
+            email: profileResponse.data.email,
+            role: profileResponse.data.role,
+            sector: profileResponse.data.sector,
+          });
         }
       }
 
       return {};
-    } catch (error) {
+    } catch {
       return { error: 'Registration failed. Please try again.' };
+    }
+  };
+
+  const checkUser = async (fingerprint_hash: string) => {
+    try {
+      const response = await apiService.checkUser(fingerprint_hash);
+      if (response.data) {
+        return { exists: response.data.exists, email: response.data.email };
+      }
+      return null;
+    } catch {
+      return null;
     }
   };
 
   const logout = () => {
     apiService.logout();
     setUser(null);
-    navigate('/');
   };
 
   return (
@@ -114,8 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         login,
         register,
+        checkUser,
         logout,
-        checkAuth,
       }}
     >
       {children}
@@ -130,4 +178,3 @@ export function useAuth() {
   }
   return context;
 }
-

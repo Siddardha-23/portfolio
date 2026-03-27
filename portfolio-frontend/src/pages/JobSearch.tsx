@@ -1,66 +1,19 @@
-import { useState, useEffect } from 'react';
-import { apiService } from '@/lib/api';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useJobSearch } from '@/hooks/useJobSearch';
 import { JobSearchPanel } from '@/components/job-search/JobSearchPanel';
 import { SavedJobsPanel } from '@/components/job-search/SavedJobsPanel';
 import { ResumePanel } from '@/components/job-search/ResumePanel';
-
-function PasswordGate({ onAuth }: { onAuth: () => void }) {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password.trim()) return;
-    setLoading(true);
-    setError('');
-    const resp = await apiService.jobSearchAuth(password);
-    setLoading(false);
-    if (resp.error) {
-      setError(resp.error);
-      return;
-    }
-    onAuth();
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Job Search Dashboard</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">Enter password to access</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoFocus
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Verifying...' : 'Access Dashboard'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
+import AuthGate from '@/components/AuthGate';
+import { useAuth } from '@/contexts/AuthContext';
 
 function Dashboard() {
   const jobSearch = useJobSearch();
 
+  const { logout } = useAuth();
+
   const handleLogout = () => {
-    localStorage.removeItem('job_search_token');
-    window.location.reload();
+    logout();
   };
 
   return (
@@ -132,39 +85,9 @@ function Dashboard() {
 }
 
 export default function JobSearch() {
-  const [authed, setAuthed] = useState(false);
-  const [checking, setChecking] = useState(true);
-
-  useEffect(() => {
-    const token = localStorage.getItem('job_search_token');
-    if (token) {
-      // Quick check: try to hit a protected endpoint
-      apiService.getResume().then(resp => {
-        // 401 means token is invalid/expired
-        if (resp.error && resp.error.includes('401')) {
-          localStorage.removeItem('job_search_token');
-          setAuthed(false);
-        } else {
-          setAuthed(true);
-        }
-        setChecking(false);
-      });
-    } else {
-      setChecking(false);
-    }
-  }, []);
-
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
-  }
-
-  if (!authed) {
-    return <PasswordGate onAuth={() => setAuthed(true)} />;
-  }
-
-  return <Dashboard />;
+  return (
+    <AuthGate title="Job Search Dashboard" description="Search jobs, save opportunities, and tailor your resume">
+      <Dashboard />
+    </AuthGate>
+  );
 }

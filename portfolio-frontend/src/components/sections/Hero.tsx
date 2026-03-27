@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2 } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -289,6 +290,7 @@ function RecruiterPanel() {
 }
 
 export default function Hero() {
+  const navigate = useNavigate();
   const [visitorName, setVisitorName] = useState('');
   const [isReturningVisitor, setIsReturningVisitor] = useState(false);
 
@@ -488,6 +490,56 @@ export default function Hero() {
                   Resume
                 </Button>
               </ResumeViewer>
+            </motion.div>
+
+            {/* Trending Feature Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.9, duration: 0.5 }}
+              className="mt-6"
+            >
+              <motion.button
+                onClick={() => navigate('/resume-parser')}
+                className="group relative w-full sm:w-auto flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-primary/20 hover:border-primary/40 transition-colors cursor-pointer text-left"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                {/* Subtle glow pulse */}
+                <motion.div
+                  className="absolute -inset-px rounded-2xl bg-gradient-to-r from-primary/20 via-accent/10 to-primary/20 opacity-0 group-hover:opacity-100 blur-sm transition-opacity"
+                  animate={{ opacity: [0, 0.3, 0] }}
+                  transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                />
+
+                <div className="relative flex items-center gap-3">
+                  {/* Fire icon with badge */}
+                  <div className="relative flex-shrink-0">
+                    <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
+                      <Flame className="h-4 w-4 text-orange-400" />
+                    </div>
+                    <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
+                      New
+                    </span>
+                  </div>
+
+                  {/* Text content */}
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-foreground">
+                      AI Resume Parser
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      Tailor your resume with AI, get ATS scores & more
+                    </div>
+                  </div>
+
+                  {/* Arrow CTA */}
+                  <div className="flex-shrink-0 text-xs font-medium text-primary flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
+                    <span className="hidden sm:inline">Try it out</span>
+                    <ArrowRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
+                </div>
+              </motion.button>
             </motion.div>
 
             {/* Availability */}

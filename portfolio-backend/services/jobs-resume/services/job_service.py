@@ -441,31 +441,33 @@ class JobService:
     # Saved Jobs CRUD
     # ------------------------------------------------------------------
 
-    def get_saved_jobs(self) -> List[Dict[str, Any]]:
-        jobs = list(self.saved_jobs.find().sort("saved_at", -1))
+    def get_saved_jobs(self, user_email: str) -> List[Dict[str, Any]]:
+        jobs = list(self.saved_jobs.find({"user_email": user_email}).sort("saved_at", -1))
         for j in jobs:
             j["_id"] = str(j["_id"])
         return jobs
 
-    def save_job(self, job: Dict[str, Any]) -> Dict[str, Any]:
+    def save_job(self, job: Dict[str, Any], user_email: str) -> Dict[str, Any]:
         doc = {
             "job_id": job.get("job_id", ""),
+            "user_email": user_email,
             "job_data": job,
             "status": "interested",
             "notes": "",
             "saved_at": datetime.now(timezone.utc),
         }
         self.saved_jobs.update_one(
-            {"job_id": doc["job_id"]},
+            {"job_id": doc["job_id"], "user_email": user_email},
             {"$set": doc},
             upsert=True,
         )
-        result = self.saved_jobs.find_one({"job_id": doc["job_id"]})
+        result = self.saved_jobs.find_one({"job_id": doc["job_id"], "user_email": user_email})
         result["_id"] = str(result["_id"])
         return result
 
     def update_saved_job(
-        self, job_id: str, status: Optional[str] = None, notes: Optional[str] = None
+        self, job_id: str, status: Optional[str] = None, notes: Optional[str] = None,
+        user_email: str = ""
     ) -> Optional[Dict[str, Any]]:
         update = {}
         if status is not None:
@@ -474,14 +476,15 @@ class JobService:
             update["notes"] = notes
         if not update:
             return None
-        self.saved_jobs.update_one({"job_id": job_id}, {"$set": update})
-        result = self.saved_jobs.find_one({"job_id": job_id})
+        query = {"job_id": job_id, "user_email": user_email}
+        self.saved_jobs.update_one(query, {"$set": update})
+        result = self.saved_jobs.find_one(query)
         if result:
             result["_id"] = str(result["_id"])
         return result
 
-    def delete_saved_job(self, job_id: str) -> bool:
-        result = self.saved_jobs.delete_one({"job_id": job_id})
+    def delete_saved_job(self, job_id: str, user_email: str = "") -> bool:
+        result = self.saved_jobs.delete_one({"job_id": job_id, "user_email": user_email})
         return result.deleted_count > 0
 
 

@@ -6,6 +6,7 @@ import { lazy, Suspense, useState, useCallback, useEffect } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
 import { UnderTheHoodProvider } from './contexts/UnderTheHoodContext';
+import { AuthProvider } from './contexts/AuthContext';
 import UnderTheHoodDrawer from './components/UnderTheHoodDrawer';
 import Welcome from './pages/Welcome';
 import Home from './pages/Home';
@@ -66,11 +67,13 @@ const App = () => (
   <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system">
-        <UnderTheHoodProvider>
-          <TooltipProvider>
-            <AppContent />
-          </TooltipProvider>
-        </UnderTheHoodProvider>
+        <AuthProvider>
+          <UnderTheHoodProvider>
+            <TooltipProvider>
+              <AppContent />
+            </TooltipProvider>
+          </UnderTheHoodProvider>
+        </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </ErrorBoundary>

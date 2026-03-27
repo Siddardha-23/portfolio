@@ -190,9 +190,9 @@ class ResumeService:
     # Resume retrieval (delegates to parser)
     # ------------------------------------------------------------------
 
-    def get_base_resume(self) -> Optional[Dict[str, Any]]:
-        """Retrieve the latest stored resume."""
-        return self.parser.get_structured_resume()
+    def get_base_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
+        """Retrieve the latest stored resume for the given user."""
+        return self.parser.get_structured_resume(user_email=user_email)
 
     # ------------------------------------------------------------------
     # Step 1 — Extract JD fields (stays here — short, self-contained)

@@ -66,9 +66,7 @@ class ApiService {
       ...options.headers,
     };
 
-    // Only set auth_token if the caller hasn't already provided an Authorization header
-    // (e.g. jobRequest sets job_search_token which must not be overwritten)
-    if (token && !(options.headers && (options.headers as Record<string, string>)['Authorization'])) {
+    if (token) {
       (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
     }
 
@@ -113,21 +111,40 @@ class ApiService {
   // Auth endpoints (/api/auth)
   // ============================================
 
-  async register(username: string, password: string, email?: string) {
-    return this.request<{ message: string; username: string }>('/auth/register', {
+  async register(
+    email: string,
+    password: string,
+    role?: string,
+    sector?: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) {
+    const response = await this.request<{ access_token: string; email: string }>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username, password, email }),
+      body: JSON.stringify({ email, password, role, sector, session_id, fingerprint_hash }),
     });
+
+    if (response.data?.access_token) {
+      this.setToken(response.data.access_token);
+    }
+
+    return response;
   }
 
-  async login(username: string, password: string) {
+  async login(
+    email: string,
+    password: string,
+    session_id?: string,
+    fingerprint_hash?: string
+  ) {
     const response = await this.request<{
       access_token: string;
-      username: string;
-      email?: string;
+      email: string;
+      role?: string;
+      sector?: string;
     }>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password, session_id, fingerprint_hash }),
     });
 
     if (response.data?.access_token) {
@@ -143,9 +160,9 @@ class ApiService {
 
   async getProfile() {
     return this.request<{
-      id: number;
-      username: string;
-      email?: string;
+      email: string;
+      role?: string;
+      sector?: string;
       created_at?: string;
     }>('/auth/profile', {
       method: 'GET',
@@ -153,8 +170,15 @@ class ApiService {
   }
 
   async verifyToken() {
-    return this.request<{ username: string; valid: boolean }>('/auth/verify', {
+    return this.request<{ email: string; valid: boolean }>('/auth/verify', {
       method: 'GET',
+    });
+  }
+
+  async checkUser(fingerprint_hash: string) {
+    return this.request<{ exists: boolean; email?: string }>('/auth/check-user', {
+      method: 'POST',
+      body: JSON.stringify({ fingerprint_hash }),
     });
   }
 
@@ -430,39 +454,6 @@ class ApiService {
   // Job Search endpoints (/api/jobs)
   // ============================================
 
-  private async jobRequest<T>(endpoint: string, options: RequestInit = {}, timeoutMs?: number): Promise<ApiResponse<T>> {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    const result = await this.request<T>(endpoint, {
-      ...options,
-      headers: { ...headers, ...options.headers as Record<string, string> },
-    }, timeoutMs);
-    // On expired/missing token, clear job_search_token so resume-parser shows password gate.
-    // Only clear on explicit token errors — not on transient network issues.
-    if (result.error && typeof window !== 'undefined') {
-      const err = result.error.toLowerCase();
-      if (err.includes('token has expired') || err.includes('missing authorization') || err.includes('session expired')) {
-        localStorage.removeItem('job_search_token');
-        return { error: 'Session expired. Please enter the password again.' };
-      }
-    }
-    return result;
-  }
-
-  async jobSearchAuth(password: string) {
-    const response = await this.request<{ access_token: string }>('/jobs/auth', {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-    });
-    if (response.data?.access_token && typeof window !== 'undefined') {
-      localStorage.setItem('job_search_token', response.data.access_token);
-    }
-    return response;
-  }
-
   async searchJobs(params: {
     q: string;
     page?: number;
@@ -478,20 +469,20 @@ class ApiService {
     if (params.date_posted) searchParams.set('date_posted', params.date_posted);
     if (params.remote) searchParams.set('remote', 'true');
     if (params.type) searchParams.set('type', params.type);
-    return this.jobRequest<{ jobs: import('../types/jobs').Job[]; total: number; page: number }>(
+    return this.request<{ jobs: import('../types/jobs').Job[]; total: number; page: number }>(
       `/jobs/search?${searchParams.toString()}`
     );
   }
 
   async batchSearchJobs(params: import('../types/jobs').BatchSearchParams) {
-    return this.jobRequest<import('../types/jobs').BatchSearchResponse>('/jobs/batch-search', {
+    return this.request<import('../types/jobs').BatchSearchResponse>('/jobs/batch-search', {
       method: 'POST',
       body: JSON.stringify(params),
     }, 30000);
   }
 
   async analyzeJob(job: import('../types/jobs').Job, action: 'summarize' | 'missing_skills' | 'cover_letter') {
-    return this.jobRequest<{ result: string; action: string }>('/jobs/analyze', {
+    return this.request<{ result: string; action: string }>('/jobs/analyze', {
       method: 'POST',
       body: JSON.stringify({ job, action }),
     });
@@ -500,7 +491,7 @@ class ApiService {
   async uploadResume(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
     const formData = new FormData();
     formData.append('file', file);
-    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
+    const token = this.getToken();
     const url = `${this.baseURL}/jobs/resume`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -524,36 +515,36 @@ class ApiService {
   }
 
   async getResume() {
-    return this.jobRequest<{ resume: import('../types/jobs').ParsedResume }>('/jobs/resume');
+    return this.request<{ resume: import('../types/jobs').ParsedResume }>('/jobs/resume');
   }
 
   async tailorResume(jobDescription: string) {
-    return this.jobRequest<{ tailored: import('../types/jobs').TailoredResume }>('/jobs/tailor-resume', {
+    return this.request<{ tailored: import('../types/jobs').TailoredResume }>('/jobs/tailor-resume', {
       method: 'POST',
       body: JSON.stringify({ job_description: jobDescription }),
     }, 30000);
   }
 
   async getSavedJobs() {
-    return this.jobRequest<{ jobs: import('../types/jobs').SavedJob[] }>('/jobs/saved');
+    return this.request<{ jobs: import('../types/jobs').SavedJob[] }>('/jobs/saved');
   }
 
   async saveJob(job: import('../types/jobs').Job) {
-    return this.jobRequest<{ job: import('../types/jobs').SavedJob }>('/jobs/saved', {
+    return this.request<{ job: import('../types/jobs').SavedJob }>('/jobs/saved', {
       method: 'POST',
       body: JSON.stringify({ job }),
     });
   }
 
   async updateSavedJob(jobId: string, data: { status?: string; notes?: string }) {
-    return this.jobRequest<{ job: import('../types/jobs').SavedJob }>(`/jobs/saved/${jobId}`, {
+    return this.request<{ job: import('../types/jobs').SavedJob }>(`/jobs/saved/${jobId}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   async deleteSavedJob(jobId: string) {
-    return this.jobRequest<{ message: string }>(`/jobs/saved/${jobId}`, {
+    return this.request<{ message: string }>(`/jobs/saved/${jobId}`, {
       method: 'DELETE',
     });
   }
@@ -564,13 +555,13 @@ class ApiService {
   // ============================================
 
   async getResumeStatus() {
-    return this.jobRequest<import('../types/resume').ResumeStatus>('/resume/status');
+    return this.request<import('../types/resume').ResumeStatus>('/resume/status');
   }
 
   async uploadResumeForParser(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
     const formData = new FormData();
     formData.append('file', file);
-    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
+    const token = this.getToken();
     const url = `${this.baseURL}/resume/upload`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
@@ -585,9 +576,8 @@ class ApiService {
       });
       clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({}));
-      if (response.status === 401 && typeof window !== 'undefined') {
-        localStorage.removeItem('job_search_token');
-        return { error: 'Session expired. Please enter the password again.' };
+      if (response.status === 401) {
+        return { error: 'Session expired. Please sign in again.' };
       }
       if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
 
@@ -625,7 +615,7 @@ class ApiService {
     while (Date.now() - startTime < maxWaitMs) {
       if (signal?.aborted) return { error: 'Cancelled' };
 
-      const resp = await this.jobRequest<{
+      const resp = await this.request<{
         status: string;
         result?: T;
         error?: string;
@@ -663,7 +653,7 @@ class ApiService {
   async extractJD(
     jobDescription: string,
   ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis }>> {
-    const submitResp = await this.jobRequest<{ job_id: string }>(
+    const submitResp = await this.request<{ job_id: string }>(
       '/resume/extract-jd',
       { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
       30000,
@@ -678,7 +668,7 @@ class ApiService {
     jdAnalysis: import('../types/resume').JDAnalysis,
     signal?: AbortSignal,
   ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
-    const submitResp = await this.jobRequest<{ job_id: string }>(
+    const submitResp = await this.request<{ job_id: string }>(
       '/resume/tailor',
       { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
       30000,
@@ -696,7 +686,7 @@ class ApiService {
     jdAnalysis: import('../types/resume').JDAnalysis,
     signal?: AbortSignal,
   ): Promise<ApiResponse<{ ats_scores: import('../types/resume').ATSScores }>> {
-    const submitResp = await this.jobRequest<{ job_id: string }>(
+    const submitResp = await this.request<{ job_id: string }>(
       '/resume/ats-scores',
       { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
       30000,
@@ -709,12 +699,48 @@ class ApiService {
     );
   }
 
+  // ============================================
+  // Resume management endpoints
+  // ============================================
+
+  async listBaseResumes(): Promise<ApiResponse<{versions: any[]}>> {
+    return this.request('/resume/versions');
+  }
+
+  async listGeneratedResumes(): Promise<ApiResponse<{generated: any[]}>> {
+    return this.request('/resume/generated');
+  }
+
+  async setActiveResume(s3Key: string): Promise<ApiResponse<any>> {
+    return this.request('/resume/active', {
+      method: 'PUT',
+      body: JSON.stringify({ s3_key: s3Key })
+    });
+  }
+
+  async deleteResume(s3Key: string): Promise<ApiResponse<any>> {
+    return this.request(`/resume/file/${encodeURIComponent(s3Key)}`, {
+      method: 'DELETE'
+    });
+  }
+
+  async downloadResumeFile(s3Key: string): Promise<Blob> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${this.baseURL}/resume/download-file/${encodeURIComponent(s3Key)}`, {
+      headers,
+    });
+    if (!response.ok) throw new Error('Download failed');
+    return response.blob();
+  }
+
   async downloadTailoredResume(
     tailoredResume: import('../types/resume').TailoredFullResume,
     jdAnalysis: import('../types/resume').JDAnalysis,
     format: 'pdf' | 'docx'
   ): Promise<{ data?: Blob; error?: string; filename?: string }> {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('job_search_token') : null;
+    const token = this.getToken();
     const url = `${this.baseURL}/resume/download`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);

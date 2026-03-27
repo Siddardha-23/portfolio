@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
+import AuthGate from '@/components/AuthGate';
+import ResumeDashboard from '@/components/resume/ResumeDashboard';
 import type {
   TailorPipelineResult,
   TailoredFullResume,
@@ -13,75 +14,6 @@ import type {
   ATSScores,
   ResumeStatus,
 } from '@/types/resume';
-
-const RESUME_STATUS_CACHE_KEY = 'resume_parser_status';
-
-function getCachedResumeStatus(): ResumeStatus | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(RESUME_STATUS_CACHE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw) as ResumeStatus;
-    return data?.has_resume ? data : null;
-  } catch {
-    return null;
-  }
-}
-
-function setCachedResumeStatus(status: ResumeStatus | null) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (status?.has_resume) localStorage.setItem(RESUME_STATUS_CACHE_KEY, JSON.stringify(status));
-    else localStorage.removeItem(RESUME_STATUS_CACHE_KEY);
-  } catch { /* ignore */ }
-}
-
-// ---------------------------------------------------------------------------
-// Password gate (same mechanism as job-search)
-// ---------------------------------------------------------------------------
-
-function PasswordGate({ onAuth }: { onAuth: () => void }) {
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password.trim()) return;
-    setLoading(true);
-    setError('');
-    const resp = await apiService.jobSearchAuth(password);
-    setLoading(false);
-    if (resp.error) { setError(resp.error); return; }
-    onAuth();
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Resume Tailor</CardTitle>
-          <p className="text-sm text-muted-foreground mt-1">Enter password to access</p>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              autoFocus
-            />
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Verifying...' : 'Access'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Score bar component
@@ -356,14 +288,11 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
           </CardHeader>
           <CardContent className="space-y-2">
             {resume.education.map((edu, i) => {
-              // Strip date patterns and duplicate text baked into degree field
               const cleanDegree = (d: string) => {
                 if (!d) return '';
-                // Remove date-like segments after pipe separators
                 let cleaned = d.split('|').map(s => s.trim())
                   .filter(s => !/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}|\d{1,2}\/\d{4})/i.test(s))
                   .join(' | ');
-                // Deduplicate if same text repeated
                 const parts = cleaned.split('|').map(s => s.trim()).filter(Boolean);
                 const unique = [...new Set(parts)];
                 return unique.join(' | ').trim();
@@ -465,61 +394,14 @@ function getTailorPhase(secs: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Main dashboard
+// Upload area for first-time users (no resumes yet)
 // ---------------------------------------------------------------------------
 
-function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
-  // Initialize from cache so cloud shows "Resume Ready" immediately when we have it (same as local)
-  const [resumeStatus, setResumeStatus] = useState<ResumeStatus | null>(() => getCachedResumeStatus());
-  const [loadingStatus, setLoadingStatus] = useState(true);
+function InitialUpload({ onUploaded }: { onUploaded: () => void }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
 
-  const [jdText, setJdText] = useState('');
-  const [analyzingJD, setAnalyzingJD] = useState(false);
-  const [jdAnalysis, setJdAnalysis] = useState<JDAnalysis | null>(null);
-  const [tailoring, setTailoring] = useState(false);
-  const [tailorError, setTailorError] = useState('');
-  const [result, setResult] = useState<TailorPipelineResult | null>(null);
-  const [atsLoading, setAtsLoading] = useState(false);
-  const [tailorElapsed, setTailorElapsed] = useState(0);
-
-  const tailorAbortRef = useRef<AbortController | null>(null);
-  const atsAbortRef = useRef<AbortController | null>(null);
-  const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
-
-  const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
-
-  // Load resume status from API; use cache so cloud behaves like local when API fails or is slow
-  useEffect(() => {
-    apiService.getResumeStatus().then(resp => {
-      setLoadingStatus(false);
-      if (resp.data?.has_resume) {
-        setResumeStatus(resp.data);
-        setCachedResumeStatus(resp.data);
-      } else if (resp.data && resp.data.has_resume === false) {
-        setResumeStatus(resp.data);
-        setCachedResumeStatus(null);
-      } else if (resp.error && !resp.error.includes('401') && !resp.error.includes('Session expired')) {
-        // API failed (network/500) — keep cached status so we still show "Resume Ready" if we had it
-        if (!getCachedResumeStatus()) setResumeStatus({ has_resume: false });
-      }
-    });
-  }, []);
-
-  // Cleanup in-flight polls and timer on unmount
-  useEffect(() => {
-    return () => {
-      tailorAbortRef.current?.abort();
-      atsAbortRef.current?.abort();
-      if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
-    };
-  }, []);
-
-  // Upload handler
   const handleUpload = useCallback(async (file: File) => {
     if (!file.name.toLowerCase().endsWith('.pdf')) {
       setUploadError('Only PDF files are accepted');
@@ -535,31 +417,10 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     setUploading(false);
     if (resp.error) {
       setUploadError(resp.error);
-      if (resp.error.includes('Session expired') && onSessionExpired) onSessionExpired();
       return;
     }
-    // Handle both async poll result (parsed_resume) and legacy sync response (resume)
-    const data = (resp as any).data;
-    const r = data?.parsed_resume || data?.resume;
-    if (r) {
-      const next: ResumeStatus = {
-        has_resume: true,
-        skills: r.skills,
-        experience_years: r.experience_years,
-        job_titles: r.job_titles,
-        summary: r.summary,
-        parsed_at: r.parsed_at,
-      };
-      setResumeStatus(next);
-      setCachedResumeStatus(next);
-    }
-    // Refresh from server when possible
-    const statusResp = await apiService.getResumeStatus();
-    if (statusResp.data) {
-      setResumeStatus(statusResp.data);
-      setCachedResumeStatus(statusResp.data);
-    }
-  }, [onSessionExpired]);
+    onUploaded();
+  }, [onUploaded]);
 
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -568,7 +429,121 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     if (file) handleUpload(file);
   }, [handleUpload]);
 
-  // Step 1: Analyze JD only
+  return (
+    <Card>
+      <CardHeader className="text-center">
+        <CardTitle>Upload Your Resume</CardTitle>
+        <p className="text-sm text-muted-foreground mt-1">
+          Upload your base resume PDF to get started with AI-powered tailoring
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+            dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
+          }`}
+        >
+          <div className="space-y-3">
+            <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+              <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+              </svg>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF here'}
+            </p>
+            {uploading && (
+              <div className="w-full max-w-xs mx-auto">
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div className="h-full bg-primary rounded-full animate-pulse" style={{ width: '60%' }} />
+                </div>
+              </div>
+            )}
+            {!uploading && (
+              <label>
+                <Button variant="outline" size="sm" asChild>
+                  <span>Or click to browse</span>
+                </Button>
+                <input
+                  type="file"
+                  accept=".pdf"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) handleUpload(file);
+                  }}
+                />
+              </label>
+            )}
+            <p className="text-[10px] text-muted-foreground">PDF only, max 5 MB</p>
+          </div>
+          {uploadError && <p className="text-sm text-destructive mt-3">{uploadError}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main dashboard (tailoring flow)
+// ---------------------------------------------------------------------------
+
+function Dashboard() {
+  const [hasResumes, setHasResumes] = useState<boolean | null>(null);
+  const [loadingCheck, setLoadingCheck] = useState(true);
+  const [showTailoringFlow, setShowTailoringFlow] = useState(false);
+
+  const [jdText, setJdText] = useState('');
+  const [analyzingJD, setAnalyzingJD] = useState(false);
+  const [jdAnalysis, setJdAnalysis] = useState<JDAnalysis | null>(null);
+  const [tailoring, setTailoring] = useState(false);
+  const [tailorError, setTailorError] = useState('');
+  const [result, setResult] = useState<TailorPipelineResult | null>(null);
+  const [atsLoading, setAtsLoading] = useState(false);
+  const [tailorElapsed, setTailorElapsed] = useState(0);
+
+  const tailorAbortRef = useRef<AbortController | null>(null);
+  const atsAbortRef = useRef<AbortController | null>(null);
+  const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
+  const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
+
+  // Check if user has any base resumes
+  const checkResumes = useCallback(async () => {
+    setLoadingCheck(true);
+    const resp = await apiService.listBaseResumes();
+    if (resp.data) {
+      setHasResumes((resp.data.versions || []).length > 0);
+    } else {
+      // Fallback: try resume status
+      const statusResp = await apiService.getResumeStatus();
+      if (statusResp.data) {
+        setHasResumes(statusResp.data.has_resume === true);
+      } else {
+        setHasResumes(false);
+      }
+    }
+    setLoadingCheck(false);
+  }, []);
+
+  useEffect(() => {
+    checkResumes();
+  }, [checkResumes]);
+
+  // Cleanup in-flight requests on unmount
+  useEffect(() => {
+    return () => {
+      tailorAbortRef.current?.abort();
+      atsAbortRef.current?.abort();
+      if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
+    };
+  }, []);
+
+  // Step 1: Analyze JD
   const handleAnalyzeJD = useCallback(async () => {
     if (!jdText.trim()) return;
     setAnalyzingJD(true);
@@ -585,10 +560,9 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     setJdAnalysis(analysis);
   }, [jdText]);
 
-  // Step 2: Tailor resume (only after JD is analyzed)
+  // Step 2: Tailor resume
   const handleTailorResume = useCallback(async () => {
     if (!jdAnalysis) return;
-    // Abort any in-flight tailor before starting a new one
     tailorAbortRef.current?.abort();
     const controller = new AbortController();
     tailorAbortRef.current = controller;
@@ -597,7 +571,6 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     setTailorElapsed(0);
     setTailorError('');
 
-    // Start elapsed timer (1s tick)
     tailorTimerRef.current = setInterval(() => {
       setTailorElapsed(prev => prev + 1);
     }, 1000);
@@ -610,7 +583,7 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     if (controller.signal.aborted) {
       setTailoring(false);
       setTailorElapsed(0);
-      return; // user cancelled — no error shown
+      return;
     }
 
     setTailoring(false);
@@ -624,7 +597,7 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     }
   }, [jdAnalysis]);
 
-  // Cancel tailor (shown after soft timeout)
+  // Cancel tailor
   const handleCancelTailor = useCallback(() => {
     tailorAbortRef.current?.abort();
     if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);
@@ -633,7 +606,7 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     setTailorElapsed(0);
   }, []);
 
-  // Step 3: Fetch ATS scores on demand
+  // Step 3: Fetch ATS scores
   const handleFetchATS = useCallback(async () => {
     if (!result?.tailored_resume || !result?.jd_analysis) return;
     atsAbortRef.current?.abort();
@@ -683,117 +656,29 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
     }
   }, [result]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('job_search_token');
-    localStorage.removeItem(RESUME_STATUS_CACHE_KEY);
-    window.location.reload();
-  };
+  if (loadingCheck) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-32 w-full" />
+      </div>
+    );
+  }
+
+  // No resumes yet: show upload UI
+  if (!hasResumes) {
+    return <InitialUpload onUploaded={() => { setHasResumes(true); }} />;
+  }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-10">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold">Resume Tailor</h1>
-            {resumeStatus?.has_resume && (
-              <span className="text-xs text-muted-foreground">Resume loaded</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => window.location.href = '/job-search'}>
-              Job Search
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleLogout}>
-              Logout
-            </Button>
-          </div>
-        </div>
-      </header>
+    <div className="space-y-6">
+      {/* Resume Dashboard */}
+      <ResumeDashboard onStartTailoring={() => setShowTailoringFlow(true)} />
 
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-6">
-        {/* Resume status / upload */}
-        {loadingStatus ? (
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-48" />
-            <Skeleton className="h-20 w-full" />
-          </div>
-        ) : !resumeStatus?.has_resume ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">Upload Your Resume</CardTitle>
-              <p className="text-xs text-muted-foreground">Upload your base resume PDF to get started</p>
-            </CardHeader>
-            <CardContent>
-              <div
-                onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={onDrop}
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${dragOver ? 'border-primary bg-primary/5' : 'border-muted-foreground/25'
-                  }`}
-              >
-                <p className="text-sm text-muted-foreground mb-2">
-                  {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF here'}
-                </p>
-                {!uploading && (
-                  <label>
-                    <Button variant="outline" size="sm" asChild>
-                      <span>Or click to browse</span>
-                    </Button>
-                    <input type="file" accept=".pdf" className="hidden" onChange={e => {
-                      const file = e.target.files?.[0];
-                      if (file) handleUpload(file);
-                    }} />
-                  </label>
-                )}
-                {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
-              </div>
-            </CardContent>
-          </Card>
-        ) : (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div className="space-y-2 flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">Resume Ready</p>
-                    <Badge variant="secondary" className="text-[10px]">
-                      {resumeStatus.experience_years || '?'} yrs exp
-                    </Badge>
-                  </div>
-                  {resumeStatus.summary && (
-                    <p className="text-xs text-muted-foreground line-clamp-2">{resumeStatus.summary}</p>
-                  )}
-                  {resumeStatus.skills && resumeStatus.skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {resumeStatus.skills.slice(0, 12).map(s => (
-                        <Badge key={s} variant="outline" className="text-[10px]">{s}</Badge>
-                      ))}
-                      {resumeStatus.skills.length > 12 && (
-                        <Badge variant="outline" className="text-[10px]">
-                          +{resumeStatus.skills.length - 12} more
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <label className="shrink-0 ml-4">
-                  <Button variant="outline" size="sm" asChild disabled={uploading}>
-                    <span>{uploading ? 'Uploading...' : 'Upload New'}</span>
-                  </Button>
-                  <input type="file" accept=".pdf" className="hidden" onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) handleUpload(file);
-                  }} />
-                </label>
-              </div>
-              {uploadError && <p className="text-sm text-destructive mt-2">{uploadError}</p>}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* JD input */}
-        {resumeStatus?.has_resume && (
+      {/* Tailoring Flow */}
+      {showTailoringFlow && (
+        <>
+          {/* JD input */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm">Paste Job Description</CardTitle>
@@ -825,205 +710,198 @@ function Dashboard({ onSessionExpired }: { onSessionExpired?: () => void }) {
               </div>
             </CardContent>
           </Card>
-        )}
 
-        {/* Step indicator / spinner */}
-        {(analyzingJD || tailoring) && (
-          <Card>
-            <CardContent className="pt-6">
-              <div className="flex flex-col items-center justify-center py-6 space-y-4">
-                <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                <div className="text-center space-y-1">
-                  <p className="text-sm font-medium">
-                    {analyzingJD ? 'Analyzing job description...' : getTailorPhase(tailorElapsed)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {tailoring && tailorElapsed >= 90
-                      ? 'Taking longer than expected — you can wait or cancel.'
-                      : 'This may take 30–60 seconds'}
-                  </p>
-                  {tailoring && tailorElapsed > 0 && (
-                    <p className="text-xs text-muted-foreground tabular-nums">{tailorElapsed}s</p>
+          {/* Step indicator / spinner */}
+          {(analyzingJD || tailoring) && (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center justify-center py-6 space-y-4">
+                  <div className="w-10 h-10 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-medium">
+                      {analyzingJD ? 'Analyzing job description...' : getTailorPhase(tailorElapsed)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {tailoring && tailorElapsed >= 90
+                        ? 'Taking longer than expected -- you can wait or cancel.'
+                        : 'This may take 30-60 seconds'}
+                    </p>
+                    {tailoring && tailorElapsed > 0 && (
+                      <p className="text-xs text-muted-foreground tabular-nums">{tailorElapsed}s</p>
+                    )}
+                  </div>
+                  {tailoring && tailorElapsed >= 90 && (
+                    <Button type="button" variant="outline" size="sm" onClick={handleCancelTailor}>
+                      Cancel
+                    </Button>
                   )}
                 </div>
-                {tailoring && tailorElapsed >= 90 && (
-                  <Button type="button" variant="outline" size="sm" onClick={handleCancelTailor}>
-                    Cancel
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Error */}
-        {tailorError && (
-          <Card className="border-destructive">
-            <CardContent className="pt-6">
-              <p className="text-sm text-destructive">{tailorError}</p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* JD Analysis result + Tailor button */}
-        {jdAnalysis && !result && (
-          <>
-            <JDAnalysisCard jd={jdAnalysis} />
-            <Card>
-              <CardContent className="pt-6">
-                <div className="flex items-center gap-3">
-                  <Button
-                    size="sm"
-                    onClick={handleTailorResume}
-                    disabled={tailoring}
-                  >
-                    {tailoring ? 'Tailoring...' : 'Tailor Resume'}
-                  </Button>
-                  <span className="text-xs text-muted-foreground">
-                    Generate a tailored resume based on the analyzed JD
-                  </span>
-                </div>
               </CardContent>
             </Card>
-          </>
-        )}
+          )}
 
-        {/* Results */}
-        {result && (
-          <>
-            {/* JD Analysis */}
-            <JDAnalysisCard jd={result.jd_analysis} />
-
-            {/* Download bar */}
-            <Card>
+          {/* Error */}
+          {tailorError && (
+            <Card className="border-destructive">
               <CardContent className="pt-6">
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-sm font-medium">Download Tailored Resume</p>
-                  <div className="flex gap-2 ml-auto">
-                    <Button
-                      size="sm"
-                      onClick={() => handleDownload('pdf')}
-                      disabled={downloading !== null}
-                    >
-                      {downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleDownload('docx')}
-                      disabled={downloading !== null}
-                    >
-                      {downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
-                    </Button>
-                  </div>
-                </div>
+                <p className="text-sm text-destructive">{tailorError}</p>
               </CardContent>
             </Card>
+          )}
 
-            {/* Tab toggle */}
-            <div className="flex gap-1 border rounded-lg p-1 w-fit">
-              <button
-                onClick={() => setActiveTab('preview')}
-                className={`px-4 py-1.5 text-sm rounded-md transition-colors ${activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-              >
-                Resume Preview
-              </button>
-              <button
-                onClick={() => setActiveTab('ats')}
-                className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                  }`}
-              >
-                ATS Analysis
-                {atsLoading && (
-                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                )}
-              </button>
-            </div>
-
-            {/* Tabbed content */}
-            {activeTab === 'preview' ? (
-              <ResumePreview resume={result.tailored_resume} />
-            ) : result.ats_scores ? (
-              <ATSPanel scores={result.ats_scores} />
-            ) : (
+          {/* JD Analysis result + Tailor button */}
+          {jdAnalysis && !result && (
+            <>
+              <JDAnalysisCard jd={jdAnalysis} />
               <Card>
                 <CardContent className="pt-6">
-                  <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                    {atsLoading ? (
-                      <>
-                        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-                        <div className="text-center space-y-1">
-                          <p className="text-sm font-medium">Computing ATS scores</p>
-                          <p className="text-xs text-muted-foreground">
-                            This takes 10-15 seconds. Your resume is ready for download in the meantime.
-                          </p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-center space-y-2">
-                          <p className="text-sm font-medium">ATS scores not yet loaded</p>
-                          <p className="text-xs text-muted-foreground">
-                            Click below to analyze your tailored resume against ATS systems.
-                          </p>
-                        </div>
-                        <Button
-                          size="sm"
-                          onClick={handleFetchATS}
-                        >
-                          Get ATS Scores
-                        </Button>
-                      </>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <Button
+                      size="sm"
+                      onClick={handleTailorResume}
+                      disabled={tailoring}
+                    >
+                      {tailoring ? 'Tailoring...' : 'Tailor Resume'}
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Generate a tailored resume based on the analyzed JD
+                    </span>
                   </div>
                 </CardContent>
               </Card>
-            )}
-          </>
-        )}
-      </main>
+            </>
+          )}
+
+          {/* Results */}
+          {result && (
+            <>
+              {/* JD Analysis */}
+              <JDAnalysisCard jd={result.jd_analysis} />
+
+              {/* Download bar */}
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <p className="text-sm font-medium">Download Tailored Resume</p>
+                    <div className="flex gap-2 ml-auto">
+                      <Button
+                        size="sm"
+                        onClick={() => handleDownload('pdf')}
+                        disabled={downloading !== null}
+                      >
+                        {downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleDownload('docx')}
+                        disabled={downloading !== null}
+                      >
+                        {downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
+                      </Button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Tab toggle */}
+              <div className="flex gap-1 border rounded-lg p-1 w-fit">
+                <button
+                  onClick={() => setActiveTab('preview')}
+                  className={`px-4 py-1.5 text-sm rounded-md transition-colors ${activeTab === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                >
+                  Resume Preview
+                </button>
+                <button
+                  onClick={() => setActiveTab('ats')}
+                  className={`px-4 py-1.5 text-sm rounded-md transition-colors flex items-center gap-1.5 ${activeTab === 'ats' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                >
+                  ATS Analysis
+                  {atsLoading && (
+                    <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                  )}
+                </button>
+              </div>
+
+              {/* Tabbed content */}
+              {activeTab === 'preview' ? (
+                <ResumePreview resume={result.tailored_resume} />
+              ) : result.ats_scores ? (
+                <ATSPanel scores={result.ats_scores} />
+              ) : (
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex flex-col items-center justify-center py-8 space-y-4">
+                      {atsLoading ? (
+                        <>
+                          <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                          <div className="text-center space-y-1">
+                            <p className="text-sm font-medium">Computing ATS scores</p>
+                            <p className="text-xs text-muted-foreground">
+                              This takes 10-15 seconds. Your resume is ready for download in the meantime.
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="text-center space-y-2">
+                            <p className="text-sm font-medium">ATS scores not yet loaded</p>
+                            <p className="text-xs text-muted-foreground">
+                              Click below to analyze your tailored resume against ATS systems.
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={handleFetchATS}
+                          >
+                            Get ATS Scores
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Page export with auth check
+// Page export with AuthGate
 // ---------------------------------------------------------------------------
 
 export default function ResumeParser() {
-  const [authed, setAuthed] = useState(false);
-  const [checking, setChecking] = useState(true);
+  return (
+    <AuthGate
+      title="AI Resume Parser"
+      description="Upload your resume, tailor it to any job description, and get ATS compatibility scores powered by AI."
+    >
+      <div className="min-h-screen bg-background">
+        {/* Header */}
+        <header className="border-b sticky top-0 bg-background/95 backdrop-blur z-10">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+            <h1 className="text-xl font-bold">Resume Tailor</h1>
+            <div className="flex items-center gap-2">
+              <Button variant="ghost" size="sm" onClick={() => window.location.href = '/job-search'}>
+                Job Search
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => window.location.href = '/home'}>
+                Home
+              </Button>
+            </div>
+          </div>
+        </header>
 
-  useEffect(() => {
-    const token = localStorage.getItem('job_search_token');
-    if (token) {
-      apiService.getResumeStatus().then(resp => {
-        const isUnauthorized = resp.error && (resp.error.includes('401') || resp.error.includes('Session expired'));
-        if (isUnauthorized) {
-          localStorage.removeItem('job_search_token');
-          setAuthed(false);
-        } else {
-          setAuthed(true);
-        }
-        setChecking(false);
-      });
-    } else {
-      setChecking(false);
-    }
-  }, []);
-
-  if (checking) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Loading...</p>
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          <Dashboard />
+        </main>
       </div>
-    );
-  }
-
-  if (!authed) {
-    return <PasswordGate onAuth={() => setAuthed(true)} />;
-  }
-
-  return <Dashboard onSessionExpired={() => setAuthed(false)} />;
+    </AuthGate>
+  );
 }

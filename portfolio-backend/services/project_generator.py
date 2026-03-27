@@ -13,6 +13,7 @@ Rules:
 - bullets: 3 realistic, grounded descriptions — what was built and how
 """
 import logging
+import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,11 @@ class ProjectGenerator:
 
         # Identify JD-relevant skills that the candidate actually has
         resume_text_lower = resume_text.lower()
+        all_skills_lower = {s.lower() for s in all_skills}
         relevant_tech = [
             s for s in (jd_required + jd_keywords)
-            if s.lower() in resume_text_lower
+            if s.lower() in all_skills_lower
+            or re.search(r'\b' + re.escape(s.lower()) + r'\b', resume_text_lower)
         ]
         relevant_tech_str = ", ".join(relevant_tech[:10]) if relevant_tech else skills_text[:200]
 
@@ -58,12 +61,21 @@ class ProjectGenerator:
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
             "3. Do NOT invent metrics, percentages, or numbers.\n"
-            "4. The project must be a realistic personal or open-source project (not a job).\n"
+            "4. The project must be a realistic personal or open-source project that a developer "
+            "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string ''.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            "7. bullets: exactly 3 bullets, each ~100-150 chars, describing what was built and how.\n"
-            "8. Name the project after the domain it covers — e.g. 'Cloud Cost Dashboard', "
-            "'ML Pipeline Automation', 'REST API Gateway'.\n\n"
+            "7. bullets: exactly 3 bullets, each ~100-150 chars, describing what was built and how. "
+            "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
+            "8. The project name MUST sound like a real GitHub project name. Think about what a real "
+            "developer would name their project based on what it does.\n"
+            "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
+            "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue', "
+            "'Sentiment Analysis Pipeline', 'API Rate Limiter Service'.\n"
+            "   BAD NAMES (NEVER use these patterns): 'Python FullStack Developer Portfolio Project', "
+            "'Software Engineer Project', 'Backend Engineer Side Project', "
+            "'Python & AWS Integration Platform', anything with the job title in it.\n"
+            "   The name must describe WHAT the project does, not WHO built it or WHAT role it's for.\n\n"
             f"Candidate's skills: {skills_text[:300]}\n"
             f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
             f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
@@ -82,22 +94,53 @@ class ProjectGenerator:
         )
 
         try:
-            result = gemini_json(prompt, max_tokens=1024, temperature=0.3)
+            from services.gemini_client import GEMINI_PRO, GEMINI_FLASH
+            PROJECT_SCHEMA = {
+                "name": str,
+                "dates": str,
+                "bullets": [str],
+                "tech": str
+            }
+            # Try PRO first, then FLASH as fallback
+            result = None
+            for model in (GEMINI_PRO, GEMINI_FLASH):
+                try:
+                    result = gemini_json(
+                        prompt,
+                        max_tokens=4096,
+                        temperature=0.3,
+                        model=model,
+                        schema=PROJECT_SCHEMA
+                    )
+                    if isinstance(result, dict):
+                        break
+                except Exception as e:
+                    logger.warning("ProjectGenerator: %s call failed: %s", model, e)
+                    continue
+
+            if not isinstance(result, dict):
+                logger.warning("ProjectGenerator: all Gemini models failed — result type: %s", type(result))
+                return None
+
+            logger.info("ProjectGenerator: Gemini returned project name='%s', tech='%s'",
+                        result.get('name', '?'), result.get('tech', '?'))
+
         except Exception as e:
             logger.warning("ProjectGenerator: Gemini call failed: %s", e)
             return None
 
-        if not isinstance(result, dict):
-            logger.warning("ProjectGenerator: Gemini returned non-dict")
+        project = self._validate_and_clean(result, original_resume, jd_analysis)
+        if project is None:
+            logger.warning("ProjectGenerator: AI project failed validation (name='%s')",
+                           result.get('name', '?') if isinstance(result, dict) else '?')
             return None
-
-        project = self._validate_and_clean(result, original_resume)
         return project
 
     def _validate_and_clean(
         self,
         project: Dict[str, Any],
         original_resume: Dict[str, Any],
+        jd_analysis: Dict[str, Any] = None,
     ) -> Optional[Dict[str, Any]]:
         """Validate generated project against allowed tech and schema.
 
@@ -112,6 +155,28 @@ class ProjectGenerator:
         if not name:
             logger.warning("ProjectGenerator: generated project has no name")
             return None
+
+        # If name contains the job title or "Portfolio", ask Gemini for a better name
+        needs_rename = False
+        jd_title = ""
+        if jd_analysis:
+            jd_title = jd_analysis.get("job_title", "").strip()
+            if jd_title and jd_title.lower() in name.lower():
+                logger.warning("ProjectGenerator: name '%s' contains job title '%s', requesting new name from Gemini", name, jd_title)
+                needs_rename = True
+        if "portfolio" in name.lower():
+            logger.warning("ProjectGenerator: name '%s' contains 'portfolio', requesting new name from Gemini", name)
+            needs_rename = True
+
+        if needs_rename:
+            new_name = self._generate_project_name(tech_str, jd_title)
+            if new_name:
+                project["name"] = new_name
+                name = new_name
+                logger.info("ProjectGenerator: Gemini generated new name: '%s'", new_name)
+            else:
+                logger.warning("ProjectGenerator: Gemini name retry failed, rejecting project")
+                return None
 
         if not isinstance(bullets, list) or len(bullets) == 0:
             logger.warning("ProjectGenerator: generated project has no bullets")
@@ -131,7 +196,10 @@ class ProjectGenerator:
             t = tech_item.strip()
             if not t:
                 continue
-            if t.lower() in all_skills_lower or t.lower() in resume_text_lower:
+            t_lower = t.lower()
+            if t_lower in all_skills_lower:
+                allowed_tech.append(t)
+            elif re.search(r'\b' + re.escape(t_lower) + r'\b', resume_text_lower):
                 allowed_tech.append(t)
             else:
                 logger.debug("ProjectGenerator: dropped unsupported tech '%s'", t)
@@ -146,3 +214,45 @@ class ProjectGenerator:
             "bullets": clean_bullets,
             "tech": ", ".join(allowed_tech),
         }
+
+    @staticmethod
+    def _generate_project_name(tech_str: str, jd_title: str) -> Optional[str]:
+        """Ask Gemini for just a project name when the initial name was bad.
+
+        Uses FLASH for speed/cost — this is a lightweight one-shot call.
+        Returns the name string or None if it fails.
+        """
+        try:
+            from services.gemini_client import gemini_json, GEMINI_FLASH
+
+            prompt = (
+                "Generate a single project name for a developer's portfolio project.\n\n"
+                "The project uses these technologies: " + tech_str + "\n"
+                + (f"The target job domain is: {jd_title}\n" if jd_title else "")
+                + "\nRULES:\n"
+                "- The name must describe WHAT the project does (e.g. 'Payment Fraud Detection API', "
+                "'Real-Time Log Aggregator', 'E-Commerce Search Engine').\n"
+                "- Do NOT include any job title, role name, or the word 'Portfolio'.\n"
+                "- The name should be 2-5 words, sound like a real GitHub project.\n"
+                "- Think about what a developer would actually build with these technologies.\n\n"
+                'Return a JSON object: {"name": "Your Project Name"}\n'
+            )
+
+            result = gemini_json(
+                prompt, max_tokens=100, temperature=0.7, model=GEMINI_FLASH,
+                schema={"name": str}
+            )
+            if isinstance(result, dict) and result.get("name", "").strip():
+                name = result["name"].strip()
+                # Final safety check: ensure the name doesn't still contain the job title
+                if jd_title and jd_title.lower() in name.lower():
+                    logger.warning("ProjectGenerator: Gemini name retry still contains job title: '%s'", name)
+                    return None
+                if "portfolio" in name.lower():
+                    logger.warning("ProjectGenerator: Gemini name retry still contains 'portfolio': '%s'", name)
+                    return None
+                return name
+        except Exception as e:
+            logger.warning("ProjectGenerator: name generation failed: %s", e)
+        return None
+

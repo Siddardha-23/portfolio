@@ -220,7 +220,7 @@ class ResumeScorer:
     def _ai_scores(self, tailored: Dict[str, Any], jd_analysis: Dict[str, Any]) -> dict:
         """Call Gemini for semantic assessment that can't be computed deterministically."""
         import json
-        from services.gemini_client import gemini_json
+        from services.gemini_client import gemini_json, GEMINI_PRO
 
         tailored_json = json.dumps(tailored, indent=2)[:6000]
         jd_json = json.dumps(jd_analysis, indent=2)[:3000]
@@ -261,7 +261,27 @@ class ResumeScorer:
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"
         )
 
-        return gemini_json(prompt, max_tokens=4096, temperature=0.3)
+        AI_SCORES_SCHEMA = {
+            "experience_relevance": int,
+            "scanners": {
+                "workday": int,
+                "greenhouse": int,
+                "lever": int,
+                "icims": int,
+                "taleo": int,
+                "smartrecruiters": int,
+            },
+            "ai_screener": {
+                "overall": int,
+                "relevance": int,
+                "seniority_fit": int,
+                "culture_fit": int,
+            },
+            "suggestions": [str],
+            "strengths": [str],
+        }
+
+        return gemini_json(prompt, max_tokens=4096, temperature=0.3, model=GEMINI_PRO, schema=AI_SCORES_SCHEMA)
 
     # ------------------------------------------------------------------
     # Combine deterministic + AI scores

@@ -590,7 +590,15 @@ class ApiService {
         return { error: 'Session expired. Please enter the password again.' };
       }
       if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
-      return { data } as ApiResponse<{ resume: import('../types/jobs').ParsedResume }>;
+
+      // Backend returns { job_id } with 202 — poll for the parsed result
+      if (data.job_id) {
+        const pollResult = await this.pollJob<{ parsed_resume: any }>(data.job_id, 120000);
+        return pollResult;
+      }
+
+      // Fallback: if backend returns the resume directly (shouldn't happen, but safe)
+      return { data } as ApiResponse<{ parsed_resume: any }>;
     } catch (error) {
       clearTimeout(timeoutId);
       return { error: error instanceof Error ? error.message : 'Upload failed' };

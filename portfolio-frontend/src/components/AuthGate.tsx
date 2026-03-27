@@ -145,24 +145,23 @@ function useTypingEffect(text: string, speed: number = 80) {
   return displayed;
 }
 
-// News ticker component
-function TechNewsTicker({ stories }: { stories: NewsStory[] }) {
-  const tickerRef = useRef<HTMLDivElement>(null);
+// News board component — fixed-height container with internal scroll only
+function TechNewsBoard({ stories }: { stories: NewsStory[] }) {
   const [paused, setPaused] = useState(false);
-
-  // Duplicate stories for seamless loop
   const doubled = [...stories, ...stories];
 
   return (
-    <div className="relative flex-1 overflow-hidden">
+    <div
+      className="relative overflow-hidden"
+      style={{ height: 'calc(100vh - 120px)' }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
       <div
-        ref={tickerRef}
         className="flex flex-col"
         style={{
           animation: paused ? 'none' : 'ticker 60s linear infinite',
         }}
-        onMouseEnter={() => setPaused(true)}
-        onMouseLeave={() => setPaused(false)}
       >
         {doubled.map((story, i) => (
           <a
@@ -170,7 +169,7 @@ function TechNewsTicker({ stories }: { stories: NewsStory[] }) {
             href={story.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="group block px-4 py-3 border-b border-pink-500/10 hover:bg-pink-500/5 transition-colors duration-200"
+            className="group block px-5 py-3.5 border-b border-pink-500/10 hover:bg-pink-500/5 transition-colors duration-200"
           >
             <p className="text-sm text-gray-300 group-hover:text-pink-300 transition-colors leading-snug line-clamp-2">
               {story.title}
@@ -186,8 +185,8 @@ function TechNewsTicker({ stories }: { stories: NewsStory[] }) {
         ))}
       </div>
       {/* Fade edges */}
-      <div className="pointer-events-none absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-gray-950 to-transparent z-10" />
-      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-gray-950 to-transparent z-10" />
+      <div className="pointer-events-none absolute top-0 left-0 right-0 h-10 bg-gradient-to-b from-gray-950 to-transparent z-10" />
+      <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-gray-950 to-transparent z-10" />
     </div>
   );
 }
@@ -426,10 +425,10 @@ export default function AuthGate({ children, title, description }: AuthGateProps
       </div>
 
       <div className="relative z-10 min-h-screen flex flex-col lg:flex-row">
-        {/* Left Side: Tech News Board */}
-        <div className="hidden lg:flex lg:w-[45%] xl:w-[40%] flex-col bg-gray-950 border-r border-pink-500/10">
+        {/* Left Side: Tech News Board — fixed height, internal scroll only */}
+        <div className="hidden lg:flex lg:w-[42%] xl:w-[38%] flex-col h-screen sticky top-0 bg-gray-950 border-r border-pink-500/10">
           {/* News header */}
-          <div className="px-6 py-5 border-b border-pink-500/10">
+          <div className="shrink-0 px-6 py-5 border-b border-pink-500/10">
             <div className="flex items-center gap-2.5">
               <div className="flex items-center justify-center w-9 h-9 rounded-lg bg-pink-500/10">
                 <span className="text-pink-400"><ZapIcon /></span>
@@ -441,19 +440,19 @@ export default function AuthGate({ children, title, description }: AuthGateProps
             </div>
           </div>
 
-          {/* News ticker */}
-          <TechNewsTicker stories={news} />
+          {/* News board — scrolls only inside this box */}
+          <TechNewsBoard stories={news} />
 
           {/* Footer */}
-          <div className="px-6 py-3 border-t border-pink-500/10">
+          <div className="shrink-0 px-6 py-3 border-t border-pink-500/10">
             <p className="text-[10px] text-gray-600 text-center">
               Powered by Hacker News API
             </p>
           </div>
         </div>
 
-        {/* Right Side: Auth Form */}
-        <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-8">
+        {/* Right Side: Auth Form — always centered in viewport */}
+        <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-8 min-h-screen">
           <div className="w-full max-w-md">
             {/* Title with typing effect */}
             <div className="text-center mb-8">

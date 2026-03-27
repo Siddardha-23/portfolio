@@ -66,6 +66,7 @@ class ResumeService:
         from services.keyword_gap_engine import KeywordGapEngine
         from services.impact_engine import ImpactEngine
         from services.project_generator import ProjectGenerator
+        from services.content_augmenter import ContentAugmenter
 
         self.parser = ResumeParser(db)
         self.tailor = ResumeTailor()
@@ -74,6 +75,7 @@ class ResumeService:
         self.keyword_gap = KeywordGapEngine()
         self.impact = ImpactEngine()
         self.project_generator = ProjectGenerator()
+        self.augmenter = ContentAugmenter(self.renderer, self.project_generator)
 
     # ------------------------------------------------------------------
     # Job management (async pattern for Lambda)
@@ -332,16 +334,12 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 result_contact["phone"] = " ".join(result_contact["phone"].split())
 
 
-            # If original resume had no projects, generate one grounded project
-            original_projects = structured.get("projects") or []
-            if not original_projects:
-                generated = svc.project_generator.generate(structured, payload["jd_analysis"])
-                if generated:
-                    result["projects"] = [generated]
-                    logger.info("ProjectGenerator: injected 1 generated project into tailored resume")
-                else:
-                    logger.error("ProjectGenerator: generation failed — no project injected")
-                    result.setdefault("projects", [])
+            # Content augmentation: page-fill, impact injection, ATS hardening
+            result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
+
+            # Date normalization: consistent "Month YYYY – Present" format
+            from services.date_normalizer import normalize_dates
+            result = normalize_dates(result)
 
             svc.complete_job(job_id, {"tailored_resume": result})
 

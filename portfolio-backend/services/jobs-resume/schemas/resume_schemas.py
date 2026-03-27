@@ -79,9 +79,11 @@ JD_ANALYSIS_SCHEMA = {
 ATS_SCORES_SCHEMA = {
     "overall": int,
     "keyword_match": int,
+    "keyword_frequency": int,
     "skills_alignment": int,
     "experience_relevance": int,
     "quantifiable_impact": int,
+    "bullet_quality": int,
     "format_score": int,
     "section_completeness": int,
     "scanners": {

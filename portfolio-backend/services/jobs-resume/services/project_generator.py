@@ -1,7 +1,8 @@
 """
-Project Generator — generates a single grounded project when the original resume has none.
+Project Generator — generates a single grounded project per invocation.
 
-Called ONLY when len(original_resume["projects"]) == 0.
+Called by ContentAugmenter when page fill is below threshold and project
+count < 3, regardless of whether the original resume already has projects.
 Output is validated against allowed tech from the resume before being injected.
 
 Rules:
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class ProjectGenerator:
-    """Generates a single grounded project entry when the original resume has none."""
+    """Generates a single grounded project entry per invocation."""
 
     def generate(
         self,
@@ -94,29 +95,26 @@ class ProjectGenerator:
         )
 
         try:
-            from services.gemini_client import GEMINI_PRO, GEMINI_FLASH
+            from services.gemini_client import GEMINI_FLASH
             PROJECT_SCHEMA = {
                 "name": str,
                 "dates": str,
                 "bullets": [str],
                 "tech": str
             }
-            # Try PRO first, then FLASH as fallback
+            # Use FLASH for speed — project quality is governed by the prompt,
+            # and FLASH is ~2-3x faster for structured JSON output.
             result = None
-            for model in (GEMINI_PRO, GEMINI_FLASH):
-                try:
-                    result = gemini_json(
-                        prompt,
-                        max_tokens=4096,
-                        temperature=0.3,
-                        model=model,
-                        schema=PROJECT_SCHEMA
-                    )
-                    if isinstance(result, dict):
-                        break
-                except Exception as e:
-                    logger.warning("ProjectGenerator: %s call failed: %s", model, e)
-                    continue
+            try:
+                result = gemini_json(
+                    prompt,
+                    max_tokens=4096,
+                    temperature=0.3,
+                    model=GEMINI_FLASH,
+                    schema=PROJECT_SCHEMA
+                )
+            except Exception as e:
+                logger.warning("ProjectGenerator: FLASH call failed: %s", e)
 
             if not isinstance(result, dict):
                 logger.warning("ProjectGenerator: all Gemini models failed — result type: %s", type(result))
@@ -135,6 +133,127 @@ class ProjectGenerator:
                            result.get('name', '?') if isinstance(result, dict) else '?')
             return None
         return project
+
+    def generate_batch(
+        self,
+        count: int,
+        original_resume: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        existing_projects: list = None,
+    ) -> list:
+        """Generate multiple projects in a single Gemini call for speed.
+
+        Returns a list of validated project dicts (may be fewer than `count`
+        if some fail validation or are duplicates).
+        """
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+        from schemas.resume_schemas import flatten_skills, build_resume_text
+
+        if count <= 0:
+            return []
+
+        all_skills = flatten_skills(original_resume)
+        resume_text = build_resume_text(original_resume)
+        skills_text = ", ".join(all_skills) if all_skills else "general software development"
+
+        jd_title = jd_analysis.get("job_title", "software engineering")
+        jd_required = jd_analysis.get("required_skills", [])
+        jd_keywords = jd_analysis.get("keywords", [])
+        jd_industry = jd_analysis.get("industry", "")
+
+        resume_text_lower = resume_text.lower()
+        all_skills_lower = {s.lower() for s in all_skills}
+        relevant_tech = [
+            s for s in (jd_required + jd_keywords)
+            if s.lower() in all_skills_lower
+            or re.search(r'\b' + re.escape(s.lower()) + r'\b', resume_text_lower)
+        ]
+        relevant_tech_str = ", ".join(relevant_tech[:10]) if relevant_tech else skills_text[:200]
+
+        # Build list of existing project names to avoid duplicates
+        existing_names = []
+        if existing_projects:
+            existing_names = [p.get("name", "") for p in existing_projects if p.get("name")]
+
+        avoid_clause = ""
+        if existing_names:
+            avoid_clause = (
+                f"\nAVOID DUPLICATES: The resume already has these projects: "
+                f"{', '.join(existing_names)}. Generate DIFFERENT projects.\n"
+            )
+
+        prompt = (
+            f"You are generating {count} portfolio project entries for a resume.\n\n"
+            "STRICT RULES — violations will be rejected:\n"
+            "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
+            "2. Do NOT invent fake company names, production systems, or client work.\n"
+            "3. Do NOT invent metrics, percentages, or numbers.\n"
+            "4. Each project must be a realistic personal or open-source project that a developer "
+            "would actually build and put on GitHub — not a generic label or placeholder.\n"
+            "5. dates: return empty string '' for each project.\n"
+            "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
+            "7. bullets: exactly 3 bullets per project, each ~100-150 chars, describing what was built and how. "
+            "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
+            "8. Each project name MUST sound like a real GitHub project name. Think about what a real "
+            "developer would name their project based on what it does.\n"
+            "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
+            "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue'.\n"
+            "   BAD NAMES (NEVER): 'Python FullStack Developer Portfolio Project', "
+            "'Software Engineer Project', anything with the job title in it.\n"
+            "   The name must describe WHAT the project does, not WHO built it.\n"
+            f"9. Each project must be DISTINCT — different domains, different tech stacks.\n"
+            f"{avoid_clause}\n"
+            f"Candidate's skills: {skills_text[:300]}\n"
+            f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
+            f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
+            "Return a JSON object with EXACTLY this structure:\n"
+            '{"projects": [\n'
+            '  {"name": "Project Name", "dates": "", "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"], "tech": "Tech1, Tech2"}\n'
+            "]}\n\n"
+            f"=== CANDIDATE RESUME CONTEXT ===\n{resume_text[:3000]}"
+        )
+
+        BATCH_SCHEMA = {
+            "projects": [{
+                "name": str,
+                "dates": str,
+                "bullets": [str],
+                "tech": str,
+            }]
+        }
+
+        try:
+            result = gemini_json(
+                prompt, max_tokens=4096, temperature=0.3,
+                model=GEMINI_FLASH, schema=BATCH_SCHEMA,
+            )
+        except Exception as e:
+            logger.warning("ProjectGenerator: batch generation failed: %s", e)
+            return []
+
+        raw_projects = result.get("projects", [])
+        if not isinstance(raw_projects, list):
+            return []
+
+        validated = []
+        for raw in raw_projects:
+            if not isinstance(raw, dict):
+                continue
+            project = self._validate_and_clean(raw, original_resume, jd_analysis)
+            if project is None:
+                continue
+            # Check for duplicates against existing + already-validated
+            all_existing = (existing_projects or []) + validated
+            from services.content_augmenter import ContentAugmenter
+            if ContentAugmenter._is_duplicate_project(project, all_existing):
+                logger.info("ProjectGenerator batch: duplicate project '%s' — skipping", project.get("name"))
+                continue
+            validated.append(project)
+            if len(validated) >= count:
+                break
+
+        logger.info("ProjectGenerator batch: generated %d/%d valid projects", len(validated), count)
+        return validated
 
     def _validate_and_clean(
         self,

@@ -158,3 +158,39 @@ def excess_generated_projects(original_resume_no_projects):
         {"name": "GenProject3", "dates": "2023", "bullets": ["..."], "tech": "Go"},
     ]
     return r
+
+
+@pytest.fixture
+def original_resume_two_projects(original_resume):
+    """Original resume with 2 existing projects."""
+    r = copy.deepcopy(original_resume)
+    r["projects"].append({
+        "name": "LogAggregator",
+        "dates": "2022",
+        "bullets": ["Built real-time log aggregation pipeline"],
+        "tech": "Python, Kafka, Elasticsearch",
+    })
+    return r
+
+
+@pytest.fixture
+def tailored_with_original_plus_generated(original_resume):
+    """Tailored resume with 1 original project + 2 generated (simulates augmenter output)."""
+    r = copy.deepcopy(original_resume)
+    r["projects"].extend([
+        {"name": "APIRateLimiter", "dates": "", "bullets": ["Built rate limiter"], "tech": "Go, Redis"},
+        {"name": "CloudCostOptimizer", "dates": "", "bullets": ["Optimized cloud costs"], "tech": "AWS, Python"},
+    ])
+    return r
+
+
+@pytest.fixture
+def tailored_with_original_plus_excess_generated(original_resume):
+    """Tailored resume with 1 original + 3 generated (exceeds cap of 3 total)."""
+    r = copy.deepcopy(original_resume)
+    r["projects"].extend([
+        {"name": "APIRateLimiter", "dates": "", "bullets": ["Built rate limiter"], "tech": "Go, Redis"},
+        {"name": "CloudCostOptimizer", "dates": "", "bullets": ["Optimized cloud costs"], "tech": "AWS, Python"},
+        {"name": "LogPipeline", "dates": "", "bullets": ["Built log pipeline"], "tech": "Python, Kafka"},
+    ])
+    return r

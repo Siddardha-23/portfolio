@@ -1,66 +1,33 @@
 {
-  "title": "Portfolio - Logs & Traces Explorer",
-  "description": "CloudWatch Logs Insights queries and X-Ray trace exploration",
-  "tags": [
-    "portfolio",
-    "logs",
-    "xray",
-    "aws"
-  ],
+  "title": "Portfolio - Logs & Traces",
+  "description": "CloudWatch Logs Insights and X-Ray trace exploration",
+  "tags": ["portfolio", "logs", "xray", "aws"],
   "timezone": "browser",
   "refresh": "5m",
-  "time": {
-    "from": "now-1h",
-    "to": "now"
-  },
+  "time": { "from": "now-3h", "to": "now" },
   "templating": {
     "list": [
       {
         "name": "service",
         "type": "custom",
-        "current": {
-          "text": "visitor",
-          "value": "portfolio-visitor"
-        },
+        "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
+        "current": { "text": "portfolio-visitor", "value": "portfolio-visitor" },
         "options": [
-          {
-            "text": "visitor",
-            "value": "portfolio-visitor",
-            "selected": true
-          },
-          {
-            "text": "auth",
-            "value": "portfolio-auth"
-          },
-          {
-            "text": "jobs-resume",
-            "value": "portfolio-jobs-resume"
-          },
-          {
-            "text": "chat",
-            "value": "portfolio-chat"
-          },
-          {
-            "text": "infra",
-            "value": "portfolio-infra"
-          }
+          { "text": "portfolio-visitor", "value": "portfolio-visitor", "selected": true },
+          { "text": "portfolio-auth", "value": "portfolio-auth" },
+          { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume" },
+          { "text": "portfolio-chat", "value": "portfolio-chat" },
+          { "text": "portfolio-infra", "value": "portfolio-infra" }
         ],
+        "multi": false,
         "label": "Service"
       },
       {
         "name": "region",
         "type": "custom",
-        "current": {
-          "text": "us-east-1",
-          "value": "us-east-1"
-        },
-        "options": [
-          {
-            "text": "us-east-1",
-            "value": "us-east-1",
-            "selected": true
-          }
-        ],
+        "query": "us-east-1",
+        "current": { "text": "us-east-1", "value": "us-east-1" },
+        "options": [{ "text": "us-east-1", "value": "us-east-1", "selected": true }],
         "label": "Region"
       }
     ]
@@ -70,226 +37,93 @@
       "id": 1,
       "title": "Recent Errors",
       "type": "logs",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "filter @message like /(?i)(error|exception|traceback|critical)/ | fields @timestamp, @message | sort @timestamp desc | limit 50",
-          "region": "$region"
-        }
-      ]
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "filter @message like /(?i)(error|exception|traceback|critical)/ | fields @timestamp, @message | sort @timestamp desc | limit 50",
+        "region": "$region",
+        "refId": "A",
+        "id": "recent_errors"
+      }]
     },
     {
       "id": 2,
       "title": "Cold Start Analysis",
       "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 10
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "filter @type = 'REPORT' | fields @timestamp, @initDuration, @duration, @maxMemoryUsed / 1048576 as memoryUsedMB, @memorySize / 1048576 as memorySizeMB | filter ispresent(@initDuration) | sort @timestamp desc | limit 25",
-          "region": "$region"
-        }
-      ],
-      "description": "Shows only invocations with cold starts (init duration present)"
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "filter @type = 'REPORT' | fields @timestamp, @initDuration as coldStartMs, @duration as durationMs, @maxMemoryUsed / 1048576 as memUsedMB | filter ispresent(@initDuration) | sort @timestamp desc | limit 25",
+        "region": "$region",
+        "refId": "A",
+        "id": "cold_starts"
+      }]
     },
     {
       "id": 3,
-      "title": "Performance Summary (REPORT lines)",
+      "title": "Performance Summary",
       "type": "table",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 10
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "filter @type = 'REPORT' | stats avg(@duration) as avgDuration, max(@duration) as maxDuration, avg(@maxMemoryUsed) / 1048576 as avgMemoryMB, count(*) as invocations, sum(ispresent(@initDuration)) as coldStarts by bin(30m)",
-          "region": "$region"
-        }
-      ]
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "filter @type = 'REPORT' | stats avg(@duration) as avgDurationMs, max(@duration) as maxDurationMs, avg(@maxMemoryUsed) / 1048576 as avgMemMB, count(*) as invocations, sum(ispresent(@initDuration)) as coldStarts by bin(1h)",
+        "region": "$region",
+        "refId": "A",
+        "id": "perf_summary"
+      }]
     },
     {
       "id": 4,
-      "title": "Log Volume Over Time",
+      "title": "Log Volume",
       "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 18
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "stats count(*) as logCount by bin(5m)",
-          "region": "$region"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "fillOpacity": 20
-          }
-        }
-      }
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "stats count(*) as logCount by bin(5m)",
+        "region": "$region",
+        "refId": "A",
+        "id": "log_volume"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
     },
     {
       "id": 5,
-      "title": "Error Volume Over Time",
+      "title": "Error Volume",
       "type": "timeseries",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 18
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "filter @message like /(?i)(error|exception|traceback)/ | stats count(*) as errorCount by bin(5m)",
-          "region": "$region"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "custom": {
-            "fillOpacity": 20
-          },
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "red"
-          }
-        }
-      }
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "filter @message like /(?i)(error|exception|traceback)/ | stats count(*) as errors by bin(5m)",
+        "region": "$region",
+        "refId": "A",
+        "id": "error_volume"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
     },
     {
       "id": 6,
-      "title": "Timeout / Memory Warnings",
+      "title": "All Logs",
       "type": "logs",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 26
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "filter @message like /Task timed out/ or @message like /Runtime exited/ or (@type = 'REPORT' and @maxMemoryUsed / @memorySize > 0.85) | fields @timestamp, @message | sort @timestamp desc | limit 20",
-          "region": "$region"
-        }
-      ],
-      "description": "Catches timeouts, runtime crashes, and invocations using >85% allocated memory"
-    },
-    {
-      "id": 7,
-      "title": "X-Ray Trace Explorer",
-      "type": "traces",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 34
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-x-ray-datasource"
-          },
-          "queryType": "getTraceSummaries",
-          "region": "$region"
-        }
-      ],
-      "description": "X-Ray data source required. Add it in Grafana: Configuration > Data Sources > X-Ray (same IAM role ARN as CloudWatch)."
-    },
-    {
-      "id": 8,
-      "title": "All Logs (Live Tail)",
-      "type": "logs",
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 44
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "cloudwatch"
-          },
-          "queryMode": "Logs",
-          "logGroups": [
-            {
-              "name": "/aws/lambda/$service"
-            }
-          ],
-          "expression": "fields @timestamp, @message | sort @timestamp desc | limit 100",
-          "region": "$region"
-        }
-      ]
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
+        "expression": "fields @timestamp, @message | sort @timestamp desc | limit 100",
+        "region": "$region",
+        "refId": "A",
+        "id": "all_logs"
+      }]
     }
   ]
 }

@@ -285,7 +285,8 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
   const [uploadError, setUploadError] = useState('');
   const [dragOver, setDragOver] = useState(false);
   const handleUpload = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) { setUploadError('Only PDF files are accepted'); return; }
+    const fname = file.name.toLowerCase();
+    if (!fname.endsWith('.pdf') && !fname.endsWith('.docx')) { setUploadError('Only PDF and DOCX files are accepted'); return; }
     if (file.size > 5 * 1024 * 1024) { setUploadError('File too large (max 5 MB)'); return; }
     setUploading(true); setUploadError('');
     const resp = await apiService.uploadResumeForParser(file);
@@ -304,7 +305,7 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
         <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-center mb-5">How it works</p>
         <div className="flex items-start justify-center gap-3 sm:gap-6">
           {[
-            { n: 1, icon: <UploadCloudIcon className="w-5 h-5" />, l: 'Upload', d: 'Upload your existing resume PDF', active: true },
+            { n: 1, icon: <UploadCloudIcon className="w-5 h-5" />, l: 'Upload', d: 'Upload your existing resume', active: true },
             { n: 2, icon: <ClipboardIcon className="w-5 h-5" />, l: 'Paste JD', d: 'Paste the job description you\'re targeting' },
             { n: 3, icon: <DocumentArrowDownIcon className="w-5 h-5" />, l: 'Download', d: 'Get your ATS-optimized resume' },
           ].map((s, i) => (
@@ -324,13 +325,13 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
         <div className="flex flex-col items-center text-center py-12 px-6">
           <div className="w-16 h-16 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-4"><UploadCloudIcon className="w-8 h-8 text-pink-400" /></div>
           <p className="text-base font-semibold text-gray-200 mb-1">Get started — upload your resume</p>
-          <p className="text-sm text-gray-500 mb-5 max-w-sm">Drop your PDF here or click below. We'll parse it and prepare it for tailoring.</p>
+          <p className="text-sm text-gray-500 mb-5 max-w-sm">Drop your PDF or DOCX here or click below. We'll parse it and prepare it for tailoring.</p>
           {uploading ? (
             <div className="w-full max-w-xs space-y-2"><div className="h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} /></div><p className="text-xs text-gray-400">Parsing your resume...</p></div>
           ) : (
-            <label className="cursor-pointer"><span className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"><UploadCloudIcon className="w-4 h-4" />Choose PDF File</span><input type="file" accept=".pdf" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} /></label>
+            <label className="cursor-pointer"><span className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"><UploadCloudIcon className="w-4 h-4" />Choose File</span><input type="file" accept=".pdf,.docx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} /></label>
           )}
-          <p className="text-[10px] text-gray-600 mt-3">PDF only, max 5 MB</p>
+          <p className="text-[10px] text-gray-600 mt-3">PDF or DOCX, max 5 MB</p>
           {uploadError && <p className="text-sm text-red-400 mt-2">{uploadError}</p>}
         </div>
       </div>
@@ -369,7 +370,8 @@ function MyResumesTab() {
   useEffect(() => { fetch(); }, [fetch]);
 
   const handleUpload = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) { setError('Only PDF files accepted'); return; }
+    const fname = file.name.toLowerCase();
+    if (!fname.endsWith('.pdf') && !fname.endsWith('.docx')) { setError('Only PDF and DOCX files accepted'); return; }
     if (file.size > 5 * 1024 * 1024) { setError('Max 5 MB'); return; }
     setUploading(true); setError('');
     const resp = await apiService.uploadResumeForParser(file);
@@ -385,13 +387,13 @@ function MyResumesTab() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-base font-semibold text-gray-100">My Resumes</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Uploaded resume PDFs used as the base for tailoring</p>
+          <p className="text-xs text-gray-500 mt-0.5">Uploaded resumes used as the base for tailoring</p>
         </div>
         <label className="cursor-pointer">
           <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${uploading ? 'bg-gray-700 text-gray-400 cursor-wait' : 'text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15'}`}>
             {uploading ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" /> Uploading...</> : <><UploadCloudIcon className="w-4 h-4" /> Upload Resume</>}
           </span>
-          <input type="file" accept=".pdf" className="hidden" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
+          <input type="file" accept=".pdf,.docx" className="hidden" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
         </label>
       </div>
       {error && <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30"><p className="text-sm text-red-300">{error}</p></div>}
@@ -399,7 +401,7 @@ function MyResumesTab() {
         <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 p-10 text-center">
           <FileIcon className="w-8 h-8 text-gray-600 mx-auto mb-3" />
           <p className="text-sm text-gray-400">No resumes uploaded yet</p>
-          <p className="text-xs text-gray-600 mt-1">Upload a PDF to get started</p>
+          <p className="text-xs text-gray-600 mt-1">Upload a PDF or DOCX to get started</p>
         </div>
       ) : (
         <div className="rounded-xl border border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">

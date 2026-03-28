@@ -33,13 +33,12 @@ function downloadTailoredResume(t: TailoredResume, jobTitle: string) {
   let lastName = '';
   try {
     const info = JSON.parse(localStorage.getItem('visitorInfo') || '{}');
-    if (info.firstName) firstName = info.firstName.toLowerCase();
-    if (info.lastName) lastName = info.lastName.toLowerCase();
+    if (info.firstName) firstName = info.firstName;
+    if (info.lastName) lastName = info.lastName;
   } catch { /* ignore */ }
 
-  const cleanTitle = jobTitle.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase().slice(0, 30);
-  const date = new Date().toISOString().split('T')[0];
-  const parts = [firstName, lastName, cleanTitle, date].filter(Boolean);
+  const cleanPart = (s: string) => s.replace(/[^a-zA-Z0-9 ]+/g, ' ').trim().replace(/\s+/g, '_');
+  const parts = [cleanPart(firstName), cleanPart(lastName), cleanPart(jobTitle)].filter(Boolean);
   const filename = `${parts.join('_')}.txt`;
 
   const blob = new Blob([text], { type: 'text/plain' });

@@ -780,7 +780,7 @@ class ResumeRenderer:
 
     @staticmethod
     def build_filename(tailored: Dict[str, Any], jd_analysis: Dict[str, Any], ext: str) -> str:
-        """Build ATS-friendly filename: Firstname_Lastname_JobTitle_Resume.ext"""
+        """Build ATS-friendly filename: Firstname_Lastname_JobTitle.ext"""
         contact = tailored.get("contact", {})
         name = contact.get("name", "").strip()
         parts = name.split()
@@ -790,9 +790,10 @@ class ResumeRenderer:
         job_title = jd_analysis.get("job_title", "")
 
         def clean(s: str) -> str:
-            s = re.sub(r"[^a-zA-Z0-9]+", "_", s).strip("_")
-            return s[:30]
+            s = re.sub(r"[^a-zA-Z0-9 ]+", " ", s).strip()
+            s = re.sub(r"\s+", "_", s).strip("_")
+            return s
 
-        segments = [clean(first), clean(last), clean(job_title), "Resume"]
+        segments = [clean(first), clean(last), clean(job_title)]
         segments = [s for s in segments if s]
         return "_".join(segments) + f".{ext}"

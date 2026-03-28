@@ -235,6 +235,55 @@ class ResumeParser:
         except Exception as e:
             raise ValueError(f"Invalid or corrupted PDF file: {e}")
 
+    @staticmethod
+    def extract_text_from_docx(file_bytes: bytes) -> str:
+        """Extract text content from a DOCX file.
+
+        Args:
+            file_bytes: Raw DOCX file content as bytes.
+
+        Returns:
+            Extracted text string concatenated from all paragraphs.
+
+        Raises:
+            ValueError: If the DOCX is invalid or contains no extractable text.
+        """
+        from docx import Document
+        import io
+
+        try:
+            doc = Document(io.BytesIO(file_bytes))
+            text_parts: List[str] = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+            # Also extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        if cell.text.strip():
+                            text_parts.append(cell.text)
+
+            text = "\n".join(text_parts).strip()
+            if len(text) < _MIN_VALID_TEXT_LENGTH:
+                raise ValueError(
+                    "Could not extract meaningful text from DOCX. "
+                    "The file may be empty or contain only images."
+                )
+            return text
+
+        except ValueError:
+            raise
+        except Exception as e:
+            raise ValueError(f"Invalid or corrupted DOCX file: {e}")
+
+    @staticmethod
+    def extract_text(file_bytes: bytes, filename: str) -> str:
+        """Extract text from a PDF or DOCX file based on the filename extension."""
+        if filename.lower().endswith(".docx"):
+            return ResumeParser.extract_text_from_docx(file_bytes)
+        return ResumeParser.extract_text_from_pdf(file_bytes)
+
     # ======================================================================
     # 2. GEMINI STRUCTURED PARSING
     # ======================================================================
@@ -770,6 +819,15 @@ class ResumeParser:
             flat skill list, experience_years, and job_titles).
         """
         raw_text = self.extract_text_from_pdf(file_bytes)
+        structured = self.parse_to_structured(raw_text)
+        return self.save_parsed_resume(structured, raw_text, user_email=user_email)
+
+    def upload_and_parse_file(self, file_bytes: bytes, filename: str, user_email: str = "") -> dict:
+        """Upload and parse a PDF or DOCX resume file.
+
+        Like upload_and_parse but accepts both PDF and DOCX files.
+        """
+        raw_text = self.extract_text(file_bytes, filename)
         structured = self.parse_to_structured(raw_text)
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 

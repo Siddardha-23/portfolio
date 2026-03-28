@@ -107,8 +107,9 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
   useEffect(() => { fetchActive(); }, [fetchActive]);
 
   const handleUpload = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setUploadError('Only PDF files are accepted');
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.pdf') && !name.endsWith('.docx')) {
+      setUploadError('Only PDF and DOCX files are accepted');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -150,7 +151,7 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
           </div>
           <div>
             <p className="text-lg font-semibold text-gray-200">Upload Your Resume</p>
-            <p className="text-sm text-gray-400 mt-1">Upload a PDF to start tailoring</p>
+            <p className="text-sm text-gray-400 mt-1">Upload a PDF or DOCX to start tailoring</p>
           </div>
           <label className="inline-block cursor-pointer">
             <span className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium text-sm text-white transition-all duration-200 ${
@@ -161,15 +162,15 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
               {uploading ? (
                 <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /> Uploading...</>
               ) : (
-                <><UploadIcon className="w-4 h-4" /> Choose PDF File</>
+                <><UploadIcon className="w-4 h-4" /> Choose File</>
               )}
             </span>
             <input
-              type="file" accept=".pdf" className="hidden" disabled={uploading}
+              type="file" accept=".pdf,.docx" className="hidden" disabled={uploading}
               onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
             />
           </label>
-          <p className="text-xs text-gray-500">PDF only, max 5 MB</p>
+          <p className="text-xs text-gray-500">PDF or DOCX, max 5 MB</p>
           {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
         </div>
       </div>
@@ -222,7 +223,7 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
                 </span>
                 <input
                   ref={fileInputRef}
-                  type="file" accept=".pdf" className="hidden" disabled={uploading}
+                  type="file" accept=".pdf,.docx" className="hidden" disabled={uploading}
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
                 />
               </label>

@@ -298,13 +298,16 @@ def upload():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
     file = request.files["file"]
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        return jsonify({"error": "Only PDF files are accepted"}), 400
+    allowed_extensions = (".pdf", ".docx")
+    if not file.filename or not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
+        return jsonify({"error": "Only PDF and DOCX files are accepted"}), 400
 
     file_bytes = file.read()
     if len(file_bytes) > 5 * 1024 * 1024:
         return jsonify({"error": "File too large (max 5 MB)"}), 400
-    if not file_bytes[:5].startswith(b'%PDF'):
+
+    is_pdf = file.filename.lower().endswith(".pdf")
+    if is_pdf and not file_bytes[:5].startswith(b'%PDF'):
         return jsonify({"error": "File is not a valid PDF"}), 400
 
     original_filename = file.filename
@@ -313,8 +316,8 @@ def upload():
         from services.resume_service import get_resume_service, ResumeService
         from services.resume_parser import ResumeParser
 
-        # Synchronous: extract text from PDF (fast, pure Python, no AI)
-        raw_text = ResumeParser.extract_text_from_pdf(file_bytes)
+        # Synchronous: extract text (fast, pure Python, no AI)
+        raw_text = ResumeParser.extract_text(file_bytes, original_filename)
 
         # Upload PDF to S3 and store metadata
         try:
@@ -344,10 +347,13 @@ def upload():
 
         # Async: create a job for Gemini parsing and return job_id immediately
         import base64
-        pdf_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        file_b64 = base64.b64encode(file_bytes).decode('utf-8')
 
         svc = get_resume_service()
-        payload = {"raw_text": raw_text, "pdf_base64": pdf_b64}
+        # Only send pdf_base64 for PDF files (used for Gemini vision)
+        payload = {"raw_text": raw_text}
+        if is_pdf:
+            payload["pdf_base64"] = file_b64
         job_id = svc.create_job("upload_parse", payload)
         ResumeService.invoke_async(job_id, "upload_parse", payload)
 

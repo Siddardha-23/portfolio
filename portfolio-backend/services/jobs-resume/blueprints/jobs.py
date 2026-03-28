@@ -229,8 +229,9 @@ def upload_resume():
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
     file = request.files["file"]
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        return jsonify({"error": "Only PDF files are accepted"}), 400
+    allowed_extensions = (".pdf", ".docx")
+    if not file.filename or not any(file.filename.lower().endswith(ext) for ext in allowed_extensions):
+        return jsonify({"error": "Only PDF and DOCX files are accepted"}), 400
 
     # 5 MB limit
     file_bytes = file.read()
@@ -242,7 +243,7 @@ def upload_resume():
     try:
         from services.resume_service import get_resume_service
         svc = get_resume_service()
-        parsed = svc.parser.upload_and_parse(file_bytes, user_email=user_email)
+        parsed = svc.parser.upload_and_parse_file(file_bytes, file.filename, user_email=user_email)
 
         # Return flat format matching the job search UI's ParsedResume type
         return jsonify({

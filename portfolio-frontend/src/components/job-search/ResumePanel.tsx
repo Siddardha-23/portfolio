@@ -27,8 +27,9 @@ export function ResumePanel() {
   }, []);
 
   const handleUpload = useCallback(async (file: File) => {
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      setError('Only PDF files are accepted');
+    const name = file.name.toLowerCase();
+    if (!name.endsWith('.pdf') && !name.endsWith('.docx')) {
+      setError('Only PDF and DOCX files are accepted');
       return;
     }
     if (file.size > 5 * 1024 * 1024) {
@@ -101,11 +102,11 @@ export function ResumePanel() {
     let lastName = '';
     try {
       const info = JSON.parse(localStorage.getItem('visitorInfo') || '{}');
-      if (info.firstName) firstName = info.firstName.toLowerCase();
-      if (info.lastName) lastName = info.lastName.toLowerCase();
+      if (info.firstName) firstName = info.firstName;
+      if (info.lastName) lastName = info.lastName;
     } catch { /* ignore */ }
-    const date = new Date().toISOString().split('T')[0];
-    const parts = [firstName, lastName, 'tailored', date].filter(Boolean);
+    const cleanPart = (s: string) => s.replace(/[^a-zA-Z0-9 ]+/g, ' ').trim().replace(/\s+/g, '_');
+    const parts = [cleanPart(firstName), cleanPart(lastName), 'Tailored'].filter(Boolean);
     const filename = `${parts.join('_')}.txt`;
     const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
@@ -132,14 +133,14 @@ export function ResumePanel() {
         }`}
       >
         <p className="text-sm text-muted-foreground mb-2">
-          {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF here'}
+          {uploading ? 'Parsing resume...' : 'Drag & drop your resume PDF or DOCX here'}
         </p>
         {!uploading && (
           <label>
             <Button variant="outline" size="sm" asChild>
               <span>Or click to browse</span>
             </Button>
-            <input type="file" accept=".pdf" className="hidden" onChange={onFileSelect} />
+            <input type="file" accept=".pdf,.docx" className="hidden" onChange={onFileSelect} />
           </label>
         )}
         {error && <p className="text-sm text-destructive mt-2">{error}</p>}

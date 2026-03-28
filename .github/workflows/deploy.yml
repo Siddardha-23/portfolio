@@ -14,11 +14,80 @@ env:
 
 jobs:
   # ===========================================================================
+  # Detect Changes
+  # ===========================================================================
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      shared-layer: ${{ steps.filter.outputs.shared-layer }}
+      any-backend: ${{ steps.resolve.outputs.any-backend }}
+      services-matrix: ${{ steps.resolve.outputs.services-matrix }}
+      is-manual: ${{ steps.resolve.outputs.is-manual }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect file changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'portfolio-frontend/**'
+            shared-layer:
+              - 'portfolio-backend/shared/**'
+            backend-visitor:
+              - 'portfolio-backend/services/visitor/**'
+            backend-auth:
+              - 'portfolio-backend/services/auth/**'
+            backend-jobs-resume:
+              - 'portfolio-backend/services/jobs-resume/**'
+            backend-chat:
+              - 'portfolio-backend/services/chat/**'
+            backend-infra:
+              - 'portfolio-backend/services/infra/**'
+
+      - name: Resolve deployment targets
+        id: resolve
+        run: |
+          IS_MANUAL=${{ github.event_name == 'workflow_dispatch' }}
+          echo "is-manual=${IS_MANUAL}" >> $GITHUB_OUTPUT
+
+          LAYER=${{ steps.filter.outputs.shared-layer }}
+
+          # Build the services list. If shared layer changed OR manual trigger, include all services.
+          SERVICES=()
+          if [ "$IS_MANUAL" = "true" ] || [ "$LAYER" = "true" ]; then
+            SERVICES=("visitor" "auth" "jobs-resume" "chat" "infra")
+          else
+            [ "${{ steps.filter.outputs.backend-visitor }}" = "true" ] && SERVICES+=("visitor")
+            [ "${{ steps.filter.outputs.backend-auth }}" = "true" ] && SERVICES+=("auth")
+            [ "${{ steps.filter.outputs.backend-jobs-resume }}" = "true" ] && SERVICES+=("jobs-resume")
+            [ "${{ steps.filter.outputs.backend-chat }}" = "true" ] && SERVICES+=("chat")
+            [ "${{ steps.filter.outputs.backend-infra }}" = "true" ] && SERVICES+=("infra")
+          fi
+
+          if [ ${#SERVICES[@]} -gt 0 ]; then
+            echo "any-backend=true" >> $GITHUB_OUTPUT
+            JSON=$(printf '%s\n' "${SERVICES[@]}" | jq -R . | jq -sc .)
+            echo "services-matrix=${JSON}" >> $GITHUB_OUTPUT
+          else
+            echo "any-backend=false" >> $GITHUB_OUTPUT
+            echo "services-matrix=[]" >> $GITHUB_OUTPUT
+          fi
+
+  # ===========================================================================
   # Frontend Build & Deploy
   # ===========================================================================
   deploy-frontend:
     name: Deploy Frontend
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: >-
+      needs.detect-changes.outputs.is-manual == 'true' ||
+      needs.detect-changes.outputs.frontend == 'true'
 
     defaults:
       run:
@@ -124,6 +193,10 @@ jobs:
   deploy-layer:
     name: Deploy Shared Layer
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: >-
+      needs.detect-changes.outputs.is-manual == 'true' ||
+      needs.detect-changes.outputs.any-backend == 'true'
     outputs:
       layer_arn: ${{ steps.publish.outputs.layer_arn }}
     defaults:
@@ -186,6 +259,10 @@ jobs:
   test-backend:
     name: Test Backend
     runs-on: ubuntu-latest
+    needs: [detect-changes]
+    if: >-
+      needs.detect-changes.outputs.is-manual == 'true' ||
+      needs.detect-changes.outputs.any-backend == 'true'
     defaults:
       run:
         working-directory: portfolio-backend
@@ -201,12 +278,18 @@ jobs:
       - name: Install shared dependencies
         run: pip install -r shared/requirements.txt
 
-      - name: Smoke test each service
+      - name: Smoke test changed services
         run: |
           # Make shared code importable
           export PYTHONPATH="${PWD}/shared/python:${PYTHONPATH}"
 
-          for service in visitor auth jobs-resume chat infra; do
+          if [ "${{ needs.detect-changes.outputs.is-manual }}" = "true" ]; then
+            SERVICES="visitor auth jobs-resume chat infra"
+          else
+            SERVICES=$(echo '${{ needs.detect-changes.outputs.services-matrix }}' | jq -r '.[]')
+          fi
+
+          for service in ${SERVICES}; do
             echo "Testing ${service} service..."
 
             # Install service-specific deps if requirements.txt has content
@@ -225,10 +308,13 @@ jobs:
   deploy-services:
     name: Deploy ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: [test-backend, deploy-layer]
+    needs: [detect-changes, test-backend, deploy-layer]
+    if: >-
+      needs.detect-changes.outputs.is-manual == 'true' ||
+      needs.detect-changes.outputs.any-backend == 'true'
     strategy:
       matrix:
-        service: [visitor, auth, jobs-resume, chat, infra]
+        service: ${{ fromJSON(needs.detect-changes.outputs.services-matrix) }}
       fail-fast: false
     defaults:
       run:
@@ -339,22 +425,44 @@ jobs:
   verify:
     name: Verify Deployment
     runs-on: ubuntu-latest
-    needs: [deploy-frontend, deploy-services]
-    if: always()
+    needs: [detect-changes, deploy-frontend, deploy-services]
+    if: always() && !cancelled()
     steps:
       - name: Test health endpoint
+        if: >-
+          needs.deploy-services.result == 'success' ||
+          needs.deploy-frontend.result == 'success'
         run: |
           curl -f https://${{ secrets.DOMAIN_NAME }}/api/health || echo "Health check pending..."
 
       - name: Generate summary
         run: |
+          FRONTEND_STATUS="${{ needs.deploy-frontend.result }}"
+          BACKEND_STATUS="${{ needs.deploy-services.result }}"
+
           echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Frontend | ${{ needs.deploy-frontend.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Shared Layer | ${{ needs.deploy-services.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Backend Services | ${{ needs.deploy-services.result == 'success' && 'Success' || 'Failed' }} |" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${FRONTEND_STATUS}" = "skipped" ]; then
+            echo "| Frontend | Skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${FRONTEND_STATUS}" = "success" ]; then
+            echo "| Frontend | Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Frontend | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${BACKEND_STATUS}" = "skipped" ]; then
+            echo "| Backend Services | Skipped (no changes) |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${BACKEND_STATUS}" = "success" ]; then
+            echo "| Backend Services | Deployed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Backend Services | Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger**: ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Links" >> $GITHUB_STEP_SUMMARY
           echo "- **Website**: https://${{ secrets.DOMAIN_NAME }}" >> $GITHUB_STEP_SUMMARY

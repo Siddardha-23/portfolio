@@ -18,14 +18,17 @@
     "list": [
       {
         "name": "function",
-        "type": "query",
+        "type": "custom",
         "label": "Function",
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "query": "dimension_values($region, AWS/Lambda, Invocations, FunctionName)",
-        "regex": "/^portfolio-.*/",
+        "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
         "current": { "selected": true, "text": "portfolio-visitor", "value": "portfolio-visitor" },
-        "refresh": 1,
-        "sort": 1,
+        "options": [
+          { "text": "portfolio-visitor", "value": "portfolio-visitor", "selected": true },
+          { "text": "portfolio-auth", "value": "portfolio-auth", "selected": false },
+          { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume", "selected": false },
+          { "text": "portfolio-chat", "value": "portfolio-chat", "selected": false },
+          { "text": "portfolio-infra", "value": "portfolio-infra", "selected": false }
+        ],
         "includeAll": false,
         "multi": false,
         "hide": 0
@@ -50,13 +53,10 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Invocations",
-        "statistic": "Sum",
-        "dimensions": { "FunctionName": ["$function"] },
-        "period": "",
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT SUM(Invocations) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "region": "$region",
-        "matchExact": true,
         "refId": "A"
       }],
       "fieldConfig": {
@@ -76,13 +76,10 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Errors",
-        "statistic": "Sum",
-        "dimensions": { "FunctionName": ["$function"] },
-        "period": "",
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT SUM(Errors) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "region": "$region",
-        "matchExact": true,
         "refId": "A"
       }],
       "fieldConfig": {
@@ -103,26 +100,20 @@
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Errors",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["$function"] },
-          "period": "",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Errors) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "region": "$region",
-          "matchExact": true,
           "refId": "errors",
           "hide": true
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["$function"] },
-          "period": "",
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT SUM(Invocations) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "region": "$region",
-          "matchExact": true,
           "refId": "invocations",
           "hide": true
         },
@@ -151,13 +142,10 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Duration",
-        "statistic": "Average",
-        "dimensions": { "FunctionName": ["$function"] },
-        "period": "",
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT AVG(Duration) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "region": "$region",
-        "matchExact": true,
         "refId": "A"
       }],
       "fieldConfig": {
@@ -177,13 +165,10 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Throttles",
-        "statistic": "Sum",
-        "dimensions": { "FunctionName": ["$function"] },
-        "period": "",
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT SUM(Throttles) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "region": "$region",
-        "matchExact": true,
         "refId": "A"
       }],
       "fieldConfig": {
@@ -212,13 +197,11 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Invocations",
-        "statistic": "Sum",
-        "dimensions": { "FunctionName": ["$function"] },
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT SUM(Invocations) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "period": "300",
         "region": "$region",
-        "matchExact": true,
         "refId": "A",
         "alias": "Invocations"
       }],
@@ -239,13 +222,11 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "Errors",
-        "statistic": "Sum",
-        "dimensions": { "FunctionName": ["$function"] },
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT SUM(Errors) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "period": "300",
         "region": "$region",
-        "matchExact": true,
         "refId": "A",
         "alias": "Errors"
       }],
@@ -276,52 +257,44 @@
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Duration",
-          "statistic": "Average",
-          "dimensions": { "FunctionName": ["$function"] },
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT AVG(Duration) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "period": "300",
           "region": "$region",
-          "matchExact": true,
           "refId": "A",
           "alias": "avg"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Duration",
-          "statistic": "p50",
-          "dimensions": { "FunctionName": ["$function"] },
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT PERCENTILE(Duration, 50) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "period": "300",
           "region": "$region",
-          "matchExact": true,
           "refId": "B",
           "alias": "p50"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Duration",
-          "statistic": "p90",
-          "dimensions": { "FunctionName": ["$function"] },
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT PERCENTILE(Duration, 90) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "period": "300",
           "region": "$region",
-          "matchExact": true,
           "refId": "C",
           "alias": "p90"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Duration",
-          "statistic": "p99",
-          "dimensions": { "FunctionName": ["$function"] },
+          "metricQueryType": 1,
+          "metricEditorMode": 1,
+          "sqlExpression": "SELECT PERCENTILE(Duration, 99) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
           "period": "300",
           "region": "$region",
-          "matchExact": true,
           "refId": "D",
           "alias": "p99"
         }
@@ -345,13 +318,11 @@
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics",
-        "namespace": "AWS/Lambda",
-        "metricName": "ConcurrentExecutions",
-        "statistic": "Maximum",
-        "dimensions": { "FunctionName": ["$function"] },
+        "metricQueryType": 1,
+        "metricEditorMode": 1,
+        "sqlExpression": "SELECT MAX(ConcurrentExecutions) FROM SCHEMA(\"AWS/Lambda\", FunctionName) WHERE FunctionName = '${function}'",
         "period": "300",
         "region": "$region",
-        "matchExact": true,
         "refId": "A",
         "alias": "Concurrent"
       }],
@@ -382,7 +353,7 @@
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
         "logGroups": [
-          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$function", "name": "/aws/lambda/$function" }
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/${function}", "name": "/aws/lambda/${function}" }
         ],
         "expression": "filter @type = 'REPORT' and ispresent(@initDuration) | stats count(*) as cold_starts, avg(@initDuration) as avg_init_ms, max(@initDuration) as max_init_ms, avg(@duration) as avg_duration_ms by bin(1h) as period | sort period desc",
         "region": "$region",
@@ -408,7 +379,7 @@
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
         "logGroups": [
-          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$function", "name": "/aws/lambda/$function" }
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/${function}", "name": "/aws/lambda/${function}" }
         ],
         "expression": "filter @type = 'REPORT' | stats avg(@memorySize / 1048576) as allocated_MB, avg(@maxMemoryUsed / 1048576) as avg_used_MB, max(@maxMemoryUsed / 1048576) as max_used_MB, avg(@maxMemoryUsed / @memorySize * 100) as avg_utilization_pct, count(*) as invocations by bin(1h) as period | sort period desc",
         "region": "$region",
@@ -443,7 +414,7 @@
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
         "logGroups": [
-          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$function", "name": "/aws/lambda/$function" }
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/${function}", "name": "/aws/lambda/${function}" }
         ],
         "expression": "filter @type = 'REPORT' | fields @timestamp, @duration as duration_ms, @maxMemoryUsed / 1048576 as memory_used_MB, @memorySize / 1048576 as memory_allocated_MB, ispresent(@initDuration) as is_cold_start, @initDuration as init_duration_ms | sort @timestamp desc | limit 50",
         "region": "$region",

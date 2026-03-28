@@ -1,26 +1,45 @@
 {
-  "title": "Portfolio - Logs & Traces",
-  "description": "CloudWatch Logs Insights and X-Ray trace exploration",
-  "tags": ["portfolio", "logs", "xray", "aws"],
+  "uid": "portfolio-logs-explorer",
+  "title": "Logs Explorer",
+  "description": "Search, filter, and analyze CloudWatch logs across all portfolio services",
+  "tags": ["portfolio", "logs"],
   "timezone": "browser",
   "refresh": "5m",
   "time": { "from": "now-3h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Service Overview", "type": "link", "url": "/d/portfolio-service-overview", "icon": "apps", "targetBlank": false },
+    { "title": "Lambda Functions", "type": "link", "url": "/d/portfolio-lambda-functions", "icon": "bolt", "targetBlank": false },
+    { "title": "X-Ray Traces", "type": "link", "url": "/d/portfolio-xray-traces", "icon": "sitemap", "targetBlank": false }
+  ],
   "templating": {
     "list": [
       {
         "name": "service",
         "type": "custom",
         "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
-        "current": { "text": "portfolio-visitor", "value": "portfolio-visitor" },
+        "current": { "text": "All", "value": ["$__all"] },
         "options": [
-          { "text": "portfolio-visitor", "value": "portfolio-visitor", "selected": true },
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "portfolio-visitor", "value": "portfolio-visitor" },
           { "text": "portfolio-auth", "value": "portfolio-auth" },
           { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume" },
           { "text": "portfolio-chat", "value": "portfolio-chat" },
           { "text": "portfolio-infra", "value": "portfolio-infra" }
         ],
-        "multi": false,
-        "label": "Service"
+        "multi": true,
+        "includeAll": true,
+        "label": "Service",
+        "allValue": ""
+      },
+      {
+        "name": "search",
+        "type": "textbox",
+        "label": "Search",
+        "current": { "text": "", "value": "" },
+        "query": "",
+        "hide": 0
       },
       {
         "name": "region",
@@ -28,102 +47,180 @@
         "query": "us-east-1",
         "current": { "text": "us-east-1", "value": "us-east-1" },
         "options": [{ "text": "us-east-1", "value": "us-east-1", "selected": true }],
-        "label": "Region"
+        "label": "Region",
+        "hide": 0
       }
     ]
   },
   "panels": [
     {
       "id": 1,
+      "title": "Log Volume & Error Overlay",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Logs",
+          "logGroups": [
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+          ],
+          "expression": "stats count(*) as total_logs by bin(5m)",
+          "region": "$region",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Logs",
+          "logGroups": [
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+            { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+          ],
+          "expression": "filter @message like /(?i)(error|exception|critical|timeout)/ | stats count(*) as errors by bin(5m)",
+          "region": "$region",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "total_logs" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }, { "id": "custom.fillOpacity", "value": 20 }] },
+          { "matcher": { "id": "byName", "options": "errors" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }, { "id": "custom.fillOpacity", "value": 40 }, { "id": "custom.drawStyle", "value": "bars" }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "right" }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 100,
+      "title": "Errors",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
       "title": "Recent Errors",
       "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 7 },
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "filter @message like /(?i)(error|exception|traceback|critical)/ | fields @timestamp, @message | sort @timestamp desc | limit 50",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @message like /(?i)(error|exception|traceback|critical|timeout)/ | fields @timestamp, @logStream as function, @message | sort @timestamp desc | limit 50",
         "region": "$region",
-        "refId": "A",
-        "id": "recent_errors"
-      }]
-    },
-    {
-      "id": 2,
-      "title": "Cold Start Analysis",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "filter @type = 'REPORT' | fields @timestamp, @initDuration as coldStartMs, @duration as durationMs, @maxMemoryUsed / 1048576 as memUsedMB | filter ispresent(@initDuration) | sort @timestamp desc | limit 25",
-        "region": "$region",
-        "refId": "A",
-        "id": "cold_starts"
-      }]
-    },
-    {
-      "id": 3,
-      "title": "Performance Summary",
-      "type": "table",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "filter @type = 'REPORT' | stats avg(@duration) as avgDurationMs, max(@duration) as maxDurationMs, avg(@maxMemoryUsed) / 1048576 as avgMemMB, count(*) as invocations, sum(ispresent(@initDuration)) as coldStarts by bin(1h)",
-        "region": "$region",
-        "refId": "A",
-        "id": "perf_summary"
-      }]
-    },
-    {
-      "id": 4,
-      "title": "Log Volume",
-      "type": "timeseries",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 18 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "stats count(*) as logCount by bin(5m)",
-        "region": "$region",
-        "refId": "A",
-        "id": "log_volume"
+        "refId": "A"
       }],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
+      "options": { "showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "sortOrder": "Descending", "dedupStrategy": "none" }
     },
     {
-      "id": 5,
-      "title": "Error Volume",
-      "type": "timeseries",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 18 },
+      "id": 101,
+      "title": "Cold Starts & Performance",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "title": "Cold Start Details",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "filter @message like /(?i)(error|exception|traceback)/ | stats count(*) as errors by bin(5m)",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @type = 'REPORT' and ispresent(@initDuration) | fields @timestamp, @logStream as function, @initDuration as init_ms, @duration as duration_ms, @maxMemoryUsed / 1048576 as mem_MB | sort @timestamp desc | limit 30",
         "region": "$region",
-        "refId": "A",
-        "id": "error_volume"
+        "refId": "A"
       }],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2 } } }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "init_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }, { "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "color", "value": { "mode": "continuous-YlRd" } }] },
+          { "matcher": { "id": "byName", "options": "duration_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "mem_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 1 }] },
+          { "matcher": { "id": "byName", "options": "@timestamp" }, "properties": [{ "id": "custom.width", "value": 180 }] }
+        ]
+      },
+      "options": { "showHeader": true }
     },
     {
-      "id": 6,
+      "id": 21,
+      "title": "Performance Summary (Hourly)",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @type = 'REPORT' | stats count(*) as invocations, avg(@duration) as avg_ms, max(@duration) as max_ms, avg(@maxMemoryUsed / 1048576) as avg_mem_MB, sum(ispresent(@initDuration)) as cold_starts by bin(1h) | sort bin(1h) desc",
+        "region": "$region",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "avg_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "avg_mem_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 1 }] }
+        ]
+      },
+      "options": { "showHeader": true }
+    },
+    {
+      "id": 102,
       "title": "All Logs",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 30,
+      "title": "Log Stream — $service",
       "type": "logs",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 25 },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 27 },
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
-        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/$service", "name": "/aws/lambda/$service" }],
-        "expression": "fields @timestamp, @message | sort @timestamp desc | limit 100",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "fields @timestamp, @logStream as function, @message | filter @message like /(?i)($search)/ | sort @timestamp desc | limit 200",
         "region": "$region",
-        "refId": "A",
-        "id": "all_logs"
-      }]
+        "refId": "A"
+      }],
+      "options": { "showTime": true, "showLabels": true, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "sortOrder": "Descending", "dedupStrategy": "none" }
     }
   ]
 }

@@ -1,12 +1,33 @@
 {
-  "title": "Portfolio - Lambda Overview",
-  "description": "Operational metrics for all portfolio Lambda microservices",
-  "tags": ["portfolio", "lambda", "aws"],
+  "uid": "portfolio-lambda-functions",
+  "title": "Lambda Functions",
+  "description": "Deep dive into Lambda function metrics — select a function to analyze invocations, errors, duration, memory, and cold starts",
+  "tags": ["portfolio", "lambda"],
   "timezone": "browser",
   "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": { "from": "now-6h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Service Overview", "type": "link", "url": "/d/portfolio-service-overview", "icon": "apps", "targetBlank": false },
+    { "title": "API Gateway", "type": "link", "url": "/d/portfolio-api-gateway", "icon": "cloud", "targetBlank": false },
+    { "title": "Logs Explorer", "type": "link", "url": "/d/portfolio-logs-explorer?var-service=portfolio-${function}", "icon": "file-alt", "targetBlank": false },
+    { "title": "X-Ray Traces", "type": "link", "url": "/d/portfolio-xray-traces", "icon": "sitemap", "targetBlank": false }
+  ],
   "templating": {
     "list": [
+      {
+        "name": "function",
+        "type": "query",
+        "label": "Function",
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "query": "dimension_values($region, AWS/Lambda, Invocations, FunctionName)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": "",
+        "sort": 1
+      },
       {
         "name": "region",
         "type": "custom",
@@ -20,33 +41,16 @@
   },
   "panels": [
     {
-      "id": 100,
-      "title": "",
-      "type": "row",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
-      "collapsed": false,
-      "panels": []
-    },
-    {
       "id": 1,
-      "title": "Total Invocations",
+      "title": "Invocations",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": {},
-          "period": "",
-          "region": "$region",
-          "matchExact": false,
-          "refId": "A",
-          "id": "invocations_total"
-        }
-      ],
+      "gridPos": { "h": 5, "w": 5, "x": 0, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Invocations", "statistic": "Sum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -54,28 +58,19 @@
           "thresholds": { "steps": [{ "color": "blue", "value": null }] }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "none" }
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
     },
     {
       "id": 2,
-      "title": "Total Errors",
+      "title": "Errors",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Errors",
-          "statistic": "Sum",
-          "dimensions": {},
-          "period": "",
-          "region": "$region",
-          "matchExact": false,
-          "refId": "A",
-          "id": "errors_total"
-        }
-      ],
+      "gridPos": { "h": 5, "w": 5, "x": 5, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -83,57 +78,74 @@
           "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "none" }
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
     },
     {
       "id": 3,
-      "title": "Avg Duration",
+      "title": "Error Rate",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "gridPos": { "h": 5, "w": 5, "x": 10, "y": 0 },
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Duration",
-          "statistic": "Average",
-          "dimensions": {},
-          "period": "",
-          "region": "$region",
-          "matchExact": false,
-          "refId": "A",
-          "id": "duration_avg"
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "", "region": "$region", "matchExact": true, "refId": "A", "hide": true
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Invocations", "statistic": "Sum",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "", "region": "$region", "matchExact": true, "refId": "B", "hide": true
+        },
+        {
+          "datasource": { "type": "__expr__", "uid": "__expr__" },
+          "refId": "C",
+          "type": "math",
+          "expression": "$A / $B * 100"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "ms",
+          "unit": "percent",
+          "decimals": 2,
           "color": { "mode": "thresholds" },
-          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 3000 }, { "color": "red", "value": 10000 }] }
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }, { "color": "red", "value": 5 }] }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background", "graphMode": "none" }
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
     },
     {
       "id": 4,
+      "title": "Avg Duration",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 5, "x": 15, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 5000 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 5,
       "title": "Throttles",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Throttles",
-          "statistic": "Sum",
-          "dimensions": {},
-          "period": "",
-          "region": "$region",
-          "matchExact": false,
-          "refId": "A",
-          "id": "throttles_total"
-        }
-      ],
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Throttles", "statistic": "Sum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
       "fieldConfig": {
         "defaults": {
           "unit": "short",
@@ -141,11 +153,11 @@
           "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }] }
         }
       },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "none" }
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
     },
     {
-      "id": 101,
-      "title": "Invocations by Function",
+      "id": 100,
+      "title": "Invocations & Errors",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
       "collapsed": false,
@@ -153,89 +165,47 @@
     },
     {
       "id": 10,
-      "title": "Invocations per Function",
+      "title": "Invocations Over Time",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 6 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-visitor"] },
-          "period": "",
-          "region": "$region",
-          "matchExact": true,
-          "refId": "visitor",
-          "id": "inv_visitor",
-          "alias": "visitor"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-auth"] },
-          "period": "",
-          "region": "$region",
-          "matchExact": true,
-          "refId": "auth",
-          "id": "inv_auth",
-          "alias": "auth"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-jobs-resume"] },
-          "period": "",
-          "region": "$region",
-          "matchExact": true,
-          "refId": "jobsresume",
-          "id": "inv_jobsresume",
-          "alias": "jobs-resume"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-chat"] },
-          "period": "",
-          "region": "$region",
-          "matchExact": true,
-          "refId": "chat",
-          "id": "inv_chat",
-          "alias": "chat"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics",
-          "namespace": "AWS/Lambda",
-          "metricName": "Invocations",
-          "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-infra"] },
-          "period": "",
-          "region": "$region",
-          "matchExact": true,
-          "refId": "infra",
-          "id": "inv_infra",
-          "alias": "infra"
-        }
-      ],
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Invocations", "statistic": "Sum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "300", "region": "$region", "matchExact": true, "refId": "A"
+      }],
       "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "auto", "pointSize": 5, "stacking": { "mode": "normal" } } }
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "never", "gradientMode": "opacity", "stacking": { "mode": "normal" } },
+          "color": { "mode": "palette-classic" }
+        }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean", "max"] }, "tooltip": { "mode": "multi" } }
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
-      "id": 102,
-      "title": "Errors & Duration",
+      "id": 11,
+      "title": "Errors Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "300", "region": "$region", "matchExact": true, "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 30, "lineWidth": 2, "drawStyle": "bars", "showPoints": "never" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 101,
+      "title": "Duration & Performance",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
       "collapsed": false,
@@ -243,91 +213,69 @@
     },
     {
       "id": 20,
-      "title": "Errors per Function",
+      "title": "Duration Percentiles (avg / p50 / p90 / p99)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-visitor"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "visitor", "id": "err_visitor", "alias": "visitor"
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "A", "alias": "avg"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-auth"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "auth", "id": "err_auth", "alias": "auth"
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p50",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "B", "alias": "p50"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-jobs-resume"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "jobsresume", "id": "err_jr", "alias": "jobs-resume"
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p90",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "C", "alias": "p90"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-chat"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "chat", "id": "err_chat", "alias": "chat"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Errors", "statistic": "Sum",
-          "dimensions": { "FunctionName": ["portfolio-infra"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "infra", "id": "err_infra", "alias": "infra"
+          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
+          "dimensions": { "FunctionName": ["$function"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "D", "alias": "p99"
         }
       ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "auto", "drawStyle": "bars" } }
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5, "lineWidth": 2, "showPoints": "never", "gradientMode": "scheme" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "avg" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } }
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
       "id": 21,
-      "title": "Duration (Avg) per Function",
+      "title": "Concurrent Executions",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
-          "dimensions": { "FunctionName": ["portfolio-visitor"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "visitor", "id": "dur_visitor", "alias": "visitor"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
-          "dimensions": { "FunctionName": ["portfolio-auth"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "auth", "id": "dur_auth", "alias": "auth"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
-          "dimensions": { "FunctionName": ["portfolio-jobs-resume"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "jobsresume", "id": "dur_jr", "alias": "jobs-resume"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
-          "dimensions": { "FunctionName": ["portfolio-chat"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "chat", "id": "dur_chat", "alias": "chat"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "Average",
-          "dimensions": { "FunctionName": ["portfolio-infra"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "infra", "id": "dur_infra", "alias": "infra"
-        }
-      ],
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
+        "dimensions": { "FunctionName": ["$function"] },
+        "period": "300", "region": "$region", "matchExact": true, "refId": "A"
+      }],
       "fieldConfig": {
-        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5, "lineWidth": 2, "showPoints": "auto" } }
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "palette-classic" },
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "never", "gradientMode": "opacity" }
+        }
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["max", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
-      "id": 103,
-      "title": "Performance",
+      "id": 102,
+      "title": "Cold Starts & Memory",
       "type": "row",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "collapsed": false,
@@ -335,87 +283,101 @@
     },
     {
       "id": 30,
-      "title": "Duration p99 per Function",
-      "type": "timeseries",
+      "title": "Cold Starts",
+      "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
-          "dimensions": { "FunctionName": ["portfolio-visitor"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "visitor", "id": "p99_visitor", "alias": "visitor"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
-          "dimensions": { "FunctionName": ["portfolio-auth"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "auth", "id": "p99_auth", "alias": "auth"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
-          "dimensions": { "FunctionName": ["portfolio-jobs-resume"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "jobsresume", "id": "p99_jr", "alias": "jobs-resume"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
-          "dimensions": { "FunctionName": ["portfolio-chat"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "chat", "id": "p99_chat", "alias": "chat"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "Duration", "statistic": "p99",
-          "dimensions": { "FunctionName": ["portfolio-infra"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "infra", "id": "p99_infra", "alias": "infra"
-        }
-      ],
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @type = 'REPORT' and ispresent(@initDuration) | stats count(*) as cold_starts, avg(@initDuration) as avg_init_ms, max(@initDuration) as max_init_ms, avg(@duration) as avg_duration_ms by @logStream as function | sort cold_starts desc",
+        "region": "$region",
+        "refId": "A"
+      }],
       "fieldConfig": {
-        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5, "lineWidth": 2 } }
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "cold_starts" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "color", "value": { "mode": "continuous-reds" } }] },
+          { "matcher": { "id": "byName", "options": "avg_init_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "max_init_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "avg_duration_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] }
+        ]
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "cold_starts", "desc": true }] }
     },
     {
       "id": 31,
-      "title": "Concurrent Executions",
-      "type": "timeseries",
+      "title": "Memory Utilization",
+      "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
-      "targets": [
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
-          "dimensions": { "FunctionName": ["portfolio-visitor"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "visitor", "id": "ce_visitor", "alias": "visitor"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
-          "dimensions": { "FunctionName": ["portfolio-auth"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "auth", "id": "ce_auth", "alias": "auth"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
-          "dimensions": { "FunctionName": ["portfolio-jobs-resume"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "jobsresume", "id": "ce_jr", "alias": "jobs-resume"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
-          "dimensions": { "FunctionName": ["portfolio-chat"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "chat", "id": "ce_chat", "alias": "chat"
-        },
-        {
-          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/Lambda", "metricName": "ConcurrentExecutions", "statistic": "Maximum",
-          "dimensions": { "FunctionName": ["portfolio-infra"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "infra", "id": "ce_infra", "alias": "infra"
-        }
-      ],
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @type = 'REPORT' | stats avg(@memorySize / 1048576) as allocated_MB, avg(@maxMemoryUsed / 1048576) as avg_used_MB, max(@maxMemoryUsed / 1048576) as max_used_MB, avg(@maxMemoryUsed / @memorySize * 100) as avg_utilization_pct, count(*) as invocations by @logStream as function | sort avg_utilization_pct desc",
+        "region": "$region",
+        "refId": "A"
+      }],
       "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2 } }
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "allocated_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "avg_used_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 1 }] },
+          { "matcher": { "id": "byName", "options": "max_used_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 1 }] },
+          { "matcher": { "id": "byName", "options": "avg_utilization_pct" }, "properties": [{ "id": "unit", "value": "percent" }, { "id": "decimals", "value": 1 }, { "id": "custom.cellOptions", "value": { "type": "gauge", "mode": "basic" } }, { "id": "color", "value": { "mode": "continuous-GrYlRd" } }, { "id": "min", "value": 0 }, { "id": "max", "value": 100 }] }
+        ]
       },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["max"] }, "tooltip": { "mode": "multi" } }
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "avg_utilization_pct", "desc": true }] }
+    },
+    {
+      "id": 103,
+      "title": "Performance Over Time (Logs)",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 40,
+      "title": "Hourly Performance Summary",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 33 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-visitor", "name": "/aws/lambda/portfolio-visitor" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-auth", "name": "/aws/lambda/portfolio-auth" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-jobs-resume", "name": "/aws/lambda/portfolio-jobs-resume" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
+          { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
+        ],
+        "expression": "filter @type = 'REPORT' | stats count(*) as invocations, avg(@duration) as avg_ms, max(@duration) as max_ms, avg(@maxMemoryUsed / 1048576) as avg_mem_MB, sum(ispresent(@initDuration)) as cold_starts by bin(1h) | sort bin(1h) desc",
+        "region": "$region",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "avg_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "max_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] },
+          { "matcher": { "id": "byName", "options": "avg_mem_MB" }, "properties": [{ "id": "unit", "value": "decmbytes" }, { "id": "decimals", "value": 1 }] },
+          { "matcher": { "id": "byName", "options": "cold_starts" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "color", "value": { "mode": "thresholds" } }, { "id": "thresholds", "value": { "mode": "absolute", "steps": [{ "color": "transparent", "value": null }, { "color": "orange", "value": 1 }] } }] }
+        ]
+      },
+      "options": { "showHeader": true }
     }
   ]
 }

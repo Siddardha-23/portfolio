@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(for f:*)",
+      "Bash(do echo:*)",
+      "Bash(python3 -c \"import json; json.load\\(open\\(''$f''\\)\\); print\\(''  Valid JSON''\\)\")",
+      "Bash(done)"
+    ]
+  }
+}

@@ -1,0 +1,209 @@
+{
+  "uid": "portfolio-xray-traces",
+  "title": "X-Ray Traces",
+  "description": "Distributed tracing — service map, trace analytics, and latency analysis via AWS X-Ray",
+  "tags": ["portfolio", "xray", "tracing"],
+  "timezone": "browser",
+  "refresh": "5m",
+  "time": { "from": "now-3h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Service Overview", "type": "link", "url": "/d/portfolio-service-overview", "icon": "apps", "targetBlank": false },
+    { "title": "API Gateway", "type": "link", "url": "/d/portfolio-api-gateway", "icon": "cloud", "targetBlank": false },
+    { "title": "Lambda Functions", "type": "link", "url": "/d/portfolio-lambda-functions", "icon": "bolt", "targetBlank": false },
+    { "title": "Logs Explorer", "type": "link", "url": "/d/portfolio-logs-explorer", "icon": "file-alt", "targetBlank": false }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "filter",
+        "type": "textbox",
+        "label": "Trace Filter",
+        "current": { "text": "", "value": "" },
+        "query": "",
+        "hide": 0
+      },
+      {
+        "name": "region",
+        "type": "custom",
+        "query": "us-east-1",
+        "current": { "text": "us-east-1", "value": "us-east-1" },
+        "options": [{ "text": "us-east-1", "value": "us-east-1", "selected": true }],
+        "label": "Region",
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "How to use X-Ray filters",
+      "type": "text",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Trace Filter Examples:** `service(\"portfolio-api\")` | `responsetime > 1` | `fault = true` | `service(\"portfolio-auth\") AND responsetime > 0.5` | `annotation.user_id = \"123\"` | `http.url CONTAINS \"/api/chat\"`\n\nLeave the filter empty to see all traces. Use the time picker to narrow the time range."
+      }
+    },
+    {
+      "id": 100,
+      "title": "Service Map",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 3 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "title": "Service Map",
+      "type": "nodeGraph",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
+      "description": "Visual map of service dependencies and communication patterns. Node size = request volume, edge color = error rate.",
+      "targets": [{
+        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "queryType": "getServiceMap",
+        "query": "$filter",
+        "region": "$region",
+        "refId": "A"
+      }],
+      "options": {
+        "nodes": { "mainStatUnit": "", "secondaryStatUnit": "" },
+        "edges": { "mainStatUnit": "", "secondaryStatUnit": "" }
+      }
+    },
+    {
+      "id": 101,
+      "title": "Trace Analytics",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "title": "Response Time Distribution",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "description": "Average, p50, p90, and p99 response times from X-Ray traces",
+      "targets": [{
+        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "queryType": "getTimeSeriesServiceStatistics",
+        "query": "$filter",
+        "region": "$region",
+        "refId": "A",
+        "columns": ["AverageResponseTime", "RootCauseServiceRequestCount"]
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2, "showPoints": "never", "gradientMode": "scheme" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 21,
+      "title": "Fault & Error Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "description": "Faults (5xx) and errors (4xx) as reported by X-Ray",
+      "targets": [{
+        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "queryType": "getTimeSeriesServiceStatistics",
+        "query": "$filter",
+        "region": "$region",
+        "refId": "A",
+        "columns": ["FaultStatistics.TotalCount", "ErrorStatistics.TotalCount", "OkCount"]
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "never" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 102,
+      "title": "Trace List",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 30,
+      "title": "Recent Traces",
+      "type": "table",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
+      "description": "Click a Trace ID to view the full trace waterfall in the Explore panel",
+      "targets": [{
+        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "queryType": "getTraceSummaries",
+        "query": "$filter",
+        "region": "$region",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Duration" }, "properties": [{ "id": "unit", "value": "s" }] },
+          { "matcher": { "id": "byName", "options": "Response Time" }, "properties": [{ "id": "unit", "value": "s" }] }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "Timestamp", "desc": true }] }
+    },
+    {
+      "id": 103,
+      "title": "Fault Traces",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 34 },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 40,
+          "title": "Traces with Faults (5xx)",
+          "type": "table",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
+          "description": "Only traces that resulted in server-side faults",
+          "targets": [{
+            "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+            "queryType": "getTraceSummaries",
+            "query": "fault = true",
+            "region": "$region",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Duration" }, "properties": [{ "id": "unit", "value": "s" }] }
+            ]
+          },
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Timestamp", "desc": true }] }
+        },
+        {
+          "id": 41,
+          "title": "Slow Traces (> 2s)",
+          "type": "table",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 45 },
+          "description": "Traces with response time exceeding 2 seconds",
+          "targets": [{
+            "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+            "queryType": "getTraceSummaries",
+            "query": "responsetime > 2",
+            "region": "$region",
+            "refId": "A"
+          }],
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": [
+              { "matcher": { "id": "byName", "options": "Duration" }, "properties": [{ "id": "unit", "value": "s" }] }
+            ]
+          },
+          "options": { "showHeader": true, "sortBy": [{ "displayName": "Duration", "desc": true }] }
+        }
+      ]
+    }
+  ]
+}

@@ -1,10 +1,19 @@
 {
-  "title": "Portfolio - API Gateway",
-  "description": "HTTP API Gateway request volume, errors, and latency",
-  "tags": ["portfolio", "api-gateway", "aws"],
+  "uid": "portfolio-api-gateway",
+  "title": "API Gateway",
+  "description": "HTTP API Gateway — request volume, error rates, latency percentiles, and route-level analysis",
+  "tags": ["portfolio", "api-gateway"],
   "timezone": "browser",
   "refresh": "1m",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": { "from": "now-6h", "to": "now" },
+  "editable": true,
+  "graphTooltip": 1,
+  "links": [
+    { "title": "Service Overview", "type": "link", "url": "/d/portfolio-service-overview", "icon": "apps", "targetBlank": false },
+    { "title": "Lambda Functions", "type": "link", "url": "/d/portfolio-lambda-functions", "icon": "bolt", "targetBlank": false },
+    { "title": "Logs Explorer", "type": "link", "url": "/d/portfolio-logs-explorer", "icon": "file-alt", "targetBlank": false },
+    { "title": "X-Ray Traces", "type": "link", "url": "/d/portfolio-xray-traces", "icon": "sitemap", "targetBlank": false }
+  ],
   "templating": {
     "list": [
       {
@@ -13,7 +22,8 @@
         "query": "us-east-1",
         "current": { "text": "us-east-1", "value": "us-east-1" },
         "options": [{ "text": "us-east-1", "value": "us-east-1", "selected": true }],
-        "label": "Region"
+        "label": "Region",
+        "hide": 0
       }
     ]
   },
@@ -22,136 +32,361 @@
       "id": 1,
       "title": "Total Requests",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Count", "statistic": "Sum",
         "dimensions": { "ApiId": ["p456vbvclk"] },
-        "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "req_total"
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
       }],
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "blue", "value": null }] } } },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "blue", "value": null }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
     },
     {
       "id": 2,
-      "title": "4xx Errors",
+      "title": "4xx Rate",
       "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "4xx", "statistic": "Sum",
-        "dimensions": { "ApiId": ["p456vbvclk"] },
-        "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "err4xx"
-      }],
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1 }] } } },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" }
-    },
-    {
-      "id": 3,
-      "title": "5xx Errors",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "5xx", "statistic": "Sum",
-        "dimensions": { "ApiId": ["p456vbvclk"] },
-        "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "err5xx"
-      }],
-      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } },
-      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "background", "graphMode": "area" }
-    },
-    {
-      "id": 4,
-      "title": "Avg Latency",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "Average",
-        "dimensions": { "ApiId": ["p456vbvclk"] },
-        "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "latency_avg"
-      }],
-      "fieldConfig": { "defaults": { "unit": "ms", "color": { "mode": "thresholds" }, "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 5000 }] } } },
-      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background", "graphMode": "area" }
-    },
-    {
-      "id": 10,
-      "title": "Request Volume",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 4 },
-      "targets": [{
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Count", "statistic": "Sum",
-        "dimensions": { "ApiId": ["p456vbvclk"] },
-        "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "req_volume", "alias": "Requests"
-      }],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2, "showPoints": "auto", "pointSize": 5 } } },
-      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean", "max"] }, "tooltip": { "mode": "multi" } }
-    },
-    {
-      "id": 20,
-      "title": "Error Rates (4xx / 5xx)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "gridPos": { "h": 5, "w": 4, "x": 4, "y": 0 },
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "4xx", "statistic": "Sum",
           "dimensions": { "ApiId": ["p456vbvclk"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "err4xx_ts", "alias": "4xx"
+          "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "err4", "hide": true
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Count", "statistic": "Sum",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "", "region": "$region", "matchExact": true, "refId": "B", "id": "total", "hide": true
+        },
+        {
+          "datasource": { "type": "__expr__", "uid": "__expr__" },
+          "refId": "C",
+          "type": "math",
+          "expression": "$A / $B * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 5 }, { "color": "red", "value": 20 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 3,
+      "title": "5xx Rate",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "5xx", "statistic": "Sum",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "err5", "hide": true
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Count", "statistic": "Sum",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "", "region": "$region", "matchExact": true, "refId": "B", "id": "total5", "hide": true
+        },
+        {
+          "datasource": { "type": "__expr__", "uid": "__expr__" },
+          "refId": "C",
+          "type": "math",
+          "expression": "$A / $B * 100"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 5 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 4,
+      "title": "Avg Latency",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "Average",
+        "dimensions": { "ApiId": ["p456vbvclk"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 500 }, { "color": "red", "value": 2000 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 5,
+      "title": "p90 Latency",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p90",
+        "dimensions": { "ApiId": ["p456vbvclk"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 1000 }, { "color": "red", "value": 3000 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 6,
+      "title": "p99 Latency",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p99",
+        "dimensions": { "ApiId": ["p456vbvclk"] },
+        "period": "", "region": "$region", "matchExact": true, "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ms",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 2000 }, { "color": "red", "value": 5000 }] }
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["mean"] }, "colorMode": "background_solid", "graphMode": "area", "textMode": "auto" }
+    },
+    {
+      "id": 100,
+      "title": "Request Volume",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 10,
+      "title": "Request Volume Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 6 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Count", "statistic": "Sum",
+        "dimensions": { "ApiId": ["p456vbvclk"] },
+        "period": "300", "region": "$region", "matchExact": true, "refId": "A", "alias": "Requests"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "custom": { "fillOpacity": 25, "lineWidth": 2, "showPoints": "never", "gradientMode": "opacity" }
+        }
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["sum", "mean", "max", "lastNotNull"] }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 11,
+      "title": "Error Counts Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 6 },
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "4xx", "statistic": "Sum",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "A", "alias": "4xx"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "5xx", "statistic": "Sum",
           "dimensions": { "ApiId": ["p456vbvclk"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "B", "id": "err5xx_ts", "alias": "5xx"
+          "period": "300", "region": "$region", "matchExact": true, "refId": "B", "alias": "5xx"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short", "custom": { "fillOpacity": 10, "lineWidth": 2, "drawStyle": "bars" } } },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi" } }
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "fillOpacity": 20, "lineWidth": 2, "drawStyle": "bars", "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "4xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "5xx" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["sum"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
     },
     {
-      "id": 21,
-      "title": "Latency (avg / p90 / p99)",
+      "id": 101,
+      "title": "Latency Analysis",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "title": "Latency Percentiles (p50 / p90 / p95 / p99)",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "gridPos": { "h": 8, "w": 14, "x": 0, "y": 15 },
       "targets": [
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "Average",
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p50",
           "dimensions": { "ApiId": ["p456vbvclk"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "A", "id": "lat_avg", "alias": "avg"
+          "period": "300", "region": "$region", "matchExact": true, "refId": "A", "alias": "p50"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p90",
           "dimensions": { "ApiId": ["p456vbvclk"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "B", "id": "lat_p90", "alias": "p90"
+          "period": "300", "region": "$region", "matchExact": true, "refId": "B", "alias": "p90"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p95",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "C", "alias": "p95"
         },
         {
           "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
           "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "p99",
           "dimensions": { "ApiId": ["p456vbvclk"] },
-          "period": "", "region": "$region", "matchExact": true, "refId": "C", "id": "lat_p99", "alias": "p99"
+          "period": "300", "region": "$region", "matchExact": true, "refId": "D", "alias": "p99"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "fillOpacity": 5, "lineWidth": 2 } } },
-      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi" } }
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 5, "lineWidth": 2, "showPoints": "never", "gradientMode": "scheme" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p50" }, "properties": [{ "id": "color", "value": { "fixedColor": "green", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p90" }, "properties": [{ "id": "color", "value": { "fixedColor": "yellow", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p95" }, "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "p99" }, "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "right", "calcs": ["mean", "max", "lastNotNull"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 21,
+      "title": "Integration Latency vs Total Latency",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 15 },
+      "description": "Integration latency = time spent in backend (Lambda). Gap between lines = API Gateway overhead.",
+      "targets": [
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "Latency", "statistic": "Average",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "A", "alias": "Total Latency"
+        },
+        {
+          "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+          "queryMode": "Metrics", "namespace": "AWS/ApiGateway", "metricName": "IntegrationLatency", "statistic": "Average",
+          "dimensions": { "ApiId": ["p456vbvclk"] },
+          "period": "300", "region": "$region", "matchExact": true, "refId": "B", "alias": "Integration Latency"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms", "custom": { "fillOpacity": 15, "lineWidth": 2, "showPoints": "never" } },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Total Latency" }, "properties": [{ "id": "color", "value": { "fixedColor": "blue", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Integration Latency" }, "properties": [{ "id": "color", "value": { "fixedColor": "purple", "mode": "fixed" } }] }
+        ]
+      },
+      "options": { "legend": { "displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"] }, "tooltip": { "mode": "multi", "sort": "desc" } }
+    },
+    {
+      "id": 102,
+      "title": "Route Analysis",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false,
+      "panels": []
     },
     {
       "id": 30,
-      "title": "Requests by Route (Access Logs)",
+      "title": "Requests by Route",
       "type": "table",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
       "targets": [{
         "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
         "queryMode": "Logs",
         "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/apigateway/portfolio-api", "name": "/aws/apigateway/portfolio-api" }],
-        "expression": "stats count(*) as requests, count_distinct(ip) as unique_ips by routeKey | sort requests desc",
+        "expression": "stats count(*) as requests, count_distinct(ip) as unique_ips, avg(responseLatency) as avg_latency_ms by routeKey | sort requests desc",
         "region": "$region",
-        "refId": "A",
-        "id": "route_stats"
-      }]
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "requests" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "color", "value": { "mode": "continuous-blues" } }] },
+          { "matcher": { "id": "byName", "options": "avg_latency_ms" }, "properties": [{ "id": "unit", "value": "ms" }, { "id": "decimals", "value": 0 }] }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "requests", "desc": true }], "footer": { "show": true, "reducer": ["sum"], "countRows": false, "fields": ["requests", "unique_ips"] } }
+    },
+    {
+      "id": 31,
+      "title": "Errors by Route",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [{
+        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+        "queryMode": "Logs",
+        "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/apigateway/portfolio-api", "name": "/aws/apigateway/portfolio-api" }],
+        "expression": "filter status >= 400 | stats count(*) as errors, count(status = 500) as server_errors by routeKey, status | sort errors desc",
+        "region": "$region",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "errors" }, "properties": [{ "id": "custom.cellOptions", "value": { "type": "color-background" } }, { "id": "color", "value": { "mode": "continuous-reds" } }] }
+        ]
+      },
+      "options": { "showHeader": true, "sortBy": [{ "displayName": "errors", "desc": true }] }
+    },
+    {
+      "id": 103,
+      "title": "Access Logs",
+      "type": "row",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 32 },
+      "collapsed": true,
+      "panels": [
+        {
+          "id": 40,
+          "title": "Recent Access Logs",
+          "type": "logs",
+          "gridPos": { "h": 10, "w": 24, "x": 0, "y": 33 },
+          "targets": [{
+            "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
+            "queryMode": "Logs",
+            "logGroups": [{ "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/apigateway/portfolio-api", "name": "/aws/apigateway/portfolio-api" }],
+            "expression": "fields @timestamp, requestId, ip, routeKey, status, responseLatency | sort @timestamp desc | limit 100",
+            "region": "$region",
+            "refId": "A"
+          }],
+          "options": { "showTime": true, "showLabels": false, "showCommonLabels": false, "wrapLogMessage": true, "prettifyLogMessage": false, "enableLogDetails": true, "sortOrder": "Descending" }
+        }
+      ]
     }
   ]
 }

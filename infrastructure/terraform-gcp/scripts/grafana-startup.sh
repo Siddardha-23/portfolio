@@ -37,6 +37,7 @@ apiVersion: 1
 datasources:
   - name: CloudWatch
     type: cloudwatch
+    uid: P034F075C744B399F
     access: proxy
     isDefault: true
     jsonData:
@@ -49,6 +50,7 @@ datasources:
 
   - name: X-Ray
     type: grafana-x-ray-datasource
+    uid: xray-datasource
     access: proxy
     jsonData:
       authType: keys
@@ -61,9 +63,35 @@ DSEOF
 
 chown -R grafana:grafana /etc/grafana/provisioning/datasources/
 
+echo "Configuring dashboard provisioning..."
+mkdir -p /etc/grafana/provisioning/dashboards
+cat > /etc/grafana/provisioning/dashboards/portfolio.yaml <<DPEOF
+apiVersion: 1
+providers:
+  - name: Portfolio
+    orgId: 1
+    folder: Portfolio
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
+DPEOF
+
+chown -R grafana:grafana /etc/grafana/provisioning/dashboards/
+
+echo "Creating dashboard directory..."
+mkdir -p /var/lib/grafana/dashboards
+chown -R grafana:grafana /var/lib/grafana/dashboards/
+
 echo "Starting Grafana..."
 systemctl daemon-reload
 systemctl enable grafana-server
 systemctl start grafana-server
 
 echo "Grafana startup complete"
+echo ""
+echo "Dashboards can be provisioned by placing JSON files in /var/lib/grafana/dashboards/"
+echo "Or import them via the Grafana UI: Dashboards > Import > Upload JSON"

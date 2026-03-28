@@ -21,18 +21,21 @@
         "type": "custom",
         "label": "Function",
         "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
-        "current": { "text": "All", "value": ["$__all"] },
+        "current": {
+          "text": ["portfolio-visitor", "portfolio-auth", "portfolio-jobs-resume", "portfolio-chat", "portfolio-infra"],
+          "value": ["portfolio-visitor", "portfolio-auth", "portfolio-jobs-resume", "portfolio-chat", "portfolio-infra"]
+        },
         "options": [
           { "text": "All", "value": "$__all", "selected": true },
-          { "text": "portfolio-visitor", "value": "portfolio-visitor" },
-          { "text": "portfolio-auth", "value": "portfolio-auth" },
-          { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume" },
-          { "text": "portfolio-chat", "value": "portfolio-chat" },
-          { "text": "portfolio-infra", "value": "portfolio-infra" }
+          { "text": "portfolio-visitor", "value": "portfolio-visitor", "selected": true },
+          { "text": "portfolio-auth", "value": "portfolio-auth", "selected": true },
+          { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume", "selected": true },
+          { "text": "portfolio-chat", "value": "portfolio-chat", "selected": true },
+          { "text": "portfolio-infra", "value": "portfolio-infra", "selected": true }
         ],
         "includeAll": true,
         "multi": true,
-        "allValue": ""
+        "allValue": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra"
       },
       {
         "name": "region",

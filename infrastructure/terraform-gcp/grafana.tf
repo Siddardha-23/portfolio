@@ -84,3 +84,17 @@ resource "google_compute_firewall" "grafana_ssh" {
   target_tags   = ["grafana-server"]
   description   = "Allow SSH for instance management"
 }
+
+resource "google_compute_firewall" "grafana_https" {
+  name    = "${var.project_name}-grafana-allow-https"
+  network = "default"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+  target_tags   = ["grafana-server"]
+  description   = "Allow HTTP/HTTPS for Nginx reverse proxy + Let's Encrypt"
+}

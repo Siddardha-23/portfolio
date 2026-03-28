@@ -1,5 +1,5 @@
 # =============================================================================
-# Grafana on GCP - AWS IAM Credentials
+# Grafana on GCP - AWS IAM Credentials + DNS
 # =============================================================================
 # IAM user with read-only access to CloudWatch metrics, logs, and X-Ray traces.
 # Access keys are used by the Grafana instance running on GCP Compute Engine.
@@ -95,4 +95,18 @@ resource "aws_iam_user_policy" "grafana_readonly" {
       }
     ]
   })
+}
+
+# =============================================================================
+# DNS: grafana.manneharshithsiddardha.com -> GCP static IP
+# =============================================================================
+
+resource "aws_route53_record" "grafana" {
+  count = var.enable_grafana && var.grafana_gcp_ip != "" ? 1 : 0
+
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "grafana.${var.domain_name}"
+  type    = "A"
+  ttl     = 300
+  records = [var.grafana_gcp_ip]
 }

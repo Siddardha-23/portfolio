@@ -104,3 +104,9 @@ variable "enable_grafana" {
   type        = bool
   default     = false
 }
+
+variable "grafana_gcp_ip" {
+  description = "Static IP of the Grafana instance on GCP (for DNS record)"
+  type        = string
+  default     = ""
+}

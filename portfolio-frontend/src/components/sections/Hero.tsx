@@ -492,61 +492,6 @@ export default function Hero() {
               </ResumeViewer>
             </motion.div>
 
-            {/* Spotlight Cards */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9, duration: 0.5 }}
-              className="mt-6 flex flex-col sm:flex-row gap-3"
-            >
-              {/* AI Resume Parser Card */}
-              <motion.button
-                onClick={() => navigate('/resume-parser')}
-                className="group relative flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-colors cursor-pointer text-left"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="relative flex-shrink-0">
-                  <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
-                    <Flame className="h-4 w-4 text-orange-400" />
-                  </div>
-                  <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
-                    New
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">AI Resume Parser</div>
-                  <div className="text-xs text-muted-foreground truncate">Tailor with AI & get ATS scores</div>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
-              </motion.button>
-
-              {/* Live Metrics Card */}
-              <motion.a
-                href="https://grafana.manneharshithsiddardha.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-emerald-500/20 hover:border-emerald-500/40 transition-colors cursor-pointer text-left"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <div className="relative flex-shrink-0">
-                  <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30">
-                    <BarChart3 className="h-4 w-4 text-emerald-400" />
-                  </div>
-                  <span className="absolute -top-1.5 -right-1.5 flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                  </span>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">Live Metrics</div>
-                  <div className="text-xs text-muted-foreground truncate">Real-time infrastructure dashboard</div>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
-              </motion.a>
-            </motion.div>
-
             {/* Availability */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -570,14 +515,122 @@ export default function Hero() {
             })()}
           </div>
 
-          {/* RIGHT SIDE - Recruiter Panel */}
-          <div className="hidden lg:block">
+          {/* RIGHT SIDE - Tool Cards + Recruiter Panel */}
+          <div className="hidden lg:block space-y-4">
+            {/* Floating Tool Cards */}
+            <div className="flex gap-3">
+              <motion.button
+                onClick={() => navigate('/resume-parser')}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.8, duration: 0.5 }}
+                className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all cursor-pointer text-left"
+                whileHover={{ scale: 1.03, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="relative flex-shrink-0">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
+                    <Flame className="h-4 w-4 text-orange-400" />
+                  </div>
+                  <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
+                    New
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-foreground">AI Resume Parser</div>
+                  <div className="text-xs text-muted-foreground">Tailor & get ATS scores</div>
+                </div>
+                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 group-hover:translate-x-0.5 transition-all" />
+              </motion.button>
+
+              <motion.a
+                href="https://grafana.manneharshithsiddardha.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.9, duration: 0.5 }}
+                className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-left"
+                whileHover={{ scale: 1.03, y: -2 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <div className="relative flex-shrink-0">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30">
+                    <BarChart3 className="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <span className="absolute -top-1.5 -right-1.5 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-foreground">Grafana Dashboard</div>
+                  <div className="text-xs text-muted-foreground">Live infrastructure metrics</div>
+                </div>
+                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
+              </motion.a>
+            </div>
+
             <RecruiterPanel />
           </div>
         </div>
 
         {/* Mobile Recruiter Panel - Below on smaller screens */}
-        <div className="lg:hidden mt-12">
+        <div className="lg:hidden mt-12 space-y-4">
+          {/* Mobile Tool Cards */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <motion.button
+              onClick={() => navigate('/resume-parser')}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.8, duration: 0.5 }}
+              className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all cursor-pointer text-left"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="relative flex-shrink-0">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
+                  <Flame className="h-4 w-4 text-orange-400" />
+                </div>
+                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
+                  New
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-foreground">AI Resume Parser</div>
+                <div className="text-xs text-muted-foreground">Tailor & get ATS scores</div>
+              </div>
+              <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 transition-all" />
+            </motion.button>
+
+            <motion.a
+              href="https://grafana.manneharshithsiddardha.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.9, duration: 0.5 }}
+              className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer text-left"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              <div className="relative flex-shrink-0">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30">
+                  <BarChart3 className="h-4 w-4 text-emerald-400" />
+                </div>
+                <span className="absolute -top-1.5 -right-1.5 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                </span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-foreground">Grafana Dashboard</div>
+                <div className="text-xs text-muted-foreground">Live infrastructure metrics</div>
+              </div>
+              <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-emerald-400 transition-all" />
+            </motion.a>
+          </div>
+
           <RecruiterPanel />
         </div>
       </div>

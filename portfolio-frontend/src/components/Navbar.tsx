@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Menu, X, ChevronRight, ChevronDown, Download, Mail, Flame, BarChart3 } from 'lucide-react';
+import { Menu, X, ChevronRight, Download, Mail } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UnderTheHoodToggle } from '@/components/UnderTheHoodToggle';
 import { ResumeViewer } from '@/components/ResumeViewer';
@@ -19,19 +19,11 @@ const navItems = [
   { label: 'Contact', href: '/home#contact', shortLabel: 'Contact' },
 ];
 
-const toolsItems = [
-  { label: 'AI Resume Parser', href: '/resume-parser', icon: Flame, iconColor: 'text-orange-400', description: 'Tailor your resume with AI' },
-  { label: 'Live Metrics', href: 'https://grafana.manneharshithsiddardha.com', icon: BarChart3, iconColor: 'text-emerald-400', description: 'Real-time infrastructure dashboard', external: true },
-];
-
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('');
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [isToolsOpen, setIsToolsOpen] = useState(false);
-  const toolsRef = useRef<HTMLDivElement>(null);
-  const toolsTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -212,79 +204,6 @@ export default function Navbar() {
               })}
             </nav>
 
-            {/* Tools dropdown */}
-            <div
-              ref={toolsRef}
-              className="relative"
-              onMouseEnter={() => {
-                clearTimeout(toolsTimeoutRef.current);
-                setIsToolsOpen(true);
-              }}
-              onMouseLeave={() => {
-                toolsTimeoutRef.current = setTimeout(() => setIsToolsOpen(false), 150);
-              }}
-            >
-              <Button
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  "text-sm font-medium rounded-full px-4 py-2 transition-all duration-300",
-                  isToolsOpen ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-                )}
-                onClick={() => setIsToolsOpen(!isToolsOpen)}
-              >
-                <span>Tools</span>
-                <ChevronDown className={cn("ml-1 h-3.5 w-3.5 transition-transform", isToolsOpen && "rotate-180")} />
-              </Button>
-              <AnimatePresence>
-                {isToolsOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute top-full right-0 mt-2 w-64 rounded-xl bg-background/95 backdrop-blur-xl border border-border/50 shadow-xl overflow-hidden"
-                  >
-                    {toolsItems.map((tool) => {
-                      const Icon = tool.icon;
-                      return tool.external ? (
-                        <a
-                          key={tool.label}
-                          href={tool.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors"
-                          onClick={() => setIsToolsOpen(false)}
-                        >
-                          <div className="p-1.5 rounded-lg bg-secondary/80">
-                            <Icon className={cn("h-4 w-4", tool.iconColor)} />
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-foreground">{tool.label}</div>
-                            <div className="text-xs text-muted-foreground">{tool.description}</div>
-                          </div>
-                        </a>
-                      ) : (
-                        <button
-                          key={tool.label}
-                          onClick={() => { navigate(tool.href); setIsToolsOpen(false); }}
-                          className="flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors w-full text-left"
-                        >
-                          <div className="p-1.5 rounded-lg bg-secondary/80">
-                            <Icon className={cn("h-4 w-4", tool.iconColor)} />
-                          </div>
-                          <div>
-                            <div className="text-sm font-medium text-foreground">{tool.label}</div>
-                            <div className="text-xs text-muted-foreground">{tool.description}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
             {/* Action buttons */}
             <div className="flex items-center gap-2">
               <UnderTheHoodToggle />
@@ -381,47 +300,6 @@ export default function Navbar() {
                           )} />
                         </a>
                       </Button>
-                    </motion.li>
-                  );
-                })}
-              </ul>
-
-              {/* Mobile Tools */}
-              <div className="mt-6 mb-2 px-4">
-                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tools</span>
-              </div>
-              <ul className="space-y-2">
-                {toolsItems.map((tool) => {
-                  const Icon = tool.icon;
-                  return (
-                    <motion.li key={tool.label} variants={mobileItemVariants}>
-                      {tool.external ? (
-                        <a
-                          href={tool.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => setIsMobileMenuOpen(false)}
-                          className="w-full flex items-center justify-between text-lg font-medium rounded-xl py-4 px-4 text-foreground hover:bg-secondary/50"
-                        >
-                          <span className="flex items-center gap-3">
-                            <Icon className={cn("h-5 w-5", tool.iconColor)} />
-                            {tool.label}
-                          </span>
-                          <ChevronRight className="h-5 w-5" />
-                        </a>
-                      ) : (
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-between text-lg font-medium rounded-xl py-6 px-4 text-foreground hover:bg-secondary/50"
-                          onClick={() => { navigate(tool.href); setIsMobileMenuOpen(false); }}
-                        >
-                          <span className="flex items-center gap-3">
-                            <Icon className={cn("h-5 w-5", tool.iconColor)} />
-                            {tool.label}
-                          </span>
-                          <ChevronRight className="h-5 w-5" />
-                        </Button>
-                      )}
                     </motion.li>
                   );
                 })}

@@ -18,15 +18,21 @@
     "list": [
       {
         "name": "function",
-        "type": "query",
+        "type": "custom",
         "label": "Function",
-        "datasource": { "type": "cloudwatch", "uid": "P034F075C744B399F" },
-        "query": "dimension_values($region, AWS/Lambda, Invocations, FunctionName)",
-        "refresh": 1,
+        "query": "portfolio-visitor,portfolio-auth,portfolio-jobs-resume,portfolio-chat,portfolio-infra",
+        "current": { "text": "All", "value": ["$__all"] },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "portfolio-visitor", "value": "portfolio-visitor" },
+          { "text": "portfolio-auth", "value": "portfolio-auth" },
+          { "text": "portfolio-jobs-resume", "value": "portfolio-jobs-resume" },
+          { "text": "portfolio-chat", "value": "portfolio-chat" },
+          { "text": "portfolio-infra", "value": "portfolio-infra" }
+        ],
         "includeAll": true,
         "multi": true,
-        "allValue": "",
-        "sort": 1
+        "allValue": ""
       },
       {
         "name": "region",

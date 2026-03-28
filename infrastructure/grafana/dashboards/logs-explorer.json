@@ -37,8 +37,8 @@
         "name": "search",
         "type": "textbox",
         "label": "Search",
-        "current": { "text": "", "value": "" },
-        "query": "",
+        "current": { "text": ".*", "value": ".*" },
+        "query": ".*",
         "hide": 0
       },
       {
@@ -216,7 +216,7 @@
           { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-chat", "name": "/aws/lambda/portfolio-chat" },
           { "arn": "arn:aws:logs:us-east-1:024230653681:log-group:/aws/lambda/portfolio-infra", "name": "/aws/lambda/portfolio-infra" }
         ],
-        "expression": "fields @timestamp, @logStream as function, @message | filter @message like /(?i)($search)/ | sort @timestamp desc | limit 200",
+        "expression": "fields @timestamp, @logStream as function, @message | filter @message like /$search/ | sort @timestamp desc | limit 200",
         "region": "$region",
         "refId": "A"
       }],

@@ -61,7 +61,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 4 },
       "description": "Visual map of service dependencies and communication patterns. Node size = request volume, edge color = error rate.",
       "targets": [{
-        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "datasource": "X-Ray",
         "queryType": "getServiceMap",
         "query": "$filter",
         "region": "$region",
@@ -87,12 +87,11 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "description": "Average, p50, p90, and p99 response times from X-Ray traces",
       "targets": [{
-        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "datasource": "X-Ray",
         "queryType": "getTimeSeriesServiceStatistics",
         "query": "$filter",
         "region": "$region",
-        "refId": "A",
-        "columns": ["AverageResponseTime", "RootCauseServiceRequestCount"]
+        "refId": "A"
       }],
       "fieldConfig": {
         "defaults": {
@@ -109,12 +108,11 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
       "description": "Faults (5xx) and errors (4xx) as reported by X-Ray",
       "targets": [{
-        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "datasource": "X-Ray",
         "queryType": "getTimeSeriesServiceStatistics",
         "query": "$filter",
         "region": "$region",
-        "refId": "A",
-        "columns": ["FaultStatistics.TotalCount", "ErrorStatistics.TotalCount", "OkCount"]
+        "refId": "A"
       }],
       "fieldConfig": {
         "defaults": {
@@ -139,7 +137,7 @@
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 24 },
       "description": "Click a Trace ID to view the full trace waterfall in the Explore panel",
       "targets": [{
-        "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+        "datasource": "X-Ray",
         "queryType": "getTraceSummaries",
         "query": "$filter",
         "region": "$region",
@@ -168,7 +166,7 @@
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 35 },
           "description": "Only traces that resulted in server-side faults",
           "targets": [{
-            "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+            "datasource": "X-Ray",
             "queryType": "getTraceSummaries",
             "query": "fault = true",
             "region": "$region",
@@ -189,7 +187,7 @@
           "gridPos": { "h": 10, "w": 24, "x": 0, "y": 45 },
           "description": "Traces with response time exceeding 2 seconds",
           "targets": [{
-            "datasource": { "type": "grafana-x-ray-datasource", "uid": "xray-datasource" },
+            "datasource": "X-Ray",
             "queryType": "getTraceSummaries",
             "query": "responsetime > 2",
             "region": "$region",

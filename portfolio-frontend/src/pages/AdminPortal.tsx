@@ -77,39 +77,44 @@ export default function AdminPortal() {
 
   const fetchStats = useCallback(async () => {
     const res = await apiService.getAdminStats();
-    if (res.data) setStats(res.data);
-    else setError(res.error || 'Failed to load stats');
+    if (res.data?.total_users != null) setStats(res.data);
+    else if (res.error) setError(res.error);
+    else setError('Failed to load stats');
   }, []);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminUsers();
-    if (res.data) setUsers(res.data.users);
-    else setError(res.error || 'Failed to load users');
+    if (res.data?.users) setUsers(res.data.users);
+    else if (res.error) setError(res.error);
+    else setError('Failed to load users');
     setLoading(false);
   }, []);
 
   const fetchResumes = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminResumes();
-    if (res.data) setResumes(res.data.resumes);
-    else setError(res.error || 'Failed to load resumes');
+    if (res.data?.resumes) setResumes(res.data.resumes);
+    else if (res.error) setError(res.error);
+    else setError('Failed to load resumes');
     setLoading(false);
   }, []);
 
   const fetchTailoring = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminTailoring();
-    if (res.data) setTailoring(res.data.records);
-    else setError(res.error || 'Failed to load tailoring records');
+    if (res.data?.records) setTailoring(res.data.records);
+    else if (res.error) setError(res.error);
+    else setError('Failed to load tailoring records');
     setLoading(false);
   }, []);
 
   const fetchUserDetail = useCallback(async (email: string) => {
     setLoading(true);
     const res = await apiService.getAdminUserDetail(email);
-    if (res.data) setSelectedUser(res.data as UserDetail);
-    else setError(res.error || 'Failed to load user details');
+    if (res.data?.user) setSelectedUser(res.data as UserDetail);
+    else if (res.error) setError(res.error);
+    else setError('Failed to load user details');
     setLoading(false);
   }, []);
 
@@ -153,12 +158,12 @@ export default function AdminPortal() {
   }
 
   const filteredUsers = searchQuery
-    ? users.filter(u =>
+    ? (users || []).filter(u =>
         u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (u.role || '').toLowerCase().includes(searchQuery.toLowerCase())
       )
-    : users;
+    : (users || []);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'dashboard', label: 'Dashboard' },

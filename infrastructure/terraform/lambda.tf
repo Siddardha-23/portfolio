@@ -77,6 +77,7 @@ locals {
 
     # Auth service routes
     "ANY /api/auth/{proxy+}"      = "auth"
+    "ANY /api/admin/{proxy+}"     = "auth"
 
     # Jobs-resume service routes
     "ANY /api/jobs/{proxy+}"      = "jobs-resume"

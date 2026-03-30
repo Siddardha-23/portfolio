@@ -83,8 +83,12 @@ def create_app():
     from blueprints.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
 
-    from blueprints.admin import admin_bp
-    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    try:
+        from blueprints.admin import admin_bp
+        app.register_blueprint(admin_bp, url_prefix='/api/admin')
+        logger.info("Admin blueprint registered")
+    except ImportError:
+        logger.warning("Admin blueprint not found, skipping")
 
     # Health check endpoint
     @app.route('/api/health')

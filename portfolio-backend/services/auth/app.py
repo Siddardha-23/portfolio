@@ -80,9 +80,11 @@ def create_app():
             response.headers['Cache-Control'] = 'no-store'
         return response
 
-    # Register only the auth blueprint
     from blueprints.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
+
+    from blueprints.admin import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
 
     # Health check endpoint
     @app.route('/api/health')

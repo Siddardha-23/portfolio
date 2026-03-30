@@ -328,10 +328,47 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 # Legacy resume without structured field — use raw_text
                 raw_text = resume.get("raw_text", "")
                 if not raw_text:
+                    # Backward-compat fallback:
+                    # If we have *base* resume metadata but no structured/raw_text,
+                    # download the base file from S3 and parse it to structured.
+                    try:
+                        from services.s3_service import get_storage_service
+                        storage = get_storage_service()
+
+                        base_resume = svc.parser.user_resumes.find_one(
+                            {
+                                "user_email": user_email,
+                                "type": "base",
+                                "is_active": True,
+                            }
+                        )
+                        if not base_resume:
+                            base_resume = svc.parser.user_resumes.find_one(
+                                {"user_email": user_email, "type": "base"},
+                                sort=[("uploaded_at", -1)],
+                            )
+                        if base_resume and base_resume.get("s3_key"):
+                            file_bytes = storage.get_resume(base_resume["s3_key"])
+                            filename = base_resume.get("filename", "resume.pdf")
+                            raw_text = svc.parser.extract_text(file_bytes, filename)
+                            validated = svc.parser.parse_to_structured(raw_text)
+                            resume = svc.parser.save_parsed_resume(
+                                validated, raw_text, user_email=user_email
+                            )
+                            structured = resume.get("structured")
+                    except Exception as e:
+                        logger.warning("Tailor fallback parse failed: %s", e)
+
+                if not structured:
                     svc.fail_job(job_id, "No resume data available. Please re-upload.")
                     return
-                # Parse raw_text to structured first, then tailor
-                structured = svc.parser.parse_to_structured(raw_text)
+
+                # Parse raw_text to structured first, then tailor (if we got structured already, skip)
+                if not structured and raw_text:
+                    structured = svc.parser.parse_to_structured(raw_text)
+                if not structured:
+                    svc.fail_job(job_id, "No resume data available. Please re-upload.")
+                    return
                 result = svc.tailor.tailor(structured, payload["jd_analysis"])
 
             # Normalize contact whitespace (safety net for resumes parsed before the fix)

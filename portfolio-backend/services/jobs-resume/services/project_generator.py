@@ -275,6 +275,12 @@ class ProjectGenerator:
             logger.warning("ProjectGenerator: generated project has no name")
             return None
 
+        # Fix slug-style names: "payment-fraud-detection-api" → "Payment Fraud Detection API"
+        if "-" in name and name == name.lower():
+            name = name.replace("-", " ").title()
+            project["name"] = name
+            logger.info("ProjectGenerator: converted slug name to title case: '%s'", name)
+
         # If name contains the job title or "Portfolio", ask Gemini for a better name
         needs_rename = False
         jd_title = ""

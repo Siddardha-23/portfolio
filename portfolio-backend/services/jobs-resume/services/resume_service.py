@@ -261,6 +261,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             svc.complete_job(job_id, {"jd_analysis": result})
 
         elif job_type == "upload_parse":
+            user_email = payload.get("user_email", "")
             # Async resume extraction: raw_text was pre-extracted synchronously
             raw_text = payload["raw_text"]
             pdf_base64 = payload.get("pdf_base64")
@@ -278,11 +279,12 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                     return
 
             # Store in DB
-            doc = svc.parser.save_parsed_resume(validated, raw_text)
+            doc = svc.parser.save_parsed_resume(validated, raw_text, user_email=user_email)
             svc.complete_job(job_id, {"parsed_resume": doc})
 
         elif job_type == "tailor":
-            resume = svc.parser.get_structured_resume()
+            user_email = payload.get("user_email", "")
+            resume = svc.parser.get_structured_resume(user_email=user_email)
             if not resume:
                 svc.fail_job(job_id, "No resume uploaded.")
                 return

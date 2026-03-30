@@ -86,10 +86,12 @@ def tailor():
         return jsonify({"error": "jd_analysis is required"}), 400
 
     try:
+        user_email = get_jwt_identity()
         from services.resume_service import get_resume_service, ResumeService
         svc = get_resume_service()
-        job_id = svc.create_job("tailor", {"jd_analysis": jd_analysis})
-        ResumeService.invoke_async(job_id, "tailor", {"jd_analysis": jd_analysis})
+        payload = {"jd_analysis": jd_analysis, "user_email": user_email}
+        job_id = svc.create_job("tailor", payload)
+        ResumeService.invoke_async(job_id, "tailor", payload)
         return jsonify({"job_id": job_id}), 202
 
     except Exception as e:
@@ -351,7 +353,7 @@ def upload():
 
         svc = get_resume_service()
         # Only send pdf_base64 for PDF files (used for Gemini vision)
-        payload = {"raw_text": raw_text}
+        payload = {"raw_text": raw_text, "user_email": user_email}
         if is_pdf:
             payload["pdf_base64"] = file_b64
         job_id = svc.create_job("upload_parse", payload)

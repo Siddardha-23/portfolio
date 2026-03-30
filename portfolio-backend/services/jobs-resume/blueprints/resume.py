@@ -388,7 +388,7 @@ def status():
         )
 
         from services.resume_service import get_resume_service
-        resume = get_resume_service().get_base_resume()
+        resume = get_resume_service().get_base_resume(user_email=user_email)
         if not resume:
             return jsonify({"has_resume": False}), 200
         parsed_at = resume.get("parsed_at", "")

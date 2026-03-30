@@ -49,6 +49,7 @@ def search():
     try:
         from services.job_service import get_job_service
         svc = get_job_service()
+        user_email = get_jwt_identity()
         result = svc.search_jobs(
             query=query,
             page=page,
@@ -56,6 +57,7 @@ def search():
             date_posted=date_posted,
             remote_only=remote_only,
             employment_type=employment_type,
+            user_email=user_email,
         )
         return jsonify(result), 200
     except RuntimeError as e:
@@ -105,12 +107,14 @@ def batch_search():
     try:
         from services.job_service import get_job_service
         svc = get_job_service()
+        user_email = get_jwt_identity()
         result = svc.batch_search_jobs(
             queries=queries,
             location=location,
             date_posted=date_posted,
             remote_only=remote_only,
             employment_type=employment_type,
+            user_email=user_email,
         )
         return jsonify(result), 200
     except RuntimeError as e:
@@ -145,7 +149,8 @@ def analyze():
 
     try:
         from services.job_service import get_job_service
-        result = get_job_service().analyze_job(job, action)
+        user_email = get_jwt_identity()
+        result = get_job_service().analyze_job(job, action, user_email=user_email)
         return jsonify({"result": result, "action": action}), 200
     except Exception as e:
         logger.error(f"Job analysis error: {e}")

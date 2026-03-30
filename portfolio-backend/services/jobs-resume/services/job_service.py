@@ -121,6 +121,7 @@ class JobService:
         date_posted: str = "month",
         remote_only: bool = False,
         employment_type: str = "",
+        user_email: str = "",
     ) -> Dict[str, Any]:
         params = {
             "query": query,
@@ -129,6 +130,8 @@ class JobService:
             "date_posted": date_posted,
             "remote_only": remote_only,
             "employment_type": employment_type,
+            # Cache results per-user because match_score is resume-specific.
+            "user_email": user_email,
         }
         cache_key = _make_cache_key(params)
 
@@ -170,7 +173,7 @@ class JobService:
         data = resp.json()
 
         jobs = [self._normalize_job(j) for j in data.get("data", [])]
-        matched = self.match_jobs(jobs)
+        matched = self.match_jobs(jobs, user_email=user_email)
 
         result = {
             "jobs": matched,
@@ -207,6 +210,7 @@ class JobService:
         date_posted: str = "today",
         remote_only: bool = False,
         employment_type: str = "",
+        user_email: str = "",
     ) -> Dict[str, Any]:
         """Run multiple search queries in parallel, deduplicate, and re-score."""
         seen_ids: set = set()
@@ -220,6 +224,7 @@ class JobService:
                 "query": query, "page": 1, "location": location,
                 "date_posted": date_posted, "remote_only": remote_only,
                 "employment_type": employment_type,
+                "user_email": user_email,
             }
             cache_key = _make_cache_key(params)
             cached = self.jobs_cache.find_one({"query_hash": cache_key})
@@ -232,6 +237,7 @@ class JobService:
                 query=query, page=1, location=location,
                 date_posted=date_posted, remote_only=remote_only,
                 employment_type=employment_type,
+                user_email=user_email,
             )
             return {"jobs": result.get("jobs", []), "cached": False}
 
@@ -257,7 +263,7 @@ class JobService:
             all_jobs = self._filter_today_jobs(all_jobs)
 
         # Re-score the merged set
-        all_jobs = self.match_jobs(all_jobs)
+        all_jobs = self.match_jobs(all_jobs, user_email=user_email)
 
         return {
             "jobs": all_jobs,
@@ -332,8 +338,8 @@ class JobService:
     # Skill Matching
     # ------------------------------------------------------------------
 
-    def match_jobs(self, jobs: List[Dict]) -> List[Dict]:
-        resume_skills = self._get_resume_skills()
+    def match_jobs(self, jobs: List[Dict], user_email: str = "") -> List[Dict]:
+        resume_skills = self._get_resume_skills(user_email=user_email)
         all_skills = set(s.lower() for s in PORTFOLIO_SKILLS)
         all_skills.update(s.lower() for s in resume_skills)
 
@@ -362,19 +368,29 @@ class JobService:
         jobs.sort(key=lambda j: j["match_score"], reverse=True)
         return jobs
 
-    def _get_resume_skills(self) -> List[str]:
-        """Get flat skills list from stored resume."""
+    def _get_resume_skills(self, user_email: str = "") -> List[str]:
+        """Get flat skills list from the stored resume for this user."""
+        if not user_email:
+            return []
         try:
-            resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
+            resume = self.user_resumes.find_one(
+                {"user_email": user_email},
+                sort=[("parsed_at", -1)],
+            )
             if resume:
                 return resume.get("skills", [])
         except Exception as e:
-            logger.warning(f"Failed to load resume skills: {e}")
+            logger.warning(f"Failed to load resume skills for {user_email}: {e}")
         return []
 
-    def get_resume(self) -> Optional[Dict[str, Any]]:
-        """Retrieve the latest stored resume (used by analyze_job)."""
-        resume = self.user_resumes.find_one({}, sort=[("parsed_at", -1)])
+    def get_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
+        """Retrieve the latest stored resume for this user (used by analyze_job)."""
+        if not user_email:
+            return None
+        resume = self.user_resumes.find_one(
+            {"user_email": user_email},
+            sort=[("parsed_at", -1)],
+        )
         if resume:
             resume.pop("_id", None)
         return resume
@@ -383,13 +399,13 @@ class JobService:
     # AI Job Analysis
     # ------------------------------------------------------------------
 
-    def analyze_job(self, job: Dict[str, Any], action: str) -> str:
+    def analyze_job(self, job: Dict[str, Any], action: str, user_email: str = "") -> str:
         from services.chat_service import _get_client, PORTFOLIO_CONTEXT
         from google.genai import types
 
         client = _get_client()
 
-        resume = self.get_resume()
+        resume = self.get_resume(user_email=user_email)
         resume_info = ""
         if resume:
             resume_info = (

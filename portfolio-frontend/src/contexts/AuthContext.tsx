@@ -11,6 +11,7 @@ export interface AuthUser {
 interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
+  isSuperAdmin: boolean;
   isLoading: boolean;
   login: (
     email: string,
@@ -185,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         isAuthenticated: !!user,
+        isSuperAdmin: !!user && user.email === 'mannesiddardha@gmail.com',
         isLoading,
         login,
         register,

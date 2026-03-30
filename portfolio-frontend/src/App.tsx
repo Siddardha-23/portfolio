@@ -18,6 +18,7 @@ const JobSearch = lazy(() => import('./pages/JobSearch'));
 const ResumeParser = lazy(() => import('./pages/ResumeParser'));
 const DeployRunner = lazy(() => import('./components/DeployRunner'));
 const CloudLab = lazy(() => import('./pages/CloudLab'));
+const AdminPortal = lazy(() => import('./pages/AdminPortal'));
 
 const queryClient = new QueryClient();
 
@@ -51,6 +52,7 @@ function AppContent() {
           <Route path="/project/:slug" element={<ProjectArchitecture />} />
           <Route path="/job-search" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><JobSearch /></Suspense>} />
           <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
+          <Route path="/admin" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><AdminPortal /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

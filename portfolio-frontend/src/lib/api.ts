@@ -820,6 +820,72 @@ class ApiService {
     }
   }
 
+  // ============================================
+  // Admin endpoints (/api/admin)
+  // ============================================
+
+  async getAdminStats() {
+    return this.request<{
+      total_users: number;
+      users_7d: number;
+      users_30d: number;
+      total_parsed_resumes: number;
+      total_base_resumes: number;
+      total_generated_resumes: number;
+      total_tailoring_sessions: number;
+    }>('/admin/stats');
+  }
+
+  async getAdminUsers() {
+    return this.request<{
+      users: Array<{
+        id: string;
+        email: string;
+        name: string | null;
+        role: string | null;
+        sector: string | null;
+        created_at: string | null;
+        last_login: string | null;
+        last_login_ip: string | null;
+        login_attempts: number;
+        base_resumes: number;
+        generated_resumes: number;
+        tailoring_sessions: number;
+        has_parsed_resume: boolean;
+      }>;
+    }>('/admin/users');
+  }
+
+  async getAdminUserDetail(email: string) {
+    return this.request<{
+      user: {
+        id: string;
+        email: string;
+        name: string | null;
+        role: string | null;
+        sector: string | null;
+        created_at: string | null;
+        last_login: string | null;
+        last_login_ip: string | null;
+        login_attempts: number;
+        fingerprint_hash: string | null;
+        session_id: string | null;
+      };
+      parsed_resume: any;
+      base_resumes: any[];
+      generated_resumes: any[];
+      tailoring_records: any[];
+    }>(`/admin/user/${encodeURIComponent(email)}`);
+  }
+
+  async getAdminResumes() {
+    return this.request<{ resumes: any[] }>('/admin/resumes');
+  }
+
+  async getAdminTailoring() {
+    return this.request<{ records: any[] }>('/admin/tailoring');
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  REQUEST TRACING - distributed tracing waterfall
   // ═══════════════════════════════════════════════════════════════

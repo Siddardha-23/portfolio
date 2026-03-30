@@ -94,6 +94,9 @@ def create_app():
     from blueprints.auth import auth_bp
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
 
+    from blueprints.admin import admin_bp
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+
     from blueprints.jobs import jobs_bp
     app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
 
@@ -132,6 +135,7 @@ def create_app():
                 'resume':  '/api/resume',
                 'trace':   '/api/trace',
                 'infra':   '/api/infra',
+                'admin':   '/api/admin',
             }
         }, 200
 

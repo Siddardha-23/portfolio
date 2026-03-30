@@ -886,6 +886,22 @@ class ApiService {
     return this.request<{ records: any[] }>('/admin/tailoring');
   }
 
+  async getAdminResumeUrl(s3Key: string) {
+    return this.request<{ url: string }>(`/admin/resume-url?s3_key=${encodeURIComponent(s3Key)}`);
+  }
+
+  async getAdminActivity() {
+    return this.request<{ activities: Array<{
+      type: string;
+      email: string;
+      name?: string;
+      detail?: string;
+      company?: string;
+      ats_score?: number;
+      timestamp: string;
+    }> }>('/admin/activity');
+  }
+
   // ═══════════════════════════════════════════════════════════════
   //  REQUEST TRACING - distributed tracing waterfall
   // ═══════════════════════════════════════════════════════════════

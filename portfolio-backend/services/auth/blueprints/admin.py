@@ -2,10 +2,10 @@
 
 Only the super admin (mannesiddardha@gmail.com) can access these endpoints.
 """
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.db_connect import DBConnect
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 admin_bp = Blueprint('admin', __name__)
@@ -213,3 +213,109 @@ def list_tailoring():
     except Exception as e:
         logger.error(f"Admin tailoring list error: {e}")
         return jsonify({'error': 'Failed to fetch tailoring records'}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/admin/resume-url?s3_key=... — Presigned download URL
+# ------------------------------------------------------------------
+@admin_bp.route('/resume-url', methods=['GET'])
+@require_super_admin
+def get_resume_presigned_url():
+    """Generate a presigned S3 URL so the admin can view/download a user resume."""
+    try:
+        s3_key = request.args.get('s3_key', '').strip()
+        if not s3_key:
+            return jsonify({'error': 's3_key query parameter is required'}), 400
+
+        import boto3, os
+        bucket = os.getenv('RESUME_S3_BUCKET', '')
+        if not bucket:
+            return jsonify({'error': 'S3 bucket not configured'}), 500
+
+        client = boto3.client('s3')
+        url = client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket, 'Key': s3_key},
+            ExpiresIn=3600,
+        )
+        return jsonify({'url': url}), 200
+    except Exception as e:
+        logger.error(f"Admin presigned URL error: {e}")
+        return jsonify({'error': 'Failed to generate download URL'}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/admin/activity — Recent activity feed
+# ------------------------------------------------------------------
+@admin_bp.route('/activity', methods=['GET'])
+@require_super_admin
+def activity_feed():
+    """Return recent activity across registrations, logins, uploads, and tailoring."""
+    try:
+        db = DBConnect().get_db()
+        now = datetime.utcnow()
+        since = now - timedelta(days=30)
+        activities = []
+
+        # Recent registrations
+        new_users = list(db.users.find(
+            {'created_at': {'$gte': since}},
+            {'email': 1, 'name': 1, 'created_at': 1, '_id': 0}
+        ).sort('created_at', -1).limit(20))
+        for u in new_users:
+            activities.append({
+                'type': 'registration',
+                'email': u.get('email'),
+                'name': u.get('name'),
+                'timestamp': u['created_at'].isoformat() if u.get('created_at') else None,
+            })
+
+        # Recent logins (users who logged in recently)
+        recent_logins = list(db.users.find(
+            {'last_login': {'$gte': since}},
+            {'email': 1, 'name': 1, 'last_login': 1, '_id': 0}
+        ).sort('last_login', -1).limit(20))
+        for u in recent_logins:
+            activities.append({
+                'type': 'login',
+                'email': u.get('email'),
+                'name': u.get('name'),
+                'timestamp': u['last_login'].isoformat() if u.get('last_login') else None,
+            })
+
+        # Recent resume uploads
+        recent_uploads = list(db.user_resumes.find(
+            {'type': 'base', 'uploaded_at': {'$gte': since}},
+            {'user_email': 1, 'filename': 1, 'uploaded_at': 1, '_id': 0}
+        ).sort('uploaded_at', -1).limit(20))
+        for r in recent_uploads:
+            activities.append({
+                'type': 'upload',
+                'email': r.get('user_email'),
+                'detail': r.get('filename'),
+                'timestamp': r['uploaded_at'].isoformat() if r.get('uploaded_at') else None,
+            })
+
+        # Recent tailoring sessions
+        recent_tailoring = list(db.tailoring_records.find(
+            {'created_at': {'$gte': since}},
+            {'user_email': 1, 'jd_analysis.job_title': 1, 'jd_analysis.company': 1,
+             'ats_scores.overall': 1, 'created_at': 1, '_id': 0}
+        ).sort('created_at', -1).limit(20))
+        for t in recent_tailoring:
+            activities.append({
+                'type': 'tailoring',
+                'email': t.get('user_email'),
+                'detail': t.get('jd_analysis', {}).get('job_title'),
+                'company': t.get('jd_analysis', {}).get('company'),
+                'ats_score': t.get('ats_scores', {}).get('overall'),
+                'timestamp': t['created_at'].isoformat() if t.get('created_at') else None,
+            })
+
+        # Sort all by timestamp descending
+        activities.sort(key=lambda a: a.get('timestamp') or '', reverse=True)
+
+        return jsonify({'activities': activities[:50]}), 200
+    except Exception as e:
+        logger.error(f"Admin activity feed error: {e}")
+        return jsonify({'error': 'Failed to fetch activity feed'}), 500

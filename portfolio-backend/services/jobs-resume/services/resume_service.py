@@ -81,7 +81,7 @@ class ResumeService:
     # Job management (async pattern for Lambda)
     # ------------------------------------------------------------------
 
-    def create_job(self, job_type: str, payload: dict) -> str:
+    def create_job(self, job_type: str, payload: dict, user_email: str = "") -> str:
         """Create a pending async job and return its unique ID.
 
         The job is stored in MongoDB with status='processing'.
@@ -90,6 +90,7 @@ class ResumeService:
         Args:
             job_type: One of 'upload_parse', 'extract_jd', 'tailor', 'ats_scores'.
             payload: Job-type-specific data (e.g., raw_text, jd_analysis).
+            user_email: Authenticated user's email to scope job polling.
 
         Returns:
             UUID string identifying the job.
@@ -100,6 +101,7 @@ class ResumeService:
             "job_type": job_type,
             "status": "processing",
             "payload": payload,
+            "user_email": user_email,
             "result": None,
             "error": None,
             "created_at": datetime.now(timezone.utc),
@@ -107,7 +109,7 @@ class ResumeService:
         })
         return job_id
 
-    def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
+    def get_job(self, job_id: str, user_email: str = "") -> Optional[Dict[str, Any]]:
         """Retrieve a job's current status and result for client polling.
 
         The payload field is stripped from the response to avoid sending
@@ -115,11 +117,15 @@ class ResumeService:
 
         Args:
             job_id: UUID of the job to check.
+            user_email: Authenticated user's email to scope job polling.
 
         Returns:
             Job dict with status/result/error, or None if not found.
         """
-        job = self.resume_jobs.find_one({"job_id": job_id})
+        query: Dict[str, Any] = {"job_id": job_id}
+        if user_email:
+            query["user_email"] = user_email
+        job = self.resume_jobs.find_one(query)
         if not job:
             return None
         job.pop("_id", None)

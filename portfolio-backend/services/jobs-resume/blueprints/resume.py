@@ -59,7 +59,8 @@ def extract_jd():
     try:
         from services.resume_service import get_resume_service, ResumeService
         svc = get_resume_service()
-        job_id = svc.create_job("extract_jd", {"job_description": jd_text})
+        user_email = get_jwt_identity()
+        job_id = svc.create_job("extract_jd", {"job_description": jd_text}, user_email=user_email)
         ResumeService.invoke_async(job_id, "extract_jd", {"job_description": jd_text})
         return jsonify({"job_id": job_id}), 202
 
@@ -90,7 +91,7 @@ def tailor():
         from services.resume_service import get_resume_service, ResumeService
         svc = get_resume_service()
         payload = {"jd_analysis": jd_analysis, "user_email": user_email}
-        job_id = svc.create_job("tailor", payload)
+        job_id = svc.create_job("tailor", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "tailor", payload)
         return jsonify({"job_id": job_id}), 202
 
@@ -123,8 +124,9 @@ def ats_scores():
     try:
         from services.resume_service import get_resume_service, ResumeService
         svc = get_resume_service()
+        user_email = get_jwt_identity()
         payload = {"tailored_resume": tailored, "jd_analysis": jd_analysis}
-        job_id = svc.create_job("ats_scores", payload)
+        job_id = svc.create_job("ats_scores", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "ats_scores", payload)
         return jsonify({"job_id": job_id}), 202
 
@@ -200,7 +202,8 @@ def save_record():
 def get_job(job_id):
     try:
         from services.resume_service import get_resume_service
-        job = get_resume_service().get_job(job_id)
+        user_email = get_jwt_identity()
+        job = get_resume_service().get_job(job_id, user_email=user_email)
         if not job:
             return jsonify({"error": "Job not found"}), 404
         for key in ("created_at", "completed_at"):
@@ -356,7 +359,7 @@ def upload():
         payload = {"raw_text": raw_text, "user_email": user_email}
         if is_pdf:
             payload["pdf_base64"] = file_b64
-        job_id = svc.create_job("upload_parse", payload)
+        job_id = svc.create_job("upload_parse", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "upload_parse", payload)
 
         return jsonify({"job_id": job_id}), 202

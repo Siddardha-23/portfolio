@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DeployBadge from '@/components/DeployBadge';
+import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
 const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
 const GitTimeline = lazy(() => import('@/components/GitTimeline'));
@@ -18,6 +19,7 @@ const InfraHealthDashboard = lazy(() => import('@/components/InfraHealthDashboar
 const SandboxDeployer = lazy(() => import('@/components/SandboxDeployer'));
 
 export default function CloudLab() {
+  useVisitorTracking('cloud-lab');
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
   const [showLatency, setShowLatency] = useState(false);

@@ -6,8 +6,10 @@ import { SavedJobsPanel } from '@/components/job-search/SavedJobsPanel';
 import { ResumePanel } from '@/components/job-search/ResumePanel';
 import AuthGate from '@/components/AuthGate';
 import { useAuth } from '@/contexts/AuthContext';
+import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
 function Dashboard() {
+  useVisitorTracking('job-search');
   const jobSearch = useJobSearch();
 
   const { logout } = useAuth();

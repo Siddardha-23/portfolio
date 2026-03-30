@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
 import AuthGate from '@/components/AuthGate';
 import { useAuth } from '@/contexts/AuthContext';
+import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { ThemeToggle } from '@/components/theme-toggle';
 import ResumeDashboard, {
   type BaseResume, type GeneratedResume,
@@ -882,6 +883,7 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
 export default function ResumeParser() {
   const { user } = useAuth();
   const [activeNav, setActiveNav] = useState<NavTab>('tailor');
+  useVisitorTracking('resume-parser');
 
   return (
     <AuthGate

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PROJECTS } from '@/lib/constants';
 import { useState, useEffect, lazy, Suspense } from 'react';
+import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
 const AerosecCaseStudy = lazy(() => import('./AerosecCaseStudy'));
 import AWSRefArchDiagram from '@/components/AWSRefArchDiagram';
@@ -247,6 +248,7 @@ function TechStack({ stack }: { stack: Record<string, string[]> }) {
 export default function ProjectArchitecture() {
     const { slug } = useParams<{ slug: string }>();
     const navigate = useNavigate();
+    useVisitorTracking(`project-${slug}`);
 
     // Scroll to top on mount is CRITICAL
     useEffect(() => {

@@ -1,5 +1,6 @@
 import os
 import secrets
+import logging
 from datetime import timedelta
 
 # Load environment variables from .env file if available (local development)
@@ -8,6 +9,11 @@ try:
     load_dotenv()
 except ImportError:
     pass  # python-dotenv not installed, use system env vars
+
+# Small observability hook: shows in Lambda logs on cold start when using SSM secrets.
+logger = logging.getLogger(__name__)
+if os.getenv('USE_SSM_SECRETS', 'false').lower() == 'true':
+    logger.info('Shared layer: utils.config loaded')
 
 
 def _get_config_value(key: str, default: str = None) -> str:

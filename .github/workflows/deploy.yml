@@ -59,7 +59,19 @@ jobs:
 
           # Build the services list. If shared layer changed OR manual trigger, include all services.
           SERVICES=()
-          if [ "$IS_MANUAL" = "true" ] || [ "$LAYER" = "true" ]; then
+          # Important: deploy-layer republishes the shared layer when `any-backend == true`.
+          # To prevent layer-version mismatches, we must update ALL backend services
+          # whenever ANY backend service changes (or when shared-layer changes / manual).
+          ANY_BACKEND=false
+          if [ "${{ steps.filter.outputs.backend-visitor }}" = "true" ] ||
+             [ "${{ steps.filter.outputs.backend-auth }}" = "true" ] ||
+             [ "${{ steps.filter.outputs.backend-jobs-resume }}" = "true" ] ||
+             [ "${{ steps.filter.outputs.backend-chat }}" = "true" ] ||
+             [ "${{ steps.filter.outputs.backend-infra }}" = "true" ]; then
+            ANY_BACKEND=true
+          fi
+
+          if [ "$IS_MANUAL" = "true" ] || [ "$LAYER" = "true" ] || [ "$ANY_BACKEND" = "true" ]; then
             SERVICES=("visitor" "auth" "jobs-resume" "chat" "infra")
           else
             [ "${{ steps.filter.outputs.backend-visitor }}" = "true" ] && SERVICES+=("visitor")

@@ -882,8 +882,9 @@ class ResumeParser:
             "parsed_at": datetime.now(timezone.utc),
         }
 
-        # Per-user storage: replace any existing resume for this user
-        self.user_resumes.delete_many({"user_email": user_email})
+        # Per-user storage (parsed/structured resume only):
+        # Don't delete "base" documents (type='base') which store the uploaded file metadata.
+        self.user_resumes.delete_many({"user_email": user_email, "structured": {"$exists": True}})
         self.user_resumes.insert_one(doc)
 
         doc.pop("_id", None)
@@ -903,7 +904,11 @@ class ResumeParser:
             The resume document dict with _id removed, or None if no resume
             has been uploaded yet.
         """
-        query = {"user_email": user_email} if user_email else {}
+        # `user_resumes` contains both:
+        # - base resume docs: { type: 'base', s3_key, filename, ... } (no `structured`)
+        # - parsed/structured resume docs: { structured, raw_text, parsed_at, ... }
+        # Only return parsed/structured docs.
+        query = {"user_email": user_email, "structured": {"$exists": True}} if user_email else {}
         resume = self.user_resumes.find_one(query, sort=[("parsed_at", -1)])
         if resume:
             resume.pop("_id", None)

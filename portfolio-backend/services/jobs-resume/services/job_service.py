@@ -374,7 +374,7 @@ class JobService:
             return []
         try:
             resume = self.user_resumes.find_one(
-                {"user_email": user_email},
+                {"user_email": user_email, "skills": {"$exists": True}},
                 sort=[("parsed_at", -1)],
             )
             if resume:
@@ -388,7 +388,7 @@ class JobService:
         if not user_email:
             return None
         resume = self.user_resumes.find_one(
-            {"user_email": user_email},
+            {"user_email": user_email, "skills": {"$exists": True}, "parsed_at": {"$exists": True}},
             sort=[("parsed_at", -1)],
         )
         if resume:

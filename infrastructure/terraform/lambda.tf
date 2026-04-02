@@ -111,6 +111,13 @@ resource "aws_lambda_layer_version" "shared" {
   source_code_hash    = data.archive_file.shared_layer.output_base64sha256
   compatible_runtimes = ["python3.12"]
   description         = "Shared utils, models, and common dependencies"
+
+  # CI/CD builds the full layer (with pip dependencies) and publishes it.
+  # Terraform only creates the initial placeholder; ignore subsequent changes
+  # to avoid replacing the CI/CD-managed layer with an incomplete local build.
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
+  }
 }
 
 # =============================================================================
@@ -347,6 +354,13 @@ resource "aws_lambda_function" "service" {
   tags = {
     Name    = "${var.project_name}-${each.key}"
     Service = each.key
+  }
+
+  # CI/CD deploys function code and updates the layer reference.
+  # Terraform manages infra config (env vars, memory, timeout, IAM);
+  # ignore CI/CD-managed attributes to avoid reverting deployments.
+  lifecycle {
+    ignore_changes = [filename, source_code_hash, layers]
   }
 }
 

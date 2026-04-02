@@ -48,11 +48,14 @@ class ResumeStorageService:
             timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
             s3_key = f"{user_id}/base/{timestamp}_{sanitized}"
 
+            ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'pdf'
+            content_type = CONTENT_TYPES.get(ext, 'application/octet-stream')
+
             self.client.put_object(
                 Bucket=self.bucket,
                 Key=s3_key,
                 Body=file_bytes,
-                ContentType='application/pdf',
+                ContentType=content_type,
             )
 
             logger.info("Uploaded base resume for user %s: %s", user_id, s3_key)

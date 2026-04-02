@@ -222,23 +222,43 @@ def list_tailoring():
 @require_super_admin
 def get_resume_presigned_url():
     """Generate a presigned S3 URL so the admin can view/download a user resume."""
+    CONTENT_TYPES = {
+        'pdf': 'application/pdf',
+        'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'doc': 'application/msword',
+        'txt': 'text/plain',
+    }
     try:
         s3_key = request.args.get('s3_key', '').strip()
         if not s3_key:
             return jsonify({'error': 's3_key query parameter is required'}), 400
+
+        disposition = request.args.get('disposition', 'inline').strip()
+        filename = request.args.get('filename', '').strip()
 
         import boto3, os
         bucket = os.getenv('RESUME_S3_BUCKET', '')
         if not bucket:
             return jsonify({'error': 'S3 bucket not configured'}), 500
 
+        # Detect content type from s3_key or filename
+        name_for_ext = filename or s3_key.split('/')[-1]
+        ext = name_for_ext.rsplit('.', 1)[-1].lower() if '.' in name_for_ext else ''
+        content_type = CONTENT_TYPES.get(ext, 'application/octet-stream')
+
+        params = {'Bucket': bucket, 'Key': s3_key, 'ResponseContentType': content_type}
+        if disposition == 'attachment' and filename:
+            params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
+        elif disposition == 'attachment':
+            params['ResponseContentDisposition'] = 'attachment'
+
         client = boto3.client('s3')
         url = client.generate_presigned_url(
             'get_object',
-            Params={'Bucket': bucket, 'Key': s3_key},
+            Params=params,
             ExpiresIn=3600,
         )
-        return jsonify({'url': url}), 200
+        return jsonify({'url': url, 'content_type': content_type}), 200
     except Exception as e:
         logger.error(f"Admin presigned URL error: {e}")
         return jsonify({'error': 'Failed to generate download URL'}), 500

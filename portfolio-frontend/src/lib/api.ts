@@ -886,8 +886,10 @@ class ApiService {
     return this.request<{ records: any[] }>('/admin/tailoring');
   }
 
-  async getAdminResumeUrl(s3Key: string) {
-    return this.request<{ url: string }>(`/admin/resume-url?s3_key=${encodeURIComponent(s3Key)}`);
+  async getAdminResumeUrl(s3Key: string, disposition: 'inline' | 'attachment' = 'inline', filename?: string) {
+    let url = `/admin/resume-url?s3_key=${encodeURIComponent(s3Key)}&disposition=${disposition}`;
+    if (filename) url += `&filename=${encodeURIComponent(filename)}`;
+    return this.request<{ url: string; content_type: string }>(url);
   }
 
   async getAdminActivity() {

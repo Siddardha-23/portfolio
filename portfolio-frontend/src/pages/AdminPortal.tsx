@@ -858,16 +858,37 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
   const [activeSection, setActiveSection] = useState<'info' | 'parsed' | 'base' | 'generated' | 'tailoring'>('info');
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerFilename, setViewerFilename] = useState<string>('');
 
-  const handleViewResume = async (s3Key: string) => {
+  const getFileExt = (name: string) => {
+    const dot = name.lastIndexOf('.');
+    return dot !== -1 ? name.slice(dot + 1).toLowerCase() : '';
+  };
+
+  const handleViewResume = async (s3Key: string, filename?: string) => {
     setDownloadingKey(s3Key);
     setResumeError(null);
+    const fname = filename || s3Key.split('/').pop() || 'resume.pdf';
+    const ext = getFileExt(fname);
     try {
-      const res = await apiService.getAdminResumeUrl(s3Key);
-      if (res.data?.url) {
-        window.open(res.data.url, '_blank');
+      // DOCX/DOC can't be previewed in browser — download instead
+      if (ext === 'docx' || ext === 'doc') {
+        const res = await apiService.getAdminResumeUrl(s3Key, 'attachment', fname);
+        if (res.data?.url) {
+          window.open(res.data.url, '_blank');
+        } else {
+          setResumeError(res.error || 'Failed to get resume URL');
+        }
       } else {
-        setResumeError(res.error || 'Failed to get resume URL');
+        // PDF — show inline in modal
+        const res = await apiService.getAdminResumeUrl(s3Key, 'inline', fname);
+        if (res.data?.url) {
+          setViewerUrl(res.data.url);
+          setViewerFilename(fname);
+        } else {
+          setResumeError(res.error || 'Failed to get resume URL');
+        }
       }
     } catch {
       setResumeError('Failed to get resume URL. Please try again.');
@@ -876,18 +897,14 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
     }
   };
 
-  const handleDownloadResume = async (s3Key: string) => {
+  const handleDownloadResume = async (s3Key: string, filename?: string) => {
     setDownloadingKey(s3Key);
     setResumeError(null);
+    const fname = filename || s3Key.split('/').pop() || 'resume.pdf';
     try {
-      const res = await apiService.getAdminResumeUrl(s3Key);
+      const res = await apiService.getAdminResumeUrl(s3Key, 'attachment', fname);
       if (res.data?.url) {
-        const a = document.createElement('a');
-        a.href = res.data.url;
-        a.download = s3Key.split('/').pop() || 'resume.pdf';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        window.open(res.data.url, '_blank');
       } else {
         setResumeError(res.error || 'Failed to get resume URL');
       }
@@ -1173,7 +1190,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                   {r.s3_key && (
                     <div className="flex items-center gap-2 flex-shrink-0 ml-3">
                       <button
-                        onClick={() => handleViewResume(r.s3_key)}
+                        onClick={() => handleViewResume(r.s3_key, r.filename)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-500 rounded-lg transition-all font-medium disabled:opacity-50"
                       >
@@ -1185,7 +1202,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                         View
                       </button>
                       <button
-                        onClick={() => handleDownloadResume(r.s3_key)}
+                        onClick={() => handleDownloadResume(r.s3_key, r.filename)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
                       >
@@ -1228,7 +1245,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                   {r.s3_key && (
                     <div className="flex items-center gap-2 flex-shrink-0 ml-3">
                       <button
-                        onClick={() => handleViewResume(r.s3_key)}
+                        onClick={() => handleViewResume(r.s3_key, r.filename)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-500 rounded-lg transition-all font-medium disabled:opacity-50"
                       >
@@ -1240,7 +1257,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                         View
                       </button>
                       <button
-                        onClick={() => handleDownloadResume(r.s3_key)}
+                        onClick={() => handleDownloadResume(r.s3_key, r.filename)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
                       >
@@ -1303,6 +1320,42 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ──── Inline Resume Viewer Modal ──── */}
+      {viewerUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="relative w-[95vw] h-[92vh] max-w-5xl bg-[#12121a] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] flex-shrink-0">
+              <p className="text-sm text-white font-medium truncate">{viewerFilename}</p>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    window.open(viewerUrl, '_blank');
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium"
+                >
+                  Open in new tab
+                </button>
+                <button
+                  onClick={() => { setViewerUrl(null); setViewerFilename(''); }}
+                  className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            {/* PDF iframe */}
+            <iframe
+              src={viewerUrl}
+              title="Resume viewer"
+              className="flex-1 w-full bg-white"
+            />
+          </div>
         </div>
       )}
     </div>

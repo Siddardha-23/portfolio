@@ -857,16 +857,42 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
   const { user, parsed_resume, base_resumes = [], generated_resumes = [], tailoring_records = [] } = detail;
   const [activeSection, setActiveSection] = useState<'info' | 'parsed' | 'base' | 'generated' | 'tailoring'>('info');
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   const handleViewResume = async (s3Key: string) => {
     setDownloadingKey(s3Key);
+    setResumeError(null);
     try {
       const res = await apiService.getAdminResumeUrl(s3Key);
       if (res.data?.url) {
         window.open(res.data.url, '_blank');
+      } else {
+        setResumeError(res.error || 'Failed to get resume URL');
       }
     } catch {
-      // silently fail
+      setResumeError('Failed to get resume URL. Please try again.');
+    } finally {
+      setDownloadingKey(null);
+    }
+  };
+
+  const handleDownloadResume = async (s3Key: string) => {
+    setDownloadingKey(s3Key);
+    setResumeError(null);
+    try {
+      const res = await apiService.getAdminResumeUrl(s3Key);
+      if (res.data?.url) {
+        const a = document.createElement('a');
+        a.href = res.data.url;
+        a.download = s3Key.split('/').pop() || 'resume.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        setResumeError(res.error || 'Failed to get resume URL');
+      }
+    } catch {
+      setResumeError('Failed to download resume. Please try again.');
     } finally {
       setDownloadingKey(null);
     }
@@ -934,6 +960,14 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
           </button>
         ))}
       </div>
+
+      {/* Resume error banner */}
+      {resumeError && (
+        <div className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center justify-between">
+          <span>{resumeError}</span>
+          <button onClick={() => setResumeError(null)} className="text-red-400/60 hover:text-red-400 transition text-xs ml-3">Dismiss</button>
+        </div>
+      )}
 
       {/* ──── Profile Section ──── */}
       {activeSection === 'info' && (
@@ -1151,7 +1185,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                         View
                       </button>
                       <button
-                        onClick={() => handleViewResume(r.s3_key)}
+                        onClick={() => handleDownloadResume(r.s3_key)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
                       >
@@ -1206,7 +1240,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
                         View
                       </button>
                       <button
-                        onClick={() => handleViewResume(r.s3_key)}
+                        onClick={() => handleDownloadResume(r.s3_key)}
                         disabled={downloadingKey === r.s3_key}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
                       >

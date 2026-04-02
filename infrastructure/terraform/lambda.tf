@@ -26,8 +26,9 @@ locals {
       memory      = 256
       timeout     = 15
       env_vars = {
-        SSM_MONGODB_URI = aws_ssm_parameter.mongodb_uri.name
-        SSM_JWT_SECRET  = aws_ssm_parameter.jwt_secret.name
+        SSM_MONGODB_URI  = aws_ssm_parameter.mongodb_uri.name
+        SSM_JWT_SECRET   = aws_ssm_parameter.jwt_secret.name
+        RESUME_S3_BUCKET = aws_s3_bucket.resumes.id
       }
     }
     jobs-resume = {

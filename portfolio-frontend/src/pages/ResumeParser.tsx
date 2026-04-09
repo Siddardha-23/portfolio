@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { lazy, Suspense } from 'react';
+import { toast } from 'sonner';
 import ResumeDashboard, {
   type BaseResume, type GeneratedResume,
   formatDate, formatBytes,
@@ -79,10 +80,10 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between items-baseline">
-        <span className="text-xs text-gray-400">{label}</span>
+        <span className="text-xs text-gray-400 dark:text-gray-400">{label}</span>
         <span className={`text-xs font-semibold tabular-nums ${score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{score}</span>
       </div>
-      <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-800overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-700 ease-out ${color || bg}`} style={{ width: `${Math.min(score, 100)}%` }} />
       </div>
     </div>
@@ -110,18 +111,18 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
 function ATSPanel({ scores }: { scores: ATSScores }) {
   return (
     <div className="space-y-5">
-      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-6">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-6">
         <div className="flex items-center gap-6">
           <ScoreRing score={scores.overall} />
           <div className="flex-1">
-            <p className="text-base font-semibold text-gray-100">Overall ATS Score</p>
-            <p className="text-xs text-gray-500 mt-0.5">Weighted score across all dimensions</p>
+            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">Overall ATS Score</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Weighted score across all dimensions</p>
           </div>
         </div>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-          <p className="text-sm font-semibold text-gray-200 mb-4">Score Breakdown</p>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">Score Breakdown</p>
           <div className="space-y-3">
             <ScoreBar label="Keyword Match" score={scores.keyword_match} />
             <ScoreBar label="Keyword Frequency" score={scores.keyword_frequency} />
@@ -133,8 +134,8 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
             <ScoreBar label="Section Completeness" score={scores.section_completeness} />
           </div>
         </div>
-        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-          <p className="text-sm font-semibold text-gray-200 mb-4">ATS Scanner Scores</p>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">ATS Scanner Scores</p>
           <div className="space-y-3">
             {scores.scanners && Object.entries(scores.scanners).map(([n, s]) => (
               <ScoreBar key={n} label={n.charAt(0).toUpperCase() + n.slice(1)} score={s} />
@@ -143,8 +144,8 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
         </div>
       </div>
       {scores.ai_screener && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-          <p className="text-sm font-semibold text-gray-200 mb-4">AI Screener Analysis</p>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">AI Screener Analysis</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <ScoreBar label="Overall" score={scores.ai_screener.overall} color="bg-violet-500" />
             <ScoreBar label="Relevance" score={scores.ai_screener.relevance} color="bg-violet-500" />
@@ -155,21 +156,21 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
       )}
       <div className="grid gap-4 md:grid-cols-2">
         {scores.strengths?.length > 0 && (
-          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
             <div className="flex items-center gap-2 mb-3"><CheckCircleIcon className="w-4 h-4 text-emerald-400" /><p className="text-sm font-semibold text-emerald-400">Strengths</p></div>
-            <ul className="space-y-2">{scores.strengths.map((s, i) => (<li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed"><span className="text-emerald-500 mt-0.5 shrink-0">+</span><span>{s}</span></li>))}</ul>
+            <ul className="space-y-2">{scores.strengths.map((s, i) => (<li key={i} className="text-xs text-gray-400 dark:text-gray-400 flex gap-2 leading-relaxed"><span className="text-emerald-500 mt-0.5 shrink-0">+</span><span>{s}</span></li>))}</ul>
           </div>
         )}
         {scores.suggestions?.length > 0 && (
-          <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
             <div className="flex items-center gap-2 mb-3"><ExclamationIcon className="w-4 h-4 text-amber-400" /><p className="text-sm font-semibold text-amber-400">Suggestions</p></div>
-            <ul className="space-y-2">{scores.suggestions.map((s, i) => (<li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed"><span className="text-amber-500 mt-0.5 shrink-0">!</span><span>{s}</span></li>))}</ul>
+            <ul className="space-y-2">{scores.suggestions.map((s, i) => (<li key={i} className="text-xs text-gray-400 dark:text-gray-400 flex gap-2 leading-relaxed"><span className="text-amber-500 mt-0.5 shrink-0">!</span><span>{s}</span></li>))}</ul>
           </div>
         )}
       </div>
       {scores.missing_keywords?.length > 0 && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-5">
-          <div className="flex items-center gap-2 mb-3"><XCircleIcon className="w-4 h-4 text-red-400" /><p className="text-sm font-semibold text-gray-200">Missing Keywords</p></div>
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
+          <div className="flex items-center gap-2 mb-3"><XCircleIcon className="w-4 h-4 text-red-400" /><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Missing Keywords</p></div>
           <div className="flex flex-wrap gap-1.5">{scores.missing_keywords.map(kw => (<span key={kw} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">{kw}</span>))}</div>
         </div>
       )}
@@ -183,17 +184,17 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
     <div className="flex items-center gap-3 mb-3"><h3 className="text-xs font-bold uppercase tracking-widest text-pink-400/80">{children}</h3><div className="flex-1 h-px bg-gray-800" /></div>
   );
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
-      <div className="bg-gradient-to-r from-gray-800/80 to-gray-900 px-6 py-5 border-b border-gray-800">
-        <h2 className="text-lg font-bold text-gray-100">{resume.contact?.name}</h2>
-        <p className="text-xs text-gray-400 mt-1">{[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github].filter(Boolean).join('  &middot;  ')}</p>
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+      <div className="bg-gradient-to-r from-gray-800/80 to-gray-900 px-6 py-5 border-b border-gray-200 dark:border-gray-800">
+        <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{resume.contact?.name}</h2>
+        <p className="text-xs text-gray-400 dark:text-gray-400 mt-1">{[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github].filter(Boolean).join('  &middot;  ')}</p>
       </div>
       <div className="px-6 py-5 space-y-5">
-        {resume.summary && <div><ST>Summary</ST><p className="text-[13px] text-gray-300 leading-relaxed">{resume.summary}</p></div>}
-        {resume.experience?.length > 0 && <div><ST>Experience</ST><div className="space-y-4">{resume.experience.map((exp, i) => (<div key={i}><div className="flex justify-between items-start gap-2"><div><p className="text-sm font-semibold text-gray-200">{exp.company}{exp.location ? `, ${exp.location}` : ''}</p>{exp.title && <p className="text-xs text-gray-400 italic mt-0.5">{exp.title}</p>}</div><span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{exp.dates}</span></div><ul className="mt-1.5 space-y-1">{exp.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
-        {resume.projects?.length > 0 && <div><ST>Projects</ST><div className="space-y-3">{resume.projects.map((p, i) => (<div key={i}><p className="text-sm font-semibold text-gray-200">{p.name}</p><ul className="mt-1 space-y-1">{p.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
-        {resume.skills && Object.keys(resume.skills).length > 0 && <div><ST>Technical Skills</ST><div className="space-y-2">{Object.entries(resume.skills).map(([c, s]) => (<div key={c} className="text-[12.5px]"><span className="font-semibold text-gray-300">{c}: </span><span className="text-gray-400">{Array.isArray(s) ? s.join(', ') : String(s)}</span></div>))}</div></div>}
-        {resume.education?.length > 0 && <div><ST>Education</ST><div className="space-y-2">{resume.education.map((edu, i) => { const d = edu.degree ? [...new Set(edu.degree.split('|').map(s=>s.trim()).filter(s=>!/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(s)).filter(Boolean))].join(' | ') : ''; return (<div key={i} className="flex justify-between items-start gap-2"><p className="text-[12.5px] text-gray-300"><span className="font-semibold">{edu.institution}</span>{d ? `  — ${d}` : ''}</p><span className="text-[11px] text-gray-500 whitespace-nowrap shrink-0">{edu.dates}</span></div>);})}</div></div>}
+        {resume.summary && <div><ST>Summary</ST><p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed">{resume.summary}</p></div>}
+        {resume.experience?.length > 0 && <div><ST>Experience</ST><div className="space-y-4">{resume.experience.map((exp, i) => (<div key={i}><div className="flex justify-between items-start gap-2"><div><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{exp.company}{exp.location ? `, ${exp.location}` : ''}</p>{exp.title && <p className="text-xs text-gray-400 dark:text-gray-400 italic mt-0.5">{exp.title}</p>}</div><span className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap shrink-0">{exp.dates}</span></div><ul className="mt-1.5 space-y-1">{exp.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 dark:text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
+        {resume.projects?.length > 0 && <div><ST>Projects</ST><div className="space-y-3">{resume.projects.map((p, i) => (<div key={i}><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{p.name}</p><ul className="mt-1 space-y-1">{p.bullets?.map((b, j) => (<li key={j} className="text-[12px] text-gray-400 dark:text-gray-400 flex gap-2 leading-relaxed"><span className="text-pink-500/40 shrink-0 mt-0.5">&bull;</span><span>{b}</span></li>))}</ul></div>))}</div></div>}
+        {resume.skills && Object.keys(resume.skills).length > 0 && <div><ST>Technical Skills</ST><div className="space-y-2">{Object.entries(resume.skills).map(([c, s]) => (<div key={c} className="text-[12.5px]"><span className="font-semibold text-gray-700 dark:text-gray-300">{c}: </span><span className="text-gray-400 dark:text-gray-400">{Array.isArray(s) ? s.join(', ') : String(s)}</span></div>))}</div></div>}
+        {resume.education?.length > 0 && <div><ST>Education</ST><div className="space-y-2">{resume.education.map((edu, i) => { const d = edu.degree ? [...new Set(edu.degree.split('|').map(s=>s.trim()).filter(s=>!/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4})/i.test(s)).filter(Boolean))].join(' | ') : ''; return (<div key={i} className="flex justify-between items-start gap-2"><p className="text-[12.5px] text-gray-700 dark:text-gray-300"><span className="font-semibold">{edu.institution}</span>{d ? `  — ${d}` : ''}</p><span className="text-[11px] text-gray-400 dark:text-gray-500 whitespace-nowrap shrink-0">{edu.dates}</span></div>);})}</div></div>}
         {resume.certifications?.length > 0 && <div><ST>Certifications</ST><div className="flex flex-wrap gap-2">{resume.certifications.map((c, i) => (<span key={i} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-sky-500/10 text-sky-300 border border-sky-500/15">{c}</span>))}</div></div>}
       </div>
     </div>
@@ -204,50 +205,53 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
 function JDAnalysisCard({ jd, defaultOpen = true }: { jd: JDAnalysis; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
-      <button type="button" onClick={() => setOpen(!open)} className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-800/20 transition-colors">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+      <button type="button" onClick={() => setOpen(!open)} className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0"><BriefcaseIcon className="w-4 h-4 text-violet-400" /></div>
           <div className="text-left min-w-0">
-            <p className="text-sm font-semibold text-gray-100">Extracted Job Requirements</p>
-            <p className="text-xs text-gray-500 truncate">{jd.job_title}{jd.company && jd.company !== 'Not specified' ? ` at ${jd.company}` : ''}</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Extracted Job Requirements</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 truncate">
+              {jd.job_title}{jd.company && jd.company !== 'Not specified' ? ` at ${jd.company}` : ''}
+              {!open && <span className="text-gray-400 dark:text-gray-600"> &middot; {jd.required_skills?.length || 0} required, {jd.preferred_skills?.length || 0} preferred skills</span>}
+            </p>
           </div>
         </div>
-        <ChevronIcon open={open} className="w-4 h-4 text-gray-500 shrink-0" />
+        <ChevronIcon open={open} className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
       </button>
       {open && (
-        <div className="px-5 pb-5 space-y-5 border-t border-gray-800/60 pt-4">
+        <div className="px-5 pb-5 space-y-5 border-t border-gray-200 dark:border-gray-800/60 pt-4">
           <div className="grid gap-5 sm:grid-cols-2">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Required Skills</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2.5">Required Skills</p>
               <div className="flex flex-wrap gap-1.5">
                 {jd.required_skills?.map(s => (<span key={s} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-blue-500/10 text-blue-300 border border-blue-500/15">{s}</span>))}
-                {(!jd.required_skills || jd.required_skills.length === 0) && <span className="text-xs text-gray-600">None extracted</span>}
+                {(!jd.required_skills || jd.required_skills.length === 0) && <span className="text-xs text-gray-400 dark:text-gray-600">None extracted</span>}
               </div>
             </div>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Preferred Skills</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2.5">Preferred Skills</p>
               <div className="flex flex-wrap gap-1.5">
                 {jd.preferred_skills?.map(s => (<span key={s} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-teal-500/10 text-teal-300 border border-teal-500/15">{s}</span>))}
-                {(!jd.preferred_skills || jd.preferred_skills.length === 0) && <span className="text-xs text-gray-600">None extracted</span>}
+                {(!jd.preferred_skills || jd.preferred_skills.length === 0) && <span className="text-xs text-gray-400 dark:text-gray-600">None extracted</span>}
               </div>
             </div>
           </div>
           {jd.responsibilities?.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">Key Responsibilities</p>
-              <ul className="space-y-1.5">{jd.responsibilities.slice(0, 5).map((r, i) => (<li key={i} className="text-xs text-gray-400 flex gap-2 leading-relaxed"><span className="text-gray-600 shrink-0 mt-0.5">&bull;</span><span>{r}</span></li>))}</ul>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2.5">Key Responsibilities</p>
+              <ul className="space-y-1.5">{jd.responsibilities.slice(0, 5).map((r, i) => (<li key={i} className="text-xs text-gray-400 dark:text-gray-400 flex gap-2 leading-relaxed"><span className="text-gray-400 dark:text-gray-600 shrink-0 mt-0.5">&bull;</span><span>{r}</span></li>))}</ul>
             </div>
           )}
-          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs pt-1 border-t border-gray-800/60">
-            {jd.experience_years && <span className="text-gray-500"><span className="text-gray-400 font-medium">Experience:</span> {jd.experience_years}</span>}
-            {jd.employment_type && <span className="text-gray-500"><span className="text-gray-400 font-medium">Type:</span> {jd.employment_type}</span>}
-            {jd.industry && <span className="text-gray-500"><span className="text-gray-400 font-medium">Industry:</span> {jd.industry}</span>}
+          <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs pt-1 border-t border-gray-200 dark:border-gray-800/60">
+            {jd.experience_years && <span className="text-gray-400 dark:text-gray-500"><span className="text-gray-400 dark:text-gray-400 font-medium">Experience:</span> {jd.experience_years}</span>}
+            {jd.employment_type && <span className="text-gray-400 dark:text-gray-500"><span className="text-gray-400 dark:text-gray-400 font-medium">Type:</span> {jd.employment_type}</span>}
+            {jd.industry && <span className="text-gray-400 dark:text-gray-500"><span className="text-gray-400 dark:text-gray-400 font-medium">Industry:</span> {jd.industry}</span>}
           </div>
           {jd.keywords?.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 mb-2.5">ATS Keywords</p>
-              <div className="flex flex-wrap gap-1.5">{jd.keywords.map(kw => (<span key={kw} className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400 border border-gray-700/60">{kw}</span>))}</div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-2.5">ATS Keywords</p>
+              <div className="flex flex-wrap gap-1.5">{jd.keywords.map(kw => (<span key={kw} className="px-2 py-0.5 rounded text-[10px] font-medium bg-gray-200 dark:bg-gray-800text-gray-400 dark:text-gray-400 border border-gray-300 dark:border-gray-700/60">{kw}</span>))}</div>
             </div>
           )}
         </div>
@@ -268,16 +272,16 @@ function getPhaseInfo(analyzing: boolean, tailoring: boolean, elapsed: number): 
 function ProgressCard({ analyzing, tailoring, elapsed, onCancel }: { analyzing?: boolean; tailoring: boolean; elapsed: number; onCancel: () => void }) {
   const phase = getPhaseInfo(!!analyzing, tailoring, elapsed);
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8">
       <div className="flex flex-col items-center justify-center space-y-5">
-        <div className="relative"><div className="w-12 h-12 rounded-full border-2 border-gray-700" /><div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
+        <div className="relative"><div className="w-12 h-12 rounded-full border-2 border-gray-300 dark:border-gray-700" /><div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
         <div className="text-center space-y-1.5">
-          <p className="text-sm font-semibold text-gray-200">{phase.text}</p>
-          <p className="text-xs text-gray-500">{elapsed >= 90 ? 'Taking longer than expected  — you can wait or cancel.' : 'This may take 30–60 seconds'}</p>
-          {elapsed > 0 && <p className="text-xs text-gray-600 tabular-nums">{elapsed}s elapsed</p>}
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{phase.text}</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500">{elapsed >= 90 ? 'Taking longer than expected  — you can wait or cancel.' : 'This may take 30–60 seconds'}</p>
+          {elapsed > 0 && <p className="text-xs text-gray-400 dark:text-gray-600 tabular-nums">{elapsed}s elapsed</p>}
         </div>
-        {tailoring && <div className="flex items-center gap-2">{[1,2,3,4].map(s => (<div key={s} className={`w-2 h-2 rounded-full transition-all duration-500 ${s <= phase.step ? 'bg-pink-400 scale-110' : 'bg-gray-700'}`} />))}</div>}
-        {elapsed >= 90 && <button type="button" onClick={onCancel} className="px-4 py-1.5 text-xs font-medium text-gray-400 border border-gray-700 rounded-lg hover:border-gray-600 hover:text-gray-300 transition-all">Cancel</button>}
+        {tailoring && <div className="flex items-center gap-2">{[1,2,3,4].map(s => (<div key={s} className={`w-2 h-2 rounded-full transition-all duration-500 ${s <= phase.step ? 'bg-pink-400 scale-110' : 'bg-gray-300 dark:bg-gray-700'}`} />))}</div>}
+        {elapsed >= 90 && <button type="button" onClick={onCancel} className="px-4 py-1.5 text-xs font-medium text-gray-400 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-gray-300 transition-all">Cancel</button>}
       </div>
     </div>
   );
@@ -302,11 +306,11 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
     <div className="space-y-8">
       <div className="text-center pt-4 pb-2">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 mb-4"><SparklesIcon className="w-3.5 h-3.5 text-pink-400" /><span className="text-xs font-medium text-pink-300">AI-Powered Resume Tailoring</span></div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-100 mb-3">Land more interviews with a<br /><span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">perfectly tailored resume</span></h2>
-        <p className="text-sm text-gray-400 max-w-lg mx-auto leading-relaxed">Upload your resume once, paste any job description, and get an ATS-optimized version tailored to that specific role in seconds.</p>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">Land more interviews with a<br /><span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">perfectly tailored resume</span></h2>
+        <p className="text-sm text-gray-400 dark:text-gray-400 max-w-lg mx-auto leading-relaxed">Upload your resume once, paste any job description, and get an ATS-optimized version tailored to that specific role in seconds.</p>
       </div>
-      <div className="rounded-xl border border-gray-800 bg-gray-900/60 p-6">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 text-center mb-5">How it works</p>
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/60 p-6">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 text-center mb-5">How it works</p>
         <div className="flex items-start justify-center gap-3 sm:gap-6">
           {[
             { n: 1, icon: <UploadCloudIcon className="w-5 h-5" />, l: 'Upload', d: 'Upload your existing resume', active: true },
@@ -314,28 +318,28 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
             { n: 3, icon: <DocumentArrowDownIcon className="w-5 h-5" />, l: 'Download', d: 'Get your ATS-optimized resume' },
           ].map((s, i) => (
             <div key={s.n} className="flex items-start gap-3 sm:gap-6">
-              {i > 0 && <div className="flex items-center pt-5 shrink-0"><div className="w-6 sm:w-10 h-px bg-gray-700" /><svg className="w-3 h-3 text-gray-600 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg></div>}
+              {i > 0 && <div className="flex items-center pt-5 shrink-0"><div className="w-6 sm:w-10 h-px bg-gray-300 dark:bg-gray-700" /><svg className="w-3 h-3 text-gray-400 dark:text-gray-600 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg></div>}
               <div className="flex flex-col items-center text-center flex-1 min-w-0">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-2.5 ${s.active ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 text-white' : 'bg-gray-800 border border-gray-700 text-gray-500'}`}>{s.icon}</div>
-                <p className={`text-xs font-semibold mb-0.5 ${s.active ? 'text-gray-100' : 'text-gray-400'}`}>Step {s.n}: {s.l}</p>
-                <p className="text-[11px] text-gray-500 leading-snug max-w-[160px]">{s.d}</p>
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-2.5 ${s.active ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 text-white' : 'bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-400 dark:text-gray-500'}`}>{s.icon}</div>
+                <p className={`text-xs font-semibold mb-0.5 ${s.active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400 dark:text-gray-400'}`}>Step {s.n}: {s.l}</p>
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 leading-snug max-w-[160px]">{s.d}</p>
               </div>
             </div>
           ))}
         </div>
       </div>
       <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) handleUpload(f); }}
-        className={`rounded-xl border-2 border-dashed transition-all duration-200 ${dragOver ? 'border-pink-500/50 bg-pink-500/5' : 'border-gray-700/60 bg-gray-900/40 hover:border-gray-600/60'}`}>
+        className={`rounded-xl border-2 border-dashed transition-all duration-200 ${dragOver ? 'border-pink-500/50 bg-pink-500/5' : 'border-gray-300 dark:border-gray-700/60 bg-gray-50/40 dark:bg-gray-900/40 hover:border-gray-400 dark:hover:border-gray-600/60'}`}>
         <div className="flex flex-col items-center text-center py-12 px-6">
           <div className="w-16 h-16 rounded-2xl bg-pink-500/10 flex items-center justify-center mb-4"><UploadCloudIcon className="w-8 h-8 text-pink-400" /></div>
-          <p className="text-base font-semibold text-gray-200 mb-1">Get started — upload your resume</p>
-          <p className="text-sm text-gray-500 mb-5 max-w-sm">Drop your PDF or DOCX here or click below. We'll parse it and prepare it for tailoring.</p>
+          <p className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-1">Get started — upload your resume</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500 mb-5 max-w-sm">Drop your PDF or DOCX here or click below. We'll parse it and prepare it for tailoring.</p>
           {uploading ? (
-            <div className="w-full max-w-xs space-y-2"><div className="h-1.5 bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} /></div><p className="text-xs text-gray-400">Parsing your resume...</p></div>
+            <div className="w-full max-w-xs space-y-2"><div className="h-1.5 bg-gray-200 dark:bg-gray-800rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} /></div><p className="text-xs text-gray-400 dark:text-gray-400">Parsing your resume...</p></div>
           ) : (
             <label className="cursor-pointer"><span className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"><UploadCloudIcon className="w-4 h-4" />Choose File</span><input type="file" accept=".pdf,.docx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} /></label>
           )}
-          <p className="text-[10px] text-gray-600 mt-3">PDF or DOCX, max 5 MB</p>
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-3">PDF or DOCX, max 5 MB</p>
           {uploadError && <p className="text-sm text-red-400 mt-2">{uploadError}</p>}
         </div>
       </div>
@@ -345,10 +349,10 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
           { icon: <SparklesIcon className="w-4 h-4 text-violet-400" />, l: 'AI-Powered Tailoring', d: 'Optimizes content for the role' },
           { icon: <DocumentArrowDownIcon className="w-4 h-4 text-emerald-400" />, l: 'PDF & DOCX Export', d: 'Download in any format' },
         ].map(f => (
-          <div key={f.l} className="rounded-lg border border-gray-800/60 bg-gray-900/40 p-4 text-center">
-            <div className="w-8 h-8 rounded-lg bg-gray-800 flex items-center justify-center mx-auto mb-2">{f.icon}</div>
-            <p className="text-xs font-semibold text-gray-300 mb-0.5">{f.l}</p>
-            <p className="text-[10px] text-gray-500">{f.d}</p>
+          <div key={f.l} className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-gray-50/40 dark:bg-gray-900/40 p-4 text-center">
+            <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-800flex items-center justify-center mx-auto mb-2">{f.icon}</div>
+            <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-0.5">{f.l}</p>
+            <p className="text-[10px] text-gray-400 dark:text-gray-500">{f.d}</p>
           </div>
         ))}
       </div>
@@ -384,17 +388,17 @@ function MyResumesTab() {
     await fetch();
   }, [fetch]);
 
-  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-800/30" /></div>;
+  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-800/30" /></div>;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-base font-semibold text-gray-100">My Resumes</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Uploaded resumes used as the base for tailoring</p>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">My Resumes</h2>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Uploaded resumes used as the base for tailoring</p>
         </div>
         <label className="cursor-pointer">
-          <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${uploading ? 'bg-gray-700 text-gray-400 cursor-wait' : 'text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15'}`}>
+          <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${uploading ? 'bg-gray-300 dark:bg-gray-700 text-gray-400 dark:text-gray-400 cursor-wait' : 'text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15'}`}>
             {uploading ? <><span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" /> Uploading...</> : <><UploadCloudIcon className="w-4 h-4" /> Upload Resume</>}
           </span>
           <input type="file" accept=".pdf,.docx" className="hidden" disabled={uploading} onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
@@ -402,23 +406,23 @@ function MyResumesTab() {
       </div>
       {error && <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30"><p className="text-sm text-red-300">{error}</p></div>}
       {resumes.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 p-10 text-center">
-          <FileIcon className="w-8 h-8 text-gray-600 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">No resumes uploaded yet</p>
-          <p className="text-xs text-gray-600 mt-1">Upload a PDF or DOCX to get started</p>
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/40 p-10 text-center">
+          <FileIcon className="w-8 h-8 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-sm text-gray-400 dark:text-gray-400">No resumes uploaded yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Upload a PDF or DOCX to get started</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">
           {resumes.map(r => (
-            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-800/20 transition-colors">
+            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${r.is_active ? 'bg-emerald-400' : 'bg-gray-600'}`} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm text-gray-200 truncate">{r.filename}</p>
+                    <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{r.filename}</p>
                     {r.is_active && <span className="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">Active</span>}
                   </div>
-                  <p className="text-xs text-gray-500">{formatDate(r.uploaded_at)}{r.size ? ` &middot; ${formatBytes(r.size)}` : ''}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">{formatDate(r.uploaded_at)}{r.size ? ` &middot; ${formatBytes(r.size)}` : ''}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">
@@ -431,7 +435,7 @@ function MyResumesTab() {
                 )}
                 <button onClick={async () => { setDeleting(r.s3_key); await apiService.deleteResume(r.s3_key); setDeleting(null); await fetch(); }}
                   disabled={deleting === r.s3_key}
-                  className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50" title="Delete">
+                  className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50" title="Delete">
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -469,40 +473,40 @@ function TailoredResumesTab() {
     setDownloading(null);
   }, []);
 
-  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-800/30" /></div>;
+  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-800/30" /></div>;
 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-base font-semibold text-gray-100">Tailored Resumes</h2>
-        <p className="text-xs text-gray-500 mt-0.5">AI-generated resumes customized for specific job descriptions</p>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Tailored Resumes</h2>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">AI-generated resumes customized for specific job descriptions</p>
       </div>
       {error && <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30"><p className="text-sm text-red-300">{error}</p></div>}
       {resumes.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-gray-700 bg-gray-900/40 p-10 text-center">
-          <SparklesIcon className="w-8 h-8 text-gray-600 mx-auto mb-3" />
-          <p className="text-sm text-gray-400">No tailored resumes yet</p>
-          <p className="text-xs text-gray-600 mt-1">Go to the Tailor tab and paste a job description to create one</p>
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/40 p-10 text-center">
+          <SparklesIcon className="w-8 h-8 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
+          <p className="text-sm text-gray-400 dark:text-gray-400">No tailored resumes yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Go to the Tailor tab and paste a job description to create one</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">
           {resumes.map(r => (
-            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-800/20 transition-colors">
+            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
               <div className="flex items-center gap-3 min-w-0 flex-1">
                 <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-400" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-200 truncate">{r.job_title || r.filename || 'Tailored Resume'}</p>
-                  <p className="text-xs text-gray-500">{formatDate(r.generated_at || r.created_at || '')}</p>
+                  <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{r.job_title || r.filename || 'Tailored Resume'}</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">{formatDate(r.generated_at || r.created_at || '')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0 ml-3">
                 <button onClick={() => handleDownload(r.s3_key, r.filename)} disabled={downloading === r.s3_key}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-300 hover:text-pink-300 hover:bg-pink-500/10 rounded-md transition-colors disabled:opacity-50">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-pink-300 hover:bg-pink-500/10 rounded-md transition-colors disabled:opacity-50">
                   <DownloadIcon className="w-3.5 h-3.5" />{downloading === r.s3_key ? 'Downloading...' : 'Download'}
                 </button>
                 <button onClick={async () => { setDeleting(r.s3_key); await apiService.deleteResume(r.s3_key); setDeleting(null); await fetch(); }}
                   disabled={deleting === r.s3_key}
-                  className="p-1.5 text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50" title="Delete">
+                  className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50" title="Delete">
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -533,23 +537,23 @@ function ProfileTab() {
     setTimeout(() => setSaved(false), 3000);
   };
 
-  const inputCls = 'w-full px-4 py-2.5 rounded-lg bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all';
-  const selectCls = 'w-full px-4 py-2.5 rounded-lg bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all appearance-none cursor-pointer';
-  const labelCls = 'block text-sm font-medium text-gray-300 mb-1.5';
+  const inputCls = 'w-full px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all';
+  const selectCls = 'w-full px-4 py-2.5 rounded-lg bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all appearance-none cursor-pointer';
+  const labelCls = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5';
 
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-base font-semibold text-gray-100">Profile Settings</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Update your personal information</p>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Profile Settings</h2>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Update your personal information</p>
       </div>
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-6 space-y-5">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-6 space-y-5">
         {/* Email (read-only) */}
         <div>
           <label className={labelCls}>Email</label>
-          <div className="px-4 py-2.5 rounded-lg bg-gray-800/40 border border-gray-700/40 text-sm text-gray-400">{user?.email}</div>
-          <p className="text-[10px] text-gray-600 mt-1">Email cannot be changed</p>
+          <div className="px-4 py-2.5 rounded-lg bg-gray-100/40 dark:bg-gray-800/40 border border-gray-300 dark:border-gray-700/40 text-sm text-gray-400 dark:text-gray-400">{user?.email}</div>
+          <p className="text-[10px] text-gray-400 dark:text-gray-600 mt-1">Email cannot be changed</p>
         </div>
 
         <div>
@@ -564,7 +568,7 @@ function ProfileTab() {
               <option value="">Select a role</option>
               {ROLE_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronIcon open={false} className="w-4 h-4 text-gray-500" /></span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronIcon open={false} className="w-4 h-4 text-gray-400 dark:text-gray-500" /></span>
           </div>
         </div>
 
@@ -575,7 +579,7 @@ function ProfileTab() {
               <option value="">Select an industry</option>
               {SECTOR_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronIcon open={false} className="w-4 h-4 text-gray-500" /></span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none"><ChevronIcon open={false} className="w-4 h-4 text-gray-400 dark:text-gray-500" /></span>
           </div>
         </div>
 
@@ -583,14 +587,14 @@ function ProfileTab() {
         {saved && <p className="text-sm text-emerald-400 flex items-center gap-1.5"><CheckCircleIcon className="w-4 h-4" /> Profile updated</p>}
 
         <button onClick={handleSave} disabled={saving}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
           {saving ? <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" /> Saving...</> : 'Save Changes'}
         </button>
       </div>
 
       {/* Danger zone */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-6">
-        <p className="text-sm font-semibold text-gray-200 mb-3">Account</p>
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-6">
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">Account</p>
         <button onClick={() => { logout(); window.location.href = '/home'; }}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-red-400 border border-red-500/20 hover:bg-red-500/10 transition-all">
           Sign Out
@@ -624,6 +628,7 @@ function TailorTab() {
   const [regenFeedback, setRegenFeedback] = useState('');
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState('');
+  const [regenJustCompleted, setRegenJustCompleted] = useState(false);
   const regenAbortRef = useRef<AbortController | null>(null);
 
   // Fetch active resume info for record storage
@@ -756,8 +761,8 @@ function TailorTab() {
     if (!result) return; setDownloading(fmt);
     const r = await apiService.downloadTailoredResume(result.tailored_resume, result.jd_analysis, fmt);
     setDownloading(null);
-    if (r.error) { setTailorError(r.error); return; }
-    if (r.data) { const u = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = u; a.download = r.filename || `resume.${fmt}`; a.click(); URL.revokeObjectURL(u); }
+    if (r.error) { toast.error('Download failed', { description: r.error }); return; }
+    if (r.data) { const u = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = u; a.download = r.filename || `resume.${fmt}`; a.click(); URL.revokeObjectURL(u); toast.success(`Resume downloaded as ${fmt.toUpperCase()}`); }
   }, [result]);
 
   const handleRegenerate = useCallback(async () => {
@@ -773,11 +778,14 @@ function TailorTab() {
     if (ctrl.signal.aborted) { setRegenerating(false); return; }
     setRegenerating(false);
 
-    if (resp.error) { setRegenError(resp.error); return; }
+    if (resp.error) { setRegenError(resp.error); toast.error('Regeneration failed', { description: resp.error }); return; }
     if (resp.data?.tailored_resume) {
       setResult(prev => prev ? { ...prev, tailored_resume: resp.data!.tailored_resume, ats_scores: undefined } : prev);
       setRegenFeedback('');
       setActiveTab('preview');
+      setRegenJustCompleted(true);
+      setTimeout(() => setRegenJustCompleted(false), 5000);
+      toast.success('Resume regenerated successfully');
       // Re-trigger ATS scoring for the new version
       atsAutoTriggered.current = false;
     }
@@ -791,7 +799,7 @@ function TailorTab() {
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   }, []);
 
-  if (loadingCheck) return <div className="space-y-4 animate-pulse"><div className="h-28 rounded-xl bg-gray-800/40" /><div className="h-48 rounded-xl bg-gray-800/20" /></div>;
+  if (loadingCheck) return <div className="space-y-4 animate-pulse"><div className="h-28 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" /><div className="h-48 rounded-xl bg-gray-100/20 dark:bg-gray-800/20" /></div>;
   if (resumeLoadError) {
     return (
       <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5 space-y-3">
@@ -799,7 +807,7 @@ function TailorTab() {
         <button
           type="button"
           onClick={checkResumes}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-200 bg-gray-800 border border-gray-700 hover:border-gray-600 transition-all duration-200"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all duration-200"
         >
           <ArrowPathIcon className="w-4 h-4" />
           Retry
@@ -817,23 +825,23 @@ function TailorTab() {
       <div ref={jdRef} className="scroll-mt-20">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0"><span className="text-xs font-bold text-white">2</span></div>
-          <div><p className="text-sm font-semibold text-gray-200">Paste a Job Description</p><p className="text-xs text-gray-500">We'll analyze requirements and tailor your resume automatically</p></div>
+          <div><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Paste a Job Description</p><p className="text-xs text-gray-400 dark:text-gray-500">We'll analyze requirements and tailor your resume automatically</p></div>
         </div>
-        <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
           <div className="p-5 space-y-4">
             <div className="relative">
               <textarea placeholder="Paste the complete job description here..." value={jdText} onChange={e => setJdText(e.target.value)} rows={8} maxLength={10000} disabled={analyzingJD || tailoring || !!result}
-                className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50" />
-              <span className="absolute bottom-3 right-3 text-[10px] text-gray-600 tabular-nums pointer-events-none">{jdText.length.toLocaleString()} / 10,000</span>
+                className="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50" />
+              <span className="absolute bottom-3 right-3 text-[10px] text-gray-400 dark:text-gray-600 tabular-nums pointer-events-none">{jdText.length.toLocaleString()} / 10,000</span>
             </div>
             <div className="flex items-center gap-3">
               {!result && !analyzingJD && !tailoring ? (
                 <button onClick={handleTailoring} disabled={!jdText.trim()}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200">
                   <SparklesIcon className="w-4 h-4" />Tailor My Resume
                 </button>
               ) : result ? (
-                <button onClick={handleStartNew} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 transition-all duration-200">
+                <button onClick={handleStartNew} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-800 dark:text-gray-200 transition-all duration-200">
                   <ArrowPathIcon className="w-4 h-4" />Tailor for a Different Job
                 </button>
               ) : null}
@@ -858,60 +866,68 @@ function TailorTab() {
               <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0"><CheckCircleIcon className="w-5 h-5 text-emerald-400" /></div>
-                  <div className="min-w-0"><p className="text-sm font-semibold text-gray-100">Resume tailored successfully!</p><p className="text-xs text-gray-400 mt-0.5">{result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p></div>
+                  <div className="min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Resume tailored successfully!</p><p className="text-xs text-gray-400 dark:text-gray-400 mt-0.5">{result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p></div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-200 bg-gray-800 border border-gray-700 hover:border-pink-500/30 hover:text-pink-300 transition-all duration-200">
+                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-pink-500/30 hover:text-pink-300 transition-all duration-200">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                     Edit &amp; Preview
                   </button>
-                  <button onClick={() => handleDownload('pdf')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
+                  <button onClick={() => handleDownload('pdf')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
                     <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
                   </button>
-                  <button onClick={() => handleDownload('docx')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-300 bg-gray-800 border border-gray-700 hover:border-gray-600 hover:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
+                  <button onClick={() => handleDownload('docx')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
                     <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
                   </button>
                 </div>
               </div>
             </div>
-            <div className="border-t border-emerald-500/10 bg-gray-900/40 px-5 py-3 flex items-center gap-4 flex-wrap">
+            <div className="border-t border-emerald-500/10 bg-gray-50/40 dark:bg-gray-900/40 px-5 py-3 flex items-center gap-4 flex-wrap">
               <button onClick={handleStartNew} className="inline-flex items-center gap-1.5 text-xs font-medium text-pink-400 hover:text-pink-300 transition-colors"><ArrowPathIcon className="w-3.5 h-3.5" />Tailor for another job</button>
               {result.ats_scores && <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400"><CheckCircleIcon className="w-3.5 h-3.5" />ATS Score: {result.ats_scores.overall}/100</span>}
-              {atsLoading && <span className="inline-flex items-center gap-1.5 text-xs text-gray-400"><span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Computing ATS scores...</span>}
+              {atsLoading && <span className="inline-flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-400"><span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Computing ATS scores...</span>}
             </div>
           </div>
 
           <JDAnalysisCard jd={result.jd_analysis} defaultOpen={false} />
 
           {/* Tabs */}
-          <div className="inline-flex rounded-xl bg-gray-800/60 p-1 border border-gray-800">
-            <button onClick={() => setActiveTab('preview')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${activeTab === 'preview' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>Your Tailored Resume</button>
-            <button onClick={() => setActiveTab('ats')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${activeTab === 'ats' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-500 hover:text-gray-300 border border-transparent'}`}>
+          <div className="inline-flex rounded-xl bg-gray-100 dark:bg-gray-800/60 p-1 border border-gray-200 dark:border-gray-800">
+            <button onClick={() => setActiveTab('preview')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 ${activeTab === 'preview' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 border border-transparent'}`}>Your Tailored Resume</button>
+            <button onClick={() => setActiveTab('ats')} className={`px-5 py-2 text-sm font-medium rounded-lg transition-all duration-200 flex items-center gap-2 ${activeTab === 'ats' ? 'bg-gradient-to-r from-pink-500/20 to-purple-500/20 text-pink-300 border border-pink-500/20' : 'text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 border border-transparent'}`}>
               ATS Score{atsLoading && <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />}{result.ats_scores && <span className={`ml-1 text-[10px] font-bold tabular-nums ${result.ats_scores.overall >= 80 ? 'text-emerald-400' : result.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{result.ats_scores.overall}/100</span>}
             </button>
           </div>
 
+          {regenJustCompleted && (
+            <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-sm text-pink-600 dark:text-pink-300">
+              <ArrowPathIcon className="w-4 h-4 shrink-0" />
+              Resume updated based on your feedback
+              <button onClick={() => setRegenJustCompleted(false)} className="ml-auto text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+            </div>
+          )}
+
           {activeTab === 'preview' ? <ResumePreview resume={result.tailored_resume} /> : result.ats_scores ? <ATSPanel scores={result.ats_scores} /> : (
-            <div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8">
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8">
               <div className="flex flex-col items-center justify-center space-y-5">
-                <div className="relative"><div className="w-10 h-10 rounded-full border-2 border-gray-700" /><div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
+                <div className="relative"><div className="w-10 h-10 rounded-full border-2 border-gray-300 dark:border-gray-700" /><div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
                 <div className="text-center space-y-1.5">
-                  <p className="text-sm font-semibold text-gray-200">Analyzing ATS compatibility...</p>
-                  <p className="text-xs text-gray-500">Checking against Workday, Greenhouse, Lever, and more. Your resume is ready for download above.</p>
+                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Analyzing ATS compatibility...</p>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Checking against Workday, Greenhouse, Lever, and more. Your resume is ready for download above.</p>
                 </div>
               </div>
             </div>
           )}
 
           {/* Regenerate section */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
-            <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-800/60">
-              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
-                <ArrowPathIcon className="w-4 h-4 text-amber-400" />
+          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+            <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-200 dark:border-gray-800/60">
+              <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
+                <ArrowPathIcon className="w-4 h-4 text-pink-400" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-100">Not satisfied?</p>
-                <p className="text-xs text-gray-500">Tell us what to change and we'll regenerate your resume</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Not satisfied?</p>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Tell us what to change and we'll regenerate your resume</p>
               </div>
             </div>
             <div className="p-5 space-y-3">
@@ -922,16 +938,16 @@ function TailorTab() {
                 rows={3}
                 maxLength={2000}
                 disabled={regenerating}
-                className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/30 transition-all disabled:opacity-50"
+                className="w-full px-4 py-3 rounded-xl bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all disabled:opacity-50"
               />
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-gray-600 tabular-nums">{regenFeedback.length} / 2,000</span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-600 tabular-nums">{regenFeedback.length} / 2,000</span>
                 <div className="flex items-center gap-3">
                   {regenError && <span className="text-xs text-red-400">{regenError}</span>}
                   <button
                     onClick={handleRegenerate}
                     disabled={!regenFeedback.trim() || regenerating}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-amber-500/15 hover:shadow-amber-500/25 disabled:shadow-none transition-all duration-200"
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 dark:disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 disabled:shadow-none transition-all duration-200"
                   >
                     {regenerating ? (
                       <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Regenerating...</>
@@ -948,7 +964,7 @@ function TailorTab() {
 
       {/* Editor mode */}
       {result && editing && (
-        <Suspense fallback={<div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8 text-center"><span className="text-sm text-gray-400">Loading editor...</span></div>}>
+        <Suspense fallback={<div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8 text-center"><span className="text-sm text-gray-400 dark:text-gray-400">Loading editor...</span></div>}>
           <ResumeEditor
             resume={result.tailored_resume}
             jdAnalysis={result.jd_analysis}
@@ -978,9 +994,9 @@ export default function ResumeParser() {
       title="AI Resume Tailor"
       description="Upload your resume, tailor it to any job description, and get ATS compatibility scores powered by AI."
     >
-      <div className="min-h-screen bg-gray-950">
+      <div className="min-h-screen bg-white dark:bg-gray-950">
         {/* Header */}
-        <header className="sticky top-0 z-20 border-b border-gray-800/60 bg-gray-950/90 backdrop-blur-md">
+        <header className="sticky top-0 z-20 border-b border-gray-200 dark:border-gray-200 dark:border-gray-800/60 bg-white/90 dark:bg-gray-950/90 backdrop-blur-md">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-pink-500/40 to-transparent" />
           <div className="max-w-5xl mx-auto px-4 sm:px-6">
             {/* Top bar */}
@@ -989,16 +1005,16 @@ export default function ResumeParser() {
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
                   <SparklesIcon className="w-4 h-4 text-white" />
                 </div>
-                <h1 className="text-lg font-bold text-gray-100">Resume Tailor</h1>
+                <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Resume Tailor</h1>
               </div>
               <div className="flex items-center gap-2">
                 <ThemeToggle />
                 <button onClick={() => window.location.href = '/home'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all">
                   <HomeIcon className="w-4 h-4" />Home
                 </button>
                 <button onClick={() => setActiveNav('profile')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 hover:text-gray-200 hover:bg-gray-800/60 transition-all">
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-400 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all">
                   <UserCircleIcon className="w-4 h-4" />
                   <span className="hidden sm:inline">{user?.name || user?.email?.split('@')[0] || 'Profile'}</span>
                 </button>
@@ -1014,7 +1030,7 @@ export default function ResumeParser() {
                   className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 ${
                     activeNav === item.key
                       ? 'border-pink-500 text-pink-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-gray-700'
+                      : 'border-transparent text-gray-400 dark:text-gray-500 hover:text-gray-900 dark:hover:text-gray-300 hover:border-gray-300 dark:border-gray-700'
                   }`}
                 >
                   {item.icon}

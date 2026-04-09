@@ -184,6 +184,7 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
   const [resume, setResume] = useState<TailoredFullResume>(() => JSON.parse(JSON.stringify(initialResume)));
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [view, setView] = useState<'split' | 'edit' | 'preview'>('split');
+  const [rewritingBullet, setRewritingBullet] = useState<string | null>(null); // "exp-0-1" format
 
   // Auto-switch to edit mode on mobile
   useEffect(() => {
@@ -318,6 +319,30 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
     });
   }, []);
 
+  // Rewrite a single bullet via AI
+  const handleRewriteBullet = useCallback(async (section: 'experience' | 'projects', index: number, bulletIdx: number) => {
+    const key = `${section}-${index}-${bulletIdx}`;
+    const items = resume[section] as any[];
+    const bullet = items[index]?.bullets?.[bulletIdx];
+    if (!bullet || rewritingBullet) return;
+
+    setRewritingBullet(key);
+    const resp = await apiService.rewriteBullet(
+      bullet,
+      jdAnalysis?.job_title,
+      jdAnalysis?.company,
+      [...(jdAnalysis?.required_skills || []), ...(jdAnalysis?.keywords || [])].slice(0, 20),
+    );
+    setRewritingBullet(null);
+
+    if (resp.data?.rewritten) {
+      updateBullet(section, index, bulletIdx, resp.data.rewritten);
+      toast.success('Bullet rewritten');
+    } else {
+      toast.error('Rewrite failed', { description: resp.error || 'Please try again' });
+    }
+  }, [resume, rewritingBullet, jdAnalysis, updateBullet]);
+
   // Skills editing
   const updateSkillCategory = useCallback((oldKey: string, newKey: string) => {
     setResume(prev => {
@@ -419,6 +444,11 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
                   <div key={j} className="flex gap-1.5 items-start">
                     <span className="text-pink-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
                     <textarea className={`${textareaCls} text-xs`} rows={2} value={bullet} onChange={e => updateBullet('experience', i, j, e.target.value)} />
+                    <button type="button" title="AI Rewrite" disabled={rewritingBullet !== null}
+                      className={`${removeBtnCls} mt-1.5 ${rewritingBullet === `experience-${i}-${j}` ? 'animate-spin' : ''} hover:!text-pink-400`}
+                      onClick={() => handleRewriteBullet('experience', i, j)}>
+                      {rewritingBullet === `experience-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
+                    </button>
                     <button type="button" className={`${removeBtnCls} mt-1.5`} onClick={() => removeBullet('experience', i, j)}><TrashIcon className="w-3 h-3" /></button>
                   </div>
                 ))}
@@ -455,6 +485,11 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
                   <div key={j} className="flex gap-1.5 items-start">
                     <span className="text-pink-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
                     <textarea className={`${textareaCls} text-xs`} rows={2} value={bullet} onChange={e => updateBullet('projects', i, j, e.target.value)} />
+                    <button type="button" title="AI Rewrite" disabled={rewritingBullet !== null}
+                      className={`${removeBtnCls} mt-1.5 hover:!text-pink-400`}
+                      onClick={() => handleRewriteBullet('projects', i, j)}>
+                      {rewritingBullet === `projects-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
+                    </button>
                     <button type="button" className={`${removeBtnCls} mt-1.5`} onClick={() => removeBullet('projects', i, j)}><TrashIcon className="w-3 h-3" /></button>
                   </div>
                 ))}

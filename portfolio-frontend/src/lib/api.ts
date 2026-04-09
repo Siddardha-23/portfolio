@@ -738,6 +738,23 @@ class ApiService {
     );
   }
 
+  async rewriteBullet(
+    bullet: string,
+    jobTitle?: string,
+    company?: string,
+    jdKeywords?: string[],
+  ): Promise<ApiResponse<{ rewritten: string }>> {
+    return this.request('/resume/rewrite-bullet', {
+      method: 'POST',
+      body: JSON.stringify({
+        bullet,
+        job_title: jobTitle || '',
+        company: company || '',
+        jd_keywords: jdKeywords || [],
+      }),
+    });
+  }
+
   async fetchATSScores(
     tailoredResume: import('../types/resume').TailoredFullResume,
     jdAnalysis: import('../types/resume').JDAnalysis,
@@ -781,6 +798,42 @@ class ApiService {
 
   async listGeneratedResumes(): Promise<ApiResponse<{generated: any[]}>> {
     return this.request('/resume/generated');
+  }
+
+  async listTailoringRecords(): Promise<ApiResponse<{records: any[]}>> {
+    return this.request('/resume/tailoring-records');
+  }
+
+  async batchTailor(
+    jdList: { text: string; title: string }[],
+  ): Promise<ApiResponse<{ jobs: { job_id: string; title: string }[] }>> {
+    return this.request('/resume/batch-tailor', {
+      method: 'POST',
+      body: JSON.stringify({ jd_list: jdList }),
+    }, 30000);
+  }
+
+  async generateCoverLetter(
+    tailoredResume: import('../types/resume').TailoredFullResume,
+    jdAnalysis: import('../types/resume').JDAnalysis,
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<{ cover_letter: string }>> {
+    const submitResp = await this.request<{ job_id: string }>(
+      '/resume/cover-letter',
+      {
+        method: 'POST',
+        body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+
+    return this.pollJob<{ cover_letter: string }>(submitResp.data.job_id, 120000, signal);
+  }
+
+  async pollJobStatus<T>(jobId: string): Promise<ApiResponse<T & { status: string }>> {
+    return this.request<T & { status: string }>(`/resume/job/${jobId}`);
   }
 
   async setActiveResume(s3Key: string): Promise<ApiResponse<any>> {

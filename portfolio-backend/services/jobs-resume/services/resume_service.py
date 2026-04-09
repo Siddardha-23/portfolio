@@ -431,6 +431,87 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             svc.complete_job(job_id, {"tailored_resume": result})
 
+        elif job_type == "cover_letter":
+            import json as _json
+            from services.gemini_client import gemini_json, GEMINI_PRO
+
+            tailored = payload["tailored_resume"]
+            jd = payload["jd_analysis"]
+
+            resume_summary = tailored.get("summary", "")
+            contact = tailored.get("contact", {})
+            name = contact.get("name", "Applicant")
+            skills = []
+            for cat_skills in tailored.get("skills", {}).values():
+                skills.extend(cat_skills if isinstance(cat_skills, list) else [])
+            top_skills = ", ".join(skills[:10])
+
+            experience_summary = ""
+            for exp in tailored.get("experience", [])[:2]:
+                title = exp.get("title", "")
+                company = exp.get("company", "")
+                bullets = exp.get("bullets", [])[:2]
+                if title and company:
+                    experience_summary += f"- {title} at {company}: {'; '.join(bullets)}\n"
+
+            prompt = (
+                "You are a professional cover letter writer. Generate a compelling, personalized "
+                "cover letter based on the candidate's resume and the job description.\n\n"
+                f"CANDIDATE: {name}\n"
+                f"TARGET ROLE: {jd.get('job_title', 'the position')}"
+                f"{' at ' + jd.get('company') if jd.get('company') and jd.get('company') != 'Not specified' else ''}\n"
+                f"KEY SKILLS: {top_skills}\n"
+                f"SUMMARY: {resume_summary}\n"
+                f"RECENT EXPERIENCE:\n{experience_summary}\n"
+                f"JD REQUIREMENTS: {', '.join(jd.get('required_skills', []))}\n"
+                f"JD RESPONSIBILITIES: {'; '.join(jd.get('responsibilities', [])[:5])}\n\n"
+                "RULES:\n"
+                "1. Write 3-4 paragraphs (250-400 words total).\n"
+                "2. Opening: Express genuine interest in the specific role and company.\n"
+                "3. Body: Connect 2-3 specific experiences/skills to JD requirements. Use concrete examples.\n"
+                "4. Closing: Reiterate enthusiasm and readiness. Include a call to action.\n"
+                "5. Tone: Professional but personable. No buzzwords or cliches.\n"
+                "6. Do NOT fabricate experiences or skills not in the resume.\n"
+                "7. Do NOT use phrases like 'I am writing to apply', 'I believe I am a strong candidate', "
+                "'I am excited to bring my skills'. Be direct and specific.\n\n"
+                'Return JSON: {"cover_letter": "The full cover letter text with paragraph breaks as \\n\\n"}'
+            )
+
+            result = gemini_json(prompt, max_tokens=2048, temperature=0.5, model=GEMINI_PRO)
+            cover_text = result.get("cover_letter", "")
+
+            svc.complete_job(job_id, {"cover_letter": cover_text})
+
+        elif job_type == "batch_tailor_item":
+            # Combined: extract JD → tailor resume (single job for batch efficiency)
+            user_email = payload.get("user_email", "")
+            jd_text = payload.get("jd_text", "")
+
+            # Step 1: Extract JD
+            jd_analysis = svc.extract_jd(jd_text)
+
+            # Step 2: Get structured resume
+            resume = svc.parser.get_structured_resume(user_email=user_email)
+            if not resume or not resume.get("structured"):
+                svc.fail_job(job_id, "No resume uploaded.")
+                return
+            structured = resume["structured"]
+
+            # Step 3: Tailor
+            result = svc.tailor.tailor(structured, jd_analysis)
+
+            # Step 4: Augment
+            result = svc.augmenter.augment(result, structured, jd_analysis)
+
+            # Step 5: Date normalization
+            from services.date_normalizer import normalize_dates
+            result = normalize_dates(result)
+
+            svc.complete_job(job_id, {
+                "tailored_resume": result,
+                "jd_analysis": jd_analysis,
+            })
+
         elif job_type == "ats_scores":
             result = svc.scorer.score(
                 payload["tailored_resume"], payload["jd_analysis"]

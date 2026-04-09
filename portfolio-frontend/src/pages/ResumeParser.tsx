@@ -19,6 +19,7 @@ import type {
 } from '@/types/resume';
 
 const ResumeEditor = lazy(() => import('@/components/resume/ResumeEditor'));
+const BatchTailor = lazy(() => import('@/components/resume/BatchTailor'));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -69,7 +70,7 @@ function ChevronIcon({ open, className = 'w-4 h-4' }: { open: boolean; className
   return (<svg className={`${className} transition-transform duration-200 ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>);
 }
 
-type NavTab = 'tailor' | 'my-resumes' | 'tailored' | 'profile';
+type NavTab = 'tailor' | 'batch' | 'my-resumes' | 'tailored' | 'profile';
 
 const ROLE_OPTIONS = ['Software Engineer', 'Data Scientist', 'Product Manager', 'Designer', 'DevOps Engineer', 'Student', 'Other'];
 const SECTOR_OPTIONS = ['Technology', 'Finance', 'Healthcare', 'Education', 'Government', 'Consulting', 'Other'];
@@ -449,67 +450,155 @@ function MyResumesTab() {
 
 // ─── Tailored Resumes tab ───────────────────────────────────────────────────
 function TailoredResumesTab() {
-  const [resumes, setResumes] = useState<GeneratedResume[]>([]);
+  const [records, setRecords] = useState<any[]>([]);
+  const [generatedFiles, setGeneratedFiles] = useState<GeneratedResume[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
-    const resp = await apiService.listGeneratedResumes();
-    if (resp.data) setResumes(resp.data.generated || []);
-    else if (resp.error) setError(resp.error);
+  const fetchAll = useCallback(async () => {
+    const [recordsResp, filesResp] = await Promise.all([
+      apiService.listTailoringRecords(),
+      apiService.listGeneratedResumes(),
+    ]);
+    if (recordsResp.data) setRecords(recordsResp.data.records || []);
+    if (filesResp.data) setGeneratedFiles(filesResp.data.generated || []);
+    if (recordsResp.error && filesResp.error) setError(recordsResp.error || filesResp.error);
     setLoading(false);
   }, []);
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleDownload = useCallback(async (s3Key: string, filename?: string) => {
+  const handleDownloadRecord = useCallback(async (tailoredResume: any, jdAnalysis: any, fmt: 'pdf' | 'docx') => {
+    const key = `${jdAnalysis?.job_title}-${fmt}`;
+    setDownloading(key);
+    const r = await apiService.downloadTailoredResume(tailoredResume, jdAnalysis, fmt);
+    setDownloading(null);
+    if (r.error) { toast.error('Download failed'); return; }
+    if (r.data) {
+      const u = URL.createObjectURL(r.data);
+      const a = document.createElement('a'); a.href = u; a.download = r.filename || `resume.${fmt}`; a.click(); URL.revokeObjectURL(u);
+      toast.success(`Downloaded as ${fmt.toUpperCase()}`);
+    }
+  }, []);
+
+  const handleDownloadFile = useCallback(async (s3Key: string, filename?: string) => {
     setDownloading(s3Key);
     try {
       const blob = await apiService.downloadResumeFile(s3Key);
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = filename || s3Key.split('/').pop() || 'resume.pdf'; a.click(); URL.revokeObjectURL(url);
-    } catch { setError('Download failed'); }
+      const a = document.createElement('a'); a.href = url; a.download = filename || 'resume.pdf'; a.click(); URL.revokeObjectURL(url);
+    } catch { toast.error('Download failed'); }
     setDownloading(null);
   }, []);
 
-  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-800/30" /></div>;
+  if (loading) return <div className="animate-pulse space-y-3"><div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" /><div className="h-16 rounded-xl bg-gray-100/20 dark:bg-gray-800/30" /></div>;
+
+  const hasContent = records.length > 0 || generatedFiles.length > 0;
 
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Tailored Resumes</h2>
-        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">AI-generated resumes customized for specific job descriptions</p>
+        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Tailoring History</h2>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">All your tailored resumes with JD details and ATS scores</p>
       </div>
       {error && <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30"><p className="text-sm text-red-300">{error}</p></div>}
-      {resumes.length === 0 ? (
+      {!hasContent ? (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/40 p-10 text-center">
           <SparklesIcon className="w-8 h-8 text-gray-400 dark:text-gray-600 mx-auto mb-3" />
           <p className="text-sm text-gray-400 dark:text-gray-400">No tailored resumes yet</p>
           <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Go to the Tailor tab and paste a job description to create one</p>
         </div>
       ) : (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-900/50 divide-y divide-gray-800/60">
-          {resumes.map(r => (
-            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
+        <div className="space-y-3">
+          {/* Tailoring records with full data */}
+          {records.map((r, idx) => {
+            const title = r.jd_analysis?.job_title || 'Untitled Role';
+            const company = r.jd_analysis?.company;
+            const atsScore = r.ats_scores?.overall;
+            const isExpanded = expandedRecord === r.record_id;
+            return (
+              <div key={r.record_id || idx} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+                <button type="button" onClick={() => setExpandedRecord(isExpanded ? null : r.record_id)}
+                  className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-400" />
+                    <div className="min-w-0 flex-1 text-left">
+                      <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
+                        {title}{company && company !== 'Not specified' ? ` at ${company}` : ''}
+                      </p>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">
+                        {formatDate(r.created_at || '')}
+                        {atsScore !== undefined && <span className={`ml-2 font-semibold ${atsScore >= 80 ? 'text-emerald-500' : atsScore >= 60 ? 'text-amber-500' : 'text-red-500'}`}>ATS: {atsScore}/100</span>}
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronIcon open={isExpanded} className="w-4 h-4 text-gray-400 dark:text-gray-500 shrink-0" />
+                </button>
+                {isExpanded && r.tailored_resume && (
+                  <div className="border-t border-gray-200 dark:border-gray-800/60 px-5 py-4 space-y-4">
+                    {/* Quick actions */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button onClick={() => handleDownloadRecord(r.tailored_resume, r.jd_analysis, 'pdf')}
+                        disabled={downloading !== null}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:opacity-50 transition-all">
+                        <DocumentArrowDownIcon className="w-3.5 h-3.5" />PDF
+                      </button>
+                      <button onClick={() => handleDownloadRecord(r.tailored_resume, r.jd_analysis, 'docx')}
+                        disabled={downloading !== null}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50 transition-all">
+                        <DocumentArrowDownIcon className="w-3.5 h-3.5" />DOCX
+                      </button>
+                      {r.jd_analysis?.required_skills?.length > 0 && (
+                        <span className="text-[11px] text-gray-400 dark:text-gray-500 ml-2">
+                          {r.jd_analysis.required_skills.length} required skills
+                        </span>
+                      )}
+                    </div>
+                    {/* Summary preview */}
+                    {r.tailored_resume?.summary && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Summary</p>
+                        <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-3">{r.tailored_resume.summary}</p>
+                      </div>
+                    )}
+                    {/* Skills preview */}
+                    {r.tailored_resume?.skills && Object.keys(r.tailored_resume.skills).length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1">Skills</p>
+                        <div className="flex flex-wrap gap-1">
+                          {Object.values(r.tailored_resume.skills).flat().slice(0, 15).map((s: any, si: number) => (
+                            <span key={si} className="px-2 py-0.5 rounded text-[10px] font-medium bg-pink-500/10 text-pink-600 dark:text-pink-300 border border-pink-500/15">{s}</span>
+                          ))}
+                          {Object.values(r.tailored_resume.skills).flat().length > 15 && (
+                            <span className="text-[10px] text-gray-400 dark:text-gray-500 self-center">+{Object.values(r.tailored_resume.skills).flat().length - 15} more</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Legacy generated files (no tailoring record) */}
+          {generatedFiles.length > 0 && records.length > 0 && (
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 pt-2">Downloaded Files</p>
+          )}
+          {generatedFiles.map(r => (
+            <div key={r.s3_key} className="flex items-center justify-between px-5 py-3.5 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors">
               <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-400" />
+                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-gray-400" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm text-gray-800 dark:text-gray-200 truncate">{r.job_title || r.filename || 'Tailored Resume'}</p>
                   <p className="text-xs text-gray-400 dark:text-gray-500">{formatDate(r.generated_at || r.created_at || '')}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-1 shrink-0 ml-3">
-                <button onClick={() => handleDownload(r.s3_key, r.filename)} disabled={downloading === r.s3_key}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-pink-300 hover:bg-pink-500/10 rounded-md transition-colors disabled:opacity-50">
-                  <DownloadIcon className="w-3.5 h-3.5" />{downloading === r.s3_key ? 'Downloading...' : 'Download'}
-                </button>
-                <button onClick={async () => { setDeleting(r.s3_key); await apiService.deleteResume(r.s3_key); setDeleting(null); await fetch(); }}
-                  disabled={deleting === r.s3_key}
-                  className="p-1.5 text-gray-400 dark:text-gray-500 hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors disabled:opacity-50" title="Delete">
-                  <TrashIcon className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button onClick={() => handleDownloadFile(r.s3_key, r.filename)} disabled={downloading === r.s3_key}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-pink-300 hover:bg-pink-500/10 rounded-md transition-colors disabled:opacity-50">
+                <DownloadIcon className="w-3.5 h-3.5" />{downloading === r.s3_key ? '...' : 'Download'}
+              </button>
             </div>
           ))}
         </div>
@@ -630,6 +719,9 @@ function TailorTab() {
   const [regenError, setRegenError] = useState('');
   const [regenJustCompleted, setRegenJustCompleted] = useState(false);
   const regenAbortRef = useRef<AbortController | null>(null);
+  const [coverLetter, setCoverLetter] = useState<string | null>(null);
+  const [coverLetterLoading, setCoverLetterLoading] = useState(false);
+  const coverLetterAbortRef = useRef<AbortController | null>(null);
 
   // Fetch active resume info for record storage
   const activeResumeRef = useRef<{ filename: string; s3_key: string } | null>(null);
@@ -656,7 +748,7 @@ function TailorTab() {
     setLoadingCheck(false);
   }, []);
   useEffect(() => { checkResumes(); }, [checkResumes]);
-  useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); regenAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
+  useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); regenAbortRef.current?.abort(); coverLetterAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
 
   // Save tailoring record to backend (fire-and-forget)
   const saveRecord = useCallback(async (
@@ -791,9 +883,25 @@ function TailorTab() {
     }
   }, [result, regenFeedback]);
 
+  const handleCoverLetter = useCallback(async () => {
+    if (!result || coverLetterLoading) return;
+    coverLetterAbortRef.current?.abort();
+    const ctrl = new AbortController(); coverLetterAbortRef.current = ctrl;
+    setCoverLetterLoading(true);
+    const resp = await apiService.generateCoverLetter(result.tailored_resume, result.jd_analysis, ctrl.signal);
+    if (ctrl.signal.aborted) { setCoverLetterLoading(false); return; }
+    setCoverLetterLoading(false);
+    if (resp.error) { toast.error('Cover letter generation failed', { description: resp.error }); return; }
+    if (resp.data?.cover_letter) {
+      setCoverLetter(resp.data.cover_letter);
+      toast.success('Cover letter generated');
+    }
+  }, [result, coverLetterLoading]);
+
   const handleStartNew = useCallback(() => {
     setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false); setEditing(false);
     setRegenFeedback(''); setRegenerating(false); setRegenError('');
+    setCoverLetter(null); setCoverLetterLoading(false);
     recordIdRef.current = null;
     atsAutoTriggered.current = false;
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -872,6 +980,11 @@ function TailorTab() {
                   <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-pink-500/30 hover:text-pink-300 transition-all duration-200">
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
                     Edit &amp; Preview
+                  </button>
+                  <button onClick={handleCoverLetter} disabled={coverLetterLoading || !!coverLetter}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-purple-500/30 hover:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
+                    <ClipboardIcon className="w-4 h-4" />
+                    {coverLetterLoading ? 'Generating...' : coverLetter ? 'Generated' : 'Cover Letter'}
                   </button>
                   <button onClick={() => handleDownload('pdf')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-400 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
                     <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
@@ -959,6 +1072,30 @@ function TailorTab() {
               </div>
             </div>
           </div>
+
+          {/* Cover Letter */}
+          {coverLetter && (
+            <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+              <div className="px-5 py-4 flex items-center justify-between border-b border-gray-200 dark:border-gray-800/60">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center shrink-0">
+                    <ClipboardIcon className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Cover Letter</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">Tailored to {result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p>
+                  </div>
+                </div>
+                <button onClick={() => { navigator.clipboard.writeText(coverLetter); toast.success('Copied to clipboard'); }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all">
+                  <ClipboardIcon className="w-3.5 h-3.5" />Copy
+                </button>
+              </div>
+              <div className="px-6 py-5">
+                <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-line">{coverLetter}</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -979,6 +1116,7 @@ function TailorTab() {
 // ─── Page export ────────────────────────────────────────────────────────────
 const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
   { key: 'tailor', label: 'Tailor', icon: <SparklesIcon className="w-4 h-4" /> },
+  { key: 'batch', label: 'Batch Tailor', icon: <ClipboardIcon className="w-4 h-4" /> },
   { key: 'my-resumes', label: 'My Resumes', icon: <FileIcon className="w-4 h-4" /> },
   { key: 'tailored', label: 'Tailored Resumes', icon: <DocumentArrowDownIcon className="w-4 h-4" /> },
   { key: 'profile', label: 'Profile', icon: <UserCircleIcon className="w-4 h-4" /> },
@@ -1046,6 +1184,7 @@ export default function ResumeParser() {
           <div className={activeNav === 'tailor' ? '' : 'hidden'}>
             <TailorTab />
           </div>
+          {activeNav === 'batch' && <Suspense fallback={<div className="animate-pulse h-48 rounded-xl bg-gray-100 dark:bg-gray-800/40" />}><BatchTailor /></Suspense>}
           {activeNav === 'my-resumes' && <MyResumesTab />}
           {activeNav === 'tailored' && <TailoredResumesTab />}
           {activeNav === 'profile' && <ProfileTab />}

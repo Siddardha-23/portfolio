@@ -101,6 +101,50 @@ def tailor():
 
 
 # ------------------------------------------------------------------
+# POST /api/resume/regenerate — Regenerate tailored resume with user feedback
+# ------------------------------------------------------------------
+@resume_bp.route("/regenerate", methods=["POST"])
+@jwt_required()
+def regenerate():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"resume_regen:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    jd_analysis = data.get("jd_analysis")
+    tailored_resume = data.get("tailored_resume")
+    user_feedback = data.get("user_feedback", "").strip()
+
+    if not jd_analysis or not isinstance(jd_analysis, dict):
+        return jsonify({"error": "jd_analysis is required"}), 400
+    if not tailored_resume or not isinstance(tailored_resume, dict):
+        return jsonify({"error": "tailored_resume is required"}), 400
+    if not user_feedback:
+        return jsonify({"error": "user_feedback is required"}), 400
+    if len(user_feedback) > 2000:
+        return jsonify({"error": "Feedback too long (max 2000 characters)"}), 400
+
+    try:
+        user_email = get_jwt_identity()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        payload = {
+            "jd_analysis": jd_analysis,
+            "tailored_resume": tailored_resume,
+            "user_feedback": user_feedback,
+            "user_email": user_email,
+        }
+        job_id = svc.create_job("regenerate", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "regenerate", payload)
+        return jsonify({"job_id": job_id}), 202
+
+    except Exception as e:
+        logger.error(f"Resume regenerate error: {e}")
+        return jsonify({"error": "Failed to start resume regeneration. Please try again."}), 500
+
+
+# ------------------------------------------------------------------
 # POST /api/resume/ats-scores — Submit ATS scoring job
 # ------------------------------------------------------------------
 
@@ -321,10 +365,10 @@ def upload():
         from services.resume_service import get_resume_service, ResumeService
         from services.resume_parser import ResumeParser
 
-        # Synchronous: extract text (fast, pure Python, no AI)
-        raw_text = ResumeParser.extract_text(file_bytes, original_filename)
+        # Validate file structure (lightweight, no text extraction)
+        ResumeParser.validate_file(file_bytes, original_filename)
 
-        # Upload PDF to S3 and store metadata
+        # Upload file to S3 and store metadata
         try:
             storage = get_storage_service()
             db = DBConnect().get_db()
@@ -350,22 +394,24 @@ def upload():
         except Exception as s3_err:
             logger.warning(f"Failed to save resume to S3: {s3_err}")
 
-        # Async: create a job for Gemini parsing and return job_id immediately
+        # Async: create a job for Gemini multi-modal parsing and return job_id immediately
         import base64
         file_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        mime_type = ResumeParser.get_mime_type(original_filename)
 
         svc = get_resume_service()
-        # Only send pdf_base64 for PDF files (used for Gemini vision)
-        payload = {"raw_text": raw_text, "user_email": user_email}
-        if is_pdf:
-            payload["pdf_base64"] = file_b64
+        payload = {
+            "file_base64": file_b64,
+            "mime_type": mime_type,
+            "user_email": user_email,
+        }
         job_id = svc.create_job("upload_parse", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "upload_parse", payload)
 
         return jsonify({"job_id": job_id}), 202
 
     except ValueError as e:
-        logger.error(f"PDF parsing error: {e}")
+        logger.error(f"File validation error: {e}")
         return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         logger.error(f"Configuration error: {e}")

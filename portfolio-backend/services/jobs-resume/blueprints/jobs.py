@@ -195,7 +195,7 @@ def tailor_resume():
             raw_text = resume.get("raw_text", "")
             if not raw_text:
                 return jsonify({"error": "Resume data unavailable. Please re-upload."}), 404
-            structured = svc.parser.parse_to_structured(raw_text)
+            structured, _ = svc.parser.parse_to_structured(raw_text)
 
         tailored = svc.tailor.tailor(structured, jd_analysis)
 

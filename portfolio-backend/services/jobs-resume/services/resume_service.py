@@ -268,21 +268,35 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
         elif job_type == "upload_parse":
             user_email = payload.get("user_email", "")
-            # Async resume extraction: raw_text was pre-extracted synchronously
-            raw_text = payload["raw_text"]
-            pdf_base64 = payload.get("pdf_base64")
+            # file_base64 + mime_type for Gemini multi-modal (new path)
+            # Falls back to pdf_base64 for backward compatibility
+            file_base64 = payload.get("file_base64") or payload.get("pdf_base64")
+            mime_type = payload.get("mime_type", "application/pdf")
+            input_raw_text = payload.get("raw_text", "")
 
             # parse_to_structured validates internally via validate_and_coerce.
             # If Gemini returns fundamentally broken output, attempt one repair.
             try:
-                validated = svc.parser.parse_to_structured(raw_text, pdf_base64)
+                validated, raw_text = svc.parser.parse_to_structured(
+                    input_raw_text, file_base64, mime_type
+                )
             except (ValueError, KeyError) as ve:
                 logger.warning("Upload parse validation failed, attempting repair: %s", ve)
                 # Try to get raw Gemini output for repair (re-parse without validation)
-                validated = _repair_extraction(raw_text, {}, str(ve))
+                validated = _repair_extraction(input_raw_text, {}, str(ve))
+                raw_text = input_raw_text
                 if validated is None:
                     svc.fail_job(job_id, f"Resume parsing failed validation: {ve}")
                     return
+
+            # Validate that Gemini extracted meaningful content
+            if len(raw_text.strip()) < 50:
+                svc.fail_job(
+                    job_id,
+                    "Could not extract meaningful text from the document. "
+                    "The file may be a scanned image or empty."
+                )
+                return
 
             # Store in DB
             doc = svc.parser.save_parsed_resume(validated, raw_text, user_email=user_email)
@@ -348,10 +362,14 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                                 sort=[("uploaded_at", -1)],
                             )
                         if base_resume and base_resume.get("s3_key"):
+                            import base64 as b64
                             file_bytes = storage.get_resume(base_resume["s3_key"])
                             filename = base_resume.get("filename", "resume.pdf")
-                            raw_text = svc.parser.extract_text(file_bytes, filename)
-                            validated = svc.parser.parse_to_structured(raw_text)
+                            file_b64 = b64.b64encode(file_bytes).decode("utf-8")
+                            mime_type = svc.parser.get_mime_type(filename)
+                            validated, raw_text = svc.parser.parse_to_structured(
+                                "", file_b64, mime_type
+                            )
                             resume = svc.parser.save_parsed_resume(
                                 validated, raw_text, user_email=user_email
                             )
@@ -365,7 +383,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
                 # Parse raw_text to structured first, then tailor (if we got structured already, skip)
                 if not structured and raw_text:
-                    structured = svc.parser.parse_to_structured(raw_text)
+                    structured, _ = svc.parser.parse_to_structured(raw_text)
                 if not structured:
                     svc.fail_job(job_id, "No resume data available. Please re-upload.")
                     return
@@ -383,6 +401,31 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
 
             # Date normalization: consistent "Month YYYY – Present" format
+            from services.date_normalizer import normalize_dates
+            result = normalize_dates(result)
+
+            svc.complete_job(job_id, {"tailored_resume": result})
+
+        elif job_type == "regenerate":
+            user_email = payload.get("user_email", "")
+            resume = svc.parser.get_structured_resume(user_email=user_email)
+            if not resume:
+                svc.fail_job(job_id, "No resume uploaded.")
+                return
+
+            structured = resume.get("structured")
+            if not structured:
+                svc.fail_job(job_id, "No structured resume found. Please re-upload.")
+                return
+
+            result = svc.tailor.regenerate(
+                structured,
+                payload["tailored_resume"],
+                payload["jd_analysis"],
+                payload["user_feedback"],
+            )
+
+            # Date normalization
             from services.date_normalizer import normalize_dates
             result = normalize_dates(result)
 

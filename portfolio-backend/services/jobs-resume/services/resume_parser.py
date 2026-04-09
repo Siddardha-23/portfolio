@@ -1,23 +1,20 @@
 """
-Resume Parser — Multi-modal PDF extraction + Gemini structured parsing.
+Resume Parser — Gemini multi-modal document extraction + structured parsing.
 
 Architecture:
-  ┌──────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────┐
-  │ PDF file │───>│ Text + Links │───>│ Gemini Flash │───>│ Validated│
-  │ (bytes)  │    │  extraction  │    │  (structured │    │  JSON    │
-  │          │    │  (PyPDF2)    │    │   parsing)   │    │  + store │
-  └──────────┘    └──────────────┘    └──────────────┘    └──────────┘
-         │                                    ▲
-         │  (pdf_base64)                      │
-         └──────── Multi-modal path ──────────┘
-            Direct PDF → Gemini Vision
-            (skips text extraction)
+  ┌──────────────┐    ┌──────────────────────────────┐    ┌──────────┐
+  │ PDF / DOCX   │───>│ Gemini Flash (multi-modal)   │───>│ Validated│
+  │ file (bytes) │    │  • Structured JSON parsing    │    │  JSON    │
+  │              │    │  • Raw text transcription      │    │  + store │
+  │              │    │  • Hyperlink URL extraction     │    │          │
+  └──────────────┘    └──────────────────────────────┘    └──────────┘
 
 Model routing:
   - Gemini 2.5 Flash: fast, factual extraction — no hallucination, no rewriting.
-  - Multi-modal mode: sends raw PDF bytes to Gemini for visual document understanding.
-    This is superior for complex layouts (columns, tables, sidebars) where PyPDF2
-    text extraction may lose structure.
+  - Multi-modal mode: sends raw file bytes (PDF or DOCX) directly to Gemini
+    for visual document understanding. Superior for complex layouts (columns,
+    tables, sidebars) and eliminates the need for separate text extraction
+    libraries (PyPDF2, python-docx).
 
 Output conforms to PARSED_RESUME_SCHEMA so downstream consumers
 (ResumeTailor, ResumeScorer, ProjectGenerator) receive consistent JSON.
@@ -82,9 +79,10 @@ _EXTRACTION_PROMPT = (
     "   - The name is almost ALWAYS the very first line or the largest text at the top of the resume.\n"
     "   - Look for email patterns like user@domain.com\n"
     "   - Look for phone patterns like (123) 456-7890 or +1-234-567-8901\n"
-    "   - Look for linkedin.com/in/... URLs (may be hyperlinked, not visible as text)\n"
-    "   - Look for github.com/... URLs (may be hyperlinked, not visible as text)\n"
-    "   - If the resume has '[Extracted Link: ...]' markers, use those URLs for linkedin/github.\n"
+    "   - Look for linkedin.com/in/... URLs — if the text 'LinkedIn' is hyperlinked, extract the\n"
+    "     actual hyperlink URL target (e.g., https://linkedin.com/in/username), NOT the display text.\n"
+    "   - Look for github.com/... URLs — same rule: extract the actual hyperlink URL target.\n"
+    "   - For linkedin and github fields, ALWAYS prefer the actual hyperlink URL over display text.\n"
     "2. EDUCATION: You MUST extract the institution/university name for every education entry.\n"
     "   - The institution name (e.g., 'Arizona State University', 'MIT') is NEVER optional.\n"
     "   - Also extract: degree, location, dates, GPA, and relevant coursework.\n\n"
@@ -143,24 +141,27 @@ _EXTRACTION_PROMPT = (
     '      "bullets": ["Description..."],\n'
     '      "tech": "Tech1, Tech2"\n'
     "    }\n"
-    "  ]\n"
+    "  ],\n"
+    '  "raw_text": "Full verbatim plain-text transcription of all visible text in the document, '
+    'preserving line breaks. Include ALL text from every page/section.",\n'
+    '  "extracted_urls": ["https://linkedin.com/in/...", "https://github.com/...", "...all '
+    'hyperlinked URLs found in the document — actual href targets, not display text"]\n'
     "}\n\n"
 )
 
 
 class ResumeParser:
-    """Handles PDF → structured JSON parsing and MongoDB storage.
+    """Handles PDF/DOCX → structured JSON parsing and MongoDB storage.
 
-    Provides two parsing paths:
-      1. Text-only: PyPDF2 extracts text → Gemini Flash parses the text.
-      2. Multi-modal: Raw PDF bytes are sent directly to Gemini Flash for
-         visual document understanding (superior for complex layouts).
+    Uses Gemini Flash multi-modal to process documents directly — file bytes
+    (PDF or DOCX) are sent to Gemini for visual document understanding,
+    structured extraction, and raw text transcription in a single call.
 
     Usage:
         parser = ResumeParser(db)
         doc = parser.upload_and_parse(pdf_bytes)  # full sync pipeline
         # -- or --
-        structured = parser.parse_to_structured(raw_text, pdf_base64)
+        structured, raw_text = parser.parse_to_structured("", file_b64, mime_type)
         doc = parser.save_parsed_resume(structured, raw_text)  # async path
     """
 
@@ -173,174 +174,115 @@ class ResumeParser:
         self.user_resumes = db.user_resumes
 
     # ======================================================================
-    # 1. PDF TEXT EXTRACTION
+    # 1. FILE VALIDATION
     # ======================================================================
 
-    @staticmethod
-    def extract_text_from_pdf(file_bytes: bytes) -> str:
-        """Extract text content from a PDF file, including embedded hyperlinks.
+    # MIME types for supported file formats
+    MIME_TYPES = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }
 
-        Uses PyPDF2 to extract visible text from each page, then inspects
-        link annotations to capture clickable URLs that may not appear in
-        the visible text (e.g., hyperlinked LinkedIn/GitHub profile names).
+    @staticmethod
+    def validate_file(file_bytes: bytes, filename: str) -> None:
+        """Validate that a file is a supported, non-corrupted PDF or DOCX.
+
+        Performs lightweight structural checks without extracting text content.
+        Text extraction is handled by Gemini multi-modal in the async job.
 
         Args:
-            file_bytes: Raw PDF file content as bytes.
-
-        Returns:
-            Extracted text string concatenated from all pages.
+            file_bytes: Raw file content as bytes.
+            filename: Original filename (used to determine format).
 
         Raises:
-            ValueError: If the PDF is invalid, corrupted, or contains no
-                        extractable text (e.g., scanned image PDFs).
+            ValueError: If the file is empty, corrupted, or unsupported.
         """
-        from PyPDF2 import PdfReader
-        import io
+        if not file_bytes or len(file_bytes) < 10:
+            raise ValueError("File is empty or too small to be a valid document.")
 
-        try:
-            reader = PdfReader(io.BytesIO(file_bytes))
-            text_parts: List[str] = []
-
-            for page in reader.pages:
-                # Extract visible text from the page
-                page_text = page.extract_text() or ""
-                text_parts.append(page_text)
-
-                # Extract clickable URLs from PDF annotations
-                # (captures hidden links behind display text like "LinkedIn")
-                if "/Annots" in page:
-                    for annot_ref in page["/Annots"]:
-                        try:
-                            annot = annot_ref.get_object()
-                            if annot.get("/Subtype") == "/Link":
-                                action = annot.get("/A")
-                                if action and action.get("/S") == "/URI":
-                                    uri = action.get("/URI")
-                                    if uri:
-                                        text_parts.append(f"[Extracted Link: {uri}]")
-                        except Exception:
-                            # Skip malformed annotations silently
-                            pass
-
-            text = "\n".join(text_parts).strip()
-            if len(text) < _MIN_VALID_TEXT_LENGTH:
-                raise ValueError(
-                    "Could not extract meaningful text from PDF. "
-                    "The file may be a scanned image — please use a text-based PDF."
-                )
-            return text
-
-        except ValueError:
-            raise  # Re-raise our own validation errors
-        except Exception as e:
-            raise ValueError(f"Invalid or corrupted PDF file: {e}")
+        if filename.lower().endswith(".pdf"):
+            if not file_bytes[:5].startswith(b"%PDF"):
+                raise ValueError("File is not a valid PDF (missing PDF header).")
+        elif filename.lower().endswith(".docx"):
+            # DOCX files are ZIP archives — check for ZIP magic bytes
+            if not file_bytes[:4].startswith(b"PK\x03\x04"):
+                raise ValueError("File is not a valid DOCX (missing ZIP header).")
+        else:
+            raise ValueError("Unsupported file format. Only PDF and DOCX are accepted.")
 
     @staticmethod
-    def extract_text_from_docx(file_bytes: bytes) -> str:
-        """Extract text content from a DOCX file.
-
-        Args:
-            file_bytes: Raw DOCX file content as bytes.
-
-        Returns:
-            Extracted text string concatenated from all paragraphs.
-
-        Raises:
-            ValueError: If the DOCX is invalid or contains no extractable text.
-        """
-        from docx import Document
-        import io
-
-        try:
-            doc = Document(io.BytesIO(file_bytes))
-            text_parts: List[str] = []
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    text_parts.append(para.text)
-            # Also extract text from tables
-            for table in doc.tables:
-                for row in table.rows:
-                    for cell in row.cells:
-                        if cell.text.strip():
-                            text_parts.append(cell.text)
-
-            text = "\n".join(text_parts).strip()
-            if len(text) < _MIN_VALID_TEXT_LENGTH:
-                raise ValueError(
-                    "Could not extract meaningful text from DOCX. "
-                    "The file may be empty or contain only images."
-                )
-            return text
-
-        except ValueError:
-            raise
-        except Exception as e:
-            raise ValueError(f"Invalid or corrupted DOCX file: {e}")
-
-    @staticmethod
-    def extract_text(file_bytes: bytes, filename: str) -> str:
-        """Extract text from a PDF or DOCX file based on the filename extension."""
-        if filename.lower().endswith(".docx"):
-            return ResumeParser.extract_text_from_docx(file_bytes)
-        return ResumeParser.extract_text_from_pdf(file_bytes)
+    def get_mime_type(filename: str) -> str:
+        """Return the MIME type for a supported file based on its extension."""
+        ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+        return ResumeParser.MIME_TYPES.get(ext, ResumeParser.MIME_TYPES["pdf"])
 
     # ======================================================================
     # 2. GEMINI STRUCTURED PARSING
     # ======================================================================
 
-    def parse_to_structured(self, raw_text: str, pdf_base64: str = None) -> dict:
+    def parse_to_structured(
+        self,
+        raw_text: str = "",
+        file_base64: str = None,
+        mime_type: str = "application/pdf",
+    ) -> tuple:
         """Parse resume content into structured JSON using Gemini Flash.
 
         Supports two input modes:
-          - Text-only: Uses pre-extracted raw text (from PyPDF2).
-          - Multi-modal: Sends the original PDF bytes directly to Gemini
-            for visual document understanding. This produces superior results
-            for resumes with complex layouts (columns, tables, sidebars).
-
-        When pdf_base64 is provided, both the PDF and the extraction prompt
-        are sent as multi-modal parts. The text-only path is used as fallback
-        when PDF bytes aren't available (e.g., legacy uploads).
+          - Multi-modal (preferred): Sends raw file bytes (PDF or DOCX) directly
+            to Gemini for visual document understanding. Gemini also extracts
+            raw text and hyperlink URLs in the same call.
+          - Text-only (fallback): Uses pre-extracted raw text when file bytes
+            aren't available (e.g., legacy uploads).
 
         Args:
-            raw_text: Plain text extracted from the resume PDF.
-            pdf_base64: Optional base64-encoded PDF bytes for multi-modal parsing.
+            raw_text: Optional pre-extracted text (used for text-only fallback).
+            file_base64: Optional base64-encoded file bytes for multi-modal parsing.
+            mime_type: MIME type of the file (PDF or DOCX).
 
         Returns:
-            Structured resume dict conforming to PARSED_RESUME_SCHEMA
-            with normalized skill keywords.
-
-        Note:
-            We do NOT use Gemini's native response_schema here because
-            PARSED_RESUME_SCHEMA uses _dict_of for skills (Record<string, string[]>)
-            which the Gemini API cannot enforce via additionalProperties.
-            Structure is enforced via prompt instructions + validate_and_coerce().
+            Tuple of (structured_dict, raw_text_str):
+              - structured_dict: Resume data conforming to PARSED_RESUME_SCHEMA.
+              - raw_text_str: Full plain-text transcription from Gemini (or input raw_text).
         """
         from services.gemini_client import gemini_json, GEMINI_FLASH
         import base64
         from google.genai import types
 
         # Build multi-modal or text-only parts for the API call
-        parts = self._build_extraction_parts(raw_text, pdf_base64, types, base64)
+        parts = self._build_extraction_parts(raw_text, file_base64, mime_type, types, base64)
 
         # Call Gemini Flash for fast, factual extraction
         result = gemini_json(
             prompt=None,       # Prompt is embedded in the parts
             parts=parts,
-            max_tokens=8192,
+            max_tokens=10000,
             temperature=0.2,   # Low temp for factual extraction
             model=GEMINI_FLASH,
         )
+
+        # Extract raw_text and extracted_urls from Gemini response
+        gemini_raw_text = result.pop("raw_text", "") or ""
+        extracted_urls = result.pop("extracted_urls", []) or []
+
+        # Use Gemini-extracted raw text, falling back to input raw_text
+        effective_raw_text = gemini_raw_text if gemini_raw_text.strip() else raw_text
+
+        # Build synthetic [Extracted Link: ...] markers from Gemini's URL extraction
+        # (preserves contract for _backfill_contact which greps for these markers)
+        if extracted_urls:
+            link_markers = "\n".join(f"[Extracted Link: {url}]" for url in extracted_urls if url)
+            effective_raw_text = effective_raw_text + "\n" + link_markers
 
         # Normalize skill keywords to canonical forms
         # ("JS" → "JavaScript", "k8s" → "Kubernetes", etc.)
         result = self._normalize_skills(result)
 
         # Backfill contact info from raw text if Gemini failed to extract it
-        # (common when schema= enforcement is off for _dict_of compatibility)
-        result = self._backfill_contact(result, raw_text)
+        result = self._backfill_contact(result, effective_raw_text)
 
         # Backfill education institution from raw text if missing
-        result = self._backfill_education(result, raw_text)
+        result = self._backfill_education(result, effective_raw_text)
 
         # Clean education fields: strip dates baked into degree, deduplicate segments
         result = self._clean_education_fields(result)
@@ -352,48 +294,38 @@ class ResumeParser:
         from schemas.resume_schemas import PARSED_RESUME_SCHEMA, validate_and_coerce
         result = validate_and_coerce(result, PARSED_RESUME_SCHEMA)
 
-        return result
+        return result, effective_raw_text
 
     @staticmethod
-    def _build_extraction_parts(raw_text, pdf_base64, types, base64) -> list:
+    def _build_extraction_parts(raw_text, file_base64, mime_type, types, base64) -> list:
         """Build the Gemini API parts list based on available input.
 
-        Multi-modal path (preferred): sends raw PDF + extraction prompt.
-        When raw_text contains [Extracted Link: ...] markers (from PyPDF2
-        annotation extraction), those are appended to the prompt so Gemini
-        can see hyperlinked URLs even when reading the PDF visually.
+        Multi-modal path (preferred): sends file bytes (PDF or DOCX) directly
+        to Gemini with the appropriate MIME type for visual document understanding.
 
         Text-only path (fallback): sends raw text appended to prompt.
 
         Args:
-            raw_text: Plain text from the resume.
-            pdf_base64: Optional base64-encoded PDF for multi-modal input.
+            raw_text: Plain text from the resume (used for text-only fallback).
+            file_base64: Optional base64-encoded file for multi-modal input.
+            mime_type: MIME type of the file (e.g., application/pdf).
             types: google.genai.types module (passed to avoid circular import).
             base64: base64 module (passed to avoid re-import).
 
         Returns:
             List of types.Part objects for the Gemini API call.
         """
-        if pdf_base64:
-            # Multi-modal: send the original PDF for visual understanding
-            pdf_bytes = base64.b64decode(pdf_base64)
-
-            # Extract [Extracted Link: ...] markers from raw_text so Gemini
-            # can see hyperlinked URLs that aren't visible in the PDF text
-            link_markers = re.findall(r'\[Extracted Link: [^\]]+\]', raw_text or "")
-            link_context = ""
-            if link_markers:
-                link_context = (
-                    "\n\nThe following URLs were found as hidden hyperlinks in the PDF. "
-                    "Use these for the contact fields (linkedin, github, email) if they "
-                    "match those services:\n" + "\n".join(link_markers) + "\n"
-                )
+        if file_base64:
+            # Multi-modal: send the original file for visual understanding
+            file_bytes = base64.b64decode(file_base64)
 
             return [
-                types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
                 types.Part.from_text(
-                    text=_EXTRACTION_PROMPT + link_context
-                    + "Extract from the attached PDF document."
+                    text=_EXTRACTION_PROMPT
+                    + "Extract from the attached document. For any hyperlinked text, "
+                    "extract the actual URL target (not the display text) and include "
+                    "it in the extracted_urls array."
                 ),
             ]
         else:
@@ -804,7 +736,7 @@ class ResumeParser:
     # ======================================================================
 
     def upload_and_parse(self, file_bytes: bytes, user_email: str = "") -> dict:
-        """Full synchronous pipeline: extract → parse → validate → store.
+        """Full synchronous pipeline: parse → validate → store.
 
         This is the legacy synchronous path. The async path (used by the
         /upload endpoint) calls parse_to_structured() and save_parsed_resume()
@@ -818,17 +750,17 @@ class ResumeParser:
             The stored document dict (includes structured JSON, raw_text,
             flat skill list, experience_years, and job_titles).
         """
-        raw_text = self.extract_text_from_pdf(file_bytes)
-        structured = self.parse_to_structured(raw_text)
+        import base64
+        file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        structured, raw_text = self.parse_to_structured("", file_b64, self.MIME_TYPES["pdf"])
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 
     def upload_and_parse_file(self, file_bytes: bytes, filename: str, user_email: str = "") -> dict:
-        """Upload and parse a PDF or DOCX resume file.
-
-        Like upload_and_parse but accepts both PDF and DOCX files.
-        """
-        raw_text = self.extract_text(file_bytes, filename)
-        structured = self.parse_to_structured(raw_text)
+        """Upload and parse a PDF or DOCX resume file via Gemini multi-modal."""
+        import base64
+        file_b64 = base64.b64encode(file_bytes).decode("utf-8")
+        mime_type = self.get_mime_type(filename)
+        structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 
     def save_parsed_resume(self, structured: dict, raw_text: str, user_email: str = "") -> dict:

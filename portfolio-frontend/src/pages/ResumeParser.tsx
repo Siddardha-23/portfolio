@@ -4,6 +4,7 @@ import AuthGate from '@/components/AuthGate';
 import { useAuth } from '@/contexts/AuthContext';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { lazy, Suspense } from 'react';
 import ResumeDashboard, {
   type BaseResume, type GeneratedResume,
   formatDate, formatBytes,
@@ -15,6 +16,8 @@ import type {
   JDAnalysis,
   ATSScores,
 } from '@/types/resume';
+
+const ResumeEditor = lazy(() => import('@/components/resume/ResumeEditor'));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -617,6 +620,11 @@ function TailorTab() {
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [activeTab, setActiveTab] = useState<'preview' | 'ats'>('preview');
   const [resumeLoadError, setResumeLoadError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [regenFeedback, setRegenFeedback] = useState('');
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState('');
+  const regenAbortRef = useRef<AbortController | null>(null);
 
   // Fetch active resume info for record storage
   const activeResumeRef = useRef<{ filename: string; s3_key: string } | null>(null);
@@ -643,7 +651,7 @@ function TailorTab() {
     setLoadingCheck(false);
   }, []);
   useEffect(() => { checkResumes(); }, [checkResumes]);
-  useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
+  useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); regenAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
 
   // Save tailoring record to backend (fire-and-forget)
   const saveRecord = useCallback(async (
@@ -752,8 +760,32 @@ function TailorTab() {
     if (r.data) { const u = URL.createObjectURL(r.data); const a = document.createElement('a'); a.href = u; a.download = r.filename || `resume.${fmt}`; a.click(); URL.revokeObjectURL(u); }
   }, [result]);
 
+  const handleRegenerate = useCallback(async () => {
+    if (!result || !regenFeedback.trim()) return;
+    regenAbortRef.current?.abort();
+    const ctrl = new AbortController(); regenAbortRef.current = ctrl;
+    setRegenerating(true); setRegenError('');
+
+    const resp = await apiService.regenerateResume(
+      result.tailored_resume, result.jd_analysis, regenFeedback.trim(), ctrl.signal
+    );
+
+    if (ctrl.signal.aborted) { setRegenerating(false); return; }
+    setRegenerating(false);
+
+    if (resp.error) { setRegenError(resp.error); return; }
+    if (resp.data?.tailored_resume) {
+      setResult(prev => prev ? { ...prev, tailored_resume: resp.data!.tailored_resume, ats_scores: undefined } : prev);
+      setRegenFeedback('');
+      setActiveTab('preview');
+      // Re-trigger ATS scoring for the new version
+      atsAutoTriggered.current = false;
+    }
+  }, [result, regenFeedback]);
+
   const handleStartNew = useCallback(() => {
-    setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false);
+    setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false); setEditing(false);
+    setRegenFeedback(''); setRegenerating(false); setRegenError('');
     recordIdRef.current = null;
     atsAutoTriggered.current = false;
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -818,7 +850,7 @@ function TailorTab() {
       {tailorError && <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-4"><div className="flex items-start gap-3"><XCircleIcon className="w-5 h-5 text-red-400 shrink-0 mt-0.5" /><p className="text-sm text-red-300">{tailorError}</p></div></div>}
 
       {/* Results */}
-      {result && (
+      {result && !editing && (
         <div className="space-y-5">
           {/* Success banner */}
           <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
@@ -829,6 +861,10 @@ function TailorTab() {
                   <div className="min-w-0"><p className="text-sm font-semibold text-gray-100">Resume tailored successfully!</p><p className="text-xs text-gray-400 mt-0.5">{result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p></div>
                 </div>
                 <div className="flex gap-2 shrink-0">
+                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-200 bg-gray-800 border border-gray-700 hover:border-pink-500/30 hover:text-pink-300 transition-all duration-200">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
+                    Edit &amp; Preview
+                  </button>
                   <button onClick={() => handleDownload('pdf')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
                     <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
                   </button>
@@ -866,7 +902,59 @@ function TailorTab() {
               </div>
             </div>
           )}
+
+          {/* Regenerate section */}
+          <div className="rounded-xl border border-gray-800 bg-gray-900/80 overflow-hidden">
+            <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-800/60">
+              <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+                <ArrowPathIcon className="w-4 h-4 text-amber-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-gray-100">Not satisfied?</p>
+                <p className="text-xs text-gray-500">Tell us what to change and we'll regenerate your resume</p>
+              </div>
+            </div>
+            <div className="p-5 space-y-3">
+              <textarea
+                placeholder="e.g., Make the summary more concise, emphasize cloud skills more, add more metrics to experience bullets..."
+                value={regenFeedback}
+                onChange={e => setRegenFeedback(e.target.value)}
+                rows={3}
+                maxLength={2000}
+                disabled={regenerating}
+                className="w-full px-4 py-3 rounded-xl bg-gray-800/60 border border-gray-700/60 text-sm text-gray-200 placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500/30 transition-all disabled:opacity-50"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-gray-600 tabular-nums">{regenFeedback.length} / 2,000</span>
+                <div className="flex items-center gap-3">
+                  {regenError && <span className="text-xs text-red-400">{regenError}</span>}
+                  <button
+                    onClick={handleRegenerate}
+                    disabled={!regenFeedback.trim() || regenerating}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-amber-500/15 hover:shadow-amber-500/25 disabled:shadow-none transition-all duration-200"
+                  >
+                    {regenerating ? (
+                      <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Regenerating...</>
+                    ) : (
+                      <><ArrowPathIcon className="w-4 h-4" />Regenerate Resume</>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Editor mode */}
+      {result && editing && (
+        <Suspense fallback={<div className="rounded-xl border border-gray-800 bg-gray-900/80 p-8 text-center"><span className="text-sm text-gray-400">Loading editor...</span></div>}>
+          <ResumeEditor
+            resume={result.tailored_resume}
+            jdAnalysis={result.jd_analysis}
+            onBack={() => setEditing(false)}
+          />
+        </Suspense>
       )}
     </div>
   );

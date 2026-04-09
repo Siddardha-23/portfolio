@@ -712,6 +712,32 @@ class ApiService {
     );
   }
 
+  async regenerateResume(
+    tailoredResume: import('../types/resume').TailoredFullResume,
+    jdAnalysis: import('../types/resume').JDAnalysis,
+    userFeedback: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
+    const submitResp = await this.request<{ job_id: string }>(
+      '/resume/regenerate',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          tailored_resume: tailoredResume,
+          jd_analysis: jdAnalysis,
+          user_feedback: userFeedback,
+        }),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: 'Failed to submit regeneration job' };
+
+    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
+      submitResp.data.job_id, 120000, signal,
+    );
+  }
+
   async fetchATSScores(
     tailoredResume: import('../types/resume').TailoredFullResume,
     jdAnalysis: import('../types/resume').JDAnalysis,

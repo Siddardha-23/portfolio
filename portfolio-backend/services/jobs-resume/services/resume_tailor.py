@@ -124,6 +124,79 @@ class ResumeTailor:
 
         return self._restore_contact(final, structured_resume)
 
+    def regenerate(
+        self,
+        structured_resume: Dict[str, Any],
+        current_tailored: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        user_feedback: str,
+    ) -> Dict[str, Any]:
+        """Regenerate a tailored resume incorporating user feedback.
+
+        Uses the same integrity pipeline as tailor(), but appends the user's
+        specific instructions to the prompt. The base tailoring rules are
+        preserved — user feedback is additive guidance, not a replacement.
+
+        Args:
+            structured_resume: Original parsed resume (source of truth for
+                               immutable fields and hallucination detection).
+            current_tailored:  The current tailored version the user wants improved.
+            jd_analysis:       Structured JD analysis dict.
+            user_feedback:     Free-text instructions from the user describing
+                               what to change (e.g., "make summary shorter",
+                               "emphasize cloud skills more").
+
+        Returns:
+            Regenerated tailored resume dict conforming to TAILORED_RESUME_SCHEMA.
+        """
+        from services.gemini_client import gemini_json, GEMINI_PRO
+
+        current_json = json.dumps(current_tailored, indent=2)
+        original_json = json.dumps(structured_resume, indent=2)
+        jd_json = json.dumps(jd_analysis, indent=2)
+
+        # Smart truncation
+        current_payload = self._smart_truncate(current_json)
+        original_payload = self._smart_truncate(original_json)
+
+        prompt = (
+            "You are a professional resume writer. The user has already received a tailored "
+            "resume but wants specific changes. Apply their feedback while maintaining all "
+            "existing quality and ATS optimization.\n\n"
+            "USER'S FEEDBACK (apply these changes):\n"
+            f'"{user_feedback}"\n\n'
+            "RULES:\n"
+            "1. Apply the user's requested changes faithfully.\n"
+            "2. Keep all other content that the user did NOT ask to change.\n"
+            "3. IMMUTABLE FIELDS — copy these EXACTLY from the ORIGINAL resume:\n"
+            "   - contact.name, contact.email, contact.phone, contact.linkedin, contact.github\n"
+            "   - Each experience entry's: company, title, location, dates\n"
+            "   - Each education entry's: institution, degree, location, dates, gpa\n"
+            "4. NEVER fabricate experience, companies, metrics, or skills not in the original.\n"
+            "5. certifications: always return an empty array [].\n"
+            "6. Every field must be a non-null string or array — never null.\n"
+            "7. Return the COMPLETE resume JSON — not just the changed parts.\n\n"
+            f"=== CURRENT TAILORED RESUME ===\n{current_payload}\n\n"
+            f"=== ORIGINAL RESUME (source of truth) ===\n{original_payload}\n\n"
+            f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}\n\n"
+            "Return the full regenerated resume as a JSON object with the same structure."
+        )
+
+        result = gemini_json(
+            prompt=prompt,
+            max_tokens=8192,
+            temperature=0.4,
+            model=GEMINI_PRO,
+        )
+        validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
+
+        # Integrity enforcement
+        corrected, report = self._guard.enforce(structured_resume, validated)
+        if report.severity != "clean":
+            logger.warning("Regenerate integrity: %s", report.severity)
+
+        return self._restore_contact(corrected, structured_resume)
+
     @staticmethod
     def _restore_contact(
         tailored: Dict[str, Any], original: Dict[str, Any]

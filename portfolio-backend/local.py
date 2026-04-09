@@ -19,7 +19,7 @@ from pathlib import Path
 
 backend_dir = Path(__file__).parent
 sys.path.insert(0, str(backend_dir / 'shared' / 'python'))
-for svc in ['visitor', 'auth', 'jobs-resume', 'chat', 'infra']:
+for svc in ['visitor', 'auth', 'chat', 'infra', 'jobs-resume']:
     sys.path.insert(0, str(backend_dir / 'services' / svc))
 
 # ── Load .env ───────────────────────────────────────────────────────

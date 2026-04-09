@@ -172,29 +172,37 @@ def rewrite_bullet():
         keyword_ctx = f"Target keywords: {', '.join(jd_keywords[:20])}\n" if jd_keywords else ""
         role_ctx = f"Target role: {job_title}" + (f" at {company}" if company else "") + "\n" if job_title else ""
 
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+
         prompt = (
-            "You are a resume bullet rewriter. Improve this single experience bullet "
-            "to be more impactful and ATS-optimized.\n\n"
-            f"{role_ctx}{keyword_ctx}\n"
+            "Rewrite this resume bullet to be more impactful and ATS-optimized.\n\n"
+            f"{role_ctx}{keyword_ctx}"
             "RULES:\n"
-            "1. Start with a strong action verb (not 'Spearheaded' or 'Orchestrated').\n"
-            "2. Follow: Action Verb + Technology/Method + Measurable Outcome.\n"
-            "3. Target 150-220 characters.\n"
-            "4. Naturally incorporate relevant keywords where the candidate has genuine experience.\n"
-            "5. Do NOT invent metrics, technologies, or achievements not implied by the original.\n"
-            "6. Do NOT use buzzwords: 'leveraged', 'spearheaded', 'cutting-edge', 'innovative'.\n"
-            "7. Write like a competent professional, not a marketing bot.\n\n"
-            f"ORIGINAL BULLET: {bullet}\n\n"
-            'Return JSON: {"rewritten": "The improved bullet text"}'
+            "- Start with a strong action verb.\n"
+            "- Follow: Action Verb + Technology + Impact.\n"
+            "- MUST be ONE single sentence, max 200 characters.\n"
+            "- Do NOT invent metrics or technologies.\n"
+            "- No buzzwords.\n\n"
+            f"ORIGINAL: {bullet}\n\n"
+            'Respond with exactly: {"rewritten": "your single sentence here"}'
         )
 
-        result = gemini_json(prompt, max_tokens=512, temperature=0.4, model=GEMINI_FLASH)
-        rewritten = result.get("rewritten", bullet)
+        schema = {"rewritten": str}
+        result = gemini_json(prompt, max_tokens=2048, temperature=0.4, model=GEMINI_FLASH, schema=schema)
+        rewritten = result.get("rewritten", "").strip()
+        # Strip any leading/trailing quotes Gemini may have added
+        if rewritten.startswith('"'):
+            rewritten = rewritten.lstrip('"')
+        if rewritten.endswith('"'):
+            rewritten = rewritten.rstrip('"')
+
+        if not rewritten:
+            return jsonify({"rewritten": bullet}), 200
         return jsonify({"rewritten": rewritten}), 200
 
     except Exception as e:
-        logger.error(f"Bullet rewrite error: {e}")
-        return jsonify({"error": "Failed to rewrite bullet. Please try again."}), 500
+        logger.error(f"Bullet rewrite error: {e}", exc_info=True)
+        return jsonify({"error": f"Rewrite failed: {str(e)[:200]}"}), 500
 
 
 # ------------------------------------------------------------------

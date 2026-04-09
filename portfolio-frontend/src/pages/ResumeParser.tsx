@@ -84,7 +84,7 @@ function ScoreBar({ label, score, color }: { label: string; score: number; color
         <span className="text-xs text-gray-600 dark:text-gray-400">{label}</span>
         <span className={`text-xs font-semibold tabular-nums ${score >= 80 ? 'text-emerald-400' : score >= 60 ? 'text-amber-400' : 'text-red-400'}`}>{score}</span>
       </div>
-      <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-800overflow-hidden">
+      <div className="h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
         <div className={`h-full rounded-full transition-all duration-700 ease-out ${color || bg}`} style={{ width: `${Math.min(score, 100)}%` }} />
       </div>
     </div>
@@ -336,7 +336,7 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
           <p className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-1">Get started — upload your resume</p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-5 max-w-sm">Drop your PDF or DOCX here or click below. We'll parse it and prepare it for tailoring.</p>
           {uploading ? (
-            <div className="w-full max-w-xs space-y-2"><div className="h-1.5 bg-gray-200 dark:bg-gray-800rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} /></div><p className="text-xs text-gray-600 dark:text-gray-400">Parsing your resume...</p></div>
+            <div className="w-full max-w-xs space-y-2"><div className="h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full animate-pulse" style={{ width: '60%' }} /></div><p className="text-xs text-gray-600 dark:text-gray-400">Parsing your resume...</p></div>
           ) : (
             <label className="cursor-pointer"><span className="inline-flex items-center gap-2 px-6 py-3 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 shadow-lg shadow-pink-500/15 hover:shadow-pink-500/25 transition-all duration-200"><UploadCloudIcon className="w-4 h-4" />Choose File</span><input type="file" accept=".pdf,.docx" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} /></label>
           )}
@@ -351,7 +351,7 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
           { icon: <DocumentArrowDownIcon className="w-4 h-4 text-emerald-400" />, l: 'PDF & DOCX Export', d: 'Download in any format' },
         ].map(f => (
           <div key={f.l} className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-gray-50/40 dark:bg-gray-900/40 p-4 text-center">
-            <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-800flex items-center justify-center mx-auto mb-2">{f.icon}</div>
+            <div className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-800 flex items-center justify-center mx-auto mb-2">{f.icon}</div>
             <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-0.5">{f.l}</p>
             <p className="text-[10px] text-gray-500 dark:text-gray-400">{f.d}</p>
           </div>

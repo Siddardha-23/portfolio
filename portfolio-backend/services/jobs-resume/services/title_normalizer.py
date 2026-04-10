@@ -52,10 +52,14 @@ def _title_case_word(word: str, is_first: bool = False) -> str:
     if lower in _ACRONYM_MAP:
         return _ACRONYM_MAP[lower]
 
-    # Handle hyphenated words: "full-stack" → "Full-Stack"
+    # Handle hyphenated words: "full-stack" → "Full-Stack", "AWS-INFRASTRUCTURE" → "AWS Infrastructure"
     if "-" in word and not word.startswith("-"):
         parts = word.split("-")
-        return "-".join(_title_case_word(p, i == 0) for i, p in enumerate(parts))
+        # If all parts are uppercase and more than 1, use spaces instead of hyphens
+        # (e.g., "AWS-INFRASTRUCTURE-AUTOMATION" → "AWS Infrastructure Automation")
+        all_upper = all(p == p.upper() and p.isalpha() for p in parts if p)
+        sep = " " if all_upper and len(parts) > 1 else "-"
+        return sep.join(_title_case_word(p, i == 0 or sep == " ") for i, p in enumerate(parts))
 
     # Handle slash-separated: "CI/CD" already caught, but "frontend/backend" → "Frontend/Backend"
     if "/" in word and word not in _ACRONYM_MAP:
@@ -77,26 +81,31 @@ def _normalize_title(text: str) -> str:
     if not text or not text.strip():
         return text
 
-    # If already mixed case (not all upper, not all lower), it's likely intentional
     stripped = text.strip()
-    is_all_upper = stripped == stripped.upper() and any(c.isalpha() for c in stripped)
-    is_all_lower = stripped == stripped.lower() and any(c.isalpha() for c in stripped)
 
-    if not is_all_upper and not is_all_lower:
-        # Mixed case — only fix obvious issues (words that should be acronyms)
-        words = stripped.split()
+    # Check if already well-formatted Title Case (e.g., "Cloud DevOps Engineer")
+    # Skip normalization only if every word is either Title Case, a known acronym,
+    # or a lowercase article — this avoids mangling intentionally formatted titles
+    words = stripped.split()
+    is_well_formatted = all(
+        w[0].isupper() or w.lower() in _LOWERCASE_WORDS or w.lower() in _ACRONYM_MAP or not w[0].isalpha()
+        for w in words if w
+    )
+    is_all_upper = stripped == stripped.upper() and any(c.isalpha() for c in stripped)
+
+    if is_well_formatted and not is_all_upper:
+        # Already looks good — just fix acronyms that might be wrong case
         result = []
         for w in words:
             lower = w.lower().rstrip(".,;:")
-            suffix = w[len(lower):]
             if lower in _ACRONYM_MAP:
+                suffix = w[len(lower):]
                 result.append(_ACRONYM_MAP[lower] + suffix)
             else:
                 result.append(w)
         return " ".join(result)
 
-    # All upper or all lower — apply full title case
-    words = stripped.split()
+    # Needs normalization — apply full title case
     return " ".join(_title_case_word(w, i == 0) for i, w in enumerate(words))
 
 

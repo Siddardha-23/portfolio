@@ -81,8 +81,10 @@ locals {
     "ANY /api/admin/{proxy+}"     = "auth"
 
     # Jobs-resume service routes
-    "ANY /api/jobs/{proxy+}"      = "jobs-resume"
-    "ANY /api/resume/{proxy+}"    = "jobs-resume"
+    "ANY /api/jobs/{proxy+}"             = "jobs-resume"
+    "ANY /api/resume/{proxy+}"           = "jobs-resume"
+    "GET /api/tech-chronicle"            = "jobs-resume"
+    "ANY /api/tech-chronicle/{proxy+}"   = "jobs-resume"
 
     # Chat service routes
     "POST /api/chat"              = "chat"

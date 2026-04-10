@@ -103,6 +103,9 @@ def create_app():
     from blueprints.resume import resume_bp
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
 
+    from blueprints.tech_chronicle import tech_chronicle_bp
+    app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')
+
     from blueprints.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
 
@@ -133,6 +136,7 @@ def create_app():
                 'chat':    '/api/chat',
                 'jobs':    '/api/jobs',
                 'resume':  '/api/resume',
+                'tech-chronicle': '/api/tech-chronicle',
                 'trace':   '/api/trace',
                 'infra':   '/api/infra',
                 'admin':   '/api/admin',

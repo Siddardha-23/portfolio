@@ -169,7 +169,7 @@ Return a JSON object: {{"items": [...]}}
     }
     try:
         result = gemini_json(
-            prompt=prompt, max_tokens=6000, temperature=0.8,
+            prompt=prompt, max_tokens=12000, temperature=0.8,
             model=GEMINI_FLASH, schema=schema,
         )
         items = result.get("items") or []
@@ -215,7 +215,7 @@ Return a JSON object: {{"items": [...]}}
     }
     try:
         result = gemini_json(
-            prompt=prompt, max_tokens=3000, temperature=0.8,
+            prompt=prompt, max_tokens=5000, temperature=0.8,
             model=GEMINI_FLASH, schema=schema,
         )
         items = result.get("items") or []

@@ -14,9 +14,9 @@ Capabilities:
 
 Model routing constants (import these, don't hardcode model names):
   ┌─────────────────┬──────────────────────────────────────────────────┐
-  │ GEMINI_FLASH    │ Fast factual extraction (resume parsing)        │
-  │ GEMINI_PRO      │ Analytical tasks (tailoring, scoring, JD parse) │
-  │ GEMINI_PREVIEW  │ Error-correction / bounded repair only          │
+  │ GEMINI_FLASH    │ Gemini 3 Flash — fast extraction, parsing        │
+  │ GEMINI_PRO      │ Gemini 3.1 Pro — tailoring, scoring, JD parse   │
+  │ GEMINI_PREVIEW  │ Gemini 3.1 Pro — error-correction / repair only │
   └─────────────────┴──────────────────────────────────────────────────┘
 """
 import json
@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model routing constants
 # ---------------------------------------------------------------------------
-GEMINI_FLASH   = "gemini-2.5-flash"        # extraction / factual parsing
-GEMINI_PRO     = "gemini-2.5-pro"           # JD-based tailoring
+GEMINI_FLASH   = "gemini-3-flash-preview"   # extraction / factual parsing
+GEMINI_PRO     = "gemini-3.1-pro-preview"   # JD-based tailoring
 GEMINI_PREVIEW = "gemini-3.1-pro-preview"   # repair / correction only
 
 # ---------------------------------------------------------------------------

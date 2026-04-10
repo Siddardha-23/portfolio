@@ -718,6 +718,8 @@ function TailorTab() {
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState('');
   const [regenJustCompleted, setRegenJustCompleted] = useState(false);
+  const [previousResume, setPreviousResume] = useState<TailoredFullResume | null>(null);
+  const [regenView, setRegenView] = useState<'regenerated' | 'previous'>('regenerated');
   const regenAbortRef = useRef<AbortController | null>(null);
   const [coverLetter, setCoverLetter] = useState<string | null>(null);
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);
@@ -872,12 +874,16 @@ function TailorTab() {
 
     if (resp.error) { setRegenError(resp.error); toast.error('Regeneration failed', { description: resp.error }); return; }
     if (resp.data?.tailored_resume) {
+      // Save current version before replacing
+      if (result?.tailored_resume) {
+        setPreviousResume(result.tailored_resume);
+      }
       setResult(prev => prev ? { ...prev, tailored_resume: resp.data!.tailored_resume, ats_scores: undefined } : prev);
       setRegenFeedback('');
       setActiveTab('preview');
+      setRegenView('regenerated');
       setRegenJustCompleted(true);
-      setTimeout(() => setRegenJustCompleted(false), 5000);
-      toast.success('Resume regenerated successfully');
+      toast.success('Resume regenerated — compare versions below');
       // Re-trigger ATS scoring for the new version
       atsAutoTriggered.current = false;
     }
@@ -901,6 +907,7 @@ function TailorTab() {
   const handleStartNew = useCallback(() => {
     setJdText(''); setJdAnalysis(null); setResult(null); setTailorError(''); setActiveTab('preview'); setAtsLoading(false); setEditing(false);
     setRegenFeedback(''); setRegenerating(false); setRegenError('');
+    setPreviousResume(null); setRegenView('regenerated'); setRegenJustCompleted(false);
     setCoverLetter(null); setCoverLetterLoading(false);
     recordIdRef.current = null;
     atsAutoTriggered.current = false;
@@ -1012,15 +1019,52 @@ function TailorTab() {
             </button>
           </div>
 
-          {regenJustCompleted && (
-            <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-pink-500/10 border border-pink-500/20 text-sm text-pink-600 dark:text-pink-300">
-              <ArrowPathIcon className="w-4 h-4 shrink-0" />
-              Resume updated based on your feedback
-              <button onClick={() => setRegenJustCompleted(false)} className="ml-auto text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">&times;</button>
+          {/* Version comparison toggle (appears after regeneration) */}
+          {previousResume && activeTab === 'preview' && (
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-pink-500/5 border border-pink-500/20">
+              <div className="flex items-center gap-3">
+                <div className="inline-flex rounded-lg bg-gray-200 dark:bg-gray-800 p-0.5 border border-gray-300 dark:border-gray-700">
+                  <button onClick={() => setRegenView('regenerated')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${regenView === 'regenerated' ? 'bg-pink-500 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'}`}>
+                    Regenerated
+                  </button>
+                  <button onClick={() => setRegenView('previous')}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${regenView === 'previous' ? 'bg-gray-600 dark:bg-gray-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'}`}>
+                    Previous
+                  </button>
+                </div>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {regenView === 'regenerated' ? 'Showing regenerated version' : 'Showing previous version'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => {
+                  if (previousResume) {
+                    setResult(prev => prev ? { ...prev, tailored_resume: previousResume, ats_scores: undefined } : prev);
+                    setPreviousResume(null);
+                    setRegenView('regenerated');
+                    toast.success('Reverted to previous version');
+                    atsAutoTriggered.current = false;
+                  }
+                }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-800 dark:hover:text-gray-200 transition-all">
+                  <ArrowPathIcon className="w-3 h-3" />Revert
+                </button>
+                <button onClick={() => { setPreviousResume(null); setRegenJustCompleted(false); }}
+                  className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-sm">&times;</button>
+              </div>
             </div>
           )}
 
-          {activeTab === 'preview' ? <ResumePreview resume={result.tailored_resume} /> : result.ats_scores ? <ATSPanel scores={result.ats_scores} /> : (
+          {activeTab === 'preview' && (
+            <ResumePreview resume={
+              previousResume && regenView === 'previous'
+                ? previousResume
+                : result.tailored_resume
+            } />
+          )}
+          {activeTab === 'ats' && result.ats_scores && <ATSPanel scores={result.ats_scores} />}
+          {activeTab === 'ats' && !result.ats_scores && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8">
               <div className="flex flex-col items-center justify-center space-y-5">
                 <div className="relative"><div className="w-10 h-10 rounded-full border-2 border-gray-300 dark:border-gray-700" /><div className="absolute inset-0 w-10 h-10 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>

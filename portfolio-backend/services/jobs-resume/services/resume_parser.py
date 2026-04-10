@@ -294,6 +294,10 @@ class ResumeParser:
         from schemas.resume_schemas import PARSED_RESUME_SCHEMA, validate_and_coerce
         result = validate_and_coerce(result, PARSED_RESUME_SCHEMA)
 
+        # Normalize experience titles and project names to Title Case
+        from services.title_normalizer import normalize_titles
+        result = normalize_titles(result)
+
         return result, effective_raw_text
 
     @staticmethod

@@ -682,7 +682,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=4096, temperature=0.3,
+                prompt, max_tokens=8192, temperature=0.3,
                 model=GEMINI_FLASH, schema=KEYWORD_SCHEMA,
             )
         except Exception as e:

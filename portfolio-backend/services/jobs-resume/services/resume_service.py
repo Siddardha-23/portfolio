@@ -402,7 +402,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             # Date normalization: consistent "Month YYYY – Present" format
             from services.date_normalizer import normalize_dates
+            from services.title_normalizer import normalize_titles
             result = normalize_dates(result)
+            result = normalize_titles(result)
 
             svc.complete_job(job_id, {"tailored_resume": result})
 
@@ -425,9 +427,11 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 payload["user_feedback"],
             )
 
-            # Date normalization
+            # Date + title normalization
             from services.date_normalizer import normalize_dates
+            from services.title_normalizer import normalize_titles
             result = normalize_dates(result)
+            result = normalize_titles(result)
 
             svc.complete_job(job_id, {"tailored_resume": result})
 
@@ -503,9 +507,11 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # Step 4: Augment
             result = svc.augmenter.augment(result, structured, jd_analysis)
 
-            # Step 5: Date normalization
+            # Step 5: Date + title normalization
             from services.date_normalizer import normalize_dates
+            from services.title_normalizer import normalize_titles
             result = normalize_dates(result)
+            result = normalize_titles(result)
 
             svc.complete_job(job_id, {
                 "tailored_resume": result,

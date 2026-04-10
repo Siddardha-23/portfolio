@@ -1357,8 +1357,8 @@ function TailorTab() {
         {/* ═══ LEFT COLUMN — Resume preview / empty state.
              No local scroll — the main body handles all scrolling, so there's
              a single scroll context and the sticky navbar can't be clipped. ═══ */}
-        <section className="min-w-0" aria-label="Resume preview">
-          <div className="relative rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gray-50/40 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/30 overflow-hidden">
+        <section className="min-w-0 lg:sticky lg:top-24 lg:self-start" aria-label="Resume preview">
+          <div className="relative rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gray-50/40 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/30 overflow-hidden flex flex-col lg:max-h-[calc(100vh-140px)]">
             {/* Resume strength meter — vertical gradient bar on the left edge,
                 driven by ATS overall score. Always present while a result is loaded. */}
             {result?.ats_scores && (() => {
@@ -1376,7 +1376,7 @@ function TailorTab() {
             })()}
             {/* Frame header — status label + Tailored/Original segmented control + Revert.
                 "New Tailor" lives in the bottom toolbar to avoid duplication. */}
-            <div className="px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.07] flex items-center justify-between gap-3 bg-white/50 dark:bg-gray-900/60 flex-wrap">
+            <div className="shrink-0 px-5 py-3.5 border-b border-gray-200 dark:border-white/[0.07] flex items-center justify-between gap-3 bg-white/50 dark:bg-gray-900/60 flex-wrap">
               <div className="flex items-center gap-3 min-w-0">
                 <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                   {result ? 'Tailored Resume' : analyzingJD || tailoring ? 'Tailoring…' : 'Resume Preview'}
@@ -1473,9 +1473,9 @@ function TailorTab() {
               </div>
             </div>
 
-            {/* Body — either progress steps, empty state, or loaded preview.
-                 The scroll context is the parent <section>, so this container just
-                 flows — no nested overflow. */}
+            {/* Body — scrolls independently so the left preview stays pinned
+                 and matches the inspector column height on large screens. */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
             {result ? (
               <div className="p-3 sm:p-5 bg-gray-100/60 dark:bg-gray-950/80 space-y-3">
                 {/* "What Changed" stats — only shown when a previous version exists
@@ -1635,6 +1635,7 @@ function TailorTab() {
                 </div>
               </motion.div>
             )}
+            </div>
           </div>
         </section>
 

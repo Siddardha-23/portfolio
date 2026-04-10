@@ -98,7 +98,7 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
   return (
     <div className="relative" style={{ width: size, height: size }}>
       <svg className="transform -rotate-90" width={size} height={size}>
-        <circle cx={size/2} cy={size/2} r={r} stroke="rgb(31,41,55)" strokeWidth="5" fill="none" />
+        <circle cx={size/2} cy={size/2} r={r} className="stroke-gray-200 dark:stroke-gray-800" strokeWidth="5" fill="none" />
         <circle cx={size/2} cy={size/2} r={r} stroke={col} strokeWidth="5" fill="none" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={o} className="transition-all duration-1000 ease-out" />
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
@@ -109,7 +109,7 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
 }
 
 // ─── ATS Panel ──────────────────────────────────────────────────────────────
-function ATSPanel({ scores }: { scores: ATSScores }) {
+function ATSPanel({ scores, onAddKeyword, addedKeywords }: { scores: ATSScores; onAddKeyword?: (kw: string) => void; addedKeywords?: Set<string> }) {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-6">
@@ -171,8 +171,38 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
       </div>
       {scores.missing_keywords?.length > 0 && (
         <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5">
-          <div className="flex items-center gap-2 mb-3"><XCircleIcon className="w-4 h-4 text-red-400" /><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Missing Keywords</p></div>
-          <div className="flex flex-wrap gap-1.5">{scores.missing_keywords.map(kw => (<span key={kw} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">{kw}</span>))}</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2"><XCircleIcon className="w-4 h-4 text-red-400" /><p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Missing Keywords</p></div>
+            {onAddKeyword && <span className="text-[10px] text-gray-500 dark:text-gray-400">Click to add to your skills</span>}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {scores.missing_keywords.map(kw => {
+              const added = addedKeywords?.has(kw);
+              if (!onAddKeyword) {
+                return <span key={kw} className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-red-500/10 text-red-400 border border-red-500/20">{kw}</span>;
+              }
+              return (
+                <button
+                  key={kw}
+                  type="button"
+                  onClick={() => !added && onAddKeyword(kw)}
+                  disabled={added}
+                  className={`group inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium border transition-all duration-200 ${
+                    added
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 cursor-default'
+                      : 'bg-red-500/10 text-red-400 border-red-500/20 hover:bg-pink-500/15 hover:text-pink-400 hover:border-pink-500/40 hover:-translate-y-px'
+                  }`}
+                >
+                  {added ? (
+                    <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 111.42-1.42L8.5 12.08l6.79-6.79a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                  ) : (
+                    <span className="text-base leading-none -mt-0.5 opacity-60 group-hover:opacity-100">+</span>
+                  )}
+                  {kw}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -182,11 +212,11 @@ function ATSPanel({ scores }: { scores: ATSScores }) {
 // ─── Resume preview ─────────────────────────────────────────────────────────
 function ResumePreview({ resume }: { resume: TailoredFullResume }) {
   const ST = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center gap-3 mb-3"><h3 className="text-xs font-bold uppercase tracking-widest text-pink-400/80">{children}</h3><div className="flex-1 h-px bg-gray-800" /></div>
+    <div className="flex items-center gap-3 mb-3"><h3 className="text-xs font-bold uppercase tracking-widest text-pink-500 dark:text-pink-400/80">{children}</h3><div className="flex-1 h-px bg-gray-200 dark:bg-gray-800" /></div>
   );
   return (
     <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
-      <div className="bg-gradient-to-r from-gray-800/80 to-gray-900 px-6 py-5 border-b border-gray-200 dark:border-gray-800">
+      <div className="bg-gradient-to-r from-pink-50 via-white to-purple-50 dark:from-gray-800/80 dark:via-gray-900 dark:to-gray-900 px-6 py-5 border-b border-gray-200 dark:border-gray-800">
         <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100">{resume.contact?.name}</h2>
         <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">{[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github].filter(Boolean).join('  &middot;  ')}</p>
       </div>
@@ -262,28 +292,71 @@ function JDAnalysisCard({ jd, defaultOpen = true }: { jd: JDAnalysis; defaultOpe
 }
 
 // ─── Phase / Progress ───────────────────────────────────────────────────────
-function getPhaseInfo(analyzing: boolean, tailoring: boolean, elapsed: number): { text: string; step: number; total: number } {
-  if (analyzing) return { text: 'Extracting job requirements...', step: 1, total: 4 };
-  if (!tailoring) return { text: 'Processing...', step: 0, total: 4 };
-  if (elapsed < 15) return { text: 'Tailoring your resume...', step: 2, total: 4 };
-  if (elapsed < 40) return { text: 'Optimizing keywords and skills...', step: 3, total: 4 };
-  return { text: 'Finalizing tailored resume...', step: 4, total: 4 };
+const PROGRESS_STEPS: { key: string; label: string; hint: string }[] = [
+  { key: 'analyze', label: 'Extract job requirements', hint: 'Pulling skills, responsibilities, and ATS keywords' },
+  { key: 'tailor',  label: 'Tailor resume content',     hint: 'Rewriting bullets and summary to match the role' },
+  { key: 'augment', label: 'Optimize keywords & impact', hint: 'Injecting metrics, filling gaps, hardening for ATS' },
+  { key: 'render',  label: 'Finalize and format',        hint: 'Preparing PDF and DOCX output' },
+];
+
+function getCurrentStep(analyzing: boolean, tailoring: boolean, elapsed: number): number {
+  if (analyzing) return 0;
+  if (!tailoring) return -1;
+  if (elapsed < 15) return 1;
+  if (elapsed < 40) return 2;
+  return 3;
 }
 
 function ProgressCard({ analyzing, tailoring, elapsed, onCancel }: { analyzing?: boolean; tailoring: boolean; elapsed: number; onCancel: () => void }) {
-  const phase = getPhaseInfo(!!analyzing, tailoring, elapsed);
+  const current = getCurrentStep(!!analyzing, tailoring, elapsed);
   return (
-    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8">
-      <div className="flex flex-col items-center justify-center space-y-5">
-        <div className="relative"><div className="w-12 h-12 rounded-full border-2 border-gray-300 dark:border-gray-700" /><div className="absolute inset-0 w-12 h-12 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" /></div>
-        <div className="text-center space-y-1.5">
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">{phase.text}</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{elapsed >= 90 ? 'Taking longer than expected  — you can wait or cancel.' : 'This may take 30–60 seconds'}</p>
-          {elapsed > 0 && <p className="text-xs text-gray-400 dark:text-gray-500 tabular-nums">{elapsed}s elapsed</p>}
+    <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-5 sm:p-6">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="relative w-9 h-9">
+            <div className="absolute inset-0 rounded-full border-2 border-gray-300 dark:border-gray-700" />
+            <div className="absolute inset-0 rounded-full border-2 border-pink-500 border-t-transparent animate-spin" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Tailoring your resume</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">{elapsed >= 90 ? 'Taking longer than expected — you can wait or cancel' : 'Usually takes 30–60 seconds'}</p>
+          </div>
         </div>
-        {tailoring && <div className="flex items-center gap-2">{[1,2,3,4].map(s => (<div key={s} className={`w-2 h-2 rounded-full transition-all duration-500 ${s <= phase.step ? 'bg-pink-400 scale-110' : 'bg-gray-300 dark:bg-gray-700'}`} />))}</div>}
-        {elapsed >= 90 && <button type="button" onClick={onCancel} className="px-4 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-gray-300 transition-all">Cancel</button>}
+        <div className="flex items-center gap-2">
+          {elapsed > 0 && <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums">{elapsed}s</span>}
+          {elapsed >= 90 && <button type="button" onClick={onCancel} className="px-3 py-1 text-[11px] font-medium text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-700 rounded-md hover:border-red-400/60 hover:text-red-400 transition-all">Cancel</button>}
+        </div>
       </div>
+      <ol className="space-y-2.5">
+        {PROGRESS_STEPS.map((step, i) => {
+          const status = i < current ? 'done' : i === current ? 'active' : 'pending';
+          return (
+            <li key={step.key} className="flex items-start gap-3">
+              <div className={`shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 ${
+                status === 'done' ? 'bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30'
+                : status === 'active' ? 'bg-pink-500/15 text-pink-400 ring-1 ring-pink-500/40'
+                : 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 ring-1 ring-gray-300 dark:ring-gray-700'
+              }`}>
+                {status === 'done' ? (
+                  <svg className="w-3 h-3" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.704 5.29a1 1 0 010 1.42l-7.5 7.5a1 1 0 01-1.42 0l-3.5-3.5a1 1 0 111.42-1.42L8.5 12.08l6.79-6.79a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
+                ) : status === 'active' ? (
+                  <span className="w-1.5 h-1.5 rounded-full bg-pink-400 animate-pulse" />
+                ) : (
+                  <span className="w-1 h-1 rounded-full bg-current" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className={`text-[13px] font-medium transition-colors ${
+                  status === 'done' ? 'text-emerald-500 dark:text-emerald-400'
+                  : status === 'active' ? 'text-gray-900 dark:text-gray-100'
+                  : 'text-gray-500 dark:text-gray-500'
+                }`}>{step.label}</p>
+                {status === 'active' && <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{step.hint}</p>}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
@@ -304,26 +377,33 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
     onUploaded();
   }, [onUploaded]);
   return (
-    <div className="space-y-8">
-      <div className="text-center pt-4 pb-2">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 mb-4"><SparklesIcon className="w-3.5 h-3.5 text-pink-400" /><span className="text-xs font-medium text-pink-300">AI-Powered Resume Tailoring</span></div>
-        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3">Land more interviews with a<br /><span className="bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">perfectly tailored resume</span></h2>
+    <div className="space-y-6 sm:space-y-7">
+      <div className="text-center pt-2 pb-1">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-pink-500/10 border border-pink-500/20 mb-3"><SparklesIcon className="w-3.5 h-3.5 text-pink-400" /><span className="text-xs font-medium text-pink-500 dark:text-pink-300">AI-Powered Resume Tailoring</span></div>
+        <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-gray-100 mb-3 leading-tight">Land more interviews with a<br /><span className="bg-gradient-to-r from-pink-500 to-purple-500 dark:from-pink-400 dark:to-purple-400 bg-clip-text text-transparent">perfectly tailored resume</span></h2>
         <p className="text-sm text-gray-600 dark:text-gray-400 max-w-lg mx-auto leading-relaxed">Upload your resume once, paste any job description, and get an ATS-optimized version tailored to that specific role in seconds.</p>
       </div>
-      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/60 p-6">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-center mb-5">How it works</p>
-        <div className="flex items-start justify-center gap-3 sm:gap-6">
+      <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/60 dark:bg-gray-900/60 p-5 sm:p-6">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 text-center mb-4 sm:mb-5">How it works</p>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-start justify-center gap-4 sm:gap-6">
           {[
             { n: 1, icon: <UploadCloudIcon className="w-5 h-5" />, l: 'Upload', d: 'Upload your existing resume', active: true },
-            { n: 2, icon: <ClipboardIcon className="w-5 h-5" />, l: 'Paste JD', d: 'Paste the job description you\'re targeting' },
+            { n: 2, icon: <ClipboardIcon className="w-5 h-5" />, l: 'Paste JD', d: "Paste the job description you're targeting" },
             { n: 3, icon: <DocumentArrowDownIcon className="w-5 h-5" />, l: 'Download', d: 'Get your ATS-optimized resume' },
           ].map((s, i) => (
-            <div key={s.n} className="flex items-start gap-3 sm:gap-6">
-              {i > 0 && <div className="flex items-center pt-5 shrink-0"><div className="w-6 sm:w-10 h-px bg-gray-300 dark:bg-gray-700" /><svg className="w-3 h-3 text-gray-400 dark:text-gray-500 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg></div>}
-              <div className="flex flex-col items-center text-center flex-1 min-w-0">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center mb-2.5 ${s.active ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 text-white' : 'bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>{s.icon}</div>
-                <p className={`text-xs font-semibold mb-0.5 ${s.active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-600 dark:text-gray-400'}`}>Step {s.n}: {s.l}</p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug max-w-[160px]">{s.d}</p>
+            <div key={s.n} className="flex items-start sm:items-start gap-4 sm:gap-6 sm:flex-row">
+              {i > 0 && (
+                <div className="hidden sm:flex items-center pt-5 shrink-0">
+                  <div className="w-6 sm:w-10 h-px bg-gray-300 dark:bg-gray-700" />
+                  <svg className="w-3 h-3 text-gray-400 dark:text-gray-500 -ml-1" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+                </div>
+              )}
+              <div className="flex sm:flex-col items-center sm:text-center flex-1 min-w-0 gap-3 sm:gap-0">
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center sm:mb-2.5 shrink-0 ${s.active ? 'bg-gradient-to-br from-pink-500 to-purple-600 shadow-lg shadow-pink-500/20 text-white' : 'bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-500 dark:text-gray-400'}`}>{s.icon}</div>
+                <div className="text-left sm:text-center min-w-0">
+                  <p className={`text-xs font-semibold mb-0.5 ${s.active ? 'text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`}>Step {s.n}: {s.l}</p>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-snug sm:max-w-[160px]">{s.d}</p>
+                </div>
               </div>
             </div>
           ))}
@@ -344,7 +424,7 @@ function OnboardingHero({ onUploaded }: { onUploaded: () => void }) {
           {uploadError && <p className="text-sm text-red-400 mt-2">{uploadError}</p>}
         </div>
       </div>
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         {[
           { icon: <MagnifyingGlassIcon className="w-4 h-4 text-blue-400" />, l: 'ATS Keyword Matching', d: 'Scanned against 6+ ATS systems' },
           { icon: <SparklesIcon className="w-4 h-4 text-violet-400" />, l: 'AI-Powered Tailoring', d: 'Optimizes content for the role' },
@@ -724,6 +804,27 @@ function TailorTab() {
   const [coverLetter, setCoverLetter] = useState<string | null>(null);
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);
   const coverLetterAbortRef = useRef<AbortController | null>(null);
+  const [addedKeywords, setAddedKeywords] = useState<Set<string>>(new Set());
+  const [showRegenerate, setShowRegenerate] = useState(false);
+
+  const handleAddKeyword = useCallback((kw: string) => {
+    setResult(prev => {
+      if (!prev) return prev;
+      const next = { ...prev.tailored_resume };
+      const skills = { ...(next.skills || {}) };
+      const cats = Object.keys(skills);
+      const targetCat = cats.includes('Technical Skills') ? 'Technical Skills'
+        : cats.includes('Skills') ? 'Skills'
+        : cats[0] || 'Skills';
+      const existing = Array.isArray(skills[targetCat]) ? [...(skills[targetCat] as string[])] : [];
+      if (!existing.some(s => s.toLowerCase() === kw.toLowerCase())) existing.push(kw);
+      skills[targetCat] = existing;
+      next.skills = skills;
+      return { ...prev, tailored_resume: next };
+    });
+    setAddedKeywords(prev => { const s = new Set(prev); s.add(kw); return s; });
+    toast.success(`Added "${kw}" to your skills`);
+  }, []);
 
   // Fetch active resume info for record storage
   const activeResumeRef = useRef<{ filename: string; s3_key: string } | null>(null);
@@ -883,6 +984,7 @@ function TailorTab() {
       setActiveTab('preview');
       setRegenView('regenerated');
       setRegenJustCompleted(true);
+      setShowRegenerate(false);
       toast.success('Resume regenerated — compare versions below');
       // Re-trigger ATS scoring for the new version
       atsAutoTriggered.current = false;
@@ -909,6 +1011,7 @@ function TailorTab() {
     setRegenFeedback(''); setRegenerating(false); setRegenError('');
     setPreviousResume(null); setRegenView('regenerated'); setRegenJustCompleted(false);
     setCoverLetter(null); setCoverLetterLoading(false);
+    setAddedKeywords(new Set()); setShowRegenerate(false);
     recordIdRef.current = null;
     atsAutoTriggered.current = false;
     setTimeout(() => jdRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
@@ -975,37 +1078,44 @@ function TailorTab() {
       {/* Results */}
       {result && !editing && (
         <div className="space-y-5">
-          {/* Success banner */}
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
-            <div className="p-5">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0"><CheckCircleIcon className="w-5 h-5 text-emerald-400" /></div>
-                  <div className="min-w-0"><p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Resume tailored successfully!</p><p className="text-xs text-gray-600 dark:text-gray-400 mt-0.5">{result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p></div>
-                </div>
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => setEditing(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-pink-500/30 hover:text-pink-300 transition-all duration-200">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
-                    Edit &amp; Preview
-                  </button>
-                  <button onClick={handleCoverLetter} disabled={coverLetterLoading || !!coverLetter}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-800 dark:text-gray-200 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-purple-500/30 hover:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
-                    <ClipboardIcon className="w-4 h-4" />
-                    {coverLetterLoading ? 'Generating...' : coverLetter ? 'Generated' : 'Cover Letter'}
-                  </button>
-                  <button onClick={() => handleDownload('pdf')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-300 disabled:to-gray-300 dark:disabled:from-gray-700 dark:disabled:to-gray-700 disabled:text-gray-500 dark:text-gray-400 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
-                    <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
-                  </button>
-                  <button onClick={() => handleDownload('docx')} disabled={downloading !== null} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 hover:text-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200">
-                    <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'docx' ? 'Generating...' : 'Download DOCX'}
-                  </button>
-                </div>
+          {/* Compact success banner */}
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-5 py-4 flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center shrink-0"><CheckCircleIcon className="w-5 h-5 text-emerald-400" /></div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">Resume tailored for {result.jd_analysis.job_title}{result.jd_analysis.company && result.jd_analysis.company !== 'Not specified' ? ` at ${result.jd_analysis.company}` : ''}</p>
+              <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                {result.ats_scores && <span className={`text-[11px] font-semibold ${result.ats_scores.overall >= 80 ? 'text-emerald-500 dark:text-emerald-400' : result.ats_scores.overall >= 60 ? 'text-amber-500 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>ATS Score: {result.ats_scores.overall}/100</span>}
+                {atsLoading && <span className="inline-flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400"><span className="w-2.5 h-2.5 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Scoring…</span>}
+                <button onClick={handleStartNew} className="text-[11px] font-medium text-pink-500 dark:text-pink-400 hover:text-pink-600 dark:hover:text-pink-300 inline-flex items-center gap-1"><ArrowPathIcon className="w-3 h-3" />Tailor for a different job</button>
               </div>
             </div>
-            <div className="border-t border-emerald-500/10 bg-gray-50/40 dark:bg-gray-900/40 px-5 py-3 flex items-center gap-4 flex-wrap">
-              <button onClick={handleStartNew} className="inline-flex items-center gap-1.5 text-xs font-medium text-pink-400 hover:text-pink-300 transition-colors"><ArrowPathIcon className="w-3.5 h-3.5" />Tailor for another job</button>
-              {result.ats_scores && <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400"><CheckCircleIcon className="w-3.5 h-3.5" />ATS Score: {result.ats_scores.overall}/100</span>}
-              {atsLoading && <span className="inline-flex items-center gap-1.5 text-xs text-gray-600 dark:text-gray-400"><span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" />Computing ATS scores...</span>}
+          </div>
+
+          {/* Persistent action toolbar */}
+          <div className="sticky top-[108px] z-10 rounded-xl border border-gray-200 dark:border-gray-800 bg-white/95 dark:bg-gray-900/95 backdrop-blur-md px-4 py-3 shadow-sm">
+            <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
+              <button onClick={() => handleDownload('pdf')} disabled={downloading !== null}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-pink-500/15 transition-all whitespace-nowrap shrink-0">
+                <DocumentArrowDownIcon className="w-4 h-4" />{downloading === 'pdf' ? 'Preparing…' : 'Download PDF'}
+              </button>
+              <button onClick={() => handleDownload('docx')} disabled={downloading !== null}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-50 transition-all whitespace-nowrap shrink-0">
+                <DocumentArrowDownIcon className="w-4 h-4" />DOCX
+              </button>
+              <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 shrink-0" />
+              <button onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-pink-500/40 hover:text-pink-500 dark:hover:text-pink-400 transition-all whitespace-nowrap shrink-0">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
+                Edit
+              </button>
+              <button onClick={() => setShowRegenerate(v => !v)}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-all whitespace-nowrap shrink-0 ${showRegenerate ? 'text-pink-500 dark:text-pink-400 bg-pink-500/10 border-pink-500/40' : 'text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-pink-500/40 hover:text-pink-500 dark:hover:text-pink-400'}`}>
+                <ArrowPathIcon className="w-4 h-4" />Regenerate
+              </button>
+              <button onClick={handleCoverLetter} disabled={coverLetterLoading || !!coverLetter}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-purple-500/40 hover:text-purple-500 dark:hover:text-purple-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap shrink-0">
+                <ClipboardIcon className="w-4 h-4" />{coverLetterLoading ? 'Generating…' : coverLetter ? 'Cover Letter ✓' : 'Cover Letter'}
+              </button>
             </div>
           </div>
 
@@ -1063,7 +1173,7 @@ function TailorTab() {
                 : result.tailored_resume
             } />
           )}
-          {activeTab === 'ats' && result.ats_scores && <ATSPanel scores={result.ats_scores} />}
+          {activeTab === 'ats' && result.ats_scores && <ATSPanel scores={result.ats_scores} onAddKeyword={handleAddKeyword} addedKeywords={addedKeywords} />}
           {activeTab === 'ats' && !result.ats_scores && (
             <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 p-8">
               <div className="flex flex-col items-center justify-center space-y-5">
@@ -1076,18 +1186,35 @@ function TailorTab() {
             </div>
           )}
 
-          {/* Regenerate section */}
-          <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
-            <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-200 dark:border-gray-800/60">
-              <div className="w-8 h-8 rounded-lg bg-pink-500/10 flex items-center justify-center shrink-0">
-                <ArrowPathIcon className="w-4 h-4 text-pink-400" />
+          {/* Regenerate section — collapsible, opens from toolbar button */}
+          {showRegenerate && (
+          <div className="rounded-xl border border-pink-500/30 bg-pink-500/5 overflow-hidden">
+            <div className="px-5 py-4 flex items-center justify-between gap-2.5 border-b border-pink-500/20">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-pink-500/15 flex items-center justify-center shrink-0">
+                  <ArrowPathIcon className="w-4 h-4 text-pink-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">What would you like to change?</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Your feedback refines the resume without losing the current version</p>
+                </div>
               </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">Not satisfied?</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Tell us what to change and we'll regenerate your resume</p>
-              </div>
+              <button type="button" onClick={() => setShowRegenerate(false)} className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-xl leading-none px-1" aria-label="Close">&times;</button>
             </div>
             <div className="p-5 space-y-3">
+              <div className="flex flex-wrap gap-1.5 mb-1">
+                {[
+                  'Make the summary more concise',
+                  'Add more metrics to bullets',
+                  'Emphasize leadership',
+                  'Highlight cloud experience',
+                ].map(hint => (
+                  <button key={hint} type="button" onClick={() => setRegenFeedback(f => f ? f : hint)}
+                    className="px-2.5 py-1 rounded-md text-[11px] font-medium bg-pink-500/10 text-pink-500 dark:text-pink-300 border border-pink-500/20 hover:bg-pink-500/15 transition-all">
+                    {hint}
+                  </button>
+                ))}
+              </div>
               <textarea
                 placeholder="e.g., Make the summary more concise, emphasize cloud skills more, add more metrics to experience bullets..."
                 value={regenFeedback}
@@ -1116,6 +1243,7 @@ function TailorTab() {
               </div>
             </div>
           </div>
+          )}
 
           {/* Cover Letter */}
           {coverLetter && (
@@ -1178,48 +1306,52 @@ export default function ResumeParser() {
     >
       <div className="min-h-screen bg-white dark:bg-gray-950">
         {/* Header */}
-        <header className="sticky top-0 z-20 border-b border-gray-200 dark:border-gray-200 dark:border-gray-800/60 bg-white/90 dark:bg-gray-950/90 backdrop-blur-md">
+        <header className="sticky top-0 z-20 border-b border-gray-200 dark:border-gray-800/60 bg-white/90 dark:bg-gray-950/90 backdrop-blur-md">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-pink-500/40 to-transparent" />
           <div className="max-w-5xl mx-auto px-4 sm:px-6">
             {/* Top bar */}
-            <div className="py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+            <div className="py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shadow-md shadow-pink-500/20 shrink-0">
                   <SparklesIcon className="w-4 h-4 text-white" />
                 </div>
-                <h1 className="text-lg font-bold text-gray-900 dark:text-gray-100">Resume Tailor</h1>
+                <h1 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 truncate">Resume Tailor</h1>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                 <ThemeToggle />
                 <button onClick={() => window.location.href = '/home'}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all">
-                  <HomeIcon className="w-4 h-4" />Home
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all" aria-label="Home">
+                  <HomeIcon className="w-4 h-4" /><span className="hidden sm:inline">Home</span>
                 </button>
                 <button onClick={() => setActiveNav('profile')}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all">
+                  className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60 transition-all">
                   <UserCircleIcon className="w-4 h-4" />
-                  <span className="hidden sm:inline">{user?.name || user?.email?.split('@')[0] || 'Profile'}</span>
+                  <span className="hidden sm:inline max-w-[120px] truncate">{user?.name || user?.email?.split('@')[0] || 'Profile'}</span>
                 </button>
               </div>
             </div>
 
-            {/* Tab navigation */}
-            <div className="flex gap-1 -mb-px overflow-x-auto hide-scrollbar">
-              {NAV_ITEMS.map(item => (
-                <button
-                  key={item.key}
-                  onClick={() => setActiveNav(item.key)}
-                  className={`inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-all duration-200 ${
-                    activeNav === item.key
-                      ? 'border-pink-500 text-pink-400'
-                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300 hover:border-gray-300 dark:border-gray-700'
-                  }`}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
-            </div>
+            {/* Tab navigation — pill-style with icon badges */}
+            <nav className="flex gap-1 overflow-x-auto hide-scrollbar pb-2" aria-label="Resume tailor sections">
+              {NAV_ITEMS.map(item => {
+                const active = activeNav === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => setActiveNav(item.key)}
+                    aria-current={active ? 'page' : undefined}
+                    className={`relative inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium whitespace-nowrap transition-all duration-200 ${
+                      active
+                        ? 'text-white bg-gradient-to-r from-pink-500 to-purple-600 shadow-md shadow-pink-500/20'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/60'
+                    }`}
+                  >
+                    <span className={active ? 'text-white' : 'text-gray-500 dark:text-gray-500'}>{item.icon}</span>
+                    {item.label}
+                  </button>
+                );
+              })}
+            </nav>
           </div>
         </header>
 

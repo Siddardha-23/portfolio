@@ -427,6 +427,12 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 payload["user_feedback"],
             )
 
+            # Content augmentation: refill the page after user-feedback regeneration
+            # (same pipeline as initial tailor — bullet expansion, impact injection,
+            # project generation, ATS hardening). Without this, feedback that shrinks
+            # content leaves empty space on the rendered page.
+            result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
+
             # Date + title normalization
             from services.date_normalizer import normalize_dates
             from services.title_normalizer import normalize_titles

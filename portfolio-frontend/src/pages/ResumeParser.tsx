@@ -990,6 +990,15 @@ function TailorTab() {
   useEffect(() => { checkResumes(); }, [checkResumes]);
   useEffect(() => () => { tailorAbortRef.current?.abort(); atsAbortRef.current?.abort(); regenAbortRef.current?.abort(); coverLetterAbortRef.current?.abort(); if (tailorTimerRef.current) clearInterval(tailorTimerRef.current); }, []);
 
+  // Lock body scroll while the full-screen editor overlay is open so scrolling
+  // inside the split editor panes doesn't chain to the page behind it.
+  useEffect(() => {
+    if (!editing) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [editing]);
+
   // Save tailoring record to backend (fire-and-forget)
   const saveRecord = useCallback(async (
     jdAnalysisData: JDAnalysis,
@@ -2236,7 +2245,7 @@ function TailorTab() {
 
       {/* Editor mode — full-screen overlay */}
       {result && editing && (
-        <div className="fixed inset-0 z-[60] bg-gray-100 dark:bg-gray-950 overflow-y-auto">
+        <div className="fixed inset-0 z-[60] bg-gray-100 dark:bg-gray-950 overflow-y-auto overscroll-contain">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
             <Suspense fallback={<div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center"><span className="text-sm text-gray-600 dark:text-gray-400">Loading editor...</span></div>}>
               <ResumeEditor

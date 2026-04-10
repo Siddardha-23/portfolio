@@ -1871,7 +1871,7 @@ function TailorTab() {
 
               {/* ── TAB 2: ATS Score ── */}
               {inspectorTab === 'ats' && result && (
-                <div className="p-5 sm:p-6">
+                <div className="p-5 sm:p-6 lg:max-h-[calc(100vh-220px)] lg:overflow-y-auto overscroll-contain">
                   {result.ats_scores ? (
                     <ATSPanel scores={result.ats_scores} onAddKeyword={handleAddKeyword} addedKeywords={addedKeywords} />
                   ) : (

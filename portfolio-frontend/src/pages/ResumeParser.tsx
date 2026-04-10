@@ -935,6 +935,7 @@ function TailorTab() {
   const [coverLetter, setCoverLetter] = useState<string | null>(null);
   const [coverLetterLoading, setCoverLetterLoading] = useState(false);
   const coverLetterAbortRef = useRef<AbortController | null>(null);
+  const coverLetterInFlightRef = useRef(false);
   const [addedKeywords, setAddedKeywords] = useState<Set<string>>(new Set());
   const [coverLetterDownloading, setCoverLetterDownloading] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<'jd' | 'ats' | 'regenerate' | 'cover'>('jd');
@@ -1149,25 +1150,32 @@ function TailorTab() {
   }, [result, regenFeedback]);
 
   const handleCoverLetter = useCallback(async () => {
-    if (!result || coverLetterLoading) return;
-    coverLetterAbortRef.current?.abort();
+    // Guard via ref so the in-flight check is stable across re-renders and
+    // the callback identity doesn't change mid-generation. A re-invocation
+    // while generating must NOT abort the existing request — it's a no-op.
+    if (!result || coverLetterInFlightRef.current) return;
+    coverLetterInFlightRef.current = true;
     const ctrl = new AbortController(); coverLetterAbortRef.current = ctrl;
     setCoverLetterLoading(true);
-    const resp = await apiService.generateCoverLetter(result.tailored_resume, result.jd_analysis, ctrl.signal);
-    if (ctrl.signal.aborted) { setCoverLetterLoading(false); return; }
-    setCoverLetterLoading(false);
-    if (resp.error) { toast.error('Cover letter generation failed', { description: resp.error }); return; }
-    if (resp.data?.cover_letter) {
-      setCoverLetter(resp.data.cover_letter);
-      toast.success('Cover letter generated');
+    try {
+      const resp = await apiService.generateCoverLetter(result.tailored_resume, result.jd_analysis, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      if (resp.error) { toast.error('Cover letter generation failed', { description: resp.error }); return; }
+      if (resp.data?.cover_letter) {
+        setCoverLetter(resp.data.cover_letter);
+        toast.success('Cover letter generated');
+      }
+    } finally {
+      coverLetterInFlightRef.current = false;
+      setCoverLetterLoading(false);
     }
-  }, [result, coverLetterLoading]);
+  }, [result]);
 
   const handleStartNew = useCallback(() => {
     setJdText(''); setResult(null); setTailorError(''); setAtsLoading(false); setEditing(false);
     setRegenFeedback(''); setRegenerating(false); setRegenError('');
     setPreviousResume(null); setRegenView('regenerated');
-    setCoverLetter(null); setCoverLetterLoading(false);
+    setCoverLetter(null); setCoverLetterLoading(false); coverLetterInFlightRef.current = false; coverLetterAbortRef.current?.abort();
     setAddedKeywords(new Set());
     setInspectorTab('jd');
     setDownloadMenuOpen(false);
@@ -1687,12 +1695,13 @@ function TailorTab() {
                     <span className={`relative ml-0.5 text-[10px] font-bold tabular-nums ${result.ats_scores.overall >= 80 ? 'text-emerald-500 dark:text-emerald-400' : result.ats_scores.overall >= 60 ? 'text-amber-500 dark:text-amber-400' : 'text-red-500 dark:text-red-400'}`}>{result.ats_scores.overall}</span>
                   )}
                   {t.key === 'ats' && atsLoading && <span className="relative w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
-                  {t.key === 'cover' && coverLetter && (
+                  {t.key === 'cover' && coverLetter && !coverLetterLoading && (
                     <span className="relative flex w-1.5 h-1.5">
                       <span className="absolute inset-0 rounded-full bg-emerald-400 opacity-60 animate-ping" />
                       <span className="relative w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     </span>
                   )}
+                  {t.key === 'cover' && coverLetterLoading && <span className="relative w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
                 </button>
               );
             })}

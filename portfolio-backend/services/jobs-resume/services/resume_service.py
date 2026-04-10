@@ -487,7 +487,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 'Return JSON: {"cover_letter": "The full cover letter text with paragraph breaks as \\n\\n"}'
             )
 
-            result = gemini_json(prompt, max_tokens=2048, temperature=0.5, model=GEMINI_PRO)
+            result = gemini_json(prompt, max_tokens=4096, temperature=0.5, model=GEMINI_PRO)
             cover_text = result.get("cover_letter", "")
 
             svc.complete_job(job_id, {"cover_letter": cover_text})

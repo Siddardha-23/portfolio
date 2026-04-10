@@ -279,6 +279,120 @@ def cover_letter():
 
 
 # ------------------------------------------------------------------
+# POST /api/resume/cover-letter/download — Render cover letter as PDF
+# ------------------------------------------------------------------
+@resume_bp.route("/cover-letter/download", methods=["POST"])
+@jwt_required()
+def cover_letter_download():
+    """Render a cover letter text block into a single-page PDF using fpdf2.
+
+    Synchronous — rendering is fast (<100ms) and doesn't need an async job.
+    """
+    data = request.get_json(force=True) or {}
+    text = data.get("cover_letter", "")
+    candidate_name = (data.get("candidate_name") or "Applicant").strip()
+    job_title = (data.get("job_title") or "").strip()
+    company = (data.get("company") or "").strip()
+
+    if not text or not isinstance(text, str):
+        return jsonify({"error": "cover_letter text is required"}), 400
+
+    text = InputSanitizer.sanitize_string(text, max_length=6000)
+
+    # fpdf2 with built-in Times font only supports Latin-1. Smart quotes, em/en
+    # dashes, ellipses, and other Unicode punctuation crash rendering. Map them
+    # to ASCII-safe equivalents before we draw. (Full Unicode would require
+    # embedding a TTF font, which bloats the Lambda deployment.)
+    _PUNCT_MAP = str.maketrans({
+        "\u2014": "-",   # em dash
+        "\u2013": "-",   # en dash
+        "\u2212": "-",   # minus
+        "\u2018": "'",   # left single quote
+        "\u2019": "'",   # right single quote
+        "\u201C": '"',   # left double quote
+        "\u201D": '"',   # right double quote
+        "\u2026": "...", # ellipsis
+        "\u00A0": " ",   # non-breaking space
+        "\u2022": "-",   # bullet
+        "\u2009": " ",   # thin space
+        "\u200B": "",    # zero-width space
+        "\u00B7": "-",   # middle dot
+    })
+    text = text.translate(_PUNCT_MAP)
+    candidate_name = candidate_name.translate(_PUNCT_MAP)
+    job_title = job_title.translate(_PUNCT_MAP)
+    company = company.translate(_PUNCT_MAP)
+    # Final safety net: encode to latin-1 and drop anything unsupported
+    text = text.encode("latin-1", errors="replace").decode("latin-1")
+    candidate_name = candidate_name.encode("latin-1", errors="replace").decode("latin-1")
+    job_title = job_title.encode("latin-1", errors="replace").decode("latin-1")
+    company = company.encode("latin-1", errors="replace").decode("latin-1")
+
+    try:
+        from fpdf import FPDF
+
+        pdf = FPDF(format="A4", unit="mm")
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+        pdf.set_margins(left=20, top=20, right=20)
+
+        # Header — candidate name
+        pdf.set_font("Times", "B", 16)
+        pdf.cell(0, 9, candidate_name, new_x="LMARGIN", new_y="NEXT")
+
+        # Subtitle — target role
+        if job_title or company:
+            subtitle_parts = [p for p in [job_title, company] if p]
+            pdf.set_font("Times", "I", 11)
+            pdf.set_text_color(90, 90, 90)
+            pdf.cell(0, 6, " - ".join(subtitle_parts), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
+
+        # Divider line
+        pdf.ln(3)
+        y = pdf.get_y()
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(20, y, 190, y)
+        pdf.ln(5)
+
+        # Date
+        pdf.set_font("Times", "", 10)
+        pdf.set_text_color(110, 110, 110)
+        pdf.cell(0, 5, datetime.now().strftime("%B %d, %Y"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
+
+        # Body — paragraphs separated by blank lines
+        pdf.set_font("Times", "", 11)
+        for paragraph in text.split("\n\n"):
+            para = paragraph.strip()
+            if not para:
+                continue
+            # fpdf2 multi_cell auto-wraps; replace internal single newlines with spaces
+            para = " ".join(line.strip() for line in para.split("\n") if line.strip())
+            pdf.multi_cell(0, 5.8, para)
+            pdf.ln(2.5)
+
+        # Output (fpdf2 returns bytearray — normalize to bytes)
+        raw = pdf.output()
+        pdf_bytes = bytes(raw) if isinstance(raw, (bytearray, memoryview)) else raw
+
+        safe_company = "".join(c for c in company if c.isalnum() or c in "-_") or "role"
+        filename = f"cover_letter_{safe_company}.pdf"
+
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        logger.error(f"Cover letter PDF render error: {e}")
+        return jsonify({"error": "Failed to render cover letter PDF"}), 500
+
+
+# ------------------------------------------------------------------
 # POST /api/resume/batch-tailor — Submit multiple JDs for parallel tailoring
 # ------------------------------------------------------------------
 @resume_bp.route("/batch-tailor", methods=["POST"])

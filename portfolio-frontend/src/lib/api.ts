@@ -832,8 +832,49 @@ class ApiService {
     return this.pollJob<{ cover_letter: string }>(submitResp.data.job_id, 120000, signal);
   }
 
+  async downloadCoverLetterPDF(
+    coverLetter: string,
+    candidateName: string,
+    jobTitle: string,
+    company: string,
+  ): Promise<{ data?: Blob; error?: string; filename?: string }> {
+    const token = this.getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    try {
+      const resp = await fetch(`${this.baseURL}/resume/cover-letter/download`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          cover_letter: coverLetter,
+          candidate_name: candidateName,
+          job_title: jobTitle,
+          company,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Download failed' }));
+        return { error: err.error || 'Download failed' };
+      }
+      const blob = await resp.blob();
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="?([^"]+)"?/);
+      return { data: blob, filename: match?.[1] || 'cover_letter.pdf' };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : 'Download failed' };
+    }
+  }
+
   async pollJobStatus<T>(jobId: string): Promise<ApiResponse<T & { status: string }>> {
     return this.request<T & { status: string }>(`/resume/job/${jobId}`);
+  }
+
+  async getTechChronicle(category: string = 'all'): Promise<ApiResponse<{
+    items: import('../types/techChronicle').TechChronicleItem[];
+    trendingTags: string[];
+    generatedAt: string | null;
+  }>> {
+    return this.request(`/tech-chronicle?category=${encodeURIComponent(category)}`);
   }
 
   async setActiveResume(s3Key: string): Promise<ApiResponse<any>> {

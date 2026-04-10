@@ -135,7 +135,7 @@ export default function BatchTailor() {
       {batchJobs.length === 0 && (
         <>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
               <span className="text-xs font-bold text-white">{jdEntries.length}</span>
             </div>
             <div>
@@ -158,13 +158,13 @@ export default function BatchTailor() {
                 </div>
                 <div className="p-4 space-y-2">
                   <input
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-500/30 transition-all"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition-all"
                     placeholder="Job title (optional, e.g. Senior Cloud Engineer at AWS)"
                     value={entry.title}
                     onChange={e => updateEntry(entry.id, 'title', e.target.value)}
                   />
                   <textarea
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-pink-500/30 transition-all"
+                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition-all"
                     rows={4}
                     placeholder="Paste the complete job description here..."
                     maxLength={15000}
@@ -179,12 +179,12 @@ export default function BatchTailor() {
           <div className="flex items-center gap-3">
             {jdEntries.length < 5 && (
               <button type="button" onClick={addEntry}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-pink-400 border border-pink-500/20 hover:bg-pink-500/10 transition-all">
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-purple-400 border border-purple-500/20 hover:bg-purple-500/10 transition-all">
                 <PlusIcon className="w-4 h-4" />Add Job Description
               </button>
             )}
             <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
               {submitting ? (
                 <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Submitting...</>
               ) : (
@@ -205,13 +205,13 @@ export default function BatchTailor() {
               </p>
               {isRunning && (
                 <div className="mt-2 h-1.5 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden w-48">
-                  <div className="h-full rounded-full bg-gradient-to-r from-pink-500 to-purple-600 transition-all duration-500" style={{ width: `${totalCount ? (completedCount / totalCount) * 100 : 0}%` }} />
+                  <div className="h-full rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 transition-all duration-500" style={{ width: `${totalCount ? (completedCount / totalCount) * 100 : 0}%` }} />
                 </div>
               )}
             </div>
             {!isRunning && (
               <button type="button" onClick={() => { setBatchJobs([]); setJdEntries([{ id: nextId(), title: '', text: '' }]); }}
-                className="text-xs text-pink-400 hover:text-pink-300 transition-colors">
+                className="text-xs text-purple-400 hover:text-purple-300 transition-colors">
                 Start New Batch
               </button>
             )}
@@ -229,7 +229,7 @@ export default function BatchTailor() {
                     {job.status === 'completed' && <CheckIcon className="w-5 h-5 text-emerald-400 shrink-0" />}
                     {job.status === 'failed' && <XIcon className="w-5 h-5 text-red-400 shrink-0" />}
                     {(job.status === 'processing' || job.status === 'queued') && (
-                      <span className="w-5 h-5 rounded-full border-2 border-pink-400 border-t-transparent animate-spin shrink-0" />
+                      <span className="w-5 h-5 rounded-full border-2 border-purple-400 border-t-transparent animate-spin shrink-0" />
                     )}
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{job.title}</p>
@@ -243,7 +243,7 @@ export default function BatchTailor() {
                   {job.status === 'completed' && (
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button onClick={() => handleDownload(job, 'pdf')}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 transition-all">
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all">
                         <DownloadIcon className="w-3.5 h-3.5" />PDF
                       </button>
                       <button onClick={() => handleDownload(job, 'docx')}

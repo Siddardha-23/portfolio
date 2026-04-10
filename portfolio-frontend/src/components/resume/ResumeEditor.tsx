@@ -30,12 +30,12 @@ function EyeIcon({ className = 'w-4 h-4' }: { className?: string }) {
 }
 
 // ─── Shared input styling ──────────────────────────────────────────────────
-const inputCls = "w-full px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-pink-500/30 focus:border-pink-500/30 transition-all";
+const inputCls = "w-full px-3 py-2 rounded-lg bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500/30 transition-all";
 const textareaCls = `${inputCls} resize-none leading-relaxed`;
 const labelCls = "block text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-500 mb-1.5";
 const sectionHeaderCls = "flex items-center gap-3 mb-3";
-const sectionTitleCls = "text-xs font-bold uppercase tracking-widest text-pink-400/80";
-const addBtnCls = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-pink-400 border border-pink-500/20 hover:bg-pink-500/10 transition-all";
+const sectionTitleCls = "text-xs font-bold uppercase tracking-widest text-purple-400/80";
+const addBtnCls = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-400 border border-purple-500/20 hover:bg-purple-500/10 transition-all";
 const removeBtnCls = "p-1 rounded-md text-gray-400 dark:text-gray-600 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-30 disabled:cursor-not-allowed";
 
 // ─── Section Header ────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ function CollapsibleSection({ title, defaultOpen = true, children, actions }: {
 // ─── Live Preview (right pane) ─────────────────────────────────────────────
 function LivePreview({ resume }: { resume: TailoredFullResume }) {
   const ST = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center gap-2 mb-2"><h3 className="text-xs font-bold uppercase tracking-widest text-pink-400/70">{children}</h3><div className="flex-1 h-px bg-gray-200 dark:bg-gray-800/60" /></div>
+    <div className="flex items-center gap-2 mb-2"><h3 className="text-xs font-bold uppercase tracking-widest text-purple-400/70">{children}</h3><div className="flex-1 h-px bg-gray-200 dark:bg-gray-800/60" /></div>
   );
   return (
     <div className="text-xs leading-relaxed">
@@ -106,7 +106,7 @@ function LivePreview({ resume }: { resume: TailoredFullResume }) {
                   <ul className="mt-1 space-y-0.5 ml-3">
                     {exp.bullets?.map((b, j) => (
                       <li key={j} className="text-gray-500 dark:text-gray-400 flex gap-1.5">
-                        <span className="text-pink-500/40 shrink-0">&bull;</span><span>{b}</span>
+                        <span className="text-purple-500/40 shrink-0">&bull;</span><span>{b}</span>
                       </li>
                     ))}
                   </ul>
@@ -129,7 +129,7 @@ function LivePreview({ resume }: { resume: TailoredFullResume }) {
                   <ul className="mt-0.5 space-y-0.5 ml-3">
                     {p.bullets?.map((b, j) => (
                       <li key={j} className="text-gray-500 dark:text-gray-400 flex gap-1.5">
-                        <span className="text-pink-500/40 shrink-0">&bull;</span><span>{b}</span>
+                        <span className="text-purple-500/40 shrink-0">&bull;</span><span>{b}</span>
                       </li>
                     ))}
                   </ul>
@@ -437,17 +437,17 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className={labelCls}>Bullets</label>
-                <button type="button" className="text-[11px] text-pink-400 hover:text-pink-300" onClick={() => addBullet('experience', i)}>+ Add bullet</button>
+                <button type="button" className="text-[11px] text-purple-400 hover:text-purple-300" onClick={() => addBullet('experience', i)}>+ Add bullet</button>
               </div>
               <div className="space-y-1.5">
                 {exp.bullets?.map((bullet, j) => (
                   <div key={j} className="flex gap-1.5 items-start">
-                    <span className="text-pink-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
+                    <span className="text-purple-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
                     <textarea className={`${textareaCls} text-xs`} rows={2} value={bullet} onChange={e => updateBullet('experience', i, j, e.target.value)} />
                     <button type="button" title="AI Rewrite" disabled={rewritingBullet !== null}
-                      className={`${removeBtnCls} mt-1.5 ${rewritingBullet === `experience-${i}-${j}` ? 'animate-spin' : ''} hover:!text-pink-400`}
+                      className={`${removeBtnCls} mt-1.5 ${rewritingBullet === `experience-${i}-${j}` ? 'animate-spin' : ''} hover:!text-purple-400`}
                       onClick={() => handleRewriteBullet('experience', i, j)}>
-                      {rewritingBullet === `experience-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
+                      {rewritingBullet === `experience-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
                     </button>
                     <button type="button" className={`${removeBtnCls} mt-1.5`} onClick={() => removeBullet('experience', i, j)}><TrashIcon className="w-3 h-3" /></button>
                   </div>
@@ -478,17 +478,17 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className={labelCls}>Bullets</label>
-                <button type="button" className="text-[11px] text-pink-400 hover:text-pink-300" onClick={() => addBullet('projects', i)}>+ Add bullet</button>
+                <button type="button" className="text-[11px] text-purple-400 hover:text-purple-300" onClick={() => addBullet('projects', i)}>+ Add bullet</button>
               </div>
               <div className="space-y-1.5">
                 {proj.bullets?.map((bullet, j) => (
                   <div key={j} className="flex gap-1.5 items-start">
-                    <span className="text-pink-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
+                    <span className="text-purple-500/40 mt-2.5 shrink-0 text-xs">&bull;</span>
                     <textarea className={`${textareaCls} text-xs`} rows={2} value={bullet} onChange={e => updateBullet('projects', i, j, e.target.value)} />
                     <button type="button" title="AI Rewrite" disabled={rewritingBullet !== null}
-                      className={`${removeBtnCls} mt-1.5 hover:!text-pink-400`}
+                      className={`${removeBtnCls} mt-1.5 hover:!text-purple-400`}
                       onClick={() => handleRewriteBullet('projects', i, j)}>
-                      {rewritingBullet === `projects-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-pink-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
+                      {rewritingBullet === `projects-${i}-${j}` ? <span className="w-3 h-3 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" /> : <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>}
                     </button>
                     <button type="button" className={`${removeBtnCls} mt-1.5`} onClick={() => removeBullet('projects', i, j)}><TrashIcon className="w-3 h-3" /></button>
                   </div>
@@ -568,7 +568,7 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
             </button>
             <div className="h-5 w-px bg-gray-200 dark:bg-gray-800" />
             <div className="flex items-center gap-2">
-              <PencilIcon className="w-4 h-4 text-pink-400" />
+              <PencilIcon className="w-4 h-4 text-purple-400" />
               <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">Resume Editor</span>
             </div>
             {isModified && <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Modified</span>}
@@ -599,7 +599,7 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
             )}
 
             <button type="button" onClick={() => handleDownload('pdf')} disabled={downloading !== null}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-pink-500/15 disabled:shadow-none transition-all duration-200">
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 dark:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
               <DocumentArrowDownIcon className="w-4 h-4" />
               {downloading === 'pdf' ? 'Generating...' : 'Download PDF'}
             </button>

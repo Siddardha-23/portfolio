@@ -86,6 +86,9 @@ def create_app():
     from blueprints.resume import resume_bp
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
 
+    from blueprints.tech_chronicle import tech_chronicle_bp
+    app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')
+
     # Health check endpoint
     @app.route('/api/health')
     def health():

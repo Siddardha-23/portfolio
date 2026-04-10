@@ -14,9 +14,9 @@ Capabilities:
 
 Model routing constants (import these, don't hardcode model names):
   ┌─────────────────┬──────────────────────────────────────────────────┐
-  │ GEMINI_FLASH    │ Fast factual extraction (resume parsing)        │
-  │ GEMINI_PRO      │ Analytical tasks (tailoring, scoring, JD parse) │
-  │ GEMINI_PREVIEW  │ Error-correction / bounded repair only          │
+  │ GEMINI_FLASH    │ Gemini 2.5 Flash — fast extraction, parsing (GA) │
+  │ GEMINI_PRO      │ Gemini 3.1 Pro — tailoring, scoring, JD parse   │
+  │ GEMINI_PREVIEW  │ Gemini 3.1 Pro — error-correction / repair only │
   └─────────────────┴──────────────────────────────────────────────────┘
 """
 import json
@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model routing constants
 # ---------------------------------------------------------------------------
-GEMINI_FLASH   = "gemini-2.5-flash"        # extraction / factual parsing
-GEMINI_PRO     = "gemini-2.5-pro"           # JD-based tailoring
-GEMINI_PREVIEW = "gemini-3.1-pro-preview"   # repair / correction only
+GEMINI_FLASH   = "gemini-2.5-flash"          # extraction / factual parsing (GA, stable)
+GEMINI_PRO     = "gemini-2.5-pro"            # JD-based tailoring (GA, stable)
+GEMINI_PREVIEW = "gemini-3.1-pro-preview"    # repair / correction only
 
 # ---------------------------------------------------------------------------
 # Client singleton
@@ -229,7 +229,61 @@ def _try_parse_json(raw: str) -> dict:
         except json.JSONDecodeError:
             pass
 
+    # Strategy 4: repair truncated JSON by closing open structures
+    repaired = _repair_truncated_json(raw)
+    if repaired:
+        try:
+            return json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
+
     return None
+
+
+def _repair_truncated_json(raw: str) -> str:
+    """Attempt to repair truncated JSON by closing unclosed brackets/strings.
+
+    Handles the common case where Gemini's output is cut off mid-string,
+    leaving unterminated strings, arrays, and objects.
+    """
+    if not raw or not raw.lstrip().startswith('{'):
+        return ""
+
+    # Remove any trailing incomplete string value (cut mid-sentence)
+    # Find the last complete JSON value boundary
+    text = raw.rstrip()
+
+    # If we're inside an unterminated string, close it
+    in_string = False
+    last_good = 0
+    for i, ch in enumerate(text):
+        if ch == '"' and (i == 0 or text[i - 1] != '\\'):
+            in_string = not in_string
+        if not in_string and ch in ',]}':
+            last_good = i
+
+    if in_string:
+        # Truncate to last complete value and close the string
+        text = text[:last_good + 1] if last_good > 0 else text
+
+    # Count unclosed brackets and close them
+    opens = 0
+    open_arrays = 0
+    for ch in text:
+        if ch == '{':
+            opens += 1
+        elif ch == '}':
+            opens -= 1
+        elif ch == '[':
+            open_arrays += 1
+        elif ch == ']':
+            open_arrays -= 1
+
+    # Remove trailing comma before closing
+    text = text.rstrip().rstrip(',')
+    text += ']' * max(0, open_arrays) + '}' * max(0, opens)
+
+    return text
 
 
 def gemini_json(
@@ -290,12 +344,14 @@ def gemini_json(
     if not raw:
         raise ValueError("AI returned an empty response. Please try again.")
 
-    # With response_schema, the output is guaranteed to be valid JSON
+    # Try standard JSON parse first, fall back to repair for truncated output
     try:
         result = json.loads(raw)
     except json.JSONDecodeError as e:
-        logger.error(f"Gemini schema failed JSON decode. Raw: {raw[:500]}")
-        raise ValueError(f"AI returned invalid format: {e}")
+        logger.warning(f"Gemini JSON decode failed, attempting repair. Raw: {raw[:500]}")
+        result = _try_parse_json(raw)
+        if result is None:
+            raise ValueError(f"AI returned invalid format: {e}")
 
     # Optionally run our Python-side default coercion/validation
     # to catch any edge cases that the loose OpenAPI schema missed

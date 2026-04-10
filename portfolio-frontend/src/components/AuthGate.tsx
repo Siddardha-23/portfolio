@@ -1,26 +1,14 @@
-import { useState, useEffect, useRef, useCallback, ReactNode } from 'react';
+import { useState, useEffect, useRef, useCallback, ReactNode, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
+import type { TechChronicleItem, TechNewsItem, CareerIntelItem } from '@/types/techChronicle';
+import { isCareerItem } from '@/types/techChronicle';
 
 interface AuthGateProps {
   children: ReactNode;
   title?: string;
   description?: string;
-}
-
-// ─── Rich news article model ────────────────────────────────────────────────
-interface NewsArticle {
-  id: number;
-  title: string;
-  url: string;
-  by: string;
-  score: number;
-  time: number;
-  descendants: number;
-  text?: string;
-  tags: string[];
-  summary: string;
-  source: string;
 }
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -34,141 +22,37 @@ const SECTOR_OPTIONS = [
   'Government', 'Consulting', 'Other',
 ];
 
-const TAG_RULES: [RegExp, string][] = [
-  [/\b(ai|artificial.?intelligence|gpt|llm|openai|machine.?learning|neural|transformer|deep.?learning|chatgpt|claude|gemini|copilot|diffusion|generative|anthropic|training|model|rag|agent)\b/i, 'AI'],
-  [/\b(aws|azure|gcp|cloud|lambda|s3|ec2|kubernetes|k8s|serverless|cloudflare|vercel|netlify|heroku|microservice)\b/i, 'Cloud'],
-  [/\b(docker|devops|ci.?cd|terraform|ansible|jenkins|deploy|infrastructure|monitoring|observability|grafana|prometheus|helm|pipeline|sre)\b/i, 'DevOps'],
-  [/\b(react|vue|angular|typescript|javascript|node\.?js|deno|bun|next\.?js|svelte|tailwind|frontend|fullstack|api|graphql|web|wasm|webassembly)\b/i, 'Web'],
-  [/\b(rust|golang|go\b|python|java\b|c\+\+|kotlin|swift|zig|haskell|elixir|ruby|compiler|language|erlang)\b/i, 'Languages'],
-  [/\b(postgres|mysql|mongodb|redis|database|sql|nosql|sqlite|supabase|vector|elasticsearch|kafka)\b/i, 'Data'],
-  [/\b(linux|kernel|os\b|unix|windows|macos|system|hardware|chip|cpu|gpu|memory|risc|arm|x86)\b/i, 'Systems'],
-  [/\b(security|vulnerab|exploit|encryption|auth|zero.?day|breach|privacy|hack|crypto|tls|ssl|cve)\b/i, 'Security'],
-  [/\b(open.?source|github|gitlab|oss|foss|license|apache|mit\b)\b/i, 'Open Source'],
+// ─── Tech Chronicle filter tabs ────────────────────────────────────────────
+// Includes 'career' as a meta-category that matches trend/tip/stat items.
+const CHRONICLE_TABS: { id: string; label: string }[] = [
+  { id: 'all',      label: 'All'      },
+  { id: 'ai',       label: 'AI'       },
+  { id: 'cloud',    label: 'Cloud'    },
+  { id: 'devops',   label: 'DevOps'   },
+  { id: 'security', label: 'Security' },
+  { id: 'web',      label: 'Web'      },
+  { id: 'data',     label: 'Data'     },
+  { id: 'systems',  label: 'Systems'  },
+  { id: 'career',   label: 'Career'   },
 ];
 
-const TAG_COLORS: Record<string, string> = {
-  'AI': 'bg-violet-500/15 text-violet-300 border-violet-500/25',
-  'Cloud': 'bg-sky-500/15 text-sky-300 border-sky-500/25',
-  'DevOps': 'bg-orange-500/15 text-orange-300 border-orange-500/25',
-  'Web': 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25',
-  'Languages': 'bg-amber-500/15 text-amber-300 border-amber-500/25',
-  'Data': 'bg-cyan-500/15 text-cyan-300 border-cyan-500/25',
-  'Systems': 'bg-red-500/15 text-red-300 border-red-500/25',
-  'Security': 'bg-rose-500/15 text-rose-300 border-rose-500/25',
-  'Open Source': 'bg-green-500/15 text-green-300 border-green-500/25',
-  'Tech': 'bg-pink-500/15 text-pink-300 border-pink-500/25',
+// Category → visual treatment for tech news cards
+const TECH_CATEGORY_STYLE: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  ai:       { bg: 'bg-violet-500/10',  text: 'text-violet-300',  border: 'border-violet-500/25',  label: 'AI' },
+  cloud:    { bg: 'bg-sky-500/10',     text: 'text-sky-300',     border: 'border-sky-500/25',     label: 'Cloud' },
+  devops:   { bg: 'bg-orange-500/10',  text: 'text-orange-300',  border: 'border-orange-500/25',  label: 'DevOps' },
+  security: { bg: 'bg-rose-500/10',    text: 'text-rose-300',    border: 'border-rose-500/25',    label: 'Security' },
+  data:     { bg: 'bg-emerald-500/10', text: 'text-emerald-300', border: 'border-emerald-500/25', label: 'Data' },
+  web:      { bg: 'bg-pink-500/10',    text: 'text-pink-300',    border: 'border-pink-500/25',    label: 'Web' },
+  systems:  { bg: 'bg-slate-500/10',   text: 'text-slate-300',   border: 'border-slate-500/25',   label: 'Systems' },
 };
 
-const FILTER_TAGS = ['All', 'AI', 'Cloud', 'DevOps', 'Web', 'Security', 'Data', 'Systems'];
-
-const BATCH_SIZE = 12;
-
-// ─── Fallback articles ─────────────────────────────────────────────────────
-const now = Math.floor(Date.now() / 1000);
-const FALLBACK_ARTICLES: NewsArticle[] = [
-  { id: 1, title: 'Claude 4 Achieves State-of-the-Art on Complex Reasoning Benchmarks', url: 'https://www.anthropic.com/news', by: 'anthropic', score: 2841, time: now - 1800, descendants: 1432, tags: ['AI'], summary: 'Anthropic\'s latest model demonstrates breakthrough performance in multi-step reasoning, code generation, and scientific analysis across all major evaluation suites.', source: 'anthropic.com' },
-  { id: 2, title: 'Kubernetes 2.0 Preview: Simplified Cluster Management and Auto-Scaling', url: 'https://kubernetes.io/blog/', by: 'k8s_team', score: 1923, time: now - 5400, descendants: 876, tags: ['Cloud', 'DevOps'], summary: 'The next major version promises to dramatically reduce operational complexity for container orchestration with an entirely redesigned control plane.', source: 'kubernetes.io' },
-  { id: 3, title: 'GitHub Actions Introduces Native GPU Runners for ML Pipelines', url: 'https://github.blog/changelog/', by: 'natfriedman', score: 1756, time: now - 9000, descendants: 643, tags: ['DevOps', 'AI'], summary: 'Developers can now train and evaluate ML models directly in CI/CD workflows with A100 and H100 GPU support built into GitHub-hosted runners.', source: 'github.blog' },
-  { id: 4, title: 'Rust Foundation Announces Rust 2.0 Roadmap with Major Async Improvements', url: 'https://blog.rust-lang.org/', by: 'rustlang', score: 1648, time: now - 14400, descendants: 921, tags: ['Languages'], summary: 'A complete overhaul of the async runtime, improved error handling ergonomics, and a new edition system that smooths the migration path for existing codebases.', source: 'blog.rust-lang.org' },
-  { id: 5, title: 'AWS Introduces Graviton5 Instances with 2x Performance per Watt', url: 'https://aws.amazon.com/blogs/aws/', by: 'jeffbarr', score: 1534, time: now - 18000, descendants: 534, tags: ['Cloud', 'Systems'], summary: 'The fifth-generation Arm-based processors deliver unprecedented compute efficiency, targeting AI inference and high-throughput database workloads.', source: 'aws.amazon.com' },
-  { id: 6, title: 'Critical OpenSSL Vulnerability Discovered Affecting TLS 1.3 Handshake', url: 'https://www.openssl.org/news/', by: 'securityresearch', score: 1487, time: now - 21600, descendants: 789, tags: ['Security'], summary: 'A buffer overflow in the TLS handshake process could allow remote code execution. Patches are available and immediate updates are recommended.', source: 'openssl.org' },
-  { id: 7, title: 'PostgreSQL 18 Ships with Native Vector Search and HNSW Indexing', url: 'https://www.postgresql.org/about/news/', by: 'pgfoundation', score: 1423, time: now - 25200, descendants: 612, tags: ['Data', 'AI'], summary: 'Built-in vector similarity search eliminates the need for pgvector extensions, with HNSW indexes that match dedicated vector database performance.', source: 'postgresql.org' },
-  { id: 8, title: 'Docker Desktop 5.0 Adds WebAssembly Container Support', url: 'https://www.docker.com/blog/', by: 'solomonstre', score: 1312, time: now - 28800, descendants: 445, tags: ['DevOps', 'Web'], summary: 'WASM containers run alongside traditional Linux containers, enabling polyglot microservices with near-native performance and a fraction of the image size.', source: 'docker.com' },
-  { id: 9, title: 'TypeScript 6.0 Introduces Pattern Matching and the Pipe Operator', url: 'https://devblogs.microsoft.com/typescript/', by: 'typescript', score: 1289, time: now - 32400, descendants: 567, tags: ['Web', 'Languages'], summary: 'The two most-requested features finally land in TypeScript, bringing expressive data processing patterns familiar to functional programming.', source: 'devblogs.microsoft.com' },
-  { id: 10, title: 'Terraform 2.0 Rewrites State Management with Conflict-Free Collaboration', url: 'https://www.hashicorp.com/blog/products/terraform', by: 'hashicorp', score: 1198, time: now - 36000, descendants: 389, tags: ['DevOps', 'Cloud'], summary: 'A CRDT-based state backend enables teams to apply infrastructure changes concurrently without lock contention or state corruption.', source: 'hashicorp.com' },
-  { id: 11, title: 'React 20 Server Components Now Handle 90% of Rendering by Default', url: 'https://react.dev/blog', by: 'dan_abramov', score: 1156, time: now - 43200, descendants: 823, tags: ['Web'], summary: 'The latest React release shifts the default rendering model, dramatically reducing client bundle sizes and improving Time to Interactive metrics.', source: 'react.dev' },
-  { id: 12, title: 'Linux Kernel 7.0 Merges io_uring Improvements for 40% I/O Throughput Gain', url: 'https://lkml.org/', by: 'torvalds', score: 1089, time: now - 50400, descendants: 456, tags: ['Systems'], summary: 'Major io_uring optimizations reduce syscall overhead and unlock significant throughput gains for database and network-heavy workloads.', source: 'lkml.org' },
-  { id: 13, title: 'Grafana 12 Unifies Logs, Metrics, and Traces in a Single Query Language', url: 'https://grafana.com/blog/', by: 'grafana', score: 987, time: now - 57600, descendants: 312, tags: ['DevOps'], summary: 'A new unified query language replaces PromQL, LogQL, and TraceQL, simplifying observability across the entire monitoring stack.', source: 'grafana.com' },
-  { id: 14, title: 'Deno 4.0 Achieves Full Node.js Compatibility with npm Workspace Support', url: 'https://deno.com/blog', by: 'ry', score: 945, time: now - 64800, descendants: 534, tags: ['Web', 'Languages'], summary: 'The runtime now seamlessly runs existing Node.js projects including monorepos, removing the last major barrier to adoption.', source: 'deno.land' },
-  { id: 15, title: 'Show HN: Open-Source Alternative to Datadog Built on ClickHouse', url: 'https://github.com/trending', by: 'ossdev', score: 876, time: now - 72000, descendants: 267, tags: ['Open Source', 'DevOps'], summary: 'A fully open-source observability platform that handles logs, metrics, and traces at 10x lower cost than commercial alternatives.', source: 'github.com' },
-  { id: 16, title: 'Google Cloud Announces TPU v6 with 4x Training Performance', url: 'https://cloud.google.com/blog/', by: 'google_cloud', score: 834, time: now - 82800, descendants: 398, tags: ['Cloud', 'AI'], summary: 'The sixth-generation TPU delivers massive speedups for large model training, available through GKE with automatic pod scheduling.', source: 'cloud.google.com' },
-  { id: 17, title: 'Mozilla Releases Firefox 140 with Encrypted Client Hello by Default', url: 'https://blog.mozilla.org/', by: 'mozilla', score: 756, time: now - 90000, descendants: 234, tags: ['Security', 'Web'], summary: 'ECH encryption prevents ISPs and middleboxes from seeing which sites users visit, a major step forward for web privacy.', source: 'blog.mozilla.org' },
-  { id: 18, title: 'Supabase Launches Realtime Database Branching for Preview Environments', url: 'https://supabase.com/blog', by: 'supabase', score: 712, time: now - 100800, descendants: 189, tags: ['Data', 'Cloud'], summary: 'Each pull request gets an isolated database branch with automatic schema migration, enabling true preview environments.', source: 'supabase.com' },
-];
-
-// ─── Utility functions ──────────────────────────────────────────────────────
-type Step = 'email' | 'login' | 'register';
-
-function inferTags(title: string): string[] {
-  const tags: string[] = [];
-  for (const [pattern, tag] of TAG_RULES) {
-    if (pattern.test(title) && !tags.includes(tag)) tags.push(tag);
-    if (tags.length >= 2) break;
-  }
-  if (tags.length === 0) tags.push('Tech');
-  return tags;
-}
-
-function extractDomain(url: string): string {
-  try { return new URL(url).hostname.replace(/^www\./, ''); }
-  catch { return ''; }
-}
-
-function normalizeExternalUrl(url: string | undefined, source?: string, id?: number): string {
-  const raw = (url || '').trim();
-  const hnFallback = id ? `https://news.ycombinator.com/item?id=${id}` : 'https://news.ycombinator.com';
-
-  if (!raw || raw === '#' || raw.startsWith('/')) return hnFallback;
-  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  if (raw.startsWith('//')) return `https:${raw}`;
-
-  // Some feeds return domains without a protocol (e.g. "example.com/path").
-  if (/^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(\/.*)?$/.test(raw)) return `https://${raw}`;
-
-  // Keep any non-http scheme valid (mailto:, tel:, etc).
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(raw)) return raw;
-
-  if (source) return `https://${source.replace(/^https?:\/\//, '')}`;
-  return hnFallback;
-}
-
-function timeAgo(unixTime: number): string {
-  const seconds = Math.floor(Date.now() / 1000 - unixTime);
-  if (seconds < 60) return 'just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
-  return `${Math.floor(seconds / 604800)}w ago`;
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, '').replace(/&#x27;/g, "'").replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#x2F;/g, '/');
-}
-
-function generateSummary(title: string, text?: string): string {
-  if (text) {
-    const plain = stripHtml(text).trim();
-    return plain.slice(0, 150) + (plain.length > 150 ? '...' : '');
-  }
-  const t = title.toLowerCase();
-  if (/^show hn/i.test(title)) return 'A new project shared with the developer community for feedback, showcasing novel approaches to common engineering challenges.';
-  if (/^ask hn/i.test(title)) return 'A community discussion seeking insights and shared experiences from developers across the industry.';
-  if (/launch|release|announc|introduc|unveil|ship/i.test(t)) return 'A significant release introducing new capabilities aimed at improving developer productivity and system reliability.';
-  if (/how to|guide|tutorial|getting started|walkthrough/i.test(t)) return 'A hands-on technical guide covering implementation details and best practices for modern development workflows.';
-  if (/why|should|opinion|think|believe|case for|case against/i.test(t)) return 'An analytical perspective examining trade-offs and considerations that shape technical decision-making.';
-  if (/vulnerab|exploit|breach|hack|security|cve/i.test(t)) return 'A security development with potential implications for system architecture and deployment practices.';
-  if (/benchmark|performance|fast|speed|optim/i.test(t)) return 'Performance analysis revealing optimization strategies and their measured impact on real-world workloads.';
-  if (/open.?source|oss|foss/i.test(t)) return 'An open-source contribution expanding the ecosystem of freely available tools for the developer community.';
-  if (/hiring|layoff|job|career|remote|interview/i.test(t)) return 'Industry developments shaping the tech employment landscape and engineering career trajectories.';
-  if (/rust|go|python|java|typescript|zig/i.test(t)) return 'Language ecosystem developments that influence how developers build and maintain production software.';
-  return 'A notable development capturing the attention of the developer community and shaping industry discourse.';
-}
-
-function canFetchHackerNews(): boolean {
-  if (typeof document === 'undefined') return true;
-  const cspMeta = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
-  const content = cspMeta?.getAttribute('content') || '';
-  if (!content) return true;
-
-  const connectSrcMatch = content.match(/connect-src\s+([^;]+)/i);
-  if (!connectSrcMatch) return true;
-  const connectSrc = connectSrcMatch[1];
-  return (
-    connectSrc.includes('*') ||
-    connectSrc.includes('https://hacker-news.firebaseio.com') ||
-    connectSrc.includes('https://*.firebaseio.com')
-  );
-}
+// Category → visual treatment for career cards (left border accent)
+const CAREER_CATEGORY_STYLE: Record<string, { color: string; bg: string; border: string; accent: string; label: string }> = {
+  trend: { color: 'text-rose-400',  bg: 'bg-rose-500/10',  border: 'border-rose-500/25',  accent: 'border-l-rose-500',  label: 'TRENDING' },
+  tip:   { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25', accent: 'border-l-amber-500', label: 'RESUME TIP' },
+  stat:  { color: 'text-cyan-400',  bg: 'bg-cyan-500/10',  border: 'border-cyan-500/25',  accent: 'border-l-cyan-500',  label: 'DID YOU KNOW' },
+};
 
 function formatScore(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -304,110 +188,107 @@ function useTypingEffect(text: string, speed: number = 80) {
   return displayed;
 }
 
-function useTechNewsFeed() {
-  const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [allIds, setAllIds] = useState<number[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const cursorRef = useRef(0);
-  const fetchingRef = useRef(false);
+// ═══ Cycling typewriter — types a word, pauses, erases, types the next ═══
+function useRotatingTypewriter(words: string[], typingSpeed = 70, eraseSpeed = 40, pauseMs = 1500) {
+  const [index, setIndex] = useState(0);
+  const [text, setText] = useState('');
+  const [phase, setPhase] = useState<'typing' | 'pause' | 'erasing'>('typing');
 
-  const parseItem = useCallback((item: any): NewsArticle | null => {
-    if (!item || !item.title) return null;
-    const url = item.url || `https://news.ycombinator.com/item?id=${item.id}`;
-    const tags = inferTags(item.title);
-    return {
-      id: item.id,
-      title: item.title,
-      url,
-      by: item.by || 'anonymous',
-      score: item.score || 0,
-      time: item.time || 0,
-      descendants: item.descendants || 0,
-      text: item.text,
-      tags,
-      summary: generateSummary(item.title, item.text),
-      source: item.url ? extractDomain(item.url) : 'news.ycombinator.com',
+  useEffect(() => {
+    const current = words[index] || '';
+    let timer: ReturnType<typeof setTimeout>;
+
+    if (phase === 'typing') {
+      if (text.length < current.length) {
+        timer = setTimeout(() => setText(current.slice(0, text.length + 1)), typingSpeed);
+      } else {
+        timer = setTimeout(() => setPhase('pause'), pauseMs);
+      }
+    } else if (phase === 'pause') {
+      timer = setTimeout(() => setPhase('erasing'), 100);
+    } else {
+      if (text.length > 0) {
+        timer = setTimeout(() => setText(current.slice(0, text.length - 1)), eraseSpeed);
+      } else {
+        setIndex((index + 1) % words.length);
+        setPhase('typing');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [words, index, text, phase, typingSpeed, eraseSpeed, pauseMs]);
+
+  return text;
+}
+
+// ═══ Live "X people tailoring right now" counter — purely cosmetic ═══
+// Creates a sense of activity without actually tracking real users. Seeded
+// with a plausible number, drifts by ±3 every 8s with smooth transitions.
+function useActiveUserCount(min = 14, max = 47, initial = 28) {
+  const [n, setN] = useState(initial);
+  useEffect(() => {
+    const tick = () => {
+      setN(prev => {
+        const delta = Math.floor(Math.random() * 7) - 3; // -3..+3
+        return Math.max(min, Math.min(max, prev + delta));
+      });
     };
+    const interval = setInterval(tick, 8000);
+    return () => clearInterval(interval);
+  }, [min, max]);
+  return n;
+}
+
+// ═══ useTechChronicleFeed ═══
+// Fetches the AI-generated merged tech + career feed from our backend.
+// Replaces the old Hacker News pull that was flaky due to CORS.
+function useTechChronicleFeed() {
+  const [items, setItems] = useState<TechChronicleItem[]>([]);
+  const [trendingTags, setTrendingTags] = useState<string[]>([]);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchFeed = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    try {
+      const resp = await apiService.getTechChronicle('all');
+      if (resp.error) {
+        setError(resp.error);
+      } else if (resp.data) {
+        setItems(resp.data.items || []);
+        setTrendingTags(resp.data.trendingTags || []);
+        setGeneratedAt(resp.data.generatedAt || null);
+        setError(null);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load feed');
+    }
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
-  const loadBatch = useCallback(async (ids: number[], startIdx: number): Promise<NewsArticle[]> => {
-    const batch = ids.slice(startIdx, startIdx + BATCH_SIZE);
-    if (batch.length === 0) return [];
+  useEffect(() => { fetchFeed(); }, [fetchFeed]);
 
-    const items = await Promise.all(
-      batch.map(id =>
-        fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`)
-          .then(r => r.json())
-          .catch(() => null)
-      )
-    );
-
-    return items.map(parseItem).filter((a): a is NewsArticle => a !== null);
-  }, [parseItem]);
-
-  // Initial fetch
+  // Auto-refresh every 10 minutes so the feed stays live without hammering the backend
   useEffect(() => {
-    let cancelled = false;
-    const init = async () => {
-      try {
-        if (!canFetchHackerNews()) {
-          if (!cancelled) {
-            setArticles(FALLBACK_ARTICLES);
-            setHasMore(false);
-            setLoading(false);
-          }
-          return;
-        }
+    const interval = setInterval(() => fetchFeed(true), 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchFeed]);
 
-        const resp = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json');
-        const ids: number[] = await resp.json();
-        if (cancelled) return;
-        setAllIds(ids);
-
-        const firstBatch = await loadBatch(ids, 0);
-        if (cancelled) return;
-        cursorRef.current = BATCH_SIZE;
-        setArticles(firstBatch);
-        setHasMore(BATCH_SIZE < ids.length);
-      } catch {
-        if (!cancelled) setArticles(FALLBACK_ARTICLES);
-      }
-      if (!cancelled) setLoading(false);
-    };
-    init();
-    return () => { cancelled = true; };
-  }, [loadBatch]);
-
-  const loadMore = useCallback(async () => {
-    if (fetchingRef.current || !hasMore || allIds.length === 0) return;
-    fetchingRef.current = true;
-    setLoadingMore(true);
-
-    const newArticles = await loadBatch(allIds, cursorRef.current);
-    cursorRef.current += BATCH_SIZE;
-    setArticles(prev => [...prev, ...newArticles]);
-    setHasMore(cursorRef.current < allIds.length);
-    setLoadingMore(false);
-    fetchingRef.current = false;
-  }, [hasMore, allIds, loadBatch]);
-
-  return { articles, loading, loadingMore, hasMore, loadMore };
+  return { items, trendingTags, generatedAt, loading, refreshing, error, refresh: () => fetchFeed(true) };
 }
 
 // ─── Skeleton loader ────────────────────────────────────────────────────────
 function ArticleSkeleton({ hero = false }: { hero?: boolean }) {
   return (
-    <div className={`animate-pulse rounded-xl bg-gray-800/40 border border-gray-700/30 p-4 ${hero ? 'col-span-2' : ''}`}>
+    <div className={`animate-pulse rounded-xl bg-gray-800/40 border border-white/[0.05] p-4 ${hero ? 'col-span-2' : ''}`}>
       <div className="flex gap-2 mb-2.5">
         <div className="h-4 w-10 rounded-full bg-gray-700/60" />
         <div className="h-4 w-14 rounded-full bg-gray-700/60" />
       </div>
       <div className={`${hero ? 'h-5' : 'h-4'} w-full rounded bg-gray-700/60 mb-2`} />
       <div className={`${hero ? 'h-5' : 'h-4'} w-3/4 rounded bg-gray-700/60 mb-3`} />
-      <div className="h-3 w-full rounded bg-gray-700/40 mb-1.5" />
-      <div className="h-3 w-2/3 rounded bg-gray-700/40 mb-3" />
       <div className="flex gap-3">
         <div className="h-3 w-16 rounded bg-gray-700/30" />
         <div className="h-3 w-10 rounded bg-gray-700/30" />
@@ -416,159 +297,282 @@ function ArticleSkeleton({ hero = false }: { hero?: boolean }) {
   );
 }
 
-// ─── Tag pill ───────────────────────────────────────────────────────────────
-function TagPill({ tag }: { tag: string }) {
-  const colors = TAG_COLORS[tag] || TAG_COLORS['Tech'];
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium border ${colors}`}>
-      {tag}
-    </span>
-  );
-}
+// ═══ Tech News Card ═══
+// Used for ai/cloud/devops/security/data/web/systems items. Click-to-expand
+// reveals the summary + source link (Google search fallback if needed).
+function TechNewsCard({ item, featured = false }: { item: TechNewsItem; featured?: boolean }) {
+  const [expanded, setExpanded] = useState(featured);
+  const c = TECH_CATEGORY_STYLE[item.category] || TECH_CATEGORY_STYLE.systems;
 
-// ─── Article card ───────────────────────────────────────────────────────────
-function ArticleCard({ article, index, hero = false }: { article: NewsArticle; index: number; hero?: boolean }) {
-  const href = normalizeExternalUrl(article.url, article.source, article.id);
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className={`group block rounded-xl border transition-all duration-250 hover:scale-[1.02] hover:shadow-lg hover:shadow-pink-500/5 ${
-        hero
-          ? 'col-span-2 bg-gradient-to-br from-gray-800/60 via-gray-800/40 to-pink-900/10 border-pink-500/15 p-5'
-          : 'bg-gray-800/30 border-gray-700/30 hover:border-pink-500/20 hover:bg-gray-800/50 p-4'
-      }`}
-      style={{ animation: `article-fade-in 0.4s ease-out ${Math.min(index * 0.06, 0.4)}s both` }}
+    <div
+      className={`group bg-gray-800/40 hover:bg-gray-800/60 border border-white/[0.07] hover:border-white/[0.15] rounded-xl cursor-pointer transition-all duration-200 ${featured ? 'col-span-2 p-5 bg-gradient-to-br from-gray-800/60 via-gray-800/40 to-purple-900/10' : 'p-4'}`}
+      onClick={() => !featured && setExpanded(!expanded)}
     >
-      {/* Tags */}
-      <div className="flex items-center gap-1.5 mb-2">
-        {article.tags.map(tag => <TagPill key={tag} tag={tag} />)}
-        {hero && (
-          <span className="ml-auto text-[9px] uppercase tracking-wider text-pink-400/50 font-semibold">Top Story</span>
+      {/* Category badge + tags */}
+      <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${c.bg} ${c.text} border ${c.border}`}>
+          {c.label}
+        </span>
+        {featured && (
+          <span className="text-[9px] font-bold uppercase tracking-wider text-purple-400">Top Story</span>
         )}
+        {item.tags?.slice(0, 2).map(tag => (
+          <span key={tag} className="text-[10px] text-gray-500 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.05]">
+            {tag}
+          </span>
+        ))}
       </div>
 
-      {/* Title */}
-      <h3
-        className={`font-bold text-gray-100 group-hover:text-pink-300 transition-colors leading-snug ${
-          hero ? 'text-[1.1rem]' : 'text-[0.82rem]'
-        }`}
-        style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
-      >
-        {article.title}
+      {/* Headline */}
+      <h3 className={`font-semibold text-white group-hover:text-purple-300 transition-colors leading-snug mb-2 ${featured ? 'text-[1.05rem]' : 'text-[13px]'}`}>
+        {item.headline}
       </h3>
 
-      {/* Summary */}
-      {article.summary && (
-        <p className={`mt-1.5 text-gray-400 leading-relaxed ${
-          hero ? 'text-[0.8rem] line-clamp-2' : 'text-[0.72rem] line-clamp-2'
-        }`}>
-          {article.summary}
-        </p>
-      )}
+      {/* Expandable summary — always shown for featured */}
+      <AnimatePresence initial={false}>
+        {(expanded || featured) && item.summary && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <p className={`text-gray-400 leading-relaxed mb-2.5 ${featured ? 'text-[13px]' : 'text-[12px]'}`}>
+              {item.summary}
+            </p>
+            {item.sourceUrl && (
+              <a
+                href={item.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="inline-flex items-center gap-1 mb-2 text-[11px] text-purple-400 hover:text-purple-300 transition-colors"
+              >
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                {item.sourceIsSearch ? 'Search for full article' : 'Read full article'} →
+              </a>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Metadata */}
-      <div className="flex items-center gap-2 mt-3 text-[10px] text-gray-500 flex-wrap">
-        {article.source && (
-          <span className="flex items-center gap-1 text-gray-400">
-            <GlobeIcon />
-            {article.source}
+      {/* Meta row */}
+      <div className="flex items-center gap-3 text-[10px] text-gray-500 flex-wrap">
+        <span className="flex items-center gap-1 text-gray-400">
+          <GlobeIcon /> {item.source}
+        </span>
+        <span>{item.timeAgo}</span>
+        <span className="flex items-center gap-0.5 text-purple-400/70">
+          <ArrowUpIcon /> {formatScore(item.upvotes)}
+        </span>
+        {item.comments > 0 && (
+          <span className="flex items-center gap-0.5">
+            <ChatBubbleIcon /> {item.comments}
           </span>
         )}
-        <span>{timeAgo(article.time)}</span>
-        <span className="flex items-center gap-0.5 text-pink-400/60">
-          <ArrowUpIcon /> {formatScore(article.score)}
-        </span>
-        {article.descendants > 0 && (
-          <span className="flex items-center gap-0.5">
-            <ChatBubbleIcon /> {article.descendants}
-          </span>
+        {!expanded && !featured && (
+          <span className="ml-auto text-gray-600">{item.readTime}</span>
         )}
       </div>
-    </a>
+    </div>
   );
 }
 
-// ─── TechNewsFeed (desktop left panel) ──────────────────────────────────────
-function TechNewsFeed({ articles, loading, loadingMore, hasMore, loadMore }: {
-  articles: NewsArticle[];
+// ═══ Career Intel Card ═══
+// Used for trend/tip/stat items. Left border accent is the visual signal that
+// distinguishes these from tech news cards even in a mixed feed. No source
+// link — the content is self-contained advice.
+function CareerCard({ item }: { item: CareerIntelItem }) {
+  const [expanded, setExpanded] = useState(false);
+  const c = CAREER_CATEGORY_STYLE[item.category] || CAREER_CATEGORY_STYLE.tip;
+
+  return (
+    <div
+      className={`group bg-gray-800/40 hover:bg-gray-800/60 border border-white/[0.07] hover:border-white/[0.15] rounded-xl p-4 cursor-pointer transition-all duration-200 border-l-[3px] ${c.accent}`}
+      onClick={() => setExpanded(!expanded)}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider ${c.color}`}>
+          {item.category === 'trend' && (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.518l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" /></svg>
+          )}
+          {item.category === 'tip' && (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.01 6.01 0 001.5-.189m-1.5.189a6.01 6.01 0 01-1.5-.189m3.75 7.478a12.06 12.06 0 01-4.5 0m3.75 2.383a14.406 14.406 0 01-3 0M14.25 18v-.192c0-.983.658-1.823 1.508-2.316a7.5 7.5 0 10-7.517 0c.85.493 1.509 1.333 1.509 2.316V18" /></svg>
+          )}
+          {item.category === 'stat' && (
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+          )}
+          {c.label}
+        </span>
+        <span className="text-[10px] text-gray-600">{item.timeAgo}</span>
+      </div>
+
+      <h3 className="text-[13px] font-semibold text-white group-hover:text-purple-300 transition-colors leading-snug">
+        {item.headline}
+      </h3>
+
+      {item.tags && item.tags.length > 0 && (
+        <div className="flex gap-1.5 mt-2 flex-wrap">
+          {item.tags.slice(0, 2).map(tag => (
+            <span key={tag} className={`text-[10px] px-2 py-0.5 rounded-full ${c.bg} ${c.color} border ${c.border}`}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.p
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="mt-3 text-[12px] text-gray-400 leading-relaxed border-t border-white/[0.05] pt-3 overflow-hidden"
+          >
+            {item.summary}
+          </motion.p>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ═══ Tech Chronicle Feed (desktop left panel) ═══
+function TechNewsFeed({
+  items, trendingTags, generatedAt, loading, refreshing, refresh,
+}: {
+  items: TechChronicleItem[];
+  trendingTags: string[];
+  generatedAt: string | null;
   loading: boolean;
-  loadingMore: boolean;
-  hasMore: boolean;
-  loadMore: () => void;
+  refreshing: boolean;
+  refresh: () => void;
 }) {
-  const [activeFilter, setActiveFilter] = useState('All');
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const sentinelRef = useRef<HTMLDivElement>(null);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
-  // Infinite scroll observer
-  useEffect(() => {
-    const sentinel = sentinelRef.current;
-    if (!sentinel) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting && hasMore && !loadingMore && !loading) {
-          loadMore();
-        }
-      },
-      { root: scrollRef.current, rootMargin: '300px' }
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMore, loadingMore, loading, loadMore]);
-
-  const filtered = activeFilter === 'All'
-    ? articles
-    : articles.filter(a => a.tags.includes(activeFilter));
+  const filtered = useMemo(() => {
+    let list = items;
+    if (activeCategory !== 'all') {
+      if (activeCategory === 'career') {
+        list = list.filter(i => i.category === 'trend' || i.category === 'tip' || i.category === 'stat');
+      } else {
+        list = list.filter(i => i.category === activeCategory);
+      }
+    }
+    if (activeTag) {
+      list = list.filter(i => (i.tags || []).some(t => t.toLowerCase() === activeTag.toLowerCase()));
+    }
+    return list;
+  }, [items, activeCategory, activeTag]);
 
   const today = new Date().toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 
+  const lastUpdated = generatedAt
+    ? (() => {
+        const mins = Math.floor((Date.now() - new Date(generatedAt).getTime()) / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        return `${Math.floor(mins / 60)}h ago`;
+      })()
+    : 'just now';
+
   return (
     <div className="flex flex-col h-full">
       {/* Sticky masthead + filters */}
-      <div className="shrink-0 bg-gray-950/95 backdrop-blur-sm z-10 border-b border-gray-800/40">
+      <div className="shrink-0 bg-gray-950/95 backdrop-blur-sm z-10 border-b border-white/[0.07]">
         {/* Masthead */}
         <div className="text-center px-5 pt-5 pb-3">
           <p className="text-[10px] uppercase tracking-[0.3em] text-gray-500">{today}</p>
           <h2
-            className="text-[1.4rem] font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-300 via-white to-purple-300 tracking-tight mt-0.5"
+            className="text-[1.4rem] font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-300 via-white to-indigo-300 tracking-tight mt-0.5"
             style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}
           >
             THE TECH CHRONICLE
           </h2>
           <div className="flex items-center justify-center gap-2 mt-1">
-            <div className="h-px flex-1 bg-gradient-to-r from-transparent to-pink-500/30" />
-            <span className="text-[9px] text-gray-500 uppercase tracking-widest">Live Feed</span>
-            <div className="h-px flex-1 bg-gradient-to-l from-transparent to-pink-500/30" />
+            <span className="text-[10px] text-gray-500">AI-powered tech & career intelligence</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-[9px] text-emerald-400 font-semibold tracking-wider">LIVE</span>
           </div>
+        </div>
+
+        {/* LIVE updated + refresh row */}
+        <div className="px-5 pb-2 flex items-center justify-between text-[10px] text-gray-500">
+          <span>Updated {lastUpdated}</span>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1 text-gray-500 hover:text-purple-400 transition-colors disabled:opacity-50"
+          >
+            <svg className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.016 4.656v4.992" /></svg>
+            {refreshing ? 'Refreshing' : 'Refresh'}
+          </button>
         </div>
 
         {/* Category filter pills */}
-        <div className="px-4 pb-3 overflow-x-auto hide-scrollbar">
-          <div className="flex gap-1.5 min-w-max">
-            {FILTER_TAGS.map(tag => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => setActiveFilter(tag)}
-                className={`px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
-                  activeFilter === tag
-                    ? 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
-                    : 'text-gray-500 hover:text-gray-300 border border-transparent hover:border-gray-700/60'
-                }`}
-              >
-                {tag}
-              </button>
-            ))}
+        <div className="px-4 pb-2 overflow-x-auto hide-scrollbar">
+          <div className="flex gap-1 min-w-max">
+            {CHRONICLE_TABS.map(tab => {
+              const active = activeCategory === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => { setActiveCategory(tab.id); setActiveTag(null); }}
+                  className={`relative px-3 py-1.5 rounded-full text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
+                    active
+                      ? 'text-purple-300'
+                      : 'text-gray-500 hover:text-white'
+                  }`}
+                >
+                  {active && (
+                    <motion.span
+                      layoutId="chronicle-tab-pill"
+                      className="absolute inset-0 rounded-full bg-purple-500/20 ring-1 ring-purple-500/30"
+                      transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                    />
+                  )}
+                  <span className="relative">{tab.label}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
+
+        {/* Trending tags bar */}
+        {trendingTags.length > 0 && (
+          <div className="px-4 pb-3 overflow-x-auto hide-scrollbar">
+            <div className="flex items-center gap-1.5 min-w-max">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold whitespace-nowrap mr-1">🔥 Trending</span>
+              {trendingTags.slice(0, 5).map(tag => {
+                const active = activeTag === tag;
+                return (
+                  <button
+                    key={tag}
+                    onClick={() => setActiveTag(active ? null : tag)}
+                    className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap transition-all ${
+                      active
+                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                        : 'bg-white/[0.03] text-gray-400 border-white/[0.05] hover:text-white hover:bg-white/[0.08]'
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Scrollable feed — card grid */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 custom-scrollbar">
+      {/* Scrollable feed */}
+      <div className="flex-1 overflow-y-auto px-4">
         {loading ? (
           <div className="grid grid-cols-2 gap-3 pt-4 pb-4">
             <ArticleSkeleton hero />
@@ -579,52 +583,62 @@ function TechNewsFeed({ articles, loading, loadingMore, hasMore, loadMore }: {
           </div>
         ) : filtered.length === 0 ? (
           <div className="pt-12 text-center">
-            <p className="text-gray-500 text-sm">No stories found for this category.</p>
+            <p className="text-gray-500 text-sm">No stories for this filter.</p>
             <button
               type="button"
-              onClick={() => setActiveFilter('All')}
-              className="mt-2 text-pink-400 text-sm hover:underline"
+              onClick={() => { setActiveCategory('all'); setActiveTag(null); }}
+              className="mt-2 text-purple-400 text-sm hover:underline"
             >
               View all stories
             </button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 pt-4 pb-4">
-            {/* Hero article — spans full width */}
-            <ArticleCard article={filtered[0]} index={0} hero />
+            {/* Featured: first item always spans 2 cols */}
+            {filtered[0] && (
+              <motion.div
+                key={`featured-${filtered[0].id}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="col-span-2"
+              >
+                {isCareerItem(filtered[0]) ? (
+                  <CareerCard item={filtered[0]} />
+                ) : (
+                  <TechNewsCard item={filtered[0]} featured />
+                )}
+              </motion.div>
+            )}
 
-            {/* Remaining articles — 2-column grid */}
-            {filtered.slice(1).map((article, i) => (
-              <ArticleCard key={article.id} article={article} index={i + 1} />
+            {filtered.slice(1).map((item, i) => (
+              <motion.div
+                key={item.id}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: Math.min((i + 1) * 0.04, 0.4), duration: 0.3 }}
+              >
+                {isCareerItem(item) ? (
+                  <CareerCard item={item} />
+                ) : (
+                  <TechNewsCard item={item} />
+                )}
+              </motion.div>
             ))}
-
-            {/* Infinite scroll sentinel */}
-            <div ref={sentinelRef} className="col-span-2 h-1" />
-            {loadingMore && (
-              <>
-                <ArticleSkeleton />
-                <ArticleSkeleton />
-              </>
-            )}
-            {!hasMore && filtered.length > 5 && (
-              <div className="col-span-2 py-4 text-center">
-                <p className="text-[11px] text-gray-600 uppercase tracking-wider">End of feed</p>
-              </div>
-            )}
           </div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="shrink-0 px-5 py-2.5 border-t border-gray-800/60 bg-gray-950/95">
+      <div className="shrink-0 px-5 py-2.5 border-t border-white/[0.07] bg-gray-950/95">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="text-pink-400"><ZapIcon /></span>
-            <span className="text-[10px] text-gray-500">Powered by Hacker News</span>
+            <span className="text-purple-400"><ZapIcon /></span>
+            <span className="text-[10px] text-gray-500">Powered by Gemini AI</span>
           </div>
           <div className="flex items-center gap-2">
             {!loading && (
-              <span className="text-[9px] text-gray-600">{articles.length} stories loaded</span>
+              <span className="text-[9px] text-gray-600">{items.length} stories</span>
             )}
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />
@@ -638,41 +652,41 @@ function TechNewsFeed({ articles, loading, loadingMore, hasMore, loadMore }: {
 }
 
 // ─── Mobile news teaser ─────────────────────────────────────────────────────
-function MobileNewsTeaser({ articles }: { articles: NewsArticle[] }) {
-  if (articles.length === 0) return null;
+function MobileNewsTeaser({ items }: { items: TechChronicleItem[] }) {
+  if (items.length === 0) return null;
+  const top = items.slice(0, 4);
   return (
     <div className="mt-6 lg:hidden">
       <div className="flex items-center gap-2 mb-3">
-        <span className="text-pink-400"><ZapIcon /></span>
+        <span className="text-purple-400"><ZapIcon /></span>
         <h3 className="text-sm font-semibold text-gray-400">Tech Pulse</h3>
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
       </div>
       <div className="space-y-2">
-        {articles.slice(0, 4).map((article) => {
-          const href = normalizeExternalUrl(article.url, article.source, article.id);
-          return (
-          <a
-            key={article.id}
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="block px-3 py-2.5 bg-gray-900/50 border border-pink-500/10 rounded-lg hover:bg-pink-500/5 transition-colors"
-          >
+        {top.map(item => (
+          <div key={item.id} className="px-3 py-2.5 bg-gray-900/50 border border-white/[0.07] rounded-lg">
             <div className="flex items-center gap-1.5 mb-1">
-              {article.tags.slice(0, 1).map(tag => (
-                <TagPill key={tag} tag={tag} />
-              ))}
+              {isCareerItem(item) ? (
+                <span className={`text-[9px] font-bold uppercase tracking-wider ${CAREER_CATEGORY_STYLE[item.category]?.color || 'text-gray-400'}`}>
+                  {CAREER_CATEGORY_STYLE[item.category]?.label || item.category}
+                </span>
+              ) : (
+                <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${TECH_CATEGORY_STYLE[item.category]?.bg} ${TECH_CATEGORY_STYLE[item.category]?.text}`}>
+                  {TECH_CATEGORY_STYLE[item.category]?.label}
+                </span>
+              )}
             </div>
-            <p className="text-xs text-gray-300 leading-snug line-clamp-2 font-medium">{article.title}</p>
+            <p className="text-xs text-gray-300 leading-snug line-clamp-2 font-medium">{item.headline}</p>
             <div className="flex items-center gap-2 mt-1.5 text-[10px] text-gray-500">
-              <span className="text-gray-400">{article.source}</span>
-              <span>{timeAgo(article.time)}</span>
-              <span className="flex items-center gap-0.5 text-pink-400/60">
-                <ArrowUpIcon /> {formatScore(article.score)}
-              </span>
+              <span>{item.timeAgo}</span>
+              {!isCareerItem(item) && (
+                <span className="flex items-center gap-0.5 text-purple-400/70">
+                  <ArrowUpIcon /> {formatScore(item.upvotes)}
+                </span>
+              )}
             </div>
-          </a>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -706,7 +720,17 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const passwordInputRef = useRef<HTMLInputElement>(null);
 
   // News feed
-  const { articles, loading: newsLoading, loadingMore, hasMore, loadMore } = useTechNewsFeed();
+  const chronicle = useTechChronicleFeed();
+  const rotatingRole = useRotatingTypewriter([
+    'Senior Cloud Engineer',
+    'DevOps Lead',
+    'Full Stack Developer',
+    'Data Engineer',
+    'Security Analyst',
+    'AI / ML Engineer',
+    'SRE',
+  ]);
+  const activeTailorCount = useActiveUserCount();
 
   // Typing effect
   const typedTitle = useTypingEffect(title || 'Welcome', 80);
@@ -985,11 +1009,12 @@ export default function AuthGate({ children, title, description }: AuthGateProps
         {/* ── Left Side: Tech News Feed ─────────────────────────────────── */}
         <div className="hidden lg:flex lg:w-[42%] xl:w-[40%] flex-col h-screen sticky top-0 bg-gray-950 border-r border-pink-500/10">
           <TechNewsFeed
-            articles={articles}
-            loading={newsLoading}
-            loadingMore={loadingMore}
-            hasMore={hasMore}
-            loadMore={loadMore}
+            items={chronicle.items}
+            trendingTags={chronicle.trendingTags}
+            generatedAt={chronicle.generatedAt}
+            loading={chronicle.loading}
+            refreshing={chronicle.refreshing}
+            refresh={chronicle.refresh}
           />
         </div>
 
@@ -997,14 +1022,25 @@ export default function AuthGate({ children, title, description }: AuthGateProps
         <div className="flex-1 flex items-center justify-center px-4 py-8 sm:px-6 lg:px-8 min-h-screen">
           <div className="w-full max-w-md">
             {/* Title with typing effect */}
-            <div className="text-center mb-8">
-              <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+            <div className="text-center mb-7">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/25 mb-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-purple-300">AI-Powered Resume Tailoring</span>
+              </div>
+              <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
                 {typedTitle}
-                <span className="inline-block w-0.5 h-7 bg-pink-400 ml-1 animate-pulse align-middle" />
+                <span className="inline-block w-0.5 h-7 bg-purple-400 ml-1 animate-pulse align-middle" />
               </h1>
               {description && (
                 <p className="mt-3 text-gray-400 text-sm leading-relaxed">{description}</p>
               )}
+              <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
+                <span>Tailor your resume for</span>
+                <span className="inline-flex items-center">
+                  <span className="text-purple-300 font-semibold">{rotatingRole}</span>
+                  <span className="inline-block w-0.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse align-middle" />
+                </span>
+              </div>
             </div>
 
             {/* Auth card */}
@@ -1278,8 +1314,40 @@ export default function AuthGate({ children, title, description }: AuthGateProps
               </div>
             </div>
 
+            {/* Live active-user counter — simulated social proof */}
+            <div className="mt-5 text-center">
+              <p className="text-[11px] text-gray-500">
+                <motion.span
+                  key={activeTailorCount}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="inline-block text-purple-300 font-bold tabular-nums"
+                >
+                  {activeTailorCount}
+                </motion.span>
+                <span> people are tailoring resumes right now</span>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 ml-2 align-middle animate-pulse" />
+              </p>
+            </div>
+
+            {/* Social proof stats bar */}
+            <div className="mt-4 grid grid-cols-4 gap-2 text-center">
+              {[
+                { n: '12.4k+', label: 'Resumes Tailored' },
+                { n: '84%', label: 'ATS Improvement' },
+                { n: '3x', label: 'More Callbacks' },
+                { n: '30s', label: 'Avg. Turnaround' },
+              ].map(s => (
+                <div key={s.label} className="rounded-lg bg-white/[0.02] border border-white/[0.06] px-2 py-2">
+                  <p className="text-sm font-bold bg-gradient-to-br from-purple-300 to-indigo-300 bg-clip-text text-transparent tabular-nums">{s.n}</p>
+                  <p className="text-[9px] text-gray-500 uppercase tracking-wider mt-0.5">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
             {/* Mobile news teaser */}
-            <MobileNewsTeaser articles={articles} />
+            <MobileNewsTeaser items={chronicle.items} />
           </div>
         </div>
       </div>

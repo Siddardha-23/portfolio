@@ -101,6 +101,111 @@ def tailor():
 
 
 # ------------------------------------------------------------------
+# POST /api/resume/regenerate — Regenerate tailored resume with user feedback
+# ------------------------------------------------------------------
+@resume_bp.route("/regenerate", methods=["POST"])
+@jwt_required()
+def regenerate():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"resume_regen:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    jd_analysis = data.get("jd_analysis")
+    tailored_resume = data.get("tailored_resume")
+    user_feedback = data.get("user_feedback", "").strip()
+
+    if not jd_analysis or not isinstance(jd_analysis, dict):
+        return jsonify({"error": "jd_analysis is required"}), 400
+    if not tailored_resume or not isinstance(tailored_resume, dict):
+        return jsonify({"error": "tailored_resume is required"}), 400
+    if not user_feedback:
+        return jsonify({"error": "user_feedback is required"}), 400
+    if len(user_feedback) > 2000:
+        return jsonify({"error": "Feedback too long (max 2000 characters)"}), 400
+
+    try:
+        user_email = get_jwt_identity()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        payload = {
+            "jd_analysis": jd_analysis,
+            "tailored_resume": tailored_resume,
+            "user_feedback": user_feedback,
+            "user_email": user_email,
+        }
+        job_id = svc.create_job("regenerate", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "regenerate", payload)
+        return jsonify({"job_id": job_id}), 202
+
+    except Exception as e:
+        logger.error(f"Resume regenerate error: {e}")
+        return jsonify({"error": "Failed to start resume regeneration. Please try again."}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/rewrite-bullet — Rewrite a single bullet with JD context
+# ------------------------------------------------------------------
+@resume_bp.route("/rewrite-bullet", methods=["POST"])
+@jwt_required()
+def rewrite_bullet():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"rewrite_bullet:{client_ip}", max_requests=30, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    bullet = data.get("bullet", "").strip()
+    job_title = data.get("job_title", "")
+    company = data.get("company", "")
+    jd_keywords = data.get("jd_keywords", [])
+
+    if not bullet:
+        return jsonify({"error": "bullet is required"}), 400
+    if len(bullet) > 1000:
+        return jsonify({"error": "Bullet too long (max 1000 chars)"}), 400
+
+    try:
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+
+        keyword_ctx = f"Target keywords: {', '.join(jd_keywords[:20])}\n" if jd_keywords else ""
+        role_ctx = f"Target role: {job_title}" + (f" at {company}" if company else "") + "\n" if job_title else ""
+
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+
+        prompt = (
+            "Rewrite this resume bullet to be more impactful and ATS-optimized.\n\n"
+            f"{role_ctx}{keyword_ctx}"
+            "RULES:\n"
+            "- Start with a strong action verb.\n"
+            "- Follow: Action Verb + Technology + Impact.\n"
+            "- MUST be ONE single sentence, max 200 characters.\n"
+            "- Do NOT invent metrics or technologies.\n"
+            "- No buzzwords.\n\n"
+            f"ORIGINAL: {bullet}\n\n"
+            'Respond with exactly: {"rewritten": "your single sentence here"}'
+        )
+
+        schema = {"rewritten": str}
+        result = gemini_json(prompt, max_tokens=2048, temperature=0.4, model=GEMINI_FLASH, schema=schema)
+        rewritten = result.get("rewritten", "").strip()
+        # Strip any leading/trailing quotes Gemini may have added
+        if rewritten.startswith('"'):
+            rewritten = rewritten.lstrip('"')
+        if rewritten.endswith('"'):
+            rewritten = rewritten.rstrip('"')
+
+        if not rewritten:
+            return jsonify({"rewritten": bullet}), 200
+        return jsonify({"rewritten": rewritten}), 200
+
+    except Exception as e:
+        logger.error(f"Bullet rewrite error: {e}", exc_info=True)
+        return jsonify({"error": f"Rewrite failed: {str(e)[:200]}"}), 500
+
+
+# ------------------------------------------------------------------
 # POST /api/resume/ats-scores — Submit ATS scoring job
 # ------------------------------------------------------------------
 
@@ -133,6 +238,245 @@ def ats_scores():
     except Exception as e:
         logger.error(f"ATS scoring error: {e}")
         return jsonify({"error": "Failed to start ATS scoring. Please try again."}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/cover-letter — Generate a cover letter
+# ------------------------------------------------------------------
+@resume_bp.route("/cover-letter", methods=["POST"])
+@jwt_required()
+def cover_letter():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cover_letter:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    tailored_resume = data.get("tailored_resume")
+    jd_analysis = data.get("jd_analysis")
+
+    if not tailored_resume or not isinstance(tailored_resume, dict):
+        return jsonify({"error": "tailored_resume is required"}), 400
+    if not jd_analysis or not isinstance(jd_analysis, dict):
+        return jsonify({"error": "jd_analysis is required"}), 400
+
+    try:
+        user_email = get_jwt_identity()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        payload = {
+            "tailored_resume": tailored_resume,
+            "jd_analysis": jd_analysis,
+            "user_email": user_email,
+        }
+        job_id = svc.create_job("cover_letter", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "cover_letter", payload)
+        return jsonify({"job_id": job_id}), 202
+
+    except Exception as e:
+        logger.error(f"Cover letter error: {e}")
+        return jsonify({"error": "Failed to start cover letter generation"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/cover-letter/download — Render cover letter as PDF
+# ------------------------------------------------------------------
+@resume_bp.route("/cover-letter/download", methods=["POST"])
+@jwt_required()
+def cover_letter_download():
+    """Render a cover letter text block into a single-page PDF using fpdf2.
+
+    Synchronous — rendering is fast (<100ms) and doesn't need an async job.
+    """
+    data = request.get_json(force=True) or {}
+    text = data.get("cover_letter", "")
+    candidate_name = (data.get("candidate_name") or "Applicant").strip()
+    job_title = (data.get("job_title") or "").strip()
+    company = (data.get("company") or "").strip()
+
+    if not text or not isinstance(text, str):
+        return jsonify({"error": "cover_letter text is required"}), 400
+
+    text = InputSanitizer.sanitize_string(text, max_length=6000)
+
+    # fpdf2 with built-in Times font only supports Latin-1. Smart quotes, em/en
+    # dashes, ellipses, and other Unicode punctuation crash rendering. Map them
+    # to ASCII-safe equivalents before we draw. (Full Unicode would require
+    # embedding a TTF font, which bloats the Lambda deployment.)
+    _PUNCT_MAP = str.maketrans({
+        "\u2014": "-",   # em dash
+        "\u2013": "-",   # en dash
+        "\u2212": "-",   # minus
+        "\u2018": "'",   # left single quote
+        "\u2019": "'",   # right single quote
+        "\u201C": '"',   # left double quote
+        "\u201D": '"',   # right double quote
+        "\u2026": "...", # ellipsis
+        "\u00A0": " ",   # non-breaking space
+        "\u2022": "-",   # bullet
+        "\u2009": " ",   # thin space
+        "\u200B": "",    # zero-width space
+        "\u00B7": "-",   # middle dot
+    })
+    text = text.translate(_PUNCT_MAP)
+    candidate_name = candidate_name.translate(_PUNCT_MAP)
+    job_title = job_title.translate(_PUNCT_MAP)
+    company = company.translate(_PUNCT_MAP)
+    # Final safety net: encode to latin-1 and drop anything unsupported
+    text = text.encode("latin-1", errors="replace").decode("latin-1")
+    candidate_name = candidate_name.encode("latin-1", errors="replace").decode("latin-1")
+    job_title = job_title.encode("latin-1", errors="replace").decode("latin-1")
+    company = company.encode("latin-1", errors="replace").decode("latin-1")
+
+    try:
+        from fpdf import FPDF
+
+        pdf = FPDF(format="A4", unit="mm")
+        pdf.set_auto_page_break(auto=True, margin=20)
+        pdf.add_page()
+        pdf.set_margins(left=20, top=20, right=20)
+
+        # Header — candidate name
+        pdf.set_font("Times", "B", 16)
+        pdf.cell(0, 9, candidate_name, new_x="LMARGIN", new_y="NEXT")
+
+        # Subtitle — target role
+        if job_title or company:
+            subtitle_parts = [p for p in [job_title, company] if p]
+            pdf.set_font("Times", "I", 11)
+            pdf.set_text_color(90, 90, 90)
+            pdf.cell(0, 6, " - ".join(subtitle_parts), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0, 0, 0)
+
+        # Divider line
+        pdf.ln(3)
+        y = pdf.get_y()
+        pdf.set_draw_color(200, 200, 200)
+        pdf.line(20, y, 190, y)
+        pdf.ln(5)
+
+        # Date
+        pdf.set_font("Times", "", 10)
+        pdf.set_text_color(110, 110, 110)
+        pdf.cell(0, 5, datetime.now().strftime("%B %d, %Y"), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(5)
+
+        # Body — paragraphs separated by blank lines
+        pdf.set_font("Times", "", 11)
+        for paragraph in text.split("\n\n"):
+            para = paragraph.strip()
+            if not para:
+                continue
+            # fpdf2 multi_cell auto-wraps; replace internal single newlines with spaces
+            para = " ".join(line.strip() for line in para.split("\n") if line.strip())
+            pdf.multi_cell(0, 5.8, para)
+            pdf.ln(2.5)
+
+        # Output (fpdf2 returns bytearray — normalize to bytes)
+        raw = pdf.output()
+        pdf_bytes = bytes(raw) if isinstance(raw, (bytearray, memoryview)) else raw
+
+        safe_company = "".join(c for c in company if c.isalnum() or c in "-_") or "role"
+        filename = f"cover_letter_{safe_company}.pdf"
+
+        return send_file(
+            io.BytesIO(pdf_bytes),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+
+    except Exception as e:
+        logger.error(f"Cover letter PDF render error: {e}")
+        return jsonify({"error": "Failed to render cover letter PDF"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/batch-tailor — Submit multiple JDs for parallel tailoring
+# ------------------------------------------------------------------
+@resume_bp.route("/batch-tailor", methods=["POST"])
+@jwt_required()
+def batch_tailor():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"batch_tailor:{client_ip}", max_requests=3, window_seconds=600):
+        return jsonify({"error": "Rate limit exceeded. Max 3 batch submissions per 10 minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    jd_list = data.get("jd_list", [])
+
+    if not isinstance(jd_list, list) or len(jd_list) == 0:
+        return jsonify({"error": "jd_list is required (array of JD objects)"}), 400
+    if len(jd_list) > 5:
+        return jsonify({"error": "Maximum 5 job descriptions per batch"}), 400
+
+    for i, jd in enumerate(jd_list):
+        if not isinstance(jd, dict) or not jd.get("text", "").strip():
+            return jsonify({"error": f"JD #{i+1} is missing text"}), 400
+
+    try:
+        user_email = get_jwt_identity()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+
+        jobs = []
+        for jd in jd_list:
+            # Each JD goes through: extract_jd → tailor (handled by batch_tailor_item job type)
+            payload = {
+                "jd_text": jd["text"].strip()[:15000],
+                "jd_title": jd.get("title", "").strip(),
+                "user_email": user_email,
+            }
+            job_id = svc.create_job("batch_tailor_item", payload, user_email=user_email)
+            ResumeService.invoke_async(job_id, "batch_tailor_item", payload)
+            jobs.append({"job_id": job_id, "title": jd.get("title", "")})
+
+        return jsonify({"jobs": jobs}), 202
+
+    except Exception as e:
+        logger.error(f"Batch tailor error: {e}")
+        return jsonify({"error": "Failed to start batch tailoring"}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/tailoring-records — List user's tailoring history
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records", methods=["GET"])
+@jwt_required()
+def list_tailoring_records():
+    user_email = get_jwt_identity()
+    try:
+        db = DBConnect().get_db()
+        records = list(
+            db.tailoring_records.find(
+                {"user_email": user_email},
+                {
+                    "record_id": 1,
+                    "jd_analysis.job_title": 1,
+                    "jd_analysis.company": 1,
+                    "tailored_resume": 1,
+                    "jd_analysis": 1,
+                    "ats_scores.overall": 1,
+                    "created_at": 1,
+                    "ats_scored_at": 1,
+                    "base_resume_filename": 1,
+                    "_id": 0,
+                },
+            )
+            .sort("created_at", -1)
+            .limit(50)
+        )
+        # Serialize datetime fields
+        for r in records:
+            if r.get("created_at"):
+                r["created_at"] = r["created_at"].isoformat()
+            if r.get("ats_scored_at"):
+                r["ats_scored_at"] = r["ats_scored_at"].isoformat()
+        return jsonify({"records": records}), 200
+    except Exception as e:
+        logger.error(f"List tailoring records error: {e}")
+        return jsonify({"error": "Failed to load tailoring history"}), 500
 
 
 # ------------------------------------------------------------------
@@ -321,10 +665,10 @@ def upload():
         from services.resume_service import get_resume_service, ResumeService
         from services.resume_parser import ResumeParser
 
-        # Synchronous: extract text (fast, pure Python, no AI)
-        raw_text = ResumeParser.extract_text(file_bytes, original_filename)
+        # Validate file structure (lightweight, no text extraction)
+        ResumeParser.validate_file(file_bytes, original_filename)
 
-        # Upload PDF to S3 and store metadata
+        # Upload file to S3 and store metadata
         try:
             storage = get_storage_service()
             db = DBConnect().get_db()
@@ -350,22 +694,24 @@ def upload():
         except Exception as s3_err:
             logger.warning(f"Failed to save resume to S3: {s3_err}")
 
-        # Async: create a job for Gemini parsing and return job_id immediately
+        # Async: create a job for Gemini multi-modal parsing and return job_id immediately
         import base64
         file_b64 = base64.b64encode(file_bytes).decode('utf-8')
+        mime_type = ResumeParser.get_mime_type(original_filename)
 
         svc = get_resume_service()
-        # Only send pdf_base64 for PDF files (used for Gemini vision)
-        payload = {"raw_text": raw_text, "user_email": user_email}
-        if is_pdf:
-            payload["pdf_base64"] = file_b64
+        payload = {
+            "file_base64": file_b64,
+            "mime_type": mime_type,
+            "user_email": user_email,
+        }
         job_id = svc.create_job("upload_parse", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "upload_parse", payload)
 
         return jsonify({"job_id": job_id}), 202
 
     except ValueError as e:
-        logger.error(f"PDF parsing error: {e}")
+        logger.error(f"File validation error: {e}")
         return jsonify({"error": str(e)}), 400
     except RuntimeError as e:
         logger.error(f"Configuration error: {e}")

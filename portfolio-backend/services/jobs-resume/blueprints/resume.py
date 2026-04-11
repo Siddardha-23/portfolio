@@ -488,15 +488,16 @@ def list_tailoring_records():
             .sort("created_at", -1)
             .limit(50)
         )
-        # Serialize datetime fields
+        # Serialize datetime fields — tolerate legacy records where the value
+        # may already be a string or missing entirely.
         for r in records:
-            if r.get("created_at"):
-                r["created_at"] = r["created_at"].isoformat()
-            if r.get("ats_scored_at"):
-                r["ats_scored_at"] = r["ats_scored_at"].isoformat()
+            for key in ("created_at", "ats_scored_at"):
+                val = r.get(key)
+                if hasattr(val, "isoformat"):
+                    r[key] = val.isoformat()
         return jsonify({"records": records}), 200
     except Exception as e:
-        logger.error(f"List tailoring records error: {e}")
+        logger.exception("List tailoring records error: %s", e)
         return jsonify({"error": "Failed to load tailoring history"}), 500
 
 

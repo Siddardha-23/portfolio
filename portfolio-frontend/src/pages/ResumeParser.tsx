@@ -4389,7 +4389,7 @@ function TailorTab() {
       {/* Editor mode — full-screen overlay */}
       {result && editing && (
         <div className="fixed inset-0 z-[60] bg-gray-100 dark:bg-gray-950 overflow-y-auto overscroll-contain">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="max-w-7xl mx-auto px-0 sm:px-0 lg:px-0">
             <Suspense
               fallback={
                 <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">

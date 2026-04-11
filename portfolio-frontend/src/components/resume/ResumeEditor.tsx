@@ -613,7 +613,7 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
       </div>
 
       {/* Split / Edit / Preview */}
-      <div className="h-[calc(100vh-10rem)]">
+      <div className="h-[calc(100vh-3.5rem)]">
         {view === 'split' && (
           <div className="flex flex-col md:flex-row h-full">
             <div className="w-full md:w-1/2 h-1/2 md:h-full border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800/60 overflow-y-auto">

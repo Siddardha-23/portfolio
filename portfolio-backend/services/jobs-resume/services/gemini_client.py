@@ -286,6 +286,81 @@ def _repair_truncated_json(raw: str) -> str:
     return text
 
 
+def gemini_grounded_search(
+    prompt: str,
+    max_tokens: int = 8192,
+    temperature: float = 0.2,
+    model: str = GEMINI_FLASH,
+    max_retries: int = 2,
+) -> dict:
+    """Call Gemini with Google Search grounding enabled.
+
+    Returns the raw response text AND any grounding metadata (search
+    suggestions, grounding chunks with source URIs).  The caller is
+    responsible for extracting URLs from grounding_metadata.
+
+    The response dict has:
+      - "text":     The model's text output.
+      - "sources":  List of {"uri": ..., "title": ...} from grounding chunks.
+
+    Raises ValueError if all retries fail.
+    """
+    from google.genai import types
+
+    client = get_gemini_client()
+
+    # Google Search grounding tool
+    search_tool = types.Tool(google_search=types.GoogleSearch())
+
+    config = types.GenerateContentConfig(
+        temperature=temperature,
+        max_output_tokens=max_tokens,
+        tools=[search_tool],
+        response_mime_type="text/plain",
+    )
+
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=config,
+            )
+
+            text = (response.text or "").strip()
+            sources: list[dict] = []
+
+            # Extract grounding metadata — source URIs from grounding chunks
+            if hasattr(response, "candidates") and response.candidates:
+                candidate = response.candidates[0]
+                gm = getattr(candidate, "grounding_metadata", None)
+                if gm:
+                    chunks = getattr(gm, "grounding_chunks", None) or []
+                    for chunk in chunks:
+                        web = getattr(chunk, "web", None)
+                        if web:
+                            uri = getattr(web, "uri", None)
+                            title = getattr(web, "title", None)
+                            if uri:
+                                sources.append({"uri": uri, "title": title or ""})
+
+            return {"text": text, "sources": sources}
+
+        except Exception as e:
+            last_error = e
+            if attempt == max_retries:
+                break
+            wait = 2 ** attempt
+            logger.warning(
+                "Gemini grounded search error (attempt %d/%d), retrying in %ds: %s",
+                attempt + 1, max_retries + 1, wait, e,
+            )
+            time.sleep(wait)
+
+    raise ValueError(f"Gemini grounded search failed after {max_retries + 1} attempts: {last_error}")
+
+
 def gemini_json(
     prompt: str = None,
     max_tokens: int = 8192,

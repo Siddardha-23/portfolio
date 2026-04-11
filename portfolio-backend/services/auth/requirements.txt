@@ -1,2 +1,0 @@
-# Service-specific dependencies (common deps provided by Lambda Layer)
-# bcrypt is in the shared layer

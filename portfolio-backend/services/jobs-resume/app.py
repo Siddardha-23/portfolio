@@ -86,8 +86,9 @@ def create_app():
     from blueprints.resume import resume_bp
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
 
-    from blueprints.tech_chronicle import tech_chronicle_bp
+    from blueprints.tech_chronicle import tech_chronicle_bp, start_background_refresh
     app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')
+    start_background_refresh()  # auto-refresh every 4 hours
 
     # Health check endpoint
     @app.route('/api/health')

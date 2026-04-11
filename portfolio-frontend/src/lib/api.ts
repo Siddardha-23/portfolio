@@ -999,6 +999,17 @@ class ApiService {
     );
   }
 
+  async regenerateTechChronicle(): Promise<ApiResponse<{
+    success: boolean;
+    news_count: number;
+    career_count: number;
+    regenerated_at: string;
+  }>> {
+    return this.request("/tech-chronicle/regenerate", {
+      method: "POST",
+    }, 60_000); // 60s timeout — pipeline fetches 20+ feeds + validates URLs
+  }
+
   async setActiveResume(s3Key: string): Promise<ApiResponse<any>> {
     return this.request("/resume/active", {
       method: "PUT",

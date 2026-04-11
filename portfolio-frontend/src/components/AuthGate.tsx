@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import type { TechChronicleItem, TechNewsItem, CareerIntelItem } from '@/types/techChronicle';
 import { isCareerItem } from '@/types/techChronicle';
+import { useTechChronicleFeed } from './tech-chronicle/useTechChronicleFeed';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -239,45 +240,9 @@ function useActiveUserCount(min = 14, max = 47, initial = 28) {
 }
 
 // ═══ useTechChronicleFeed ═══
-// Fetches the AI-generated merged tech + career feed from our backend.
-// Replaces the old Hacker News pull that was flaky due to CORS.
-function useTechChronicleFeed() {
-  const [items, setItems] = useState<TechChronicleItem[]>([]);
-  const [trendingTags, setTrendingTags] = useState<string[]>([]);
-  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchFeed = useCallback(async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    try {
-      const resp = await apiService.getTechChronicle('all');
-      if (resp.error) {
-        setError(resp.error);
-      } else if (resp.data) {
-        setItems(resp.data.items || []);
-        setTrendingTags(resp.data.trendingTags || []);
-        setGeneratedAt(resp.data.generatedAt || null);
-        setError(null);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load feed');
-    }
-    setLoading(false);
-    setRefreshing(false);
-  }, []);
-
-  useEffect(() => { fetchFeed(); }, [fetchFeed]);
-
-  // Auto-refresh every 10 minutes so the feed stays live without hammering the backend
-  useEffect(() => {
-    const interval = setInterval(() => fetchFeed(true), 10 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchFeed]);
-
-  return { items, trendingTags, generatedAt, loading, refreshing, error, refresh: () => fetchFeed(true) };
-}
+// Imported from ./tech-chronicle/useTechChronicleFeed.ts
+// Client-side fetching from HN, Dev.to, Lobsters, Hashnode.
+// See tech-chronicle/README.md for architecture docs.
 
 // ─── Skeleton loader ────────────────────────────────────────────────────────
 function ArticleSkeleton({ hero = false }: { hero?: boolean }) {
@@ -555,7 +520,7 @@ function TechNewsFeed({
                 return (
                   <button
                     key={tag}
-                    onClick={() => setActiveTag(active ? null : tag)}
+                    onClick={() => { setActiveTag(active ? null : tag); setActiveCategory('all'); }}
                     className={`text-[10px] px-2 py-0.5 rounded-full border whitespace-nowrap transition-all ${
                       active
                         ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'

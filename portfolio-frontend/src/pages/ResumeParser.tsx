@@ -973,16 +973,31 @@ function TailorTab() {
     const resp = await apiService.listBaseResumes();
     if (resp.data) {
       const versions = resp.data.versions || [];
-      setHasResumes(versions.length > 0);
       const active = versions.find((v: any) => v.is_active);
       if (active) activeResumeRef.current = { filename: active.filename, s3_key: active.s3_key };
+
+      if (versions.length > 0) {
+        // Base files exist — also check /status to ensure a parsed resume
+        // doc exists. If it's missing (parse job failed/never completed),
+        // the /status endpoint triggers an S3 re-parse automatically.
+        const statusResp = await apiService.getResumeStatus();
+        if (statusResp.data?.has_resume) {
+          setHasResumes(true);
+        } else {
+          // Status says no parsed resume — still show the tailor UI
+          // (ensure_structured_resume in the tailor endpoint will retry)
+          setHasResumes(true);
+        }
+      } else {
+        setHasResumes(false);
+      }
     } else {
       const isAuthError = (resp.error || '').toLowerCase().includes('session expired') || (resp.error || '').includes('401');
       if (isAuthError) {
         setResumeLoadError('Your session expired. Please log in again.');
       } else {
         const s = await apiService.getResumeStatus();
-        if (s.data) setHasResumes(s.data.has_resume === true);
+        if (s.data) setHasResumes(s.data.has_resume === true || s.data.has_base_file === true);
         else setResumeLoadError(s.error || resp.error || 'Unable to load your resumes right now.');
       }
     }

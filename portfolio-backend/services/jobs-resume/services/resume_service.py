@@ -304,90 +304,39 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
         elif job_type == "tailor":
             user_email = payload.get("user_email", "")
-            resume = svc.parser.get_structured_resume(user_email=user_email)
+            resume = svc.parser.ensure_structured_resume(user_email=user_email)
             if not resume:
-                svc.fail_job(job_id, "No resume uploaded.")
+                svc.fail_job(
+                    job_id,
+                    "No parsed resume found. Please re-upload your resume on the My Resumes tab and try again."
+                )
                 return
 
-            # Use structured JSON if available, fall back to raw_text for backward compat
-            structured = resume.get("structured")
-            if structured:
-                # Safety net: backfill any empty critical fields from raw_text
-                # before sending to the tailor. This handles resumes parsed
-                # before the backfill fix was deployed, or when Gemini
-                # partially extracts contact/education.
-                raw_text = resume.get("raw_text", "")
-                if raw_text:
-                    from services.resume_parser import ResumeParser
+            # ensure_structured_resume guarantees resume has a populated
+            # `structured` field (re-parsing from base S3 file if needed).
+            structured = resume["structured"]
+            raw_text = resume.get("raw_text", "")
+            if raw_text:
+                from services.resume_parser import ResumeParser
 
-                    # Backfill individual empty contact fields (phone, name, etc.)
-                    contact = structured.get("contact", {})
-                    contact_fields = ("name", "email", "phone", "linkedin", "github")
-                    missing_contact = [f for f in contact_fields if not contact.get(f, "").strip()]
-                    if missing_contact:
-                        structured = ResumeParser._backfill_contact(structured, raw_text)
-                        logger.info("Tailor: backfilled missing contact fields: %s", missing_contact)
+                # Backfill individual empty contact fields (phone, name, etc.)
+                contact = structured.get("contact", {})
+                contact_fields = ("name", "email", "phone", "linkedin", "github")
+                missing_contact = [f for f in contact_fields if not contact.get(f, "").strip()]
+                if missing_contact:
+                    structured = ResumeParser._backfill_contact(structured, raw_text)
+                    logger.info("Tailor: backfilled missing contact fields: %s", missing_contact)
 
-                    # Backfill empty education institution names
-                    edu_missing = any(
-                        not edu.get("institution", "").strip()
-                        for edu in structured.get("education", [])
-                    )
-                    if edu_missing:
-                        structured = ResumeParser._backfill_education(structured, raw_text)
-                        logger.info("Tailor: backfilled missing education institutions")
+                # Backfill empty education institution names
+                edu_missing = any(
+                    not edu.get("institution", "").strip()
+                    for edu in structured.get("education", [])
+                )
+                if edu_missing:
+                    structured = ResumeParser._backfill_education(structured, raw_text)
+                    logger.info("Tailor: backfilled missing education institutions")
 
-                result = svc.tailor.tailor(structured, payload["jd_analysis"])
-            else:
-                # Legacy resume without structured field — use raw_text
-                raw_text = resume.get("raw_text", "")
-                if not raw_text:
-                    # Backward-compat fallback:
-                    # If we have *base* resume metadata but no structured/raw_text,
-                    # download the base file from S3 and parse it to structured.
-                    try:
-                        from services.s3_service import get_storage_service
-                        storage = get_storage_service()
-
-                        base_resume = svc.parser.user_resumes.find_one(
-                            {
-                                "user_email": user_email,
-                                "type": "base",
-                                "is_active": True,
-                            }
-                        )
-                        if not base_resume:
-                            base_resume = svc.parser.user_resumes.find_one(
-                                {"user_email": user_email, "type": "base"},
-                                sort=[("uploaded_at", -1)],
-                            )
-                        if base_resume and base_resume.get("s3_key"):
-                            import base64 as b64
-                            file_bytes = storage.get_resume(base_resume["s3_key"])
-                            filename = base_resume.get("filename", "resume.pdf")
-                            file_b64 = b64.b64encode(file_bytes).decode("utf-8")
-                            mime_type = svc.parser.get_mime_type(filename)
-                            validated, raw_text = svc.parser.parse_to_structured(
-                                "", file_b64, mime_type
-                            )
-                            resume = svc.parser.save_parsed_resume(
-                                validated, raw_text, user_email=user_email
-                            )
-                            structured = resume.get("structured")
-                    except Exception as e:
-                        logger.warning("Tailor fallback parse failed: %s", e)
-
-                if not structured:
-                    svc.fail_job(job_id, "No resume data available. Please re-upload.")
-                    return
-
-                # Parse raw_text to structured first, then tailor (if we got structured already, skip)
-                if not structured and raw_text:
-                    structured, _ = svc.parser.parse_to_structured(raw_text)
-                if not structured:
-                    svc.fail_job(job_id, "No resume data available. Please re-upload.")
-                    return
-                result = svc.tailor.tailor(structured, payload["jd_analysis"])
+            result = svc.tailor.tailor(structured, payload["jd_analysis"])
 
             # Normalize contact whitespace (safety net for resumes parsed before the fix)
             result_contact = result.get("contact", {})
@@ -410,9 +359,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
         elif job_type == "regenerate":
             user_email = payload.get("user_email", "")
-            resume = svc.parser.get_structured_resume(user_email=user_email)
+            resume = svc.parser.ensure_structured_resume(user_email=user_email)
             if not resume:
-                svc.fail_job(job_id, "No resume uploaded.")
+                svc.fail_job(job_id, "No parsed resume found. Please re-upload your resume and try again.")
                 return
 
             structured = resume.get("structured")
@@ -501,9 +450,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             jd_analysis = svc.extract_jd(jd_text)
 
             # Step 2: Get structured resume
-            resume = svc.parser.get_structured_resume(user_email=user_email)
+            resume = svc.parser.ensure_structured_resume(user_email=user_email)
             if not resume or not resume.get("structured"):
-                svc.fail_job(job_id, "No resume uploaded.")
+                svc.fail_job(job_id, "No parsed resume found. Please re-upload your resume and try again.")
                 return
             structured = resume["structured"]
 

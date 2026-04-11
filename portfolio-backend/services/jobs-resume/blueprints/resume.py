@@ -735,16 +735,35 @@ def status():
         active_resume = db.user_resumes.find_one(
             {'user_email': user_email, 'type': 'base', 'is_active': True}
         )
+        # Also check if any base file exists at all
+        any_base = active_resume or db.user_resumes.find_one(
+            {'user_email': user_email, 'type': 'base'}
+        )
 
         from services.resume_service import get_resume_service
-        resume = get_resume_service().get_base_resume(user_email=user_email)
+        svc = get_resume_service()
+        resume = svc.get_base_resume(user_email=user_email)
+
         if not resume:
-            return jsonify({"has_resume": False}), 200
+            # No structured/parsed resume found — but a base file might exist.
+            # If so, attempt a re-parse from S3 (handles users whose parse
+            # job failed or never completed after upload).
+            if any_base and any_base.get("s3_key"):
+                logger.info("Status: no parsed resume for %s but base file exists, attempting re-parse", user_email)
+                resume = svc.parser.ensure_structured_resume(user_email=user_email)
+
+            if not resume:
+                return jsonify({
+                    "has_resume": False,
+                    "has_base_file": bool(any_base),
+                }), 200
+
         parsed_at = resume.get("parsed_at", "")
         if hasattr(parsed_at, 'isoformat'):
             parsed_at = parsed_at.isoformat()
         response = {
             "has_resume": True,
+            "has_base_file": bool(any_base),
             "skills": resume.get("skills", []),
             "experience_years": resume.get("experience_years"),
             "job_titles": resume.get("job_titles", []),

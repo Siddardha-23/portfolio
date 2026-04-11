@@ -850,6 +850,69 @@ class ResumeParser:
             resume.pop("_id", None)
         return resume
 
+    def ensure_structured_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
+        """Return a structured resume, re-parsing from the base S3 file if needed.
+
+        Users who uploaded before the async parse flow (or whose parse job
+        failed) only have a `type='base'` doc with an S3 key — no `structured`
+        field. Without this fallback the tailor endpoint would reject them
+        even though their resume is sitting in S3.
+        """
+        resume = self.get_structured_resume(user_email=user_email)
+        if resume and resume.get("structured"):
+            return resume
+
+        if not user_email:
+            logger.warning("ensure_structured_resume: no user_email provided, cannot look up resume")
+            return None
+
+        logger.info(
+            "ensure_structured_resume: no parsed resume for %s, searching for base file to re-parse",
+            user_email,
+        )
+
+        base = self.user_resumes.find_one(
+            {"user_email": user_email, "type": "base", "is_active": True}
+        ) or self.user_resumes.find_one(
+            {"user_email": user_email, "type": "base"},
+            sort=[("uploaded_at", -1)],
+        )
+        if not base or not base.get("s3_key"):
+            logger.warning(
+                "ensure_structured_resume: no base file doc with s3_key for %s (base doc exists: %s)",
+                user_email,
+                bool(base),
+            )
+            return None
+
+        logger.info(
+            "ensure_structured_resume: found base file for %s — s3_key=%s, filename=%s — attempting re-parse from S3",
+            user_email,
+            base.get("s3_key"),
+            base.get("filename", "?"),
+        )
+
+        try:
+            from services.s3_service import get_storage_service
+            import base64 as _b64
+
+            file_bytes = get_storage_service().get_resume(base["s3_key"])
+            file_b64 = _b64.b64encode(file_bytes).decode("utf-8")
+            mime_type = self.get_mime_type(base.get("filename", "resume.pdf"))
+            structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
+            result = self.save_parsed_resume(structured, raw_text, user_email=user_email)
+            logger.info("ensure_structured_resume: successfully re-parsed resume for %s", user_email)
+            return result
+        except Exception as e:
+            logger.error(
+                "ensure_structured_resume: S3 reparse failed for %s (s3_key=%s): %s",
+                user_email,
+                base.get("s3_key"),
+                e,
+                exc_info=True,
+            )
+            return None
+
     # ======================================================================
     # 5. HELPERS
     # ======================================================================

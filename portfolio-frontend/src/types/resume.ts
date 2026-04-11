@@ -96,6 +96,7 @@ export interface TailorPipelineResult {
 
 export interface ResumeStatus {
   has_resume: boolean;
+  has_base_file?: boolean;
   skills?: string[];
   experience_years?: number;
   job_titles?: string[];

@@ -186,7 +186,9 @@ def tailor_resume():
 
         # Extract JD → get structured resume → tailor
         jd_analysis = svc.extract_jd(job_description)
-        resume = svc.parser.get_structured_resume(user_email=user_email)
+        # ensure_structured_resume re-parses from the base S3 file if the user
+        # only has a legacy base upload with no structured doc yet.
+        resume = svc.parser.ensure_structured_resume(user_email=user_email)
         if not resume:
             return jsonify({"error": "No resume uploaded"}), 404
 

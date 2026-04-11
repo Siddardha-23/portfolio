@@ -63,9 +63,6 @@ class ResumeStorageService:
         except Exception as e:
             logger.error("Failed to upload base resume for user %s: %s", user_id, e)
             raise
-        except Exception as e:
-            logger.error("Unexpected error uploading base resume for user %s: %s", user_id, e)
-            raise
 
     def upload_generated_resume(self, user_id: str, file_bytes: bytes, job_title: str, format: str = 'pdf') -> str:
         """Upload a generated/tailored resume to S3.
@@ -99,9 +96,6 @@ class ResumeStorageService:
             return s3_key
         except Exception as e:
             logger.error("Failed to upload generated resume for user %s: %s", user_id, e)
-            raise
-        except Exception as e:
-            logger.error("Unexpected error uploading generated resume for user %s: %s", user_id, e)
             raise
 
     def list_base_resumes(self, user_id: str) -> list:
@@ -150,9 +144,6 @@ class ResumeStorageService:
             return resumes
         except Exception as e:
             logger.error("Failed to list base resumes for user %s: %s", user_id, e)
-            raise
-        except Exception as e:
-            logger.error("Unexpected error listing base resumes for user %s: %s", user_id, e)
             raise
 
     def list_generated_resumes(self, user_id: str) -> list:
@@ -206,9 +197,6 @@ class ResumeStorageService:
         except Exception as e:
             logger.error("Failed to list generated resumes for user %s: %s", user_id, e)
             raise
-        except Exception as e:
-            logger.error("Unexpected error listing generated resumes for user %s: %s", user_id, e)
-            raise
 
     def get_resume(self, s3_key: str) -> bytes:
         """Download a resume from S3.
@@ -230,14 +218,11 @@ class ResumeStorageService:
             data = response['Body'].read()
             logger.info("Downloaded resume: %s (%d bytes)", s3_key, len(data))
             return data
-        except Exception as e:
-            if e.response['Error']['Code'] == 'NoSuchKey':
-                logger.error("Resume not found: %s", s3_key)
-            else:
-                logger.error("Failed to download resume %s: %s", s3_key, e)
+        except self.client.exceptions.NoSuchKey:
+            logger.error("Resume not found in S3: %s", s3_key)
             raise
         except Exception as e:
-            logger.error("Unexpected error downloading resume %s: %s", s3_key, e)
+            logger.error("Failed to download resume %s: %s", s3_key, e)
             raise
 
     def delete_resume(self, s3_key: str) -> bool:
@@ -258,9 +243,6 @@ class ResumeStorageService:
             return True
         except Exception as e:
             logger.error("Failed to delete resume %s: %s", s3_key, e)
-            raise
-        except Exception as e:
-            logger.error("Unexpected error deleting resume %s: %s", s3_key, e)
             raise
 
     def get_presigned_url(self, s3_key: str, expiry: int = 3600) -> str:
@@ -286,9 +268,6 @@ class ResumeStorageService:
             return url
         except Exception as e:
             logger.error("Failed to generate presigned URL for %s: %s", s3_key, e)
-            raise
-        except Exception as e:
-            logger.error("Unexpected error generating presigned URL for %s: %s", s3_key, e)
             raise
 
     @staticmethod

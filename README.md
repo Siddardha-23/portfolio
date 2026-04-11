@@ -130,6 +130,22 @@ portfolio/
 - Node.js 18+
 - MongoDB Atlas cluster (or local MongoDB)
 
+### Quick Start (Makefile)
+
+If you have `make` installed, you can easily manage the project setup and execution from the root directory:
+
+```bash
+# Install both frontend and backend dependencies
+make install
+
+# Start both servers simultaneously in new terminal windows
+make run
+
+# Run formatters and linters (eslint, black, flake8)
+make format
+make lint
+```
+
 ### Backend
 
 ```bash

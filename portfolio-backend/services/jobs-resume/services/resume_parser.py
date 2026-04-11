@@ -55,8 +55,18 @@ _MIN_VALID_TEXT_LENGTH = 50
 
 # Month abbreviation → number mapping for date parsing
 _MONTH_MAP = {
-    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 # Regex patterns compiled once at module level for performance
@@ -73,7 +83,6 @@ _PRESENT_KEYWORDS = frozenset({"present", "current", "now", "ongoing", "today"})
 _EXTRACTION_PROMPT = (
     "You are a strict resume parser. Your ONLY job is to extract information that is "
     "explicitly present in the resume. NEVER infer, synthesize, or invent anything.\n\n"
-
     "CRITICAL MANDATORY FIELDS — you MUST extract these if they exist anywhere in the resume:\n"
     "1. CONTACT: The person's full name, email address, phone number, LinkedIn URL, and GitHub URL.\n"
     "   - The name is almost ALWAYS the very first line or the largest text at the top of the resume.\n"
@@ -86,7 +95,6 @@ _EXTRACTION_PROMPT = (
     "2. EDUCATION: You MUST extract the institution/university name for every education entry.\n"
     "   - The institution name (e.g., 'Arizona State University', 'MIT') is NEVER optional.\n"
     "   - Also extract: degree, location, dates, GPA, and relevant coursework.\n\n"
-
     "STRICT EXTRACTION RULES:\n"
     "1. Extract ONLY information explicitly present in the resume. NEVER fabricate or invent.\n"
     "2. Summary: If no summary/objective section exists, return empty string. DO NOT write one.\n"
@@ -100,7 +108,6 @@ _EXTRACTION_PROMPT = (
     "9. Include technologies mentioned in infrastructure context.\n"
     "   Example: 'Deployed on AWS ECS' → 'AWS' and 'ECS' are Cloud & DevOps skills.\n"
     "10. Categorize skills into logical groups (Languages, Frameworks, Cloud & DevOps, etc.).\n\n"
-
     "Return a JSON object with EXACTLY this structure (ALL top-level keys are REQUIRED):\n"
     "{\n"
     '  "contact": {\n'
@@ -254,10 +261,10 @@ class ResumeParser:
 
         # Call Gemini Flash for fast, factual extraction
         result = gemini_json(
-            prompt=None,       # Prompt is embedded in the parts
+            prompt=None,  # Prompt is embedded in the parts
             parts=parts,
             max_tokens=10000,
-            temperature=0.2,   # Low temp for factual extraction
+            temperature=0.2,  # Low temp for factual extraction
             model=GEMINI_FLASH,
         )
 
@@ -292,10 +299,12 @@ class ResumeParser:
 
         # Schema validation: ensure all required keys exist with correct types
         from schemas.resume_schemas import PARSED_RESUME_SCHEMA, validate_and_coerce
+
         result = validate_and_coerce(result, PARSED_RESUME_SCHEMA)
 
         # Normalize experience titles and project names to Title Case
         from services.title_normalizer import normalize_titles
+
         result = normalize_titles(result)
 
         return result, effective_raw_text
@@ -374,8 +383,11 @@ class ResumeParser:
             contact = {}
 
         # Count how many fields need backfill
-        fields_to_fill = [f for f in ("name", "email", "phone", "linkedin", "github")
-                          if not contact.get(f, "").strip()]
+        fields_to_fill = [
+            f
+            for f in ("name", "email", "phone", "linkedin", "github")
+            if not contact.get(f, "").strip()
+        ]
         if not fields_to_fill:
             # Even if all fields are populated, still run href override + fabrication check
             pass
@@ -384,7 +396,7 @@ class ResumeParser:
 
         # --- Extract [Extracted Link: ...] markers from PDF annotations ---
         # These are actual href URLs from the PDF, more reliable than Gemini's extraction.
-        extracted_links = re.findall(r'\[Extracted Link:\s*([^\]]+)\]', raw_text)
+        extracted_links = re.findall(r"\[Extracted Link:\s*([^\]]+)\]", raw_text)
         linkedin_href = ""
         github_href = ""
         for link in extracted_links:
@@ -403,13 +415,17 @@ class ResumeParser:
         # For LinkedIn: if Gemini returned a non-URL value (e.g. display text "LinkedIn"),
         # clear it now so regex backfill can try, but the href will override at the end.
         linkedin_val = contact.get("linkedin", "").strip()
-        if linkedin_val and "linkedin.com" not in linkedin_val.lower() and "github.com" not in linkedin_val.lower():
+        if (
+            linkedin_val
+            and "linkedin.com" not in linkedin_val.lower()
+            and "github.com" not in linkedin_val.lower()
+        ):
             contact["linkedin"] = ""
             logger.warning("Contact: cleared non-URL linkedin value '%s'", linkedin_val)
 
         # --- Email ---
         if not contact.get("email", "").strip():
-            email_match = re.search(r'[\w.+-]+@[\w-]+\.[\w.-]+', raw_text)
+            email_match = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", raw_text)
             if email_match:
                 contact["email"] = email_match.group(0)
 
@@ -417,18 +433,18 @@ class ResumeParser:
         if not contact.get("phone", "").strip():
             phone_patterns = [
                 # US format: (123) 456-7890 or 123-456-7890 or +1 234 567 8901
-                r'(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}',
+                r"(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",
                 # International format: +91 12345 67890 or +44 7911 123456
-                r'\+\d{1,3}[-.\s]?\d{4,5}[-.\s]?\d{4,6}',
+                r"\+\d{1,3}[-.\s]?\d{4,5}[-.\s]?\d{4,6}",
                 # General: any sequence of 10+ digits with separators
-                r'(?:\+?\d{1,3}[-.\s]?)?\d[\d\s.-]{8,}\d',
+                r"(?:\+?\d{1,3}[-.\s]?)?\d[\d\s.-]{8,}\d",
             ]
             for pattern in phone_patterns:
                 phone_match = re.search(pattern, raw_text)
                 if phone_match:
                     phone = phone_match.group(0).strip()
                     # Validate: must have at least 10 digits
-                    digits = re.sub(r'\D', '', phone)
+                    digits = re.sub(r"\D", "", phone)
                     if len(digits) >= 10:
                         contact["phone"] = phone
                         break
@@ -436,8 +452,7 @@ class ResumeParser:
         # --- LinkedIn ---
         if not contact.get("linkedin", "").strip():
             linkedin_match = re.search(
-                r'(?:https?://)?(?:www\.)?linkedin\.com/(?:in/)?[\w-]+/?',
-                raw_text, re.IGNORECASE
+                r"(?:https?://)?(?:www\.)?linkedin\.com/(?:in/)?[\w-]+/?", raw_text, re.IGNORECASE
             )
             if linkedin_match:
                 contact["linkedin"] = linkedin_match.group(0)
@@ -445,8 +460,7 @@ class ResumeParser:
         # --- GitHub ---
         if not contact.get("github", "").strip():
             github_match = re.search(
-                r'(?:https?://)?(?:www\.)?github\.com/[\w-]+/?',
-                raw_text, re.IGNORECASE
+                r"(?:https?://)?(?:www\.)?github\.com/[\w-]+/?", raw_text, re.IGNORECASE
             )
             if github_match:
                 contact["github"] = github_match.group(0)
@@ -461,7 +475,7 @@ class ResumeParser:
                     and "@" not in line
                     and "http" not in line.lower()
                     and not line.startswith("[")
-                    and not re.match(r'^[\d(+]', line)
+                    and not re.match(r"^[\d(+]", line)
                     and "linkedin" not in line.lower()
                     and "github" not in line.lower()
                 ):
@@ -481,19 +495,25 @@ class ResumeParser:
             if not github_val:
                 contact["github"] = linkedin_val
             contact["linkedin"] = ""
-            logger.warning("Contact cross-contamination: moved github.com URL from linkedin to github field")
+            logger.warning(
+                "Contact cross-contamination: moved github.com URL from linkedin to github field"
+            )
         if github_val and "linkedin.com" in github_val.lower():
             if not linkedin_val:
                 contact["linkedin"] = github_val
             contact["github"] = ""
-            logger.warning("Contact cross-contamination: moved linkedin.com URL from github to linkedin field")
+            logger.warning(
+                "Contact cross-contamination: moved linkedin.com URL from github to linkedin field"
+            )
 
         # --- FINAL: LinkedIn href is authoritative — override everything ---
         # This runs AFTER all other processing (fabrication, cross-contamination, regex).
         # The PDF annotation URL is the single source of truth for LinkedIn.
         if linkedin_href:
             contact["linkedin"] = linkedin_href
-            logger.info("Contact backfill: LinkedIn FINAL override from PDF href: %s", linkedin_href)
+            logger.info(
+                "Contact backfill: LinkedIn FINAL override from PDF href: %s", linkedin_href
+            )
 
         # Normalize LinkedIn and GitHub URLs to canonical forms
         if contact.get("linkedin"):
@@ -518,22 +538,29 @@ class ResumeParser:
         if not url:
             return ""
         # Match canonical /in/username form
-        match = re.search(r'linkedin\.com/in/([\w-]+)', url, re.IGNORECASE)
+        match = re.search(r"linkedin\.com/in/([\w-]+)", url, re.IGNORECASE)
         if match:
             return f"https://linkedin.com/in/{match.group(1)}"
         # Match linkedin.com/username (missing /in/) — insert /in/
-        match = re.search(r'linkedin\.com/([\w-]+)', url, re.IGNORECASE)
+        match = re.search(r"linkedin\.com/([\w-]+)", url, re.IGNORECASE)
         if match:
             username = match.group(1)
             # Exclude known LinkedIn subpaths that aren't usernames
             if username.lower() not in (
-                "pub", "company", "school", "jobs", "feed",
-                "messaging", "in", "notifications", "mynetwork",
+                "pub",
+                "company",
+                "school",
+                "jobs",
+                "feed",
+                "messaging",
+                "in",
+                "notifications",
+                "mynetwork",
             ):
                 return f"https://linkedin.com/in/{username}"
         # Fallback: if it contains linkedin.com, just normalize protocol
         if "linkedin.com" in url.lower():
-            url = re.sub(r'^(https?://)?(www\.)?', 'https://', url)
+            url = re.sub(r"^(https?://)?(www\.)?", "https://", url)
             return url.rstrip("/")
         return url
 
@@ -546,12 +573,12 @@ class ResumeParser:
         url = url.strip()
         if not url:
             return ""
-        match = re.search(r'github\.com/([\w-]+)', url, re.IGNORECASE)
+        match = re.search(r"github\.com/([\w-]+)", url, re.IGNORECASE)
         if match:
             username = match.group(1)
             return f"https://github.com/{username}"
         if "github.com" in url.lower():
-            url = re.sub(r'^(https?://)?(www\.)?', 'https://', url)
+            url = re.sub(r"^(https?://)?(www\.)?", "https://", url)
             return url.rstrip("/")
         return url
 
@@ -576,9 +603,8 @@ class ResumeParser:
 
         # Common university name patterns
         uni_pattern = re.compile(
-            r'(?:University|Institute|College|School|Academy)'
-            r'(?:\s+of\s+[\w\s]+)?',
-            re.IGNORECASE
+            r"(?:University|Institute|College|School|Academy)" r"(?:\s+of\s+[\w\s]+)?",
+            re.IGNORECASE,
         )
 
         for edu_entry in education:
@@ -593,7 +619,7 @@ class ResumeParser:
                 # Look for university names within ~200 chars of the degree text
                 degree_idx = raw_text.lower().find(degree.lower()[:30])
                 if degree_idx >= 0:
-                    search_window = raw_text[max(0, degree_idx - 200):degree_idx + 200]
+                    search_window = raw_text[max(0, degree_idx - 200) : degree_idx + 200]
                     # Look for lines that look like university names
                     for line in search_window.split("\n"):
                         line = line.strip()
@@ -602,7 +628,8 @@ class ResumeParser:
                             edu_entry["institution"] = line
                             logger.info(
                                 "Education backfill: found institution '%s' near degree '%s'",
-                                line, degree
+                                line,
+                                degree,
                             )
                             break
 
@@ -610,15 +637,10 @@ class ResumeParser:
             if not edu_entry.get("institution", "").strip():
                 for line in raw_text.split("\n"):
                     line = line.strip()
-                    if (
-                        uni_pattern.search(line)
-                        and len(line) < 100
-                        and not line.startswith("[")
-                    ):
+                    if uni_pattern.search(line) and len(line) < 100 and not line.startswith("["):
                         edu_entry["institution"] = line
                         logger.info(
-                            "Education backfill: found institution '%s' via global search",
-                            line
+                            "Education backfill: found institution '%s' via global search", line
                         )
                         break
 
@@ -639,10 +661,10 @@ class ResumeParser:
           3. Extracts dates into the dates field if dates was empty
         """
         _DATE_RE = re.compile(
-            r'\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|'
-            r'Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|'
-            r'Dec(?:ember)?)\s+\d{4}\b'
-            r'|\b(?:Spring|Fall|Summer|Winter)\s+\d{4}\b',
+            r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|"
+            r"Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|"
+            r"Dec(?:ember)?)\s+\d{4}\b"
+            r"|\b(?:Spring|Fall|Summer|Winter)\s+\d{4}\b",
             re.IGNORECASE,
         )
 
@@ -678,7 +700,7 @@ class ResumeParser:
 
             # Step 2: Even without pipes, strip inline date patterns from degree
             cleaned = _DATE_RE.sub("", degree).strip()
-            cleaned = re.sub(r'^[\s|,\-]+|[\s|,\-]+$', '', cleaned)
+            cleaned = re.sub(r"^[\s|,\-]+|[\s|,\-]+$", "", cleaned)
             if cleaned:
                 edu["degree"] = cleaned
 
@@ -711,8 +733,7 @@ class ResumeParser:
             )
         if missing_contact:
             logger.warning(
-                "PARSE VALIDATION: Missing critical contact fields: %s",
-                ", ".join(missing_contact)
+                "PARSE VALIDATION: Missing critical contact fields: %s", ", ".join(missing_contact)
             )
 
         # Check education
@@ -721,19 +742,17 @@ class ResumeParser:
                 logger.warning(
                     "PARSE VALIDATION: Education[%d] has empty institution "
                     "(degree: '%s', location: '%s')",
-                    i, edu.get("degree", "?"), edu.get("location", "?")
+                    i,
+                    edu.get("degree", "?"),
+                    edu.get("location", "?"),
                 )
 
         # Check experience
         for i, exp in enumerate(result.get("experience", [])):
             if not exp.get("company", "").strip():
-                logger.warning(
-                    "PARSE VALIDATION: Experience[%d] has empty company", i
-                )
+                logger.warning("PARSE VALIDATION: Experience[%d] has empty company", i)
             if not exp.get("title", "").strip():
-                logger.warning(
-                    "PARSE VALIDATION: Experience[%d] has empty title", i
-                )
+                logger.warning("PARSE VALIDATION: Experience[%d] has empty title", i)
 
     # ======================================================================
     # 3. FULL UPLOAD PIPELINE
@@ -755,6 +774,7 @@ class ResumeParser:
             flat skill list, experience_years, and job_titles).
         """
         import base64
+
         file_b64 = base64.b64encode(file_bytes).decode("utf-8")
         structured, raw_text = self.parse_to_structured("", file_b64, self.MIME_TYPES["pdf"])
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
@@ -762,6 +782,7 @@ class ResumeParser:
     def upload_and_parse_file(self, file_bytes: bytes, filename: str, user_email: str = "") -> dict:
         """Upload and parse a PDF or DOCX resume file via Gemini multi-modal."""
         import base64
+
         file_b64 = base64.b64encode(file_bytes).decode("utf-8")
         mime_type = self.get_mime_type(filename)
         structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
@@ -807,9 +828,7 @@ class ResumeParser:
                     "degree": edu.get("degree", ""),
                     "institution": edu.get("institution", ""),
                     "year": (
-                        edu.get("dates", "").split("–")[-1].strip()
-                        if edu.get("dates")
-                        else ""
+                        edu.get("dates", "").split("–")[-1].strip() if edu.get("dates") else ""
                     ),
                 }
                 for edu in structured.get("education", [])
@@ -863,7 +882,9 @@ class ResumeParser:
             return resume
 
         if not user_email:
-            logger.warning("ensure_structured_resume: no user_email provided, cannot look up resume")
+            logger.warning(
+                "ensure_structured_resume: no user_email provided, cannot look up resume"
+            )
             return None
 
         logger.info(
@@ -901,7 +922,9 @@ class ResumeParser:
             mime_type = self.get_mime_type(base.get("filename", "resume.pdf"))
             structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
             result = self.save_parsed_resume(structured, raw_text, user_email=user_email)
-            logger.info("ensure_structured_resume: successfully re-parsed resume for %s", user_email)
+            logger.info(
+                "ensure_structured_resume: successfully re-parsed resume for %s", user_email
+            )
             return result
         except Exception as e:
             logger.error(
@@ -951,10 +974,7 @@ class ResumeParser:
             years = _YEAR_PATTERN.findall(dates)
 
             # Extract month abbreviations (e.g., "Jan", "May", "December")
-            months = [
-                m.group(0).lower()[:3]
-                for m in _MONTH_PATTERN.finditer(dates)
-            ]
+            months = [m.group(0).lower()[:3] for m in _MONTH_PATTERN.finditer(dates)]
 
             if len(years) >= 2:
                 # Date range with start and end years
@@ -963,9 +983,7 @@ class ResumeParser:
                     end_year = int(years[-1])
                     start_m = _MONTH_MAP.get(months[0], 1) if months else 1
                     end_m = (
-                        _MONTH_MAP.get(months[-1] if len(months) >= 2 else "", 12)
-                        if months
-                        else 12
+                        _MONTH_MAP.get(months[-1] if len(months) >= 2 else "", 12) if months else 12
                     )
                     total_months += (end_year - start_year) * 12 + (end_m - start_m)
                 except (ValueError, IndexError):
@@ -979,10 +997,7 @@ class ResumeParser:
                     try:
                         start_year = int(years[0])
                         start_m = _MONTH_MAP.get(months[0], 1) if months else 1
-                        total_months += (
-                            (current_year - start_year) * 12
-                            + (current_month - start_m)
-                        )
+                        total_months += (current_year - start_year) * 12 + (current_month - start_m)
                     except (ValueError, IndexError):
                         total_months += (current_year - int(years[0])) * 12
 

@@ -29,6 +29,7 @@ Async pattern:
   3. Client polls GET /job/<id> until status is "completed" or "failed".
   4. On completion, the result dict is stored in MongoDB and returned.
 """
+
 import json
 import logging
 import os
@@ -96,17 +97,19 @@ class ResumeService:
             UUID string identifying the job.
         """
         job_id = str(uuid.uuid4())
-        self.resume_jobs.insert_one({
-            "job_id": job_id,
-            "job_type": job_type,
-            "status": "processing",
-            "payload": payload,
-            "user_email": user_email,
-            "result": None,
-            "error": None,
-            "created_at": datetime.now(timezone.utc),
-            "completed_at": None,
-        })
+        self.resume_jobs.insert_one(
+            {
+                "job_id": job_id,
+                "job_type": job_type,
+                "status": "processing",
+                "payload": payload,
+                "user_email": user_email,
+                "result": None,
+                "error": None,
+                "created_at": datetime.now(timezone.utc),
+                "completed_at": None,
+            }
+        )
         return job_id
 
     def get_job(self, job_id: str, user_email: str = "") -> Optional[Dict[str, Any]]:
@@ -136,22 +139,26 @@ class ResumeService:
         """Mark a job as completed with its result dict."""
         self.resume_jobs.update_one(
             {"job_id": job_id},
-            {"$set": {
-                "status": "completed",
-                "result": result,
-                "completed_at": datetime.now(timezone.utc),
-            }},
+            {
+                "$set": {
+                    "status": "completed",
+                    "result": result,
+                    "completed_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
     def fail_job(self, job_id: str, error: str):
         """Mark a job as failed with an error message."""
         self.resume_jobs.update_one(
             {"job_id": job_id},
-            {"$set": {
-                "status": "failed",
-                "error": error,
-                "completed_at": datetime.now(timezone.utc),
-            }},
+            {
+                "$set": {
+                    "status": "failed",
+                    "error": error,
+                    "completed_at": datetime.now(timezone.utc),
+                }
+            },
         )
 
     @staticmethod
@@ -171,6 +178,7 @@ class ResumeService:
         func_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
         if not func_name:
             import threading
+
             t = threading.Thread(
                 target=_process_job,
                 args=(job_id, job_type, payload),
@@ -181,16 +189,19 @@ class ResumeService:
             return
 
         import boto3
+
         client = boto3.client("lambda", region_name=os.environ.get("AWS_REGION", "us-east-1"))
         client.invoke(
             FunctionName=func_name,
             InvocationType="Event",  # async — returns immediately
-            Payload=json.dumps({
-                "async_job": True,
-                "job_id": job_id,
-                "job_type": job_type,
-                "payload": payload,
-            }),
+            Payload=json.dumps(
+                {
+                    "async_job": True,
+                    "job_id": job_id,
+                    "job_type": job_type,
+                    "payload": payload,
+                }
+            ),
         )
         logger.info(f"Async job {job_id} ({job_type}) dispatched to Lambda")
 
@@ -247,6 +258,7 @@ class ResumeService:
 
         # Normalize extracted keywords to canonical forms
         from utils.keyword_normalizer import normalize_keywords
+
         validated["required_skills"] = normalize_keywords(validated.get("required_skills", []))
         validated["preferred_skills"] = normalize_keywords(validated.get("preferred_skills", []))
         validated["keywords"] = normalize_keywords(validated.get("keywords", []))
@@ -257,6 +269,7 @@ class ResumeService:
 # ---------------------------------------------------------------------------
 # Async job processor (called by Lambda async invocation or background thread)
 # ---------------------------------------------------------------------------
+
 
 def _process_job(job_id: str, job_type: str, payload: dict):
     """Execute the appropriate pipeline step and store the result in MongoDB."""
@@ -294,7 +307,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 svc.fail_job(
                     job_id,
                     "Could not extract meaningful text from the document. "
-                    "The file may be a scanned image or empty."
+                    "The file may be a scanned image or empty.",
                 )
                 return
 
@@ -308,7 +321,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             if not resume:
                 svc.fail_job(
                     job_id,
-                    "No parsed resume found. Please re-upload your resume on the My Resumes tab and try again."
+                    "No parsed resume found. Please re-upload your resume on the My Resumes tab and try again.",
                 )
                 return
 
@@ -345,13 +358,13 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             if result_contact.get("phone"):
                 result_contact["phone"] = " ".join(result_contact["phone"].split())
 
-
             # Content augmentation: page-fill, impact injection, ATS hardening
             result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
 
             # Date normalization: consistent "Month YYYY – Present" format
             from services.date_normalizer import normalize_dates
             from services.title_normalizer import normalize_titles
+
             result = normalize_dates(result)
             result = normalize_titles(result)
 
@@ -361,7 +374,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             user_email = payload.get("user_email", "")
             resume = svc.parser.ensure_structured_resume(user_email=user_email)
             if not resume:
-                svc.fail_job(job_id, "No parsed resume found. Please re-upload your resume and try again.")
+                svc.fail_job(
+                    job_id, "No parsed resume found. Please re-upload your resume and try again."
+                )
                 return
 
             structured = resume.get("structured")
@@ -385,6 +400,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # Date + title normalization
             from services.date_normalizer import normalize_dates
             from services.title_normalizer import normalize_titles
+
             result = normalize_dates(result)
             result = normalize_titles(result)
 
@@ -452,7 +468,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # Step 2: Get structured resume
             resume = svc.parser.ensure_structured_resume(user_email=user_email)
             if not resume or not resume.get("structured"):
-                svc.fail_job(job_id, "No parsed resume found. Please re-upload your resume and try again.")
+                svc.fail_job(
+                    job_id, "No parsed resume found. Please re-upload your resume and try again."
+                )
                 return
             structured = resume["structured"]
 
@@ -465,18 +483,20 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # Step 5: Date + title normalization
             from services.date_normalizer import normalize_dates
             from services.title_normalizer import normalize_titles
+
             result = normalize_dates(result)
             result = normalize_titles(result)
 
-            svc.complete_job(job_id, {
-                "tailored_resume": result,
-                "jd_analysis": jd_analysis,
-            })
+            svc.complete_job(
+                job_id,
+                {
+                    "tailored_resume": result,
+                    "jd_analysis": jd_analysis,
+                },
+            )
 
         elif job_type == "ats_scores":
-            result = svc.scorer.score(
-                payload["tailored_resume"], payload["jd_analysis"]
-            )
+            result = svc.scorer.score(payload["tailored_resume"], payload["jd_analysis"])
             svc.complete_job(job_id, {"ats_scores": result})
 
         else:
@@ -510,12 +530,7 @@ def _repair_extraction(raw_text: str, invalid_output: dict, error_msg: str):
     )
 
     try:
-        result = gemini_json(
-        repair_prompt,
-        max_tokens=8192,
-        temperature=0.2,
-        model=GEMINI_PREVIEW
-    )
+        result = gemini_json(repair_prompt, max_tokens=8192, temperature=0.2, model=GEMINI_PREVIEW)
         validated = validate_and_coerce(result, PARSED_RESUME_SCHEMA)
         logger.info("Repair extraction succeeded via Preview model")
         return validated

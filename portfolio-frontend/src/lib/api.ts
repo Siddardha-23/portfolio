@@ -1,6 +1,6 @@
 /**
  * API service layer for backend communication
- * 
+ *
  * This service provides a clean interface to all backend API endpoints.
  * The backend is organized in a microservice-like architecture with:
  * - /api/auth - Authentication
@@ -13,8 +13,12 @@
 // In browser on production (non-localhost), always use same origin so /api hits CloudFront regardless of build env.
 // This avoids API URL mismatch after infra changes (e.g. Lambda URL, domain).
 function getApiBaseUrl(): string {
-  const build = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-  if (typeof window !== 'undefined' && window.location?.origin && !window.location.origin.includes('localhost'))
+  const build = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+  if (
+    typeof window !== "undefined" &&
+    window.location?.origin &&
+    !window.location.origin.includes("localhost")
+  )
     return `${window.location.origin}/api`;
   return build;
 }
@@ -33,22 +37,27 @@ class ApiService {
   constructor(baseURL: string) {
     this.baseURL = baseURL;
     // Load token from localStorage on initialization
-    if (typeof window !== 'undefined') {
-      this.token = localStorage.getItem('auth_token');
+    if (typeof window !== "undefined") {
+      this.token = localStorage.getItem("auth_token");
     }
   }
 
   setToken(token: string | null) {
     this.token = token;
-    if (token && typeof window !== 'undefined') {
-      localStorage.setItem('auth_token', token);
-    } else if (typeof window !== 'undefined') {
-      localStorage.removeItem('auth_token');
+    if (token && typeof window !== "undefined") {
+      localStorage.setItem("auth_token", token);
+    } else if (typeof window !== "undefined") {
+      localStorage.removeItem("auth_token");
     }
   }
 
   getToken(): string | null {
-    return this.token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return (
+      this.token ||
+      (typeof window !== "undefined"
+        ? localStorage.getItem("auth_token")
+        : null)
+    );
   }
 
   private static readonly REQUEST_TIMEOUT_MS = 15000;
@@ -56,22 +65,25 @@ class ApiService {
   private async request<T>(
     endpoint: string,
     options: RequestInit = {},
-    timeoutMs?: number
+    timeoutMs?: number,
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
     const token = this.getToken();
 
     const headers: HeadersInit = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...options.headers,
     };
 
     if (token) {
-      (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs || ApiService.REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      timeoutMs || ApiService.REQUEST_TIMEOUT_MS,
+    );
 
     try {
       const response = await fetch(url, {
@@ -86,26 +98,27 @@ class ApiService {
 
       if (response.status === 401 && token) {
         this.logout();
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('auth:session-expired'));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("auth:session-expired"));
         }
-        return { error: 'Session expired. Please sign in again.' };
+        return { error: "Session expired. Please sign in again." };
       }
 
       if (!response.ok) {
         return {
-          error: data.error || data.message || data.msg || `HTTP ${response.status}`,
+          error:
+            data.error || data.message || data.msg || `HTTP ${response.status}`,
         };
       }
 
       return { data };
     } catch (error) {
       clearTimeout(timeoutId);
-      if (error instanceof Error && error.name === 'AbortError') {
-        return { error: 'Request timed out. Please try again.' };
+      if (error instanceof Error && error.name === "AbortError") {
+        return { error: "Request timed out. Please try again." };
       }
       return {
-        error: error instanceof Error ? error.message : 'Network error',
+        error: error instanceof Error ? error.message : "Network error",
       };
     }
   }
@@ -120,11 +133,21 @@ class ApiService {
     role?: string,
     sector?: string,
     session_id?: string,
-    fingerprint_hash?: string
+    fingerprint_hash?: string,
   ) {
-    const response = await this.request<{ access_token: string; email: string }>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ email, password, role, sector, session_id, fingerprint_hash }),
+    const response = await this.request<{
+      access_token: string;
+      email: string;
+    }>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        email,
+        password,
+        role,
+        sector,
+        session_id,
+        fingerprint_hash,
+      }),
     });
 
     if (response.data?.access_token) {
@@ -138,15 +161,15 @@ class ApiService {
     email: string,
     password: string,
     session_id?: string,
-    fingerprint_hash?: string
+    fingerprint_hash?: string,
   ) {
     const response = await this.request<{
       access_token: string;
       email: string;
       role?: string;
       sector?: string;
-    }>('/auth/login', {
-      method: 'POST',
+    }>("/auth/login", {
+      method: "POST",
       body: JSON.stringify({ email, password, session_id, fingerprint_hash }),
     });
 
@@ -168,8 +191,8 @@ class ApiService {
       role?: string;
       sector?: string;
       created_at?: string;
-    }>('/auth/profile', {
-      method: 'GET',
+    }>("/auth/profile", {
+      method: "GET",
     });
   }
 
@@ -180,35 +203,38 @@ class ApiService {
       role?: string;
       sector?: string;
       created_at?: string;
-    }>('/auth/profile', {
-      method: 'PUT',
+    }>("/auth/profile", {
+      method: "PUT",
       body: JSON.stringify(data),
     });
   }
 
   async verifyToken() {
-    return this.request<{ email: string; valid: boolean }>('/auth/verify', {
-      method: 'GET',
+    return this.request<{ email: string; valid: boolean }>("/auth/verify", {
+      method: "GET",
     });
   }
 
   async checkUser(fingerprint_hash: string) {
-    return this.request<{ exists: boolean; email?: string }>('/auth/check-user', {
-      method: 'POST',
-      body: JSON.stringify({ fingerprint_hash }),
-    });
+    return this.request<{ exists: boolean; email?: string }>(
+      "/auth/check-user",
+      {
+        method: "POST",
+        body: JSON.stringify({ fingerprint_hash }),
+      },
+    );
   }
 
   async checkEmail(email: string) {
-    return this.request<{ exists: boolean }>('/auth/check-email', {
-      method: 'POST',
+    return this.request<{ exists: boolean }>("/auth/check-email", {
+      method: "POST",
       body: JSON.stringify({ email }),
     });
   }
 
   async validatePassword(email: string, password: string) {
-    return this.request<{ valid: boolean }>('/auth/validate-password', {
-      method: 'POST',
+    return this.request<{ valid: boolean }>("/auth/validate-password", {
+      method: "POST",
       body: JSON.stringify({ email, password }),
     });
   }
@@ -221,14 +247,14 @@ class ApiService {
     return this.request<{
       message: string;
       ip: string;
-      status: 'new' | 'existing';
+      status: "new" | "existing";
       session_id: string;
       location?: {
         city: string;
         country: string;
       };
-    }>('/info', {
-      method: 'POST',
+    }>("/info", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -249,8 +275,8 @@ class ApiService {
         active_sessions_1h: number;
         tracked_sessions: number;
       };
-    }>('/info/stats', {
-      method: 'GET',
+    }>("/info/stats", {
+      method: "GET",
     });
   }
 
@@ -272,8 +298,8 @@ class ApiService {
         city: string;
         country: string;
       };
-    }>('/info/register-visitor', {
-      method: 'POST',
+    }>("/info/register-visitor", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -297,8 +323,8 @@ class ApiService {
         longitude?: number | null;
         count: number;
       }>;
-    }>(`/info/org-stats${queryParams || ''}`, {
-      method: 'GET',
+    }>(`/info/org-stats${queryParams || ""}`, {
+      method: "GET",
     });
   }
 
@@ -313,8 +339,8 @@ class ApiService {
       is_new: boolean;
       page_views: number;
       is_tracked: boolean;
-    }>('/session/validate', {
-      method: 'POST',
+    }>("/session/validate", {
+      method: "POST",
       body: JSON.stringify({ session_id: sessionId }),
     });
   }
@@ -323,8 +349,8 @@ class ApiService {
     return this.request<{
       success: boolean;
       message: string;
-    }>('/session/track-page', {
-      method: 'POST',
+    }>("/session/track-page", {
+      method: "POST",
       body: JSON.stringify({ session_id: sessionId, page }),
     });
   }
@@ -334,8 +360,8 @@ class ApiService {
       total_sessions: number;
       active_sessions_1h: number;
       tracked_sessions: number;
-    }>('/session/stats', {
-      method: 'GET',
+    }>("/session/stats", {
+      method: "GET",
     });
   }
 
@@ -349,8 +375,8 @@ class ApiService {
     return this.request<{
       success: boolean;
       message: string;
-    }>('/session/track-time', {
-      method: 'POST',
+    }>("/session/track-time", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -379,8 +405,8 @@ class ApiService {
       }>;
       top_section: string;
       total_engagement_ms: number;
-    }>('/session/section-analytics', {
-      method: 'GET',
+    }>("/session/section-analytics", {
+      method: "GET",
     });
   }
 
@@ -399,8 +425,8 @@ class ApiService {
       org: string;
       latitude?: number;
       longitude?: number;
-    }>('/geo/lookup', {
-      method: 'POST',
+    }>("/geo/lookup", {
+      method: "POST",
       body: JSON.stringify({ ip }),
     });
   }
@@ -414,8 +440,8 @@ class ApiService {
         country: string;
         timezone: string;
       };
-    }>('/geo/my-ip', {
-      method: 'GET',
+    }>("/geo/my-ip", {
+      method: "GET",
     });
   }
 
@@ -424,8 +450,8 @@ class ApiService {
       total_cached_ips: number;
       top_countries: Array<{ country: string; count: number }>;
       top_cities: Array<{ city: string; count: number }>;
-    }>('/geo/stats', {
-      method: 'GET',
+    }>("/geo/stats", {
+      method: "GET",
     });
   }
 
@@ -433,9 +459,14 @@ class ApiService {
   // Contact endpoints (/api/contact)
   // ============================================
 
-  async submitContact(name: string, email: string, subject: string, message: string) {
-    return this.request<{ message: string; success: boolean }>('/contact', {
-      method: 'POST',
+  async submitContact(
+    name: string,
+    email: string,
+    subject: string,
+    message: string,
+  ) {
+    return this.request<{ message: string; success: boolean }>("/contact", {
+      method: "POST",
       body: JSON.stringify({ name, email, subject, message }),
     });
   }
@@ -451,8 +482,8 @@ class ApiService {
         created_at: string;
         ip_address: string;
       }>;
-    }>('/contact/messages', {
-      method: 'GET',
+    }>("/contact/messages", {
+      method: "GET",
     });
   }
 
@@ -460,9 +491,12 @@ class ApiService {
   // Chat endpoints (/api/chat)
   // ============================================
 
-  async sendChatMessage(message: string, history?: Array<{ role: string; content: string }>) {
-    return this.request<{ response: string; success: boolean }>('/chat', {
-      method: 'POST',
+  async sendChatMessage(
+    message: string,
+    history?: Array<{ role: string; content: string }>,
+  ) {
+    return this.request<{ response: string; success: boolean }>("/chat", {
+      method: "POST",
       body: JSON.stringify({ message, history }),
     });
   }
@@ -476,8 +510,8 @@ class ApiService {
       status: string;
       service: string;
       version: string;
-    }>('/health', {
-      method: 'GET',
+    }>("/health", {
+      method: "GET",
     });
   }
 
@@ -494,89 +528,122 @@ class ApiService {
     type?: string;
   }) {
     const searchParams = new URLSearchParams();
-    searchParams.set('q', params.q);
-    if (params.page) searchParams.set('page', String(params.page));
-    if (params.location) searchParams.set('location', params.location);
-    if (params.date_posted) searchParams.set('date_posted', params.date_posted);
-    if (params.remote) searchParams.set('remote', 'true');
-    if (params.type) searchParams.set('type', params.type);
-    return this.request<{ jobs: import('../types/jobs').Job[]; total: number; page: number }>(
-      `/jobs/search?${searchParams.toString()}`
+    searchParams.set("q", params.q);
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.location) searchParams.set("location", params.location);
+    if (params.date_posted) searchParams.set("date_posted", params.date_posted);
+    if (params.remote) searchParams.set("remote", "true");
+    if (params.type) searchParams.set("type", params.type);
+    return this.request<{
+      jobs: import("../types/jobs").Job[];
+      total: number;
+      page: number;
+    }>(`/jobs/search?${searchParams.toString()}`);
+  }
+
+  async batchSearchJobs(params: import("../types/jobs").BatchSearchParams) {
+    return this.request<import("../types/jobs").BatchSearchResponse>(
+      "/jobs/batch-search",
+      {
+        method: "POST",
+        body: JSON.stringify(params),
+      },
+      30000,
     );
   }
 
-  async batchSearchJobs(params: import('../types/jobs').BatchSearchParams) {
-    return this.request<import('../types/jobs').BatchSearchResponse>('/jobs/batch-search', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    }, 30000);
-  }
-
-  async analyzeJob(job: import('../types/jobs').Job, action: 'summarize' | 'missing_skills' | 'cover_letter') {
-    return this.request<{ result: string; action: string }>('/jobs/analyze', {
-      method: 'POST',
+  async analyzeJob(
+    job: import("../types/jobs").Job,
+    action: "summarize" | "missing_skills" | "cover_letter",
+  ) {
+    return this.request<{ result: string; action: string }>("/jobs/analyze", {
+      method: "POST",
       body: JSON.stringify({ job, action }),
     });
   }
 
-  async uploadResume(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
+  async uploadResume(
+    file: File,
+  ): Promise<ApiResponse<{ resume: import("../types/jobs").ParsedResume }>> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
     const token = this.getToken();
     const url = `${this.baseURL}/jobs/resume`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
       const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         body: formData,
         headers,
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
-      return { data } as ApiResponse<{ resume: import('../types/jobs').ParsedResume }>;
+      if (!response.ok)
+        return { error: data.error || `HTTP ${response.status}` };
+      return { data } as ApiResponse<{
+        resume: import("../types/jobs").ParsedResume;
+      }>;
     } catch (error) {
       clearTimeout(timeoutId);
-      return { error: error instanceof Error ? error.message : 'Upload failed' };
+      return {
+        error: error instanceof Error ? error.message : "Upload failed",
+      };
     }
   }
 
   async getResume() {
-    return this.request<{ resume: import('../types/jobs').ParsedResume }>('/jobs/resume');
+    return this.request<{ resume: import("../types/jobs").ParsedResume }>(
+      "/jobs/resume",
+    );
   }
 
   async tailorResume(jobDescription: string) {
-    return this.request<{ tailored: import('../types/jobs').TailoredResume }>('/jobs/tailor-resume', {
-      method: 'POST',
-      body: JSON.stringify({ job_description: jobDescription }),
-    }, 30000);
+    return this.request<{ tailored: import("../types/jobs").TailoredResume }>(
+      "/jobs/tailor-resume",
+      {
+        method: "POST",
+        body: JSON.stringify({ job_description: jobDescription }),
+      },
+      30000,
+    );
   }
 
   async getSavedJobs() {
-    return this.request<{ jobs: import('../types/jobs').SavedJob[] }>('/jobs/saved');
+    return this.request<{ jobs: import("../types/jobs").SavedJob[] }>(
+      "/jobs/saved",
+    );
   }
 
-  async saveJob(job: import('../types/jobs').Job) {
-    return this.request<{ job: import('../types/jobs').SavedJob }>('/jobs/saved', {
-      method: 'POST',
-      body: JSON.stringify({ job }),
-    });
+  async saveJob(job: import("../types/jobs").Job) {
+    return this.request<{ job: import("../types/jobs").SavedJob }>(
+      "/jobs/saved",
+      {
+        method: "POST",
+        body: JSON.stringify({ job }),
+      },
+    );
   }
 
-  async updateSavedJob(jobId: string, data: { status?: string; notes?: string }) {
-    return this.request<{ job: import('../types/jobs').SavedJob }>(`/jobs/saved/${jobId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+  async updateSavedJob(
+    jobId: string,
+    data: { status?: string; notes?: string },
+  ) {
+    return this.request<{ job: import("../types/jobs").SavedJob }>(
+      `/jobs/saved/${jobId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      },
+    );
   }
 
   async deleteSavedJob(jobId: string) {
     return this.request<{ message: string }>(`/jobs/saved/${jobId}`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   }
 
@@ -586,21 +653,25 @@ class ApiService {
   // ============================================
 
   async getResumeStatus() {
-    return this.request<import('../types/resume').ResumeStatus>('/resume/status');
+    return this.request<import("../types/resume").ResumeStatus>(
+      "/resume/status",
+    );
   }
 
-  async uploadResumeForParser(file: File): Promise<ApiResponse<{ resume: import('../types/jobs').ParsedResume }>> {
+  async uploadResumeForParser(
+    file: File,
+  ): Promise<ApiResponse<{ resume: import("../types/jobs").ParsedResume }>> {
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append("file", file);
     const token = this.getToken();
     const url = `${this.baseURL}/resume/upload`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
       const headers: Record<string, string> = {};
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         body: formData,
         headers,
         signal: controller.signal,
@@ -608,13 +679,17 @@ class ApiService {
       clearTimeout(timeoutId);
       const data = await response.json().catch(() => ({}));
       if (response.status === 401) {
-        return { error: 'Session expired. Please sign in again.' };
+        return { error: "Session expired. Please sign in again." };
       }
-      if (!response.ok) return { error: data.error || `HTTP ${response.status}` };
+      if (!response.ok)
+        return { error: data.error || `HTTP ${response.status}` };
 
       // Backend returns { job_id } with 202 — poll for the parsed result
       if (data.job_id) {
-        const pollResult = await this.pollJob<{ parsed_resume: any }>(data.job_id, 120000);
+        const pollResult = await this.pollJob<{ parsed_resume: any }>(
+          data.job_id,
+          120000,
+        );
         return pollResult;
       }
 
@@ -622,7 +697,9 @@ class ApiService {
       return { data } as ApiResponse<{ parsed_resume: any }>;
     } catch (error) {
       clearTimeout(timeoutId);
-      return { error: error instanceof Error ? error.message : 'Upload failed' };
+      return {
+        error: error instanceof Error ? error.message : "Upload failed",
+      };
     }
   }
 
@@ -644,7 +721,7 @@ class ApiService {
     const maxConsecutiveErrors = 3;
 
     while (Date.now() - startTime < maxWaitMs) {
-      if (signal?.aborted) return { error: 'Cancelled' };
+      if (signal?.aborted) return { error: "Cancelled" };
 
       const resp = await this.request<{
         status: string;
@@ -658,70 +735,85 @@ class ApiService {
           return { error: resp.error };
         }
         // Transient error (cold start / brief timeout) — wait and retry
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
         continue;
       }
 
       consecutiveErrors = 0;
       const job = resp.data;
-      if (!job) return { error: 'Job not found' };
+      if (!job) return { error: "Job not found" };
 
-      if (job.status === 'completed' && job.result) {
+      if (job.status === "completed" && job.result) {
         return { data: job.result as unknown as T };
       }
 
-      if (job.status === 'failed') {
-        return { error: job.error || 'Job failed. Please try again.' };
+      if (job.status === "failed") {
+        return { error: job.error || "Job failed. Please try again." };
       }
 
       // Still processing - wait and poll again
-      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
 
-    return { error: 'Request timed out. Please try again.' };
+    return { error: "Request timed out. Please try again." };
   }
 
   async extractJD(
     jobDescription: string,
-  ): Promise<ApiResponse<{ jd_analysis: import('../types/resume').JDAnalysis }>> {
+  ): Promise<
+    ApiResponse<{ jd_analysis: import("../types/resume").JDAnalysis }>
+  > {
     const submitResp = await this.request<{ job_id: string }>(
-      '/resume/extract-jd',
-      { method: 'POST', body: JSON.stringify({ job_description: jobDescription }) },
+      "/resume/extract-jd",
+      {
+        method: "POST",
+        body: JSON.stringify({ job_description: jobDescription }),
+      },
       30000,
     );
     if (submitResp.error) return { error: submitResp.error };
-    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+    if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
 
-    return this.pollJob<{ jd_analysis: import('../types/resume').JDAnalysis }>(submitResp.data.job_id);
+    return this.pollJob<{ jd_analysis: import("../types/resume").JDAnalysis }>(
+      submitResp.data.job_id,
+    );
   }
 
   async tailorResumeForParser(
-    jdAnalysis: import('../types/resume').JDAnalysis,
+    jdAnalysis: import("../types/resume").JDAnalysis,
     signal?: AbortSignal,
-  ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
+  ): Promise<
+    ApiResponse<{
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>
+  > {
     const submitResp = await this.request<{ job_id: string }>(
-      '/resume/tailor',
-      { method: 'POST', body: JSON.stringify({ jd_analysis: jdAnalysis }) },
+      "/resume/tailor",
+      { method: "POST", body: JSON.stringify({ jd_analysis: jdAnalysis }) },
       30000,
     );
     if (submitResp.error) return { error: submitResp.error };
-    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+    if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
 
-    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
-      submitResp.data.job_id, 120000, signal,
-    );
+    return this.pollJob<{
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>(submitResp.data.job_id, 120000, signal);
   }
 
   async regenerateResume(
-    tailoredResume: import('../types/resume').TailoredFullResume,
-    jdAnalysis: import('../types/resume').JDAnalysis,
+    tailoredResume: import("../types/resume").TailoredFullResume,
+    jdAnalysis: import("../types/resume").JDAnalysis,
     userFeedback: string,
     signal?: AbortSignal,
-  ): Promise<ApiResponse<{ tailored_resume: import('../types/resume').TailoredFullResume }>> {
+  ): Promise<
+    ApiResponse<{
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>
+  > {
     const submitResp = await this.request<{ job_id: string }>(
-      '/resume/regenerate',
+      "/resume/regenerate",
       {
-        method: 'POST',
+        method: "POST",
         body: JSON.stringify({
           tailored_resume: tailoredResume,
           jd_analysis: jdAnalysis,
@@ -731,11 +823,12 @@ class ApiService {
       30000,
     );
     if (submitResp.error) return { error: submitResp.error };
-    if (!submitResp.data?.job_id) return { error: 'Failed to submit regeneration job' };
+    if (!submitResp.data?.job_id)
+      return { error: "Failed to submit regeneration job" };
 
-    return this.pollJob<{ tailored_resume: import('../types/resume').TailoredFullResume }>(
-      submitResp.data.job_id, 120000, signal,
-    );
+    return this.pollJob<{
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>(submitResp.data.job_id, 120000, signal);
   }
 
   async rewriteBullet(
@@ -744,32 +837,40 @@ class ApiService {
     company?: string,
     jdKeywords?: string[],
   ): Promise<ApiResponse<{ rewritten: string }>> {
-    return this.request('/resume/rewrite-bullet', {
-      method: 'POST',
+    return this.request("/resume/rewrite-bullet", {
+      method: "POST",
       body: JSON.stringify({
         bullet,
-        job_title: jobTitle || '',
-        company: company || '',
+        job_title: jobTitle || "",
+        company: company || "",
         jd_keywords: jdKeywords || [],
       }),
     });
   }
 
   async fetchATSScores(
-    tailoredResume: import('../types/resume').TailoredFullResume,
-    jdAnalysis: import('../types/resume').JDAnalysis,
+    tailoredResume: import("../types/resume").TailoredFullResume,
+    jdAnalysis: import("../types/resume").JDAnalysis,
     signal?: AbortSignal,
-  ): Promise<ApiResponse<{ ats_scores: import('../types/resume').ATSScores }>> {
+  ): Promise<ApiResponse<{ ats_scores: import("../types/resume").ATSScores }>> {
     const submitResp = await this.request<{ job_id: string }>(
-      '/resume/ats-scores',
-      { method: 'POST', body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }) },
+      "/resume/ats-scores",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          tailored_resume: tailoredResume,
+          jd_analysis: jdAnalysis,
+        }),
+      },
       30000,
     );
     if (submitResp.error) return { error: submitResp.error };
-    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+    if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
 
-    return this.pollJob<{ ats_scores: import('../types/resume').ATSScores }>(
-      submitResp.data.job_id, 120000, signal,
+    return this.pollJob<{ ats_scores: import("../types/resume").ATSScores }>(
+      submitResp.data.job_id,
+      120000,
+      signal,
     );
   }
 
@@ -782,8 +883,8 @@ class ApiService {
     base_resume_filename?: string;
     base_resume_s3_key?: string;
   }): Promise<ApiResponse<{ record_id: string; updated?: boolean }>> {
-    return this.request('/resume/save-record', {
-      method: 'POST',
+    return this.request("/resume/save-record", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   }
@@ -792,44 +893,55 @@ class ApiService {
   // Resume management endpoints
   // ============================================
 
-  async listBaseResumes(): Promise<ApiResponse<{versions: any[]}>> {
-    return this.request('/resume/versions');
+  async listBaseResumes(): Promise<ApiResponse<{ versions: any[] }>> {
+    return this.request("/resume/versions");
   }
 
-  async listGeneratedResumes(): Promise<ApiResponse<{generated: any[]}>> {
-    return this.request('/resume/generated');
+  async listGeneratedResumes(): Promise<ApiResponse<{ generated: any[] }>> {
+    return this.request("/resume/generated");
   }
 
-  async listTailoringRecords(): Promise<ApiResponse<{records: any[]}>> {
-    return this.request('/resume/tailoring-records');
+  async listTailoringRecords(): Promise<ApiResponse<{ records: any[] }>> {
+    return this.request("/resume/tailoring-records");
   }
 
   async batchTailor(
     jdList: { text: string; title: string }[],
   ): Promise<ApiResponse<{ jobs: { job_id: string; title: string }[] }>> {
-    return this.request('/resume/batch-tailor', {
-      method: 'POST',
-      body: JSON.stringify({ jd_list: jdList }),
-    }, 30000);
+    return this.request(
+      "/resume/batch-tailor",
+      {
+        method: "POST",
+        body: JSON.stringify({ jd_list: jdList }),
+      },
+      30000,
+    );
   }
 
   async generateCoverLetter(
-    tailoredResume: import('../types/resume').TailoredFullResume,
-    jdAnalysis: import('../types/resume').JDAnalysis,
+    tailoredResume: import("../types/resume").TailoredFullResume,
+    jdAnalysis: import("../types/resume").JDAnalysis,
     signal?: AbortSignal,
   ): Promise<ApiResponse<{ cover_letter: string }>> {
     const submitResp = await this.request<{ job_id: string }>(
-      '/resume/cover-letter',
+      "/resume/cover-letter",
       {
-        method: 'POST',
-        body: JSON.stringify({ tailored_resume: tailoredResume, jd_analysis: jdAnalysis }),
+        method: "POST",
+        body: JSON.stringify({
+          tailored_resume: tailoredResume,
+          jd_analysis: jdAnalysis,
+        }),
       },
       30000,
     );
     if (submitResp.error) return { error: submitResp.error };
-    if (!submitResp.data?.job_id) return { error: 'Failed to submit job' };
+    if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
 
-    return this.pollJob<{ cover_letter: string }>(submitResp.data.job_id, 120000, signal);
+    return this.pollJob<{ cover_letter: string }>(
+      submitResp.data.job_id,
+      120000,
+      signal,
+    );
   }
 
   async downloadCoverLetterPDF(
@@ -839,11 +951,13 @@ class ApiService {
     company: string,
   ): Promise<{ data?: Blob; error?: string; filename?: string }> {
     const token = this.getToken();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     try {
       const resp = await fetch(`${this.baseURL}/resume/cover-letter/download`, {
-        method: 'POST',
+        method: "POST",
         headers,
         body: JSON.stringify({
           cover_letter: coverLetter,
@@ -853,74 +967,87 @@ class ApiService {
         }),
       });
       if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Download failed' }));
-        return { error: err.error || 'Download failed' };
+        const err = await resp
+          .json()
+          .catch(() => ({ error: "Download failed" }));
+        return { error: err.error || "Download failed" };
       }
       const blob = await resp.blob();
-      const cd = resp.headers.get('Content-Disposition') || '';
+      const cd = resp.headers.get("Content-Disposition") || "";
       const match = cd.match(/filename="?([^"]+)"?/);
-      return { data: blob, filename: match?.[1] || 'cover_letter.pdf' };
+      return { data: blob, filename: match?.[1] || "cover_letter.pdf" };
     } catch (e) {
-      return { error: e instanceof Error ? e.message : 'Download failed' };
+      return { error: e instanceof Error ? e.message : "Download failed" };
     }
   }
 
-  async pollJobStatus<T>(jobId: string): Promise<ApiResponse<T & { status: string }>> {
+  async pollJobStatus<T>(
+    jobId: string,
+  ): Promise<ApiResponse<T & { status: string }>> {
     return this.request<T & { status: string }>(`/resume/job/${jobId}`);
   }
 
-  async getTechChronicle(category: string = 'all'): Promise<ApiResponse<{
-    items: import('../types/techChronicle').TechChronicleItem[];
-    trendingTags: string[];
-    generatedAt: string | null;
-  }>> {
-    return this.request(`/tech-chronicle?category=${encodeURIComponent(category)}`);
+  async getTechChronicle(category: string = "all"): Promise<
+    ApiResponse<{
+      items: import("../types/techChronicle").TechChronicleItem[];
+      trendingTags: string[];
+      generatedAt: string | null;
+    }>
+  > {
+    return this.request(
+      `/tech-chronicle?category=${encodeURIComponent(category)}`,
+    );
   }
 
   async setActiveResume(s3Key: string): Promise<ApiResponse<any>> {
-    return this.request('/resume/active', {
-      method: 'PUT',
-      body: JSON.stringify({ s3_key: s3Key })
+    return this.request("/resume/active", {
+      method: "PUT",
+      body: JSON.stringify({ s3_key: s3Key }),
     });
   }
 
   async deleteResume(s3Key: string): Promise<ApiResponse<any>> {
     return this.request(`/resume/file/${encodeURIComponent(s3Key)}`, {
-      method: 'DELETE'
+      method: "DELETE",
     });
   }
 
   async downloadResumeFile(s3Key: string): Promise<Blob> {
     const token = this.getToken();
     const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const response = await fetch(`${this.baseURL}/resume/download-file/${encodeURIComponent(s3Key)}`, {
-      headers,
-    });
-    if (!response.ok) throw new Error('Download failed');
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const response = await fetch(
+      `${this.baseURL}/resume/download-file/${encodeURIComponent(s3Key)}`,
+      {
+        headers,
+      },
+    );
+    if (!response.ok) throw new Error("Download failed");
     return response.blob();
   }
 
   async downloadTailoredResume(
-    tailoredResume: import('../types/resume').TailoredFullResume,
-    jdAnalysis: import('../types/resume').JDAnalysis,
-    format: 'pdf' | 'docx'
+    tailoredResume: import("../types/resume").TailoredFullResume,
+    jdAnalysis: import("../types/resume").JDAnalysis,
+    format: "pdf" | "docx",
   ): Promise<{ data?: Blob; error?: string; filename?: string }> {
     const token = this.getToken();
     const url = `${this.baseURL}/resume/download`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     try {
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const response = await fetch(url, {
-        method: 'POST',
+        method: "POST",
         headers,
         body: JSON.stringify({
           tailored_resume: tailoredResume,
           jd_analysis: jdAnalysis,
           format,
-          job_title: jdAnalysis.job_title || 'untitled',
+          job_title: jdAnalysis.job_title || "untitled",
         }),
         signal: controller.signal,
       });
@@ -930,13 +1057,15 @@ class ApiService {
         return { error: errData.error || `HTTP ${response.status}` };
       }
       const blob = await response.blob();
-      const disposition = response.headers.get('content-disposition') || '';
+      const disposition = response.headers.get("content-disposition") || "";
       const match = disposition.match(/filename="?([^"]+)"?/);
       const filename = match?.[1] || `resume.${format}`;
       return { data: blob, filename };
     } catch (error) {
       clearTimeout(timeoutId);
-      return { error: error instanceof Error ? error.message : 'Download failed' };
+      return {
+        error: error instanceof Error ? error.message : "Download failed",
+      };
     }
   }
 
@@ -953,7 +1082,7 @@ class ApiService {
       total_base_resumes: number;
       total_generated_resumes: number;
       total_tailoring_sessions: number;
-    }>('/admin/stats');
+    }>("/admin/stats");
   }
 
   async getAdminUsers() {
@@ -973,7 +1102,7 @@ class ApiService {
         tailoring_sessions: number;
         has_parsed_resume: boolean;
       }>;
-    }>('/admin/users');
+    }>("/admin/users");
   }
 
   async getAdminUserDetail(email: string) {
@@ -999,29 +1128,35 @@ class ApiService {
   }
 
   async getAdminResumes() {
-    return this.request<{ resumes: any[] }>('/admin/resumes');
+    return this.request<{ resumes: any[] }>("/admin/resumes");
   }
 
   async getAdminTailoring() {
-    return this.request<{ records: any[] }>('/admin/tailoring');
+    return this.request<{ records: any[] }>("/admin/tailoring");
   }
 
-  async getAdminResumeUrl(s3Key: string, disposition: 'inline' | 'attachment' = 'inline', filename?: string) {
+  async getAdminResumeUrl(
+    s3Key: string,
+    disposition: "inline" | "attachment" = "inline",
+    filename?: string,
+  ) {
     let url = `/admin/resume-url?s3_key=${encodeURIComponent(s3Key)}&disposition=${disposition}`;
     if (filename) url += `&filename=${encodeURIComponent(filename)}`;
     return this.request<{ url: string; content_type: string }>(url);
   }
 
   async getAdminActivity() {
-    return this.request<{ activities: Array<{
-      type: string;
-      email: string;
-      name?: string;
-      detail?: string;
-      company?: string;
-      ats_score?: number;
-      timestamp: string;
-    }> }>('/admin/activity');
+    return this.request<{
+      activities: Array<{
+        type: string;
+        email: string;
+        name?: string;
+        detail?: string;
+        company?: string;
+        ats_score?: number;
+        timestamp: string;
+      }>;
+    }>("/admin/activity");
   }
 
   // ═══════════════════════════════════════════════════════════════
@@ -1037,7 +1172,7 @@ class ApiService {
 
     try {
       const fetchStart = performance.now();
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, { cache: "no-store" });
       const fetchEnd = performance.now();
 
       if (!response.ok) {
@@ -1048,8 +1183,10 @@ class ApiService {
       const totalMs = Math.round((fetchEnd - fetchStart) * 100) / 100;
 
       // Get Resource Timing entry for this specific request
-      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-      const entry = entries.find(e => e.name.includes('/trace'));
+      const entries = performance.getEntriesByType(
+        "resource",
+      ) as PerformanceResourceTiming[];
+      const entry = entries.find((e) => e.name.includes("/trace"));
 
       // Helper: safely compute duration from Resource Timing (handles cross-origin zeroes)
       const safeDelta = (a: number, b: number, max: number) => {
@@ -1060,10 +1197,18 @@ class ApiService {
 
       const client = {
         total_ms: totalMs,
-        dns_ms: entry ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs) : 0,
-        tcp_tls_ms: entry ? safeDelta(entry.connectEnd, entry.connectStart, totalMs) : 0,
-        ttfb_ms: entry ? safeDelta(entry.responseStart, entry.requestStart, totalMs) : 0,
-        download_ms: entry ? safeDelta(entry.responseEnd, entry.responseStart, totalMs) : 0,
+        dns_ms: entry
+          ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs)
+          : 0,
+        tcp_tls_ms: entry
+          ? safeDelta(entry.connectEnd, entry.connectStart, totalMs)
+          : 0,
+        ttfb_ms: entry
+          ? safeDelta(entry.responseStart, entry.requestStart, totalMs)
+          : 0,
+        download_ms: entry
+          ? safeDelta(entry.responseEnd, entry.responseStart, totalMs)
+          : 0,
       };
 
       return {
@@ -1074,7 +1219,7 @@ class ApiService {
       };
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : 'Trace request failed',
+        error: error instanceof Error ? error.message : "Trace request failed",
       };
     }
   }
@@ -1086,7 +1231,7 @@ class ApiService {
 
     try {
       const fetchStart = performance.now();
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, { cache: "no-store" });
       const fetchEnd = performance.now();
 
       if (!response.ok) {
@@ -1096,8 +1241,10 @@ class ApiService {
       const serverData = await response.json();
       const totalMs = Math.round((fetchEnd - fetchStart) * 100) / 100;
 
-      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-      const entry = entries.find(e => e.name.includes('/trace/deep'));
+      const entries = performance.getEntriesByType(
+        "resource",
+      ) as PerformanceResourceTiming[];
+      const entry = entries.find((e) => e.name.includes("/trace/deep"));
 
       const safeDelta = (a: number, b: number, max: number) => {
         if (!a || !b || a <= 0 || b <= 0) return 0;
@@ -1107,10 +1254,18 @@ class ApiService {
 
       const client = {
         total_ms: totalMs,
-        dns_ms: entry ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs) : 0,
-        tcp_tls_ms: entry ? safeDelta(entry.connectEnd, entry.connectStart, totalMs) : 0,
-        ttfb_ms: entry ? safeDelta(entry.responseStart, entry.requestStart, totalMs) : 0,
-        download_ms: entry ? safeDelta(entry.responseEnd, entry.responseStart, totalMs) : 0,
+        dns_ms: entry
+          ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs)
+          : 0,
+        tcp_tls_ms: entry
+          ? safeDelta(entry.connectEnd, entry.connectStart, totalMs)
+          : 0,
+        ttfb_ms: entry
+          ? safeDelta(entry.responseStart, entry.requestStart, totalMs)
+          : 0,
+        download_ms: entry
+          ? safeDelta(entry.responseEnd, entry.responseStart, totalMs)
+          : 0,
       };
 
       return {
@@ -1121,7 +1276,8 @@ class ApiService {
       };
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : 'Deep trace request failed',
+        error:
+          error instanceof Error ? error.message : "Deep trace request failed",
       };
     }
   }
@@ -1131,45 +1287,94 @@ class ApiService {
 
     try {
       // 1. Collect Navigation Timing (the actual page load)
-      const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+      const navEntries = performance.getEntriesByType(
+        "navigation",
+      ) as PerformanceNavigationTiming[];
       const nav = navEntries[0];
 
-      const navigation = nav ? {
-        dns_ms: Math.round((nav.domainLookupEnd - nav.domainLookupStart) * 100) / 100,
-        tcp_ms: Math.round((nav.connectEnd - nav.connectStart) * 100) / 100,
-        tls_ms: nav.secureConnectionStart > 0
-          ? Math.round((nav.connectEnd - nav.secureConnectionStart) * 100) / 100
-          : 0,
-        ttfb_ms: Math.round((nav.responseStart - nav.requestStart) * 100) / 100,
-        document_download_ms: Math.round((nav.responseEnd - nav.responseStart) * 100) / 100,
-        dom_parse_ms: Math.round((nav.domInteractive - nav.responseEnd) * 100) / 100,
-        dom_interactive_ms: Math.round(nav.domInteractive * 100) / 100,
-        page_load_ms: Math.round((nav.loadEventEnd > 0 ? nav.loadEventEnd : performance.now()) * 100) / 100,
-        redirect_ms: Math.round((nav.redirectEnd - nav.redirectStart) * 100) / 100,
-        transfer_size: nav.transferSize || 0,
-      } : {
-        dns_ms: 0, tcp_ms: 0, tls_ms: 0, ttfb_ms: 0,
-        document_download_ms: 0, dom_parse_ms: 0, dom_interactive_ms: 0,
-        page_load_ms: Math.round(performance.now() * 100) / 100,
-        redirect_ms: 0, transfer_size: 0,
-      };
+      const navigation = nav
+        ? {
+            dns_ms:
+              Math.round((nav.domainLookupEnd - nav.domainLookupStart) * 100) /
+              100,
+            tcp_ms: Math.round((nav.connectEnd - nav.connectStart) * 100) / 100,
+            tls_ms:
+              nav.secureConnectionStart > 0
+                ? Math.round(
+                    (nav.connectEnd - nav.secureConnectionStart) * 100,
+                  ) / 100
+                : 0,
+            ttfb_ms:
+              Math.round((nav.responseStart - nav.requestStart) * 100) / 100,
+            document_download_ms:
+              Math.round((nav.responseEnd - nav.responseStart) * 100) / 100,
+            dom_parse_ms:
+              Math.round((nav.domInteractive - nav.responseEnd) * 100) / 100,
+            dom_interactive_ms: Math.round(nav.domInteractive * 100) / 100,
+            page_load_ms:
+              Math.round(
+                (nav.loadEventEnd > 0 ? nav.loadEventEnd : performance.now()) *
+                  100,
+              ) / 100,
+            redirect_ms:
+              Math.round((nav.redirectEnd - nav.redirectStart) * 100) / 100,
+            transfer_size: nav.transferSize || 0,
+          }
+        : {
+            dns_ms: 0,
+            tcp_ms: 0,
+            tls_ms: 0,
+            ttfb_ms: 0,
+            document_download_ms: 0,
+            dom_parse_ms: 0,
+            dom_interactive_ms: 0,
+            page_load_ms: Math.round(performance.now() * 100) / 100,
+            redirect_ms: 0,
+            transfer_size: 0,
+          };
 
       // 2. Collect Resource Timing (all loaded assets)
-      const allResources = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
+      const allResources = performance.getEntriesByType(
+        "resource",
+      ) as PerformanceResourceTiming[];
 
-      const categorize = (entries: PerformanceResourceTiming[], filter: (e: PerformanceResourceTiming) => boolean) =>
-        entries.filter(filter).map(e => ({
-          name: e.name.split('/').pop()?.split('?')[0] || e.name,
-          duration: Math.round(e.duration * 100) / 100,
-          size: e.transferSize || 0,
-        })).sort((a, b) => b.duration - a.duration).slice(0, 5);
+      const categorize = (
+        entries: PerformanceResourceTiming[],
+        filter: (e: PerformanceResourceTiming) => boolean,
+      ) =>
+        entries
+          .filter(filter)
+          .map((e) => ({
+            name: e.name.split("/").pop()?.split("?")[0] || e.name,
+            duration: Math.round(e.duration * 100) / 100,
+            size: e.transferSize || 0,
+          }))
+          .sort((a, b) => b.duration - a.duration)
+          .slice(0, 5);
 
-      const scripts = categorize(allResources, e => e.initiatorType === 'script' || e.name.endsWith('.js'));
-      const styles = categorize(allResources, e => e.initiatorType === 'link' && (e.name.endsWith('.css') || e.name.includes('.css')));
-      const apiCalls = categorize(allResources, e => e.name.includes('/api/'));
-      const fonts = categorize(allResources, e => e.initiatorType === 'css' || e.name.match(/\.(woff2?|ttf|otf)/) !== null);
+      const scripts = categorize(
+        allResources,
+        (e) => e.initiatorType === "script" || e.name.endsWith(".js"),
+      );
+      const styles = categorize(
+        allResources,
+        (e) =>
+          e.initiatorType === "link" &&
+          (e.name.endsWith(".css") || e.name.includes(".css")),
+      );
+      const apiCalls = categorize(allResources, (e) =>
+        e.name.includes("/api/"),
+      );
+      const fonts = categorize(
+        allResources,
+        (e) =>
+          e.initiatorType === "css" ||
+          e.name.match(/\.(woff2?|ttf|otf)/) !== null,
+      );
 
-      const totalTransferKb = Math.round(allResources.reduce((sum, e) => sum + (e.transferSize || 0), 0) / 1024);
+      const totalTransferKb = Math.round(
+        allResources.reduce((sum, e) => sum + (e.transferSize || 0), 0) / 1024,
+      );
 
       const resources = {
         scripts,
@@ -1183,7 +1388,7 @@ class ApiService {
       // 3. Fetch server-side Lambda/container data
       performance.clearResourceTimings();
       const fetchStart = performance.now();
-      const response = await fetch(url, { cache: 'no-store' });
+      const response = await fetch(url, { cache: "no-store" });
       const fetchEnd = performance.now();
 
       if (!response.ok) {
@@ -1193,8 +1398,10 @@ class ApiService {
       const serverData = await response.json();
       const totalMs = Math.round((fetchEnd - fetchStart) * 100) / 100;
 
-      const entries = performance.getEntriesByType('resource') as PerformanceResourceTiming[];
-      const entry = entries.find(e => e.name.includes('/trace/pageload'));
+      const entries = performance.getEntriesByType(
+        "resource",
+      ) as PerformanceResourceTiming[];
+      const entry = entries.find((e) => e.name.includes("/trace/pageload"));
 
       const safeDelta = (a: number, b: number, max: number) => {
         if (!a || !b || a <= 0 || b <= 0) return 0;
@@ -1204,10 +1411,18 @@ class ApiService {
 
       const client = {
         total_ms: totalMs,
-        dns_ms: entry ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs) : 0,
-        tcp_tls_ms: entry ? safeDelta(entry.connectEnd, entry.connectStart, totalMs) : 0,
-        ttfb_ms: entry ? safeDelta(entry.responseStart, entry.requestStart, totalMs) : 0,
-        download_ms: entry ? safeDelta(entry.responseEnd, entry.responseStart, totalMs) : 0,
+        dns_ms: entry
+          ? safeDelta(entry.domainLookupEnd, entry.domainLookupStart, totalMs)
+          : 0,
+        tcp_tls_ms: entry
+          ? safeDelta(entry.connectEnd, entry.connectStart, totalMs)
+          : 0,
+        ttfb_ms: entry
+          ? safeDelta(entry.responseStart, entry.requestStart, totalMs)
+          : 0,
+        download_ms: entry
+          ? safeDelta(entry.responseEnd, entry.responseStart, totalMs)
+          : 0,
       };
 
       return {
@@ -1220,7 +1435,8 @@ class ApiService {
       };
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : 'Page load trace failed',
+        error:
+          error instanceof Error ? error.message : "Page load trace failed",
       };
     }
   }
@@ -1403,7 +1619,10 @@ interface SandboxLatest {
 
 declare module ApiService {
   interface Prototype {
-    deploySandboxMessage(message: string, color: string): Promise<ApiResponse<any>>;
+    deploySandboxMessage(
+      message: string,
+      color: string,
+    ): Promise<ApiResponse<any>>;
     getSandboxStatus(): Promise<ApiResponse<SandboxStatus>>;
     getLatestSandboxMessage(): Promise<ApiResponse<SandboxLatest>>;
   }
@@ -1411,23 +1630,23 @@ declare module ApiService {
 
 Object.assign(ApiService.prototype, {
   async deploySandboxMessage(this: ApiService, message: string, color: string) {
-    return this['request']('/infra/sandbox/deploy', {
-      method: 'POST',
+    return this["request"]("/infra/sandbox/deploy", {
+      method: "POST",
       body: JSON.stringify({ message, color }),
     });
   },
 
   async getSandboxStatus(this: ApiService) {
-    return this['request']('/infra/sandbox/status', {
-      method: 'GET',
+    return this["request"]("/infra/sandbox/status", {
+      method: "GET",
     });
   },
 
   async getLatestSandboxMessage(this: ApiService) {
-    return this['request']('/infra/sandbox/latest', {
-      method: 'GET',
+    return this["request"]("/infra/sandbox/latest", {
+      method: "GET",
     });
-  }
+  },
 });
 
 export const apiService = new ApiService(API_BASE_URL);

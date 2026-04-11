@@ -6,23 +6,24 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 CONTENT_TYPES = {
-    'pdf': 'application/pdf',
-    'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'doc': 'application/msword',
-    'txt': 'text/plain',
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "doc": "application/msword",
+    "txt": "text/plain",
 }
 
 
 class ResumeStorageService:
     def __init__(self):
         self._client = None
-        self._bucket = os.getenv('RESUME_S3_BUCKET', '')
+        self._bucket = os.getenv("RESUME_S3_BUCKET", "")
 
     @property
     def client(self):
         if self._client is None:
             import boto3
-            self._client = boto3.client('s3')
+
+            self._client = boto3.client("s3")
         return self._client
 
     @property
@@ -45,11 +46,11 @@ class ResumeStorageService:
                 raise ValueError("RESUME_S3_BUCKET is not configured")
 
             sanitized = self._sanitize_filename(filename)
-            timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
             s3_key = f"{user_id}/base/{timestamp}_{sanitized}"
 
-            ext = filename.rsplit('.', 1)[-1].lower() if '.' in filename else 'pdf'
-            content_type = CONTENT_TYPES.get(ext, 'application/octet-stream')
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "pdf"
+            content_type = CONTENT_TYPES.get(ext, "application/octet-stream")
 
             self.client.put_object(
                 Bucket=self.bucket,
@@ -64,7 +65,9 @@ class ResumeStorageService:
             logger.error("Failed to upload base resume for user %s: %s", user_id, e)
             raise
 
-    def upload_generated_resume(self, user_id: str, file_bytes: bytes, job_title: str, format: str = 'pdf') -> str:
+    def upload_generated_resume(
+        self, user_id: str, file_bytes: bytes, job_title: str, format: str = "pdf"
+    ) -> str:
         """Upload a generated/tailored resume to S3.
 
         Args:
@@ -81,9 +84,9 @@ class ResumeStorageService:
                 raise ValueError("RESUME_S3_BUCKET is not configured")
 
             sanitized_title = self._sanitize_filename(job_title)
-            timestamp = datetime.utcnow().strftime('%Y%m%d%H%M%S')
+            timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
             s3_key = f"{user_id}/generated/{timestamp}_{sanitized_title}_tailored.{format}"
-            content_type = CONTENT_TYPES.get(format, 'application/octet-stream')
+            content_type = CONTENT_TYPES.get(format, "application/octet-stream")
 
             self.client.put_object(
                 Bucket=self.bucket,
@@ -117,29 +120,31 @@ class ResumeStorageService:
             response = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
 
             resumes = []
-            for obj in response.get('Contents', []):
-                key = obj['Key']
+            for obj in response.get("Contents", []):
+                key = obj["Key"]
                 # Key format: {user_id}/base/{timestamp}_{sanitized_filename}
-                basename = key.split('/')[-1]
-                parts = basename.split('_', 1)
-                timestamp_str = parts[0] if len(parts) > 1 else ''
+                basename = key.split("/")[-1]
+                parts = basename.split("_", 1)
+                timestamp_str = parts[0] if len(parts) > 1 else ""
                 filename = parts[1] if len(parts) > 1 else basename
 
                 uploaded_at = None
                 if timestamp_str:
                     try:
-                        uploaded_at = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S').isoformat()
+                        uploaded_at = datetime.strptime(timestamp_str, "%Y%m%d%H%M%S").isoformat()
                     except ValueError:
-                        uploaded_at = obj['LastModified'].isoformat()
+                        uploaded_at = obj["LastModified"].isoformat()
 
-                resumes.append({
-                    's3_key': key,
-                    'filename': filename,
-                    'uploaded_at': uploaded_at,
-                    'size_bytes': obj['Size'],
-                })
+                resumes.append(
+                    {
+                        "s3_key": key,
+                        "filename": filename,
+                        "uploaded_at": uploaded_at,
+                        "size_bytes": obj["Size"],
+                    }
+                )
 
-            resumes.sort(key=lambda r: r['uploaded_at'] or '', reverse=True)
+            resumes.sort(key=lambda r: r["uploaded_at"] or "", reverse=True)
             logger.info("Listed %d base resumes for user %s", len(resumes), user_id)
             return resumes
         except Exception as e:
@@ -165,33 +170,35 @@ class ResumeStorageService:
             response = self.client.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
 
             resumes = []
-            for obj in response.get('Contents', []):
-                key = obj['Key']
+            for obj in response.get("Contents", []):
+                key = obj["Key"]
                 # Key format: {user_id}/generated/{timestamp}_{sanitized_job_title}_tailored.{format}
-                basename = key.split('/')[-1]
-                parts = basename.split('_', 1)
-                timestamp_str = parts[0] if len(parts) > 1 else ''
+                basename = key.split("/")[-1]
+                parts = basename.split("_", 1)
+                timestamp_str = parts[0] if len(parts) > 1 else ""
                 remainder = parts[1] if len(parts) > 1 else basename
 
                 generated_at = None
                 if timestamp_str:
                     try:
-                        generated_at = datetime.strptime(timestamp_str, '%Y%m%d%H%M%S').isoformat()
+                        generated_at = datetime.strptime(timestamp_str, "%Y%m%d%H%M%S").isoformat()
                     except ValueError:
-                        generated_at = obj['LastModified'].isoformat()
+                        generated_at = obj["LastModified"].isoformat()
 
                 # Extract job title by removing the trailing '_tailored.{ext}'
-                job_title = re.sub(r'_tailored\.\w+$', '', remainder)
+                job_title = re.sub(r"_tailored\.\w+$", "", remainder)
 
-                resumes.append({
-                    's3_key': key,
-                    'filename': basename,
-                    'generated_at': generated_at,
-                    'size_bytes': obj['Size'],
-                    'job_title': job_title,
-                })
+                resumes.append(
+                    {
+                        "s3_key": key,
+                        "filename": basename,
+                        "generated_at": generated_at,
+                        "size_bytes": obj["Size"],
+                        "job_title": job_title,
+                    }
+                )
 
-            resumes.sort(key=lambda r: r['generated_at'] or '', reverse=True)
+            resumes.sort(key=lambda r: r["generated_at"] or "", reverse=True)
             logger.info("Listed %d generated resumes for user %s", len(resumes), user_id)
             return resumes
         except Exception as e:
@@ -215,7 +222,7 @@ class ResumeStorageService:
                 raise ValueError("RESUME_S3_BUCKET is not configured")
 
             response = self.client.get_object(Bucket=self.bucket, Key=s3_key)
-            data = response['Body'].read()
+            data = response["Body"].read()
             logger.info("Downloaded resume: %s (%d bytes)", s3_key, len(data))
             return data
         except self.client.exceptions.NoSuchKey:
@@ -260,8 +267,8 @@ class ResumeStorageService:
                 raise ValueError("RESUME_S3_BUCKET is not configured")
 
             url = self.client.generate_presigned_url(
-                'get_object',
-                Params={'Bucket': self.bucket, 'Key': s3_key},
+                "get_object",
+                Params={"Bucket": self.bucket, "Key": s3_key},
                 ExpiresIn=expiry,
             )
             logger.info("Generated presigned URL for %s (expiry=%ds)", s3_key, expiry)
@@ -284,11 +291,11 @@ class ResumeStorageService:
             A sanitized, lowercase string safe for S3 keys.
         """
         # Replace spaces with underscores
-        sanitized = name.strip().replace(' ', '_')
+        sanitized = name.strip().replace(" ", "_")
         # Remove anything that is not alphanumeric, hyphen, underscore, or dot
-        sanitized = re.sub(r'[^a-zA-Z0-9\-_.]', '', sanitized)
+        sanitized = re.sub(r"[^a-zA-Z0-9\-_.]", "", sanitized)
         # Collapse consecutive underscores/hyphens
-        sanitized = re.sub(r'[_\-]{2,}', '_', sanitized)
+        sanitized = re.sub(r"[_\-]{2,}", "_", sanitized)
         # Lowercase and truncate
         sanitized = sanitized.lower()[:100]
         return sanitized

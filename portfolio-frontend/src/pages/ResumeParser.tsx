@@ -2140,6 +2140,29 @@ function TailorTab() {
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
   const [resumeLoadError, setResumeLoadError] = useState("");
   const [editing, setEditing] = useState(false);
+
+  // Lock page scroll while the full-screen editor overlay is mounted.
+  // Without this, wheel/touch gestures chain through to the TailorTab
+  // behind it (overscroll-contain only helps when the overlay itself can
+  // scroll), and the disappearing scrollbar causes a layout shift that
+  // briefly reveals the page underneath.
+  useEffect(() => {
+    if (!editing) return;
+    const body = document.body;
+    const prevOverflow = body.style.overflow;
+    const prevPaddingRight = body.style.paddingRight;
+    const scrollbarWidth =
+      window.innerWidth - document.documentElement.clientWidth;
+    body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+    return () => {
+      body.style.overflow = prevOverflow;
+      body.style.paddingRight = prevPaddingRight;
+    };
+  }, [editing]);
+
   const [regenFeedback, setRegenFeedback] = useState("");
   const [regenerating, setRegenerating] = useState(false);
   const [regenError, setRegenError] = useState("");

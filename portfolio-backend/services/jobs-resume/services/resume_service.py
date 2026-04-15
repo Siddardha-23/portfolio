@@ -148,18 +148,16 @@ class ResumeService:
             },
         )
 
-    def fail_job(self, job_id: str, error: str):
-        """Mark a job as failed with an error message."""
-        self.resume_jobs.update_one(
-            {"job_id": job_id},
-            {
-                "$set": {
-                    "status": "failed",
-                    "error": error,
-                    "completed_at": datetime.now(timezone.utc),
-                }
-            },
-        )
+    def fail_job(self, job_id: str, error: str, error_code: Optional[str] = None):
+        """Mark a job as failed with an error message and optional machine-readable code."""
+        update: Dict[str, Any] = {
+            "status": "failed",
+            "error": error,
+            "completed_at": datetime.now(timezone.utc),
+        }
+        if error_code:
+            update["error_code"] = error_code
+        self.resume_jobs.update_one({"job_id": job_id}, {"$set": update})
 
     @staticmethod
     def invoke_async(job_id: str, job_type: str, payload: dict):
@@ -505,8 +503,10 @@ def _process_job(job_id: str, job_type: str, payload: dict):
         logger.info(f"Job {job_id} ({job_type}) completed successfully")
 
     except Exception as e:
+        from services.gemini_client import LLMRetriesExhaustedError
         logger.error(f"Job {job_id} ({job_type}) failed: {e}")
-        svc.fail_job(job_id, str(e))
+        code = getattr(e, "code", None) if isinstance(e, LLMRetriesExhaustedError) else None
+        svc.fail_job(job_id, str(e), error_code=code)
 
 
 def _repair_extraction(raw_text: str, invalid_output: dict, error_msg: str):

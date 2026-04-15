@@ -10,6 +10,17 @@
  * - /api/geo - IP geolocation
  */
 
+import { toast } from "sonner";
+
+const LLM_RETRIES_EXHAUSTED_TOAST_ID = "llm-retries-exhausted";
+
+function notifyLLMRetriesExhausted(): void {
+  toast.error(
+    "⚡ High demand right now. Please try again in a moment.",
+    { id: LLM_RETRIES_EXHAUSTED_TOAST_ID, duration: 6000 },
+  );
+}
+
 // In browser on production (non-localhost), always use same origin so /api hits CloudFront regardless of build env.
 // This avoids API URL mismatch after infra changes (e.g. Lambda URL, domain).
 function getApiBaseUrl(): string {
@@ -727,6 +738,7 @@ class ApiService {
         status: string;
         result?: T;
         error?: string;
+        error_code?: string;
       }>(`/resume/job/${jobId}`, {}, 30000);
 
       if (resp.error) {
@@ -748,6 +760,10 @@ class ApiService {
       }
 
       if (job.status === "failed") {
+        if (job.error_code === "LLM_RETRIES_EXHAUSTED") {
+          notifyLLMRetriesExhausted();
+          return { error: "" };
+        }
         return { error: job.error || "Job failed. Please try again." };
       }
 
@@ -984,7 +1000,14 @@ class ApiService {
   async pollJobStatus<T>(
     jobId: string,
   ): Promise<ApiResponse<T & { status: string }>> {
-    return this.request<T & { status: string }>(`/resume/job/${jobId}`);
+    const resp = await this.request<
+      T & { status: string; error?: string; error_code?: string }
+    >(`/resume/job/${jobId}`);
+    if (resp.data?.error_code === "LLM_RETRIES_EXHAUSTED") {
+      notifyLLMRetriesExhausted();
+      resp.data = { ...resp.data, error: "" };
+    }
+    return resp;
   }
 
   async getTechChronicle(category: string = "all"): Promise<

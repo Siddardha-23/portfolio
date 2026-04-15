@@ -33,6 +33,11 @@ GEMINI_FLASH   = "gemini-2.5-flash"          # extraction / factual parsing (GA,
 GEMINI_PRO     = "gemini-2.5-pro"            # JD-based tailoring (GA, stable)
 GEMINI_PREVIEW = "gemini-3.1-pro-preview"    # repair / correction only
 
+
+class LLMRetriesExhaustedError(Exception):
+    """Raised when all Gemini API retry attempts have been exhausted."""
+    code = "LLM_RETRIES_EXHAUSTED"
+
 # ---------------------------------------------------------------------------
 # Client singleton
 # ---------------------------------------------------------------------------
@@ -191,7 +196,9 @@ def _call_gemini(
             )
             time.sleep(wait)
 
-    raise ValueError(f"AI service unavailable after {max_retries + 1} attempts: {last_error}")
+    raise LLMRetriesExhaustedError(
+        f"AI service unavailable after {max_retries + 1} attempts: {last_error}"
+    )
 
 
 def _try_parse_json(raw: str) -> dict:

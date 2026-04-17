@@ -235,87 +235,136 @@ export default function InterviewPrepTab() {
                 </div>
               )}
 
-              {content && (
-                <div className="space-y-5 rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-5">
-                  {content.elevator_pitch && (
-                    <Section title="Elevator pitch" subtitle="Open the interview with this.">
-                      <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed">{content.elevator_pitch}</p>
-                    </Section>
-                  )}
+              {content && (() => {
+                // Gemini occasionally returns a field as a string (or {question:...})
+                // instead of the expected list. Normalise everything defensively
+                // so a malformed field can never crash the render.
+                const asStrArray = (v: unknown): string[] => {
+                  if (Array.isArray(v)) return v.filter(Boolean).map(String);
+                  if (typeof v === "string" && v.trim()) {
+                    // Split on sentence/newline/semicolon when a plain string comes back
+                    return v.split(/\n+|(?<=\.)\s+|; /).map(s => s.trim()).filter(Boolean);
+                  }
+                  return [];
+                };
+                const asQArray = (v: unknown): { question: string; why_asked?: string; answer_outline?: string }[] => {
+                  if (Array.isArray(v)) {
+                    return v
+                      .map(item => {
+                        if (typeof item === "string") return { question: item };
+                        if (item && typeof item === "object") {
+                          const q = (item as any).question ?? (item as any).q ?? "";
+                          if (!q) return null;
+                          return {
+                            question: String(q),
+                            why_asked: (item as any).why_asked ? String((item as any).why_asked) : undefined,
+                            answer_outline: (item as any).answer_outline ? String((item as any).answer_outline) : undefined,
+                          };
+                        }
+                        return null;
+                      })
+                      .filter((x): x is { question: string; why_asked?: string; answer_outline?: string } => !!x);
+                  }
+                  if (typeof v === "string" && v.trim()) return [{ question: v }];
+                  return [];
+                };
 
-                  {!!content.talking_points?.length && (
-                    <Section title="Talking points" subtitle="Your strongest selling points for this role.">
-                      <ul className="space-y-1.5">
-                        {content.talking_points.map((p, i) => (
-                          <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
-                            <span className="text-purple-500/70 shrink-0">•</span><span>{p}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Section>
-                  )}
+                const talkingPoints = asStrArray(content.talking_points);
+                const behavioral = asQArray(content.behavioral_questions);
+                const technical = asQArray(content.technical_questions);
+                const companySpecific = asQArray(content.company_specific);
+                const gaps = asStrArray(content.gaps_to_address);
+                const redFlags = asStrArray(content.red_flags);
+                const askThem = asStrArray(content.questions_to_ask_them);
 
-                  {!!content.behavioral_questions?.length && (
-                    <Section title={`Behavioral questions (${content.behavioral_questions.length})`}>
-                      <div className="space-y-1.5">
-                        {content.behavioral_questions.map((q, i) => <QuestionCard key={i} q={q} />)}
-                      </div>
-                    </Section>
-                  )}
+                return (
+                  <div className="space-y-5 rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-5">
+                    {content.elevator_pitch && (
+                      <Section title="Elevator pitch" subtitle="Open the interview with this.">
+                        <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed">{content.elevator_pitch}</p>
+                      </Section>
+                    )}
 
-                  {!!content.technical_questions?.length && (
-                    <Section title={`Technical questions (${content.technical_questions.length})`}>
-                      <div className="space-y-1.5">
-                        {content.technical_questions.map((q, i) => <QuestionCard key={i} q={q} />)}
-                      </div>
-                    </Section>
-                  )}
+                    {talkingPoints.length > 0 && (
+                      <Section title="Talking points" subtitle="Your strongest selling points for this role.">
+                        <ul className="space-y-1.5">
+                          {talkingPoints.map((p, i) => (
+                            <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
+                              <span className="text-purple-500/70 shrink-0">•</span><span>{p}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Section>
+                    )}
 
-                  {!!content.company_specific?.length && (
-                    <Section title="Company-specific">
-                      <div className="space-y-1.5">
-                        {content.company_specific.map((q, i) => <QuestionCard key={i} q={q} />)}
-                      </div>
-                    </Section>
-                  )}
+                    {behavioral.length > 0 && (
+                      <Section title={`Behavioral questions (${behavioral.length})`}>
+                        <div className="space-y-1.5">
+                          {behavioral.map((q, i) => <QuestionCard key={i} q={q} />)}
+                        </div>
+                      </Section>
+                    )}
 
-                  {!!content.gaps_to_address?.length && (
-                    <Section title="Gaps to address" subtitle="JD requirements not obvious in the resume — have a ready answer.">
-                      <ul className="space-y-1">
-                        {content.gaps_to_address.map((g, i) => (
-                          <li key={i} className="text-[12px] text-amber-600 dark:text-amber-300 flex gap-2">
-                            <span className="text-amber-500 shrink-0">⚠</span><span>{g}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Section>
-                  )}
+                    {technical.length > 0 && (
+                      <Section title={`Technical questions (${technical.length})`}>
+                        <div className="space-y-1.5">
+                          {technical.map((q, i) => <QuestionCard key={i} q={q} />)}
+                        </div>
+                      </Section>
+                    )}
 
-                  {!!content.red_flags?.length && (
-                    <Section title="Likely tough questions">
-                      <ul className="space-y-1">
-                        {content.red_flags.map((r, i) => (
-                          <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
-                            <span className="text-red-500 shrink-0">!</span><span>{r}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Section>
-                  )}
+                    {companySpecific.length > 0 && (
+                      <Section title="Company-specific">
+                        <div className="space-y-1.5">
+                          {companySpecific.map((q, i) => <QuestionCard key={i} q={q} />)}
+                        </div>
+                      </Section>
+                    )}
 
-                  {!!content.questions_to_ask_them?.length && (
-                    <Section title="Questions to ask them" subtitle="Thoughtful questions that show interest and due diligence.">
-                      <ul className="space-y-1">
-                        {content.questions_to_ask_them.map((q, i) => (
-                          <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
-                            <span className="text-purple-500/70 shrink-0">?</span><span>{q}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </Section>
-                  )}
-                </div>
-              )}
+                    {gaps.length > 0 && (
+                      <Section title="Gaps to address" subtitle="JD requirements not obvious in the resume — have a ready answer.">
+                        <ul className="space-y-1">
+                          {gaps.map((g, i) => (
+                            <li key={i} className="text-[12px] text-amber-600 dark:text-amber-300 flex gap-2">
+                              <span className="text-amber-500 shrink-0">⚠</span><span>{g}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Section>
+                    )}
+
+                    {redFlags.length > 0 && (
+                      <Section title="Likely tough questions">
+                        <ul className="space-y-1">
+                          {redFlags.map((r, i) => (
+                            <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
+                              <span className="text-red-500 shrink-0">!</span><span>{r}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Section>
+                    )}
+
+                    {askThem.length > 0 && (
+                      <Section title="Questions to ask them" subtitle="Thoughtful questions that show interest and due diligence.">
+                        <ul className="space-y-1">
+                          {askThem.map((q, i) => (
+                            <li key={i} className="text-[12px] text-gray-700 dark:text-gray-300 flex gap-2">
+                              <span className="text-purple-500/70 shrink-0">?</span><span>{q}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </Section>
+                    )}
+
+                    {talkingPoints.length + behavioral.length + technical.length + companySpecific.length + gaps.length + redFlags.length + askThem.length === 0 && !content.elevator_pitch && (
+                      <p className="text-xs text-gray-500 dark:text-gray-400 text-center py-4">
+                        The model didn't return structured content. Try <b>Regenerate</b>.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-xs text-gray-500 dark:text-gray-400">

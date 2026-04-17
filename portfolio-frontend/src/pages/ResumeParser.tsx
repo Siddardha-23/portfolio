@@ -1768,7 +1768,11 @@ function TailoredResumesTab() {
   const [dateTo, setDateTo] = useState<string>("");
   const [atsMin, setAtsMin] = useState<number>(0);
   const [hasRegensOnly, setHasRegensOnly] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("newest");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Active quick-preset tokens (pure client-side derivations of the other filter state)
+  const [quickPreset, setQuickPreset] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -1804,11 +1808,16 @@ function TailoredResumesTab() {
       const title = rec.jd_analysis?.job_title || "";
       const company = rec.jd_analysis?.company || "";
       if (q) {
-        const hay = `${title} ${company}`.toLowerCase();
+        const skillsHay = (rec.jd_analysis?.required_skills || []).join(" ");
+        const hay = `${title} ${company} ${skillsHay}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       if (companyFilter !== "all" && company !== companyFilter) return false;
       if (roleFilter !== "all" && title !== roleFilter) return false;
+      if (statusFilter !== "all") {
+        const s = rec.application?.status || "draft";
+        if (s !== statusFilter) return false;
+      }
       const ts = rec.created_at ? new Date(rec.created_at).getTime() : 0;
       if (from && ts < from) return false;
       if (to && ts > to) return false;
@@ -1828,12 +1837,78 @@ function TailoredResumesTab() {
       return sortKey === "newest" ? tb - ta : ta - tb;
     });
     return list;
-  }, [records, search, companyFilter, roleFilter, dateFrom, dateTo, atsMin, hasRegensOnly, sortKey]);
+  }, [records, search, companyFilter, roleFilter, statusFilter, dateFrom, dateTo, atsMin, hasRegensOnly, sortKey]);
 
-  // Prevent the filter-derived values from going stale when filters are reset
+  // Preset counters drive the quick-chip badges so users can see at a glance
+  // how many records match a given lens before applying it.
+  const presetCounts = useMemo(() => {
+    const now = Date.now();
+    const weekAgo = now - 7 * 86400000;
+    const monthAgo = now - 30 * 86400000;
+    const ts = (r: TailoringRecord) => r.created_at ? new Date(r.created_at).getTime() : 0;
+    return {
+      week: records.filter(r => ts(r) >= weekAgo).length,
+      month: records.filter(r => ts(r) >= monthAgo).length,
+      highAts: records.filter(r => (r.ats_scores?.overall ?? 0) >= 80).length,
+      needsWork: records.filter(r => (r.ats_scores?.overall ?? 100) < 60 && r.ats_scores?.overall !== undefined).length,
+      multiVersion: records.filter(r => (r.versions?.length || 0) >= 2).length,
+      offers: records.filter(r => r.application?.status === "offer").length,
+      interviewing: records.filter(r => r.application?.status === "interviewing").length,
+      pending: records.filter(r => {
+        const d = r.application?.next_action_date;
+        if (!d) return false;
+        const diff = new Date(d).getTime() - now;
+        return diff <= 3 * 86400000; // ≤ 3 days (incl. overdue)
+      }).length,
+    };
+  }, [records]);
+
+  const applyPreset = useCallback((key: string) => {
+    // Clear only the fields the preset controls, preserve search etc.
+    setDateFrom(""); setDateTo(""); setAtsMin(0); setHasRegensOnly(false); setStatusFilter("all");
+    const now = new Date();
+    const iso = (d: Date) => d.toISOString().slice(0, 10);
+    switch (key) {
+      case "week": {
+        const from = new Date(now); from.setDate(from.getDate() - 7);
+        setDateFrom(iso(from)); setDateTo(iso(now)); break;
+      }
+      case "month": {
+        const from = new Date(now); from.setDate(from.getDate() - 30);
+        setDateFrom(iso(from)); setDateTo(iso(now)); break;
+      }
+      case "highAts": setAtsMin(80); setSortKey("ats"); break;
+      case "needsWork": setAtsMin(1); setSortKey("ats"); break;
+      case "multiVersion": setHasRegensOnly(true); break;
+      case "offers": setStatusFilter("offer"); break;
+      case "interviewing": setStatusFilter("interviewing"); break;
+      case "pending": setStatusFilter("interviewing"); break; // closest proxy
+    }
+    setQuickPreset(key);
+  }, []);
+
+  // Active filter chips — described by a label + a clear callback each
+  const activeChips = useMemo(() => {
+    const chips: { key: string; label: string; clear: () => void }[] = [];
+    if (search.trim()) chips.push({ key: "search", label: `"${search.trim()}"`, clear: () => setSearch("") });
+    if (companyFilter !== "all") chips.push({ key: "company", label: companyFilter, clear: () => setCompanyFilter("all") });
+    if (roleFilter !== "all") chips.push({ key: "role", label: roleFilter, clear: () => setRoleFilter("all") });
+    if (statusFilter !== "all") {
+      const nice = STATUS_CHIP[statusFilter]?.label || statusFilter;
+      chips.push({ key: "status", label: nice, clear: () => setStatusFilter("all") });
+    }
+    if (dateFrom || dateTo) {
+      chips.push({ key: "date", label: `${dateFrom || "…"} → ${dateTo || "…"}`, clear: () => { setDateFrom(""); setDateTo(""); } });
+    }
+    if (atsMin > 0) chips.push({ key: "ats", label: `ATS ≥ ${atsMin}`, clear: () => setAtsMin(0) });
+    if (hasRegensOnly) chips.push({ key: "regens", label: "Multi-version", clear: () => setHasRegensOnly(false) });
+    return chips;
+  }, [search, companyFilter, roleFilter, statusFilter, dateFrom, dateTo, atsMin, hasRegensOnly]);
+
   const resetFilters = useCallback(() => {
-    setSearch(""); setCompanyFilter("all"); setRoleFilter("all");
+    setSearch(""); setCompanyFilter("all"); setRoleFilter("all"); setStatusFilter("all");
     setDateFrom(""); setDateTo(""); setAtsMin(0); setHasRegensOnly(false); setSortKey("newest");
+    setQuickPreset(null);
   }, []);
 
   // When a record is expanded for the first time, lazy-fetch the full record
@@ -1970,59 +2045,179 @@ function TailoredResumesTab() {
         </div>
       )}
 
-      {/* Filter bar */}
+      {/* Filter bar — chip-based with smart presets + applied-filter chips */}
       {records.length > 0 && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-3 space-y-2">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-            <FilterInput label="Search">
+        <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gradient-to-b from-white/70 to-white/30 dark:from-gray-900/40 dark:to-gray-900/20 backdrop-blur-sm overflow-hidden">
+          {/* Row 1 — search + sort */}
+          <div className="px-4 py-3 flex items-center gap-3 flex-wrap border-b border-gray-200/70 dark:border-gray-800/50">
+            <div className="relative flex-1 min-w-[240px]">
+              <svg
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"
+                fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+              </svg>
               <input
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="role, company…"
-                className={inputCls}
+                placeholder="Search role, company, required skills…"
+                className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/80 dark:bg-gray-900/60 border border-gray-300 dark:border-gray-700/60 text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-500/30 transition-all"
               />
-            </FilterInput>
-            <FilterInput label="Company">
-              <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={selectCls}>
-                <option value="all">All</option>
-                {companies.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </FilterInput>
-            <FilterInput label="Role">
-              <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={selectCls}>
-                <option value="all">All</option>
-                {roles.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </FilterInput>
-            <FilterInput label="From">
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={inputCls} />
-            </FilterInput>
-            <FilterInput label="To">
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={inputCls} />
-            </FilterInput>
-            <FilterInput label={`ATS ≥ ${atsMin}`}>
-              <input type="range" min={0} max={100} step={5} value={atsMin} onChange={e => setAtsMin(Number(e.target.value))} className="w-full accent-purple-500" />
-            </FilterInput>
-          </div>
-          <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-            <div className="flex items-center gap-3">
-              <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-400 cursor-pointer select-none">
-                <input type="checkbox" checked={hasRegensOnly} onChange={e => setHasRegensOnly(e.target.checked)} className="accent-purple-500" />
-                Only with multiple versions
-              </label>
-              <div className="flex items-center gap-1 text-[11px]">
-                <span className="text-gray-500 dark:text-gray-400">Sort:</span>
-                {([["newest","Newest"],["oldest","Oldest"],["ats","Best ATS"]] as [SortKey,string][]).map(([k,lbl]) => (
-                  <button
-                    key={k}
-                    onClick={() => setSortKey(k)}
-                    className={`px-2 py-0.5 rounded ${sortKey === k ? "bg-purple-500/20 text-purple-600 dark:text-purple-300" : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"}`}
-                  >{lbl}</button>
-                ))}
-              </div>
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-800 text-xs"
+                >×</button>
+              )}
             </div>
-            <button onClick={resetFilters} className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Reset</button>
+            <div className="flex items-center gap-1">
+              {([
+                ["newest", "Newest"],
+                ["oldest", "Oldest"],
+                ["ats", "Best ATS"],
+              ] as [SortKey, string][]).map(([k, lbl]) => (
+                <button
+                  key={k}
+                  onClick={() => setSortKey(k)}
+                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${
+                    sortKey === k
+                      ? "bg-purple-500/15 text-purple-600 dark:text-purple-300 ring-1 ring-purple-500/30"
+                      : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/40"
+                  }`}
+                >{lbl}</button>
+              ))}
+            </div>
           </div>
+
+          {/* Row 2 — quick-preset chips with live counts */}
+          <div className="px-4 py-2.5 flex items-center gap-2 overflow-x-auto border-b border-gray-200/70 dark:border-gray-800/50">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-500 shrink-0">Quick</span>
+            {([
+              { k: "week",          label: "This week",      count: presetCounts.week,         icon: "📅" },
+              { k: "month",         label: "Last 30 days",   count: presetCounts.month,        icon: "🗓" },
+              { k: "highAts",       label: "High match 80+", count: presetCounts.highAts,      icon: "✨" },
+              { k: "needsWork",     label: "Needs work",     count: presetCounts.needsWork,    icon: "🛠" },
+              { k: "multiVersion",  label: "Multi-version",  count: presetCounts.multiVersion, icon: "↻" },
+              { k: "interviewing",  label: "Interviewing",   count: presetCounts.interviewing, icon: "💬" },
+              { k: "offers",        label: "Offers",         count: presetCounts.offers,       icon: "🔥" },
+              { k: "pending",       label: "Due soon",       count: presetCounts.pending,      icon: "⚡" },
+            ] as const).map(p => {
+              const active = quickPreset === p.k;
+              const dim = p.count === 0;
+              return (
+                <button
+                  key={p.k}
+                  onClick={() => active ? (resetFilters()) : applyPreset(p.k)}
+                  disabled={dim && !active}
+                  className={`group relative shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                    active
+                      ? "bg-gradient-to-br from-purple-500 to-indigo-500 text-white border-transparent shadow-sm shadow-purple-500/30"
+                      : dim
+                      ? "bg-gray-50 dark:bg-gray-900/40 text-gray-400 dark:text-gray-600 border-gray-200 dark:border-gray-800/60 cursor-not-allowed"
+                      : "bg-white/80 dark:bg-gray-900/40 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700/60 hover:border-purple-400/60 hover:bg-purple-500/5"
+                  }`}
+                >
+                  <span className="text-[11px]">{p.icon}</span>
+                  <span>{p.label}</span>
+                  <span className={`px-1.5 py-0 rounded-full text-[9px] font-bold ${
+                    active ? "bg-white/25 text-white" : dim ? "bg-gray-100 dark:bg-gray-800 text-gray-400" : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 group-hover:bg-purple-500/20 group-hover:text-purple-500"
+                  }`}>{p.count}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Row 3 — applied-filter chips + advanced toggle + result summary */}
+          <div className="px-4 py-2.5 flex items-center gap-2 flex-wrap">
+            {activeChips.length > 0 ? (
+              <>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-500 shrink-0">Active</span>
+                {activeChips.map(c => (
+                  <span
+                    key={c.key}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/25"
+                  >
+                    {c.label}
+                    <button
+                      onClick={c.clear}
+                      className="ml-0.5 w-3.5 h-3.5 rounded-full flex items-center justify-center hover:bg-purple-500/20 text-purple-500"
+                      aria-label={`Remove ${c.key}`}
+                    >×</button>
+                  </span>
+                ))}
+                <button onClick={resetFilters} className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-red-500 ml-1">
+                  Clear all
+                </button>
+              </>
+            ) : (
+              <span className="text-[11px] text-gray-500 dark:text-gray-500 italic">No filters applied</span>
+            )}
+            <div className="flex-1" />
+            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+              <b className="text-gray-800 dark:text-gray-200">{filtered.length}</b> of {records.length}
+            </span>
+            <button
+              onClick={() => setAdvancedOpen(o => !o)}
+              className={`text-[11px] font-medium px-2.5 py-1 rounded-md transition-all ${
+                advancedOpen
+                  ? "bg-purple-500/15 text-purple-600 dark:text-purple-300"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/40"
+              }`}
+            >
+              {advancedOpen ? "Hide advanced ▴" : "Advanced filters ▾"}
+            </button>
+          </div>
+
+          {/* Advanced drawer (collapsible) */}
+          {advancedOpen && (
+            <div className="px-4 pb-4 pt-1 border-t border-gray-200/70 dark:border-gray-800/50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 bg-gray-50/50 dark:bg-gray-900/20">
+              <FilterInput label="Company">
+                <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={selectCls}>
+                  <option value="all">All companies</option>
+                  {companies.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </FilterInput>
+              <FilterInput label="Role">
+                <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={selectCls}>
+                  <option value="all">All roles</option>
+                  {roles.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </FilterInput>
+              <FilterInput label="Status">
+                <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className={selectCls}>
+                  <option value="all">Any status</option>
+                  {Object.entries(STATUS_CHIP).map(([k, v]) => (
+                    <option key={k} value={k}>{v.label}</option>
+                  ))}
+                </select>
+              </FilterInput>
+              <FilterInput label={atsMin > 0 ? `ATS ≥ ${atsMin}` : "ATS minimum"}>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0} max={100} step={5}
+                    value={atsMin}
+                    onChange={e => setAtsMin(Number(e.target.value))}
+                    className="flex-1 accent-purple-500"
+                  />
+                  <span className="text-[11px] tabular-nums text-gray-600 dark:text-gray-400 w-8 text-right">{atsMin}</span>
+                </div>
+              </FilterInput>
+              <FilterInput label="From">
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={inputCls} />
+              </FilterInput>
+              <FilterInput label="To">
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={inputCls} />
+              </FilterInput>
+              <label className="flex flex-col gap-1 min-w-0">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Options</span>
+                <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-700 dark:text-gray-300 cursor-pointer select-none px-2.5 py-1.5 rounded-md bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60">
+                  <input type="checkbox" checked={hasRegensOnly} onChange={e => setHasRegensOnly(e.target.checked)} className="accent-purple-500" />
+                  Multi-version only
+                </label>
+              </label>
+            </div>
+          )}
         </div>
       )}
 

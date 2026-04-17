@@ -1,12 +1,30 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiService } from "@/lib/api";
-import type {
-  CodingProblem, CaseStudy, SystemDesignPrompt, DataChallenge,
-  InterviewPrepQuestion, QDifficulty, MockEvaluation,
-} from "@/types/resume";
+import type { QDifficulty, MockEvaluation } from "@/types/resume";
 import { DifficultyBadge, Spinner } from "./PracticeCards";
+import { asStrArray, sanitize } from "./prepUtils";
 import type { NormalizedPrep } from "./prepUtils";
+
+// Gemini sometimes returns evaluation list fields as JSON-encoded strings or
+// single strings. Normalise defensively so the render never crashes.
+function normalizeEvaluation(raw: any): MockEvaluation {
+  const scoreRaw = raw?.score;
+  let score = 0;
+  if (typeof scoreRaw === "number") score = Math.round(scoreRaw);
+  else if (typeof scoreRaw === "string") {
+    const m = scoreRaw.match(/\d+/);
+    score = m ? Math.min(100, parseInt(m[0], 10)) : 0;
+  }
+  return {
+    score: Math.max(0, Math.min(100, score)),
+    verdict: raw?.verdict ? sanitize(String(raw.verdict)) : "",
+    strengths: asStrArray(raw?.strengths),
+    improvements: asStrArray(raw?.improvements),
+    missing_points: asStrArray(raw?.missing_points),
+    model_answer: raw?.model_answer ? sanitize(String(raw.model_answer)) : "",
+  };
+}
 
 type Category =
   | "behavioral" | "technical" | "company"
@@ -148,8 +166,9 @@ export default function MockInterview({
       toast.error("Evaluation failed", { description: r.error });
       return;
     }
-    setEvaluation(r.data.evaluation);
-    setHistory(prev => [{ q: current.text.slice(0, 80), score: r.data!.evaluation.score, cat: current.kind }, ...prev].slice(0, 20));
+    const evalNorm = normalizeEvaluation(r.data.evaluation);
+    setEvaluation(evalNorm);
+    setHistory(prev => [{ q: current.text.slice(0, 80), score: evalNorm.score, cat: current.kind }, ...prev].slice(0, 20));
   };
 
   const scoreColor = (s: number) =>

@@ -108,7 +108,7 @@ class ProjectGenerator:
             try:
                 result = gemini_json(
                     prompt,
-                    max_tokens=4096,
+                    max_tokens=12000,
                     temperature=0.3,
                     model=GEMINI_FLASH,
                     schema=PROJECT_SCHEMA
@@ -224,7 +224,7 @@ class ProjectGenerator:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=4096, temperature=0.3,
+                prompt, max_tokens=12000, temperature=0.3,
                 model=GEMINI_FLASH, schema=BATCH_SCHEMA,
             )
         except Exception as e:
@@ -364,7 +364,7 @@ class ProjectGenerator:
             )
 
             result = gemini_json(
-                prompt, max_tokens=100, temperature=0.7, model=GEMINI_FLASH,
+                prompt, max_tokens=300, temperature=0.7, model=GEMINI_FLASH,
                 schema={"name": str}
             )
             if isinstance(result, dict) and result.get("name", "").strip():

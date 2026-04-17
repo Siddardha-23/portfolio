@@ -325,7 +325,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=4096, temperature=0.4,
+                prompt, max_tokens=12000, temperature=0.4,
                 model=GEMINI_FLASH, schema=EXPANSION_SCHEMA,
             )
         except Exception as e:
@@ -442,7 +442,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=4096, temperature=0.3,
+                prompt, max_tokens=12000, temperature=0.3,
                 model=GEMINI_FLASH, schema=IMPACT_SCHEMA,
             )
         except Exception as e:
@@ -682,7 +682,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=8192, temperature=0.3,
+                prompt, max_tokens=24000, temperature=0.3,
                 model=GEMINI_FLASH, schema=KEYWORD_SCHEMA,
             )
         except Exception as e:
@@ -748,7 +748,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=4096, temperature=0.2,
+                prompt, max_tokens=12000, temperature=0.2,
                 model=GEMINI_FLASH, schema=VERB_SCHEMA,
             )
         except Exception as e:
@@ -819,7 +819,7 @@ class ContentAugmenter:
 
         try:
             result = gemini_json(
-                prompt, max_tokens=2048, temperature=0.3,
+                prompt, max_tokens=6000, temperature=0.3,
                 model=GEMINI_FLASH, schema={"summary": str},
             )
             new_summary = result.get("summary", "")

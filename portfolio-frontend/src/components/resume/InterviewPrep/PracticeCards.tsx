@@ -89,20 +89,20 @@ export function QuestionCard({
         ? "border-emerald-500/30 bg-emerald-500/5"
         : "border-gray-200 dark:border-gray-800/60 bg-white/60 dark:bg-gray-900/40 hover:border-purple-500/30"
     }`}>
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
+      <div className="flex items-start gap-2.5 px-4 py-3">
         <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
-        <span className="shrink-0 mt-0.5 inline-flex w-5 h-5 items-center justify-center rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-300 text-[10px] font-bold tabular-nums">
+        <span className="shrink-0 mt-0.5 inline-flex w-6 h-6 items-center justify-center rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-300 text-[11px] font-bold tabular-nums">
           {index + 1}
         </span>
         <button onClick={() => setOpen(o => !o)} className="flex-1 min-w-0 text-left">
           <div className="flex items-start gap-2">
-            <p className={`flex-1 text-[12.5px] leading-snug ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-800 dark:text-gray-200"}`}>
+            <p className={`flex-1 text-[15px] leading-relaxed ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-800 dark:text-gray-100"}`}>
               {q.question}
             </p>
             <DifficultyBadge d={q.difficulty} />
           </div>
           {!open && q.answer_outline && (
-            <p className="text-[10.5px] text-gray-400 dark:text-gray-500 mt-1 line-clamp-1 italic">
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 line-clamp-1 italic">
               {q.answer_outline}
             </p>
           )}
@@ -127,33 +127,33 @@ export function QuestionCard({
       </div>
 
       {open && (q.why_asked || q.answer_outline) && (
-        <div className="border-t border-gray-200 dark:border-gray-800/60 bg-gray-50/40 dark:bg-gray-900/20 px-3 py-3 space-y-2.5">
+        <div className="border-t border-gray-200 dark:border-gray-800/60 bg-gray-50/40 dark:bg-gray-900/20 px-4 py-3.5 space-y-3">
           {q.why_asked && (
-            <div className="flex gap-2">
-              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-400 w-14">Why</span>
-              <p className="text-[11.5px] text-gray-600 dark:text-gray-300 leading-relaxed">{q.why_asked}</p>
+            <div className="flex gap-2.5">
+              <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-400 w-16">Why</span>
+              <p className="text-[13.5px] text-gray-600 dark:text-gray-300 leading-relaxed">{q.why_asked}</p>
             </div>
           )}
           {q.answer_outline && (
             star ? (
               <div>
-                <div className="flex gap-2 mb-1.5 items-center">
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-14">Answer</span>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">STAR framework</span>
+                <div className="flex gap-2.5 mb-2 items-center">
+                  <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-16">Answer</span>
+                  <span className="text-[11px] text-gray-400 dark:text-gray-500 italic">STAR framework</span>
                 </div>
-                <div className="ml-16 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {star.map(p => (
-                    <div key={p.label} className="rounded-md bg-white dark:bg-gray-900/60 border border-emerald-500/20 px-2 py-1.5">
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">{p.label}</p>
-                      <p className="text-[11px] text-gray-700 dark:text-gray-300 leading-snug mt-0.5">{p.text}</p>
+                    <div key={p.label} className="rounded-md bg-white dark:bg-gray-900/60 border border-emerald-500/20 px-2.5 py-2">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">{p.label}</p>
+                      <p className="text-[13px] text-gray-700 dark:text-gray-300 leading-relaxed mt-0.5">{p.text}</p>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-14">Answer</span>
-                <p className="text-[11.5px] text-gray-700 dark:text-gray-300 leading-relaxed flex-1">{q.answer_outline}</p>
+              <div className="flex gap-2.5">
+                <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-16">Answer</span>
+                <p className="text-[13.5px] text-gray-700 dark:text-gray-300 leading-relaxed flex-1">{q.answer_outline}</p>
               </div>
             )
           )}
@@ -180,12 +180,12 @@ export function BulletCard({
     emerald: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
   }[accent];
   return (
-    <div className={`rounded-lg border px-3 py-2 flex items-start gap-2.5 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5 opacity-70" : "border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/40"}`}>
+    <div className={`rounded-lg border px-3.5 py-2.5 flex items-start gap-2.5 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5 opacity-70" : "border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/40"}`}>
       <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
-      <span className={`shrink-0 inline-flex w-5 h-5 items-center justify-center rounded-md ${colorMap} text-[10px] font-bold tabular-nums`}>
+      <span className={`shrink-0 inline-flex w-6 h-6 items-center justify-center rounded-md ${colorMap} text-[11px] font-bold tabular-nums`}>
         {index + 1}
       </span>
-      <p className={`flex-1 text-[12px] leading-relaxed ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-700 dark:text-gray-300"}`}>{text}</p>
+      <p className={`flex-1 text-sm leading-relaxed ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-700 dark:text-gray-200"}`}>{text}</p>
       <CopyButton text={text} />
     </div>
   );
@@ -207,36 +207,36 @@ export function CodingCard({
 
   return (
     <div className={`rounded-xl border overflow-hidden transition-all ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
-      <div className="px-4 py-3 flex items-start gap-2.5">
+      <div className="px-4 py-3.5 flex items-start gap-3">
         <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold tabular-nums text-purple-500 dark:text-purple-400">#{index + 1}</span>
-            <h4 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{p.title}</h4>
+            <span className="text-xs font-bold tabular-nums text-purple-500 dark:text-purple-400">#{index + 1}</span>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">{p.title}</h4>
             <DifficultyBadge d={p.difficulty} />
             {(p.skill_tags || []).slice(0, 4).map((t, i) => (
-              <span key={i} className="text-[9px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">{t}</span>
+              <span key={i} className="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">{t}</span>
             ))}
           </div>
-          <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed mt-2">{p.problem_statement}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mt-2">{p.problem_statement}</p>
 
           {(p.constraints?.length || 0) > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-0.5">Constraints</p>
-              <ul className="text-[11px] text-gray-600 dark:text-gray-400 space-y-0.5">
-                {p.constraints!.map((c, i) => <li key={i} className="pl-3 before:content-['•'] before:text-purple-400 before:mr-1 before:-ml-3">{c}</li>)}
+            <div className="mt-2.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Constraints</p>
+              <ul className="text-[13px] text-gray-600 dark:text-gray-300 space-y-0.5">
+                {p.constraints!.map((c, i) => <li key={i} className="pl-3.5 before:content-['•'] before:text-purple-400 before:mr-1.5 before:-ml-3">{c}</li>)}
               </ul>
             </div>
           )}
 
           {(p.examples?.length || 0) > 0 && (
-            <div className="mt-2 space-y-1.5">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Examples</p>
+            <div className="mt-2.5 space-y-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Examples</p>
               {p.examples!.map((ex, i) => (
-                <div key={i} className="rounded-md bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-800 p-2 font-mono text-[10.5px]">
-                  <div><span className="text-blue-500">input:</span> <span className="text-gray-700 dark:text-gray-300">{ex.input}</span></div>
-                  <div><span className="text-emerald-500">output:</span> <span className="text-gray-700 dark:text-gray-300">{ex.output}</span></div>
-                  {ex.explanation && <div className="text-gray-500 dark:text-gray-500 italic mt-0.5 font-sans text-[10.5px]">{ex.explanation}</div>}
+                <div key={i} className="rounded-md bg-gray-50 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-800 p-2.5 font-mono text-[12.5px]">
+                  <div><span className="text-blue-500 font-bold">input:</span> <span className="text-gray-700 dark:text-gray-200">{ex.input}</span></div>
+                  <div><span className="text-emerald-500 font-bold">output:</span> <span className="text-gray-700 dark:text-gray-200">{ex.output}</span></div>
+                  {ex.explanation && <div className="text-gray-500 dark:text-gray-400 italic mt-1 font-sans text-[12px]">{ex.explanation}</div>}
                 </div>
               ))}
             </div>
@@ -247,7 +247,7 @@ export function CodingCard({
               <button
                 onClick={() => setShowHint(h => Math.min((p.hints?.length || 0), h + 1))}
                 disabled={showHint >= (p.hints?.length || 0)}
-                className="text-[10px] px-2 py-1 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
+                className="text-xs px-2.5 py-1 rounded-md border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-300 hover:bg-amber-500/20 disabled:opacity-50"
               >
                 💡 {showHint === 0 ? "Reveal hint" : showHint >= (p.hints?.length || 0) ? "All hints shown" : `Next hint (${showHint}/${p.hints?.length})`}
               </button>
@@ -255,7 +255,7 @@ export function CodingCard({
             {p.approach && (
               <button
                 onClick={() => setShowApproach(v => !v)}
-                className="text-[10px] px-2 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20"
+                className="text-xs px-2.5 py-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 hover:bg-emerald-500/20"
               >
                 🧭 {showApproach ? "Hide approach" : "Reveal approach"}
               </button>
@@ -263,22 +263,22 @@ export function CodingCard({
             {onAskCoach && (
               <button
                 onClick={() => onAskCoach(`Help me solve this problem step-by-step: ${p.title}. ${p.problem_statement}`)}
-                className="text-[10px] px-2 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
+                className="text-xs px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
               >
                 💬 Ask coach
               </button>
             )}
             <button
               onClick={() => setOpen(o => !o)}
-              className="text-[10px] px-2 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+              className="text-xs px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
             >{open ? "Less" : "More"}</button>
             <CopyButton text={`${p.title}\n\n${p.problem_statement}`} />
           </div>
 
           {showHint > 0 && (p.hints?.length || 0) > 0 && (
-            <div className="mt-2 space-y-1">
+            <div className="mt-2.5 space-y-1">
               {p.hints!.slice(0, showHint).map((h, i) => (
-                <div key={i} className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2.5 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+                <div key={i} className="rounded-md bg-amber-500/10 border border-amber-500/20 px-3 py-2 text-[13px] text-amber-700 dark:text-amber-200 leading-relaxed">
                   <span className="font-bold mr-1">Hint {i + 1}:</span>{h}
                 </div>
               ))}
@@ -286,17 +286,17 @@ export function CodingCard({
           )}
 
           {showApproach && p.approach && (
-            <div className="mt-2 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-2 text-[11px] text-emerald-700 dark:text-emerald-300">
-              <p className="font-bold text-[10px] uppercase tracking-wider mb-0.5">Approach</p>
+            <div className="mt-2.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5 text-[13px] text-emerald-700 dark:text-emerald-200 leading-relaxed">
+              <p className="font-bold text-xs uppercase tracking-wider mb-1">Approach</p>
               {p.approach}
               {p.complexity && (
-                <p className="mt-1 font-mono text-[10.5px] text-emerald-600 dark:text-emerald-400">{p.complexity}</p>
+                <p className="mt-1.5 font-mono text-xs text-emerald-600 dark:text-emerald-300">{p.complexity}</p>
               )}
             </div>
           )}
 
           {open && (
-            <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-800/60 text-[10px] text-gray-500 dark:text-gray-400">
+            <div className="mt-3 pt-2 border-t border-gray-200 dark:border-gray-800/60 text-xs text-gray-500 dark:text-gray-400">
               Tip: use the <b>Mock Interview</b> tab to attempt this under a timer and get graded feedback.
             </div>
           )}
@@ -317,23 +317,23 @@ export function CaseCard({
   onAskCoach?: (prompt: string) => void;
 }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
-      <div className="flex items-start gap-2.5">
+    <div className={`rounded-xl border px-4 py-3.5 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
+      <div className="flex items-start gap-3">
         <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold tabular-nums text-blue-500">#{index + 1}</span>
-            <h4 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{c.title}</h4>
+            <span className="text-xs font-bold tabular-nums text-blue-500">#{index + 1}</span>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">{c.title}</h4>
             <DifficultyBadge d={c.difficulty} />
           </div>
-          <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed mt-2">{c.scenario}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mt-2">{c.scenario}</p>
 
           {(c.subtasks?.length || 0) > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Subtasks</p>
-              <ul className="space-y-1">
+            <div className="mt-2.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Subtasks</p>
+              <ul className="space-y-1.5">
                 {c.subtasks!.map((s, i) => (
-                  <li key={i} className="flex gap-2 text-[11.5px] text-gray-700 dark:text-gray-300">
+                  <li key={i} className="flex gap-2 text-[13.5px] text-gray-700 dark:text-gray-200 leading-relaxed">
                     <span className="shrink-0 text-blue-400">▸</span><span>{s}</span>
                   </li>
                 ))}
@@ -342,36 +342,36 @@ export function CaseCard({
           )}
 
           {(c.evaluation_criteria?.length || 0) > 0 && (
-            <details className="mt-2 group">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400">
+            <details className="mt-2.5 group">
+              <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400">
                 What the interviewer evaluates ↓
               </summary>
-              <ul className="mt-1 space-y-0.5 pl-3">
+              <ul className="mt-1.5 space-y-1 pl-4">
                 {c.evaluation_criteria!.map((e, i) => (
-                  <li key={i} className="text-[11px] text-gray-600 dark:text-gray-400 list-disc ml-3">{e}</li>
+                  <li key={i} className="text-[13px] text-gray-600 dark:text-gray-300 list-disc ml-3 leading-relaxed">{e}</li>
                 ))}
               </ul>
             </details>
           )}
 
           {(c.hints?.length || 0) > 0 && (
-            <details className="mt-1">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400">
+            <details className="mt-1.5">
+              <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400">
                 Hints ↓
               </summary>
-              <ul className="mt-1 space-y-0.5 pl-3">
+              <ul className="mt-1.5 space-y-1 pl-4">
                 {c.hints!.map((h, i) => (
-                  <li key={i} className="text-[11px] text-amber-700 dark:text-amber-300 list-disc ml-3">{h}</li>
+                  <li key={i} className="text-[13px] text-amber-700 dark:text-amber-200 list-disc ml-3 leading-relaxed">{h}</li>
                 ))}
               </ul>
             </details>
           )}
 
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2.5 flex items-center gap-2">
             {onAskCoach && (
               <button
                 onClick={() => onAskCoach(`Walk me through how to approach this case: ${c.title}. ${c.scenario}`)}
-                className="text-[10px] px-2 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
+                className="text-xs px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
               >💬 Discuss with coach</button>
             )}
             <CopyButton text={`${c.title}\n${c.scenario}`} />
@@ -393,23 +393,23 @@ export function SystemDesignCard({
   onAskCoach?: (prompt: string) => void;
 }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
-      <div className="flex items-start gap-2.5">
+    <div className={`rounded-xl border px-4 py-3.5 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
+      <div className="flex items-start gap-3">
         <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold tabular-nums text-indigo-500">#{index + 1}</span>
-            <h4 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{p.title}</h4>
+            <span className="text-xs font-bold tabular-nums text-indigo-500">#{index + 1}</span>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">{p.title}</h4>
             <DifficultyBadge d={p.difficulty} />
           </div>
-          <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed mt-2">{p.scope}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mt-2">{p.scope}</p>
 
           {(p.requirements?.length || 0) > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Requirements</p>
-              <ul className="grid grid-cols-1 md:grid-cols-2 gap-1">
+            <div className="mt-2.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Requirements</p>
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
                 {p.requirements!.map((r, i) => (
-                  <li key={i} className="text-[11px] text-gray-700 dark:text-gray-300 flex gap-1.5">
+                  <li key={i} className="text-[13px] text-gray-700 dark:text-gray-200 flex gap-1.5 leading-relaxed">
                     <span className="text-indigo-400 shrink-0">◆</span><span>{r}</span>
                   </li>
                 ))}
@@ -418,34 +418,34 @@ export function SystemDesignCard({
           )}
 
           {(p.suggested_components?.length || 0) > 0 && (
-            <div className="mt-2">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Suggested components</p>
-              <div className="flex flex-wrap gap-1">
+            <div className="mt-2.5">
+              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">Suggested components</p>
+              <div className="flex flex-wrap gap-1.5">
                 {p.suggested_components!.map((c, i) => (
-                  <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">{c}</span>
+                  <span key={i} className="text-xs px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20">{c}</span>
                 ))}
               </div>
             </div>
           )}
 
           {(p.discussion_points?.length || 0) > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400">
+            <details className="mt-2.5">
+              <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-emerald-500 hover:text-emerald-400">
                 Tradeoffs to surface ↓
               </summary>
-              <ul className="mt-1 space-y-0.5 pl-3">
+              <ul className="mt-1.5 space-y-1 pl-4">
                 {p.discussion_points!.map((d, i) => (
-                  <li key={i} className="text-[11px] text-gray-600 dark:text-gray-400 list-disc ml-3">{d}</li>
+                  <li key={i} className="text-[13px] text-gray-600 dark:text-gray-300 list-disc ml-3 leading-relaxed">{d}</li>
                 ))}
               </ul>
             </details>
           )}
 
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2.5 flex items-center gap-2">
             {onAskCoach && (
               <button
                 onClick={() => onAskCoach(`Let's design this together: ${p.title}. ${p.scope}. What do I clarify first?`)}
-                className="text-[10px] px-2 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
+                className="text-xs px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
               >💬 Whiteboard with coach</button>
             )}
             <CopyButton text={`${p.title}\n${p.scope}`} />
@@ -467,37 +467,37 @@ export function DataChallengeCard({
   onAskCoach?: (prompt: string) => void;
 }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
-      <div className="flex items-start gap-2.5">
+    <div className={`rounded-xl border px-4 py-3.5 ${reviewed ? "border-emerald-500/30 bg-emerald-500/5" : "border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40"}`}>
+      <div className="flex items-start gap-3">
         <ReviewCheckbox reviewed={reviewed} onToggle={onToggleReviewed} />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold tabular-nums text-cyan-500">#{index + 1}</span>
-            <h4 className="text-[13px] font-semibold text-gray-900 dark:text-gray-100">{d.title}</h4>
+            <span className="text-xs font-bold tabular-nums text-cyan-500">#{index + 1}</span>
+            <h4 className="text-base font-semibold text-gray-900 dark:text-gray-100">{d.title}</h4>
             <DifficultyBadge d={d.difficulty} />
           </div>
-          <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed mt-2">{d.scenario}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed mt-2">{d.scenario}</p>
           {d.deliverable && (
-            <div className="mt-2 rounded-md bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1.5">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-300">Deliverable</p>
-              <p className="text-[11.5px] text-gray-700 dark:text-gray-300 mt-0.5">{d.deliverable}</p>
+            <div className="mt-2.5 rounded-md bg-cyan-500/10 border border-cyan-500/20 px-3 py-2">
+              <p className="text-xs font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-300">Deliverable</p>
+              <p className="text-[13.5px] text-gray-700 dark:text-gray-200 mt-0.5 leading-relaxed">{d.deliverable}</p>
             </div>
           )}
           {(d.hints?.length || 0) > 0 && (
-            <details className="mt-2">
-              <summary className="cursor-pointer text-[10px] font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400">Hints ↓</summary>
-              <ul className="mt-1 space-y-0.5 pl-3">
+            <details className="mt-2.5">
+              <summary className="cursor-pointer text-xs font-bold uppercase tracking-wider text-amber-500 hover:text-amber-400">Hints ↓</summary>
+              <ul className="mt-1.5 space-y-1 pl-4">
                 {d.hints!.map((h, i) => (
-                  <li key={i} className="text-[11px] text-amber-700 dark:text-amber-300 list-disc ml-3">{h}</li>
+                  <li key={i} className="text-[13px] text-amber-700 dark:text-amber-200 list-disc ml-3 leading-relaxed">{h}</li>
                 ))}
               </ul>
             </details>
           )}
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2.5 flex items-center gap-2">
             {onAskCoach && (
               <button
                 onClick={() => onAskCoach(`How would you tackle this data challenge? ${d.title}. ${d.scenario}`)}
-                className="text-[10px] px-2 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
+                className="text-xs px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300 hover:bg-purple-500/20"
               >💬 Ask coach</button>
             )}
             <CopyButton text={`${d.title}\n${d.scenario}`} />

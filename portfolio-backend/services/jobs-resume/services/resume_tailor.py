@@ -71,7 +71,7 @@ class ResumeTailor:
 
         result = gemini_json(
             prompt=prompt, 
-            max_tokens=8192, 
+            max_tokens=24000, 
             temperature=0.4, 
             model=GEMINI_PRO
         )
@@ -107,7 +107,7 @@ class ResumeTailor:
         # Repair path: use GEMINI_PREVIEW for bounded correction only
         retry_result = gemini_json(
             prompt=correction_prompt, 
-            max_tokens=8192, 
+            max_tokens=24000, 
             temperature=0.3, 
             model=GEMINI_PREVIEW
         )
@@ -184,7 +184,7 @@ class ResumeTailor:
 
         result = gemini_json(
             prompt=prompt,
-            max_tokens=8192,
+            max_tokens=24000,
             temperature=0.4,
             model=GEMINI_PRO,
         )

@@ -281,7 +281,7 @@ class ResumeScorer:
             "strengths": [str],
         }
 
-        return gemini_json(prompt, max_tokens=4096, temperature=0.3, model=GEMINI_PRO, schema=AI_SCORES_SCHEMA)
+        return gemini_json(prompt, max_tokens=12000, temperature=0.3, model=GEMINI_PRO, schema=AI_SCORES_SCHEMA)
 
     # ------------------------------------------------------------------
     # Combine deterministic + AI scores

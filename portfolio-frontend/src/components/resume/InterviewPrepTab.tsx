@@ -247,8 +247,8 @@ export default function InterviewPrepTab() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Interview Prep</h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Interview Prep</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
           A collaborative practice system — question banks, timed mock answers with AI grading, an always-on coach who knows your resume and JD.
         </p>
       </div>
@@ -264,7 +264,7 @@ export default function InterviewPrepTab() {
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search records…"
-              className="w-full pl-8 pr-2 py-1.5 rounded-md bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-xs text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
+              className="w-full pl-8 pr-2 py-2 rounded-md bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
             />
           </div>
           {filteredRecords.map(r => {
@@ -274,16 +274,16 @@ export default function InterviewPrepTab() {
               <button
                 key={r.record_id}
                 onClick={() => setSelectedId(r.record_id)}
-                className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${isSel ? "bg-purple-500/15 border border-purple-500/30" : "hover:bg-gray-100/60 dark:hover:bg-gray-800/40 border border-transparent"}`}
+                className={`w-full text-left px-3 py-2.5 rounded-md transition-colors ${isSel ? "bg-purple-500/15 border border-purple-500/30" : "hover:bg-gray-100/60 dark:hover:bg-gray-800/40 border border-transparent"}`}
               >
-                <p className="text-xs font-medium text-gray-800 dark:text-gray-200 truncate">{r.jd_analysis?.job_title || "Untitled"}</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{r.jd_analysis?.job_title || "Untitled"}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
                   {r.jd_analysis?.company && r.jd_analysis.company !== "Not specified" ? r.jd_analysis.company : "—"}
                   <span className="mx-1">·</span>
                   {formatDate(r.created_at || "")}
                 </p>
                 {hasPrep && (
-                  <span className="mt-1 inline-block text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25">Prep ready</span>
+                  <span className="mt-1.5 inline-block text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25 font-medium">Prep ready</span>
                 )}
               </button>
             );
@@ -302,19 +302,19 @@ export default function InterviewPrepTab() {
               <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gradient-to-br from-purple-500/5 via-white/50 to-transparent dark:from-purple-500/10 dark:via-gray-900/40 dark:to-transparent p-5">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-purple-500 dark:text-purple-400">Prep for</p>
-                    <p className="text-lg font-semibold text-gray-900 dark:text-gray-100 mt-0.5 leading-snug">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-purple-500 dark:text-purple-400">Prep for</p>
+                    <p className="text-xl font-semibold text-gray-900 dark:text-gray-100 mt-1 leading-snug">
                       {selected.jd_analysis?.job_title || "Untitled role"}
                       {selected.jd_analysis?.company && selected.jd_analysis.company !== "Not specified" && (
                         <span className="text-gray-500 dark:text-gray-400 font-normal"> at {selected.jd_analysis.company}</span>
                       )}
                     </p>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                    <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-1.5 flex items-center gap-2 flex-wrap">
                       <span>{generatedAt ? `Generated ${formatDate(generatedAt)}` : "No prep generated yet"}</span>
                       {norm?.role_type && (
                         <>
                           <span>·</span>
-                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-semibold">{ROLE_LABELS[norm.role_type] || norm.role_type}</span>
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 text-[11px] font-semibold">{ROLE_LABELS[norm.role_type] || norm.role_type}</span>
                         </>
                       )}
                       {totalItems > 0 && (
@@ -331,14 +331,14 @@ export default function InterviewPrepTab() {
                       <button
                         onClick={() => handleGenerate(true)}
                         disabled={generating}
-                        className="px-3 py-1.5 rounded-md text-[11px] font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50"
+                        className="px-3.5 py-2 rounded-md text-sm font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50"
                       >{generating ? "Regenerating…" : "Regenerate"}</button>
                     )}
                     {!content && (
                       <button
                         onClick={() => handleGenerate(false)}
                         disabled={generating}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 shadow-sm shadow-purple-500/25"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 shadow-sm shadow-purple-500/25"
                       >{generating && <Spinner />} {generating ? "Generating prep…" : "Generate prep"}</button>
                     )}
                   </div>
@@ -355,12 +355,12 @@ export default function InterviewPrepTab() {
               </div>
 
               {!content && !generating && (
-                <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-xs text-gray-500 dark:text-gray-400">
+                <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
                   Click <b>Generate prep</b> to create an interview pack with role-adaptive questions, coding / case / system design problems, and open the AI coach.
                 </div>
               )}
               {generating && !content && (
-                <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 p-8 text-center text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
+                <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 p-8 text-center text-sm text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
                   <Spinner /> Generating prep — usually 15–30 seconds for a full pack.
                 </div>
               )}
@@ -375,7 +375,7 @@ export default function InterviewPrepTab() {
                         <button
                           key={t.key}
                           onClick={() => setTopTab(t.key)}
-                          className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-[11px] font-medium transition-all border-b-2 ${
+                          className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-medium transition-all border-b-2 ${
                             isActive
                               ? "border-purple-500 text-gray-900 dark:text-gray-100 bg-purple-500/5"
                               : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
@@ -392,21 +392,21 @@ export default function InterviewPrepTab() {
                     {topTab === "overview" && (
                       <div className="space-y-4">
                         {norm.pitch && (
-                          <div className="rounded-xl border border-purple-500/25 bg-purple-500/5 p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-sm">🎤</span>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">Elevator pitch</p>
-                              <span className="text-[10px] text-gray-500 dark:text-gray-400">— open with this</span>
+                          <div className="rounded-xl border border-purple-500/25 bg-purple-500/5 p-5">
+                            <div className="flex items-center gap-2 mb-2.5">
+                              <span className="text-base">🎤</span>
+                              <p className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">Elevator pitch</p>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">— open with this</span>
                               <div className="flex-1" />
                               <CopyButton text={norm.pitch} />
                             </div>
-                            <p className="text-[13px] text-gray-800 dark:text-gray-200 leading-relaxed">{norm.pitch}</p>
+                            <p className="text-[15px] text-gray-800 dark:text-gray-200 leading-relaxed">{norm.pitch}</p>
                           </div>
                         )}
 
                         {norm.talking.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">💪 Talking points</p>
+                            <p className="text-xs font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">💪 Talking points</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                               {norm.talking.map((t, i) => (
                                 <BulletCard key={i} index={i} text={t} accent="purple"
@@ -432,13 +432,13 @@ export default function InterviewPrepTab() {
                             <button
                               key={x.label}
                               onClick={() => { setTopTab(x.tab as TopTab); if (x.tab === "questions") setQSub(x.sub as QSubTab); if (x.tab === "practical") setPracticalSub(x.sub as PracticalSubTab); }}
-                              className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 px-3 py-2.5 text-left hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors"
+                              className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 px-4 py-3 text-left hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors"
                             >
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs">{x.icon}</span>
-                                <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{x.label}</p>
+                                <span className="text-sm">{x.icon}</span>
+                                <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">{x.label}</p>
                               </div>
-                              <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{x.count}</p>
+                              <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-1">{x.count}</p>
                             </button>
                           ))}
                         </div>
@@ -454,7 +454,7 @@ export default function InterviewPrepTab() {
                               <button
                                 key={s.key}
                                 onClick={() => setQSub(s.key)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium rounded capitalize ${qSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] font-medium rounded capitalize ${qSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
                               >
                                 <span>{s.icon}</span>{s.label}
                               </button>
@@ -507,7 +507,7 @@ export default function InterviewPrepTab() {
                               <button
                                 key={s.key}
                                 onClick={() => setPracticalSub(s.key)}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium rounded ${practicalSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 text-[13px] font-medium rounded ${practicalSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
                               >
                                 <span>{s.icon}</span>{s.label}
                               </button>
@@ -570,7 +570,7 @@ export default function InterviewPrepTab() {
                       <div className="space-y-4">
                         {norm.gaps.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300 mb-2">⚠ Gaps to close</p>
+                            <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300 mb-2">⚠ Gaps to close</p>
                             <div className="space-y-1.5">
                               {norm.gaps.map((g, i) => (
                                 <BulletCard key={i} index={i} text={g} accent="amber"
@@ -581,7 +581,7 @@ export default function InterviewPrepTab() {
                         )}
                         {norm.asks.length > 0 && (
                           <div>
-                            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-300 mb-2">❓ Questions to ask them</p>
+                            <p className="text-xs font-bold uppercase tracking-wider text-blue-600 dark:text-blue-300 mb-2">❓ Questions to ask them</p>
                             <div className="space-y-1.5">
                               {norm.asks.map((a, i) => (
                                 <BulletCard key={i} index={i} text={a} accent="blue"
@@ -601,11 +601,13 @@ export default function InterviewPrepTab() {
 
                     {/* ── AI Coach ── */}
                     {topTab === "coach" && (
-                      <CoachChat
-                        recordId={selected.record_id}
-                        externalPrompt={coachPrompt}
-                        onClearExternal={() => setCoachPrompt(null)}
-                      />
+                      <div className="h-[calc(100dvh-14rem)] min-h-[480px] max-h-[820px]">
+                        <CoachChat
+                          recordId={selected.record_id}
+                          externalPrompt={coachPrompt}
+                          onClearExternal={() => setCoachPrompt(null)}
+                        />
+                      </div>
                     )}
                   </div>
                 </>
@@ -641,7 +643,7 @@ function DifficultyFilter({
           <button
             key={o.key}
             onClick={() => onChange(o.key)}
-            className={`px-2 py-1 text-[10px] font-medium rounded ${active ? (o.key === "all" ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-sm" : `${chip.cls} border-0 shadow-sm`) : "text-gray-500 dark:text-gray-400"}`}
+            className={`px-2.5 py-1 text-xs font-medium rounded ${active ? (o.key === "all" ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-sm" : `${chip.cls} border-0 shadow-sm`) : "text-gray-500 dark:text-gray-400"}`}
           >{o.label}</button>
         );
       })}
@@ -660,7 +662,7 @@ function GetAnotherButton({
     <button
       onClick={() => onClick(difficulty)}
       disabled={loading}
-      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 shadow-sm"
+      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 shadow-sm"
       title={`Generate a new ${difficulty} question`}
     >
       {loading ? <Spinner className="w-3 h-3" /> : <span>+</span>} Get another

@@ -263,7 +263,7 @@ class ResumeParser:
         result = gemini_json(
             prompt=None,  # Prompt is embedded in the parts
             parts=parts,
-            max_tokens=10000,
+            max_tokens=24000,
             temperature=0.2,  # Low temp for factual extraction
             model=GEMINI_FLASH,
         )

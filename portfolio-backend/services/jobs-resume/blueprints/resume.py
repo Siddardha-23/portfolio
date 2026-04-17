@@ -207,7 +207,7 @@ def rewrite_bullet():
 
         schema = {"rewritten": str}
         result = gemini_json(
-            prompt, max_tokens=2048, temperature=0.4, model=GEMINI_FLASH, schema=schema
+            prompt, max_tokens=6000, temperature=0.4, model=GEMINI_FLASH, schema=schema
         )
         rewritten = result.get("rewritten", "").strip()
         # Strip any leading/trailing quotes Gemini may have added
@@ -925,7 +925,7 @@ def generate_interview_prep(record_id):
         }
 
         result = gemini_json(
-            prompt, max_tokens=9000, temperature=0.55, model=GEMINI_PRO, schema=schema
+            prompt, max_tokens=24000, temperature=0.55, model=GEMINI_PRO, schema=schema
         )
 
         pack = {
@@ -1058,22 +1058,25 @@ def practice_question(record_id):
             f"Roles: {' | '.join(exp_flat)}\n"
             f"Skills: {' | '.join(skills_flat[:5])}\n"
             f"{focus_block}{avoid_block}\n\n"
-            "Return strict JSON. For behavioral/technical/company/red_flags use this shape:\n"
-            '{"category": "' + category + '", "difficulty": "' + difficulty + '",'
-            ' "question": {"question": "...", "why_asked": "...", "answer_outline": "...", "difficulty": "' + difficulty + '"}}\n'
-            "For coding: question object has title, problem_statement, constraints[], "
-            "examples[{input,output,explanation?}], hints[], approach, complexity, skill_tags[], difficulty.\n"
-            "For system_design: title, scope, requirements[], suggested_components[], discussion_points[], difficulty.\n"
-            "For case_study: title, scenario, subtasks[], evaluation_criteria[], hints[], difficulty.\n"
-            "For data_challenge: title, scenario, deliverable, hints[], difficulty.\n"
-            "No markdown, no preamble."
+            "Return strict JSON with exactly one top-level key `question` holding the item object.\n"
+            "The inner shape depends on category:\n"
+            "  behavioral/technical/company: {question, why_asked, answer_outline, difficulty}\n"
+            "  coding: {title, problem_statement, constraints[], examples[{input,output,explanation?}], hints[], approach, complexity, skill_tags[], difficulty}\n"
+            "  system_design: {title, scope, requirements[], suggested_components[], discussion_points[], difficulty}\n"
+            "  case_study: {title, scenario, subtasks[], evaluation_criteria[], hints[], difficulty}\n"
+            "  data_challenge: {title, scenario, deliverable, hints[], difficulty}\n"
+            "Always wrap: {\"question\": { ... }}. No markdown, no preamble, no extra keys."
         )
 
         from services.gemini_client import gemini_json, GEMINI_PRO
         result = gemini_json(
-            prompt, max_tokens=2800, temperature=0.75, model=GEMINI_PRO
-        )
-        return jsonify({"category": category, "difficulty": difficulty, **(result or {})}), 200
+            prompt, max_tokens=8000, temperature=0.75, model=GEMINI_PRO
+        ) or {}
+        # Unwrap if Gemini still returned fields at the top level instead of under `question`.
+        payload = result.get("question")
+        if not isinstance(payload, dict):
+            payload = {k: v for k, v in result.items() if k not in ("category", "difficulty")}
+        return jsonify({"category": category, "difficulty": difficulty, "question": payload}), 200
     except Exception as e:
         logger.exception("Practice question error: %s", e)
         return jsonify({"error": f"Failed to generate question: {str(e)[:200]}"}), 500
@@ -1186,7 +1189,7 @@ def interview_chat(record_id):
         from services.gemini_client import gemini_json, GEMINI_FLASH
         result = gemini_json(
             prompt=prompt,
-            max_tokens=1500,
+            max_tokens=5000,
             temperature=0.55,
             model=GEMINI_FLASH,
             schema={"reply": str},
@@ -1316,7 +1319,7 @@ def mock_evaluate(record_id):
 
         from services.gemini_client import gemini_json, GEMINI_PRO
         result = gemini_json(
-            prompt, max_tokens=2000, temperature=0.3, model=GEMINI_PRO, schema=schema
+            prompt, max_tokens=6000, temperature=0.3, model=GEMINI_PRO, schema=schema
         )
         return jsonify({"evaluation": result}), 200
     except Exception as e:

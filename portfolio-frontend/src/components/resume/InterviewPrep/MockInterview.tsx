@@ -135,9 +135,36 @@ export default function MockInterview({
       difficulty,
       seen_titles: seen.slice(0, 20),
     });
-    if (r.error || !r.data?.question) return null;
-    const q = r.data.question;
-    const text = (q.question || `${q.title || ""}\n\n${q.problem_statement || q.scenario || q.scope || ""}`).trim();
+    if (r.error || !r.data) return null;
+
+    // Gemini returns one of several shapes depending on category. Accept all:
+    //  1. {category, difficulty, question: {...}} — the preferred wrap
+    //  2. {category, difficulty, ...fields}       — fields at top level
+    //  3. {...fields} directly                    — no metadata wrap
+    const raw: any = r.data;
+    let q: any = raw.question;
+    if (!q || typeof q !== "object") {
+      // Strip metadata and use the remaining fields as the question object
+      const { category: _c, difficulty: _d, ...rest } = raw as any;
+      q = rest;
+    }
+    // Unwrap if Gemini double-wrapped (e.g. {question: {question: "..."}})
+    if (q && typeof q === "object" && typeof q.question === "object") {
+      q = q.question;
+    }
+    if (!q || (typeof q !== "object")) return null;
+
+    // Build the display text — works for every category shape
+    let text = "";
+    if (typeof q.question === "string") {
+      text = q.question;
+    } else {
+      const title = q.title ? `${q.title}\n\n` : "";
+      const body = q.problem_statement || q.scenario || q.scope || q.deliverable || "";
+      text = `${title}${body}`.trim();
+    }
+    if (!text) return null;
+
     return { text, kind: category as Category, difficulty, meta: q };
   };
 
@@ -182,14 +209,14 @@ export default function MockInterview({
       <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/60 dark:bg-gray-900/40 p-3 space-y-3">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Category</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Category</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {CATEGORIES.map(c => (
               <button
                 key={c.key}
                 onClick={() => setCat(c.key)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[13px] font-medium border transition-all ${
                   cat === c.key
                     ? "bg-gradient-to-br from-purple-500 to-indigo-500 text-white border-transparent shadow-sm shadow-purple-500/30"
                     : "bg-white/80 dark:bg-gray-900/40 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700/60 hover:border-purple-400/60"
@@ -201,13 +228,13 @@ export default function MockInterview({
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Difficulty</span>
+          <span className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Difficulty</span>
           <div className="inline-flex rounded-md bg-gray-100 dark:bg-gray-800/60 p-0.5 border border-gray-200 dark:border-gray-800">
             {DIFFICULTIES.map(d => (
               <button
                 key={d.key}
                 onClick={() => setDiff(d.key)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded capitalize ${
+                className={`px-3 py-1.5 text-[13px] font-medium rounded capitalize ${
                   diff === d.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"
                 }`}
               >{d.label}</button>
@@ -215,7 +242,7 @@ export default function MockInterview({
           </div>
           <div className="flex-1" />
           {history.length > 0 && (
-            <span className="text-[11px] text-gray-500 dark:text-gray-400">
+            <span className="text-sm text-gray-500 dark:text-gray-400">
               <b>{history.length}</b> answered · avg{" "}
               <span className={`font-bold tabular-nums ${avgScore !== null ? scoreColor(avgScore) : ""}`}>{avgScore ?? "—"}</span>
             </span>
@@ -223,7 +250,7 @@ export default function MockInterview({
           <button
             onClick={nextQuestion}
             disabled={generating || evaluating}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 shadow-sm shadow-purple-500/25"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 shadow-sm shadow-purple-500/25"
           >
             {generating ? <Spinner /> : <span>▶</span>} {current ? "Next question" : "Start mock"}
           </button>
@@ -234,19 +261,19 @@ export default function MockInterview({
       {current && (
         <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/5 via-white to-transparent dark:from-purple-500/10 dark:via-gray-900/40 dark:to-transparent p-5 space-y-3">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-500">Q</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-purple-500">Q</span>
             <DifficultyBadge d={current.difficulty} />
-            <span className="text-[10px] uppercase tracking-wider text-gray-500">{current.kind.replace("_", " ")}</span>
+            <span className="text-xs uppercase tracking-wider text-gray-500">{current.kind.replace("_", " ")}</span>
             <div className="flex-1" />
-            <span className="text-[11px] text-gray-500 dark:text-gray-400 tabular-nums">
+            <span className="text-sm text-gray-500 dark:text-gray-400 tabular-nums">
               ⏱ <b className={timerSeconds > 120 ? "text-amber-500" : ""}>{mmss(timerSeconds)}</b>
             </span>
             <button
               onClick={() => setTimerActive(t => !t)}
-              className="text-[10px] px-1.5 py-0.5 rounded text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+              className="text-xs px-2 py-0.5 rounded text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
             >{timerActive ? "Pause" : "Resume"}</button>
           </div>
-          <p className="text-[13px] text-gray-800 dark:text-gray-100 leading-relaxed whitespace-pre-wrap">{current.text}</p>
+          <p className="text-[15px] text-gray-800 dark:text-gray-100 leading-relaxed whitespace-pre-wrap">{current.text}</p>
 
           <textarea
             value={answer}
@@ -254,16 +281,16 @@ export default function MockInterview({
             placeholder="Type your answer here — aim for structured, specific, grounded in your real experience. The coach scores it on relevance, clarity, specificity, and structure."
             rows={8}
             disabled={evaluating || !!evaluation}
-            className="w-full px-3 py-2.5 rounded-lg bg-white dark:bg-gray-900/60 border border-gray-300 dark:border-gray-700/60 text-[12px] text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 resize-y font-sans leading-relaxed"
+            className="w-full px-3.5 py-3 rounded-lg bg-white dark:bg-gray-900/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30 resize-y font-sans leading-relaxed"
           />
           <div className="flex items-center gap-2">
-            <span className="text-[10px] text-gray-500 dark:text-gray-500 tabular-nums">{answer.length} chars · ~{Math.max(1, Math.round(answer.split(/\s+/).filter(Boolean).length / 150))} min read</span>
+            <span className="text-xs text-gray-500 dark:text-gray-500 tabular-nums">{answer.length} chars · ~{Math.max(1, Math.round(answer.split(/\s+/).filter(Boolean).length / 150))} min read</span>
             <div className="flex-1" />
             {!evaluation && (
               <button
                 onClick={submit}
                 disabled={!answer.trim() || evaluating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 shadow-sm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 shadow-sm"
               >
                 {evaluating ? <Spinner /> : <span>✓</span>} {evaluating ? "Grading…" : "Grade my answer"}
               </button>
@@ -271,56 +298,56 @@ export default function MockInterview({
             {evaluation && (
               <button
                 onClick={nextQuestion}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500"
               >Next question →</button>
             )}
           </div>
 
           {/* Evaluation */}
           {evaluation && (
-            <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-gray-900/60 p-4 space-y-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className={`text-3xl font-bold tabular-nums ${scoreColor(evaluation.score)}`}>
-                  {evaluation.score}<span className="text-lg text-gray-400">/100</span>
+            <div className="mt-4 rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white dark:bg-gray-900/60 p-5 space-y-4">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className={`text-4xl font-bold tabular-nums ${scoreColor(evaluation.score)}`}>
+                  {evaluation.score}<span className="text-xl text-gray-400">/100</span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Verdict</p>
-                  <p className="text-[13px] text-gray-800 dark:text-gray-200">{evaluation.verdict}</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Verdict</p>
+                  <p className="text-[15px] text-gray-800 dark:text-gray-200 mt-0.5">{evaluation.verdict}</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {evaluation.strengths?.length > 0 && (
-                  <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 mb-1">💚 Strengths</p>
-                    <ul className="space-y-0.5">
-                      {evaluation.strengths.map((s, i) => <li key={i} className="text-[11.5px] text-gray-700 dark:text-gray-300">• {s}</li>)}
+                  <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-300 mb-1.5">💚 Strengths</p>
+                    <ul className="space-y-1">
+                      {evaluation.strengths.map((s, i) => <li key={i} className="text-[13.5px] text-gray-700 dark:text-gray-200 leading-relaxed">• {s}</li>)}
                     </ul>
                   </div>
                 )}
                 {evaluation.improvements?.length > 0 && (
-                  <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-2.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300 mb-1">🎯 Improve</p>
-                    <ul className="space-y-0.5">
-                      {evaluation.improvements.map((s, i) => <li key={i} className="text-[11.5px] text-gray-700 dark:text-gray-300">• {s}</li>)}
+                  <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300 mb-1.5">🎯 Improve</p>
+                    <ul className="space-y-1">
+                      {evaluation.improvements.map((s, i) => <li key={i} className="text-[13.5px] text-gray-700 dark:text-gray-200 leading-relaxed">• {s}</li>)}
                     </ul>
                   </div>
                 )}
               </div>
 
               {evaluation.missing_points?.length > 0 && (
-                <div className="rounded-lg bg-red-500/5 border border-red-500/20 p-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-300 mb-1">⚠ Missing points</p>
-                  <ul className="space-y-0.5">
-                    {evaluation.missing_points.map((s, i) => <li key={i} className="text-[11.5px] text-gray-700 dark:text-gray-300">• {s}</li>)}
+                <div className="rounded-lg bg-red-500/5 border border-red-500/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-red-600 dark:text-red-300 mb-1.5">⚠ Missing points</p>
+                  <ul className="space-y-1">
+                    {evaluation.missing_points.map((s, i) => <li key={i} className="text-[13.5px] text-gray-700 dark:text-gray-200 leading-relaxed">• {s}</li>)}
                   </ul>
                 </div>
               )}
 
               {evaluation.model_answer && (
-                <div className="rounded-lg bg-purple-500/5 border border-purple-500/20 p-2.5">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300 mb-1">🏆 Model answer</p>
-                  <p className="text-[12px] text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">{evaluation.model_answer}</p>
+                <div className="rounded-lg bg-purple-500/5 border border-purple-500/20 p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300 mb-1.5">🏆 Model answer</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-200 leading-relaxed whitespace-pre-wrap">{evaluation.model_answer}</p>
                 </div>
               )}
             </div>
@@ -330,21 +357,21 @@ export default function MockInterview({
 
       {!current && !generating && (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-10 text-center">
-          <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Ready to practice?</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Pick a category + difficulty, click <b>Start mock</b>, answer in your own words. Your coach grades on relevance, clarity, specificity, and structure.</p>
+          <p className="text-base font-semibold text-gray-700 dark:text-gray-300">Ready to practice?</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 leading-relaxed">Pick a category + difficulty, click <b>Start mock</b>, answer in your own words. Your coach grades on relevance, clarity, specificity, and structure.</p>
         </div>
       )}
 
       {/* History */}
       {history.length > 0 && (
-        <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/40 dark:bg-gray-900/30 p-3">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">This session · {history.length} graded</p>
-          <div className="space-y-1">
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/40 dark:bg-gray-900/30 p-3.5">
+          <p className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-2">This session · {history.length} graded</p>
+          <div className="space-y-1.5">
             {history.map((h, i) => (
-              <div key={i} className="flex items-center gap-2 text-[11px]">
-                <span className={`tabular-nums font-bold ${scoreColor(h.score)} w-8`}>{h.score}</span>
-                <span className="text-gray-500 dark:text-gray-500 uppercase text-[9px] tracking-wider w-24 shrink-0">{h.cat.replace("_", " ")}</span>
-                <span className="text-gray-600 dark:text-gray-400 truncate flex-1">{h.q}</span>
+              <div key={i} className="flex items-center gap-2 text-[13px]">
+                <span className={`tabular-nums font-bold ${scoreColor(h.score)} w-9`}>{h.score}</span>
+                <span className="text-gray-500 dark:text-gray-500 uppercase text-[10px] tracking-wider w-28 shrink-0">{h.cat.replace("_", " ")}</span>
+                <span className="text-gray-600 dark:text-gray-300 truncate flex-1">{h.q}</span>
               </div>
             ))}
           </div>

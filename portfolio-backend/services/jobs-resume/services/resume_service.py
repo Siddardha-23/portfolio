@@ -251,7 +251,7 @@ class ResumeService:
             f"=== JOB DESCRIPTION ===\n{jd_text[:5000]}"
         )
 
-        result = gemini_json(prompt, max_tokens=4096, model=GEMINI_PRO, schema=JD_ANALYSIS_SCHEMA)
+        result = gemini_json(prompt, max_tokens=12000, model=GEMINI_PRO, schema=JD_ANALYSIS_SCHEMA)
         validated = validate_and_coerce(result, JD_ANALYSIS_SCHEMA)
 
         # Normalize extracted keywords to canonical forms
@@ -450,7 +450,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 'Return JSON: {"cover_letter": "The full cover letter text with paragraph breaks as \\n\\n"}'
             )
 
-            result = gemini_json(prompt, max_tokens=4096, temperature=0.5, model=GEMINI_PRO)
+            result = gemini_json(prompt, max_tokens=12000, temperature=0.5, model=GEMINI_PRO)
             cover_text = result.get("cover_letter", "")
 
             svc.complete_job(job_id, {"cover_letter": cover_text})
@@ -530,7 +530,7 @@ def _repair_extraction(raw_text: str, invalid_output: dict, error_msg: str):
     )
 
     try:
-        result = gemini_json(repair_prompt, max_tokens=8192, temperature=0.2, model=GEMINI_PREVIEW)
+        result = gemini_json(repair_prompt, max_tokens=24000, temperature=0.2, model=GEMINI_PREVIEW)
         validated = validate_and_coerce(result, PARSED_RESUME_SCHEMA)
         logger.info("Repair extraction succeeded via Preview model")
         return validated

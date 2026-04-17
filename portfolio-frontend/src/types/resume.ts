@@ -152,21 +152,98 @@ export interface ApplicationInfo {
   updated_at?: string;
 }
 
+export type QDifficulty = "easy" | "medium" | "hard";
+export type RoleType =
+  | "coding"
+  | "data"
+  | "devops"
+  | "design"
+  | "pm"
+  | "business"
+  | "research"
+  | "generic";
+
 export interface InterviewPrepQuestion {
   question: string;
   why_asked?: string;
   answer_outline?: string;
+  difficulty?: QDifficulty;
+}
+
+export interface RedFlagItem {
+  question: string;
+  answer_outline?: string;
+  defense?: string;
+  difficulty?: QDifficulty;
+}
+
+export interface CodingProblem {
+  title: string;
+  difficulty?: QDifficulty;
+  problem_statement: string;
+  constraints?: string[];
+  examples?: { input: string; output: string; explanation?: string }[];
+  hints?: string[];
+  approach?: string;
+  complexity?: string;
+  skill_tags?: string[];
+}
+
+export interface CaseStudy {
+  title: string;
+  difficulty?: QDifficulty;
+  scenario: string;
+  subtasks?: string[];
+  evaluation_criteria?: string[];
+  hints?: string[];
+}
+
+export interface SystemDesignPrompt {
+  title: string;
+  difficulty?: QDifficulty;
+  scope: string;
+  requirements?: string[];
+  suggested_components?: string[];
+  discussion_points?: string[];
+}
+
+export interface DataChallenge {
+  title: string;
+  difficulty?: QDifficulty;
+  scenario: string;
+  deliverable?: string;
+  hints?: string[];
 }
 
 export interface InterviewPrepContent {
+  role_type?: RoleType;
   elevator_pitch?: string;
   talking_points?: string[];
   behavioral_questions?: InterviewPrepQuestion[];
   technical_questions?: InterviewPrepQuestion[];
   company_specific?: InterviewPrepQuestion[];
+  coding_problems?: CodingProblem[];
+  case_studies?: CaseStudy[];
+  system_design_prompts?: SystemDesignPrompt[];
+  data_challenges?: DataChallenge[];
   gaps_to_address?: string[];
   questions_to_ask_them?: string[];
-  red_flags?: string[];
+  red_flags?: (RedFlagItem | string)[];
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+  at?: string;
+}
+
+export interface MockEvaluation {
+  score: number;
+  verdict: string;
+  strengths: string[];
+  improvements: string[];
+  missing_points: string[];
+  model_answer: string;
 }
 
 export interface InterviewPrepPack {

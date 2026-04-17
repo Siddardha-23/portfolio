@@ -830,50 +830,102 @@ def generate_interview_prep(record_id):
         from services.gemini_client import gemini_json, GEMINI_PRO
 
         prompt = (
-            f"You are an interview coach preparing {contact_name} for an interview "
-            f"for {job_title}{company_ctx}. Generate a structured prep pack grounded "
-            "ONLY in the provided resume and job description. Do not invent experience "
-            "or metrics that aren't there.\n\n"
+            f"You are a world-class interview coach preparing {contact_name} for "
+            f"an interview for {job_title}{company_ctx}. Generate a rich, practical "
+            "prep pack grounded ONLY in the provided resume and job description. "
+            "Do not invent experience or metrics that aren't there.\n\n"
             f"=== JOB DESCRIPTION ===\n{jd_text}\n\n"
             f"=== JD ANALYSIS ===\n"
             f"Required skills: {', '.join((jd_analysis.get('required_skills') or [])[:25])}\n"
             f"Keywords: {', '.join((jd_analysis.get('keywords') or [])[:25])}\n"
             f"Seniority: {jd_analysis.get('seniority', '')}\n\n"
             f"=== CANDIDATE RESUME ===\n{resume_ctx}\n\n"
-            "Respond as strict JSON with the following keys:\n"
+            "=== INSTRUCTIONS ===\n"
+            "First classify the role in `role_type` as ONE of: \n"
+            "  coding | data | devops | design | pm | business | research | generic\n"
+            "Then generate interview prep with difficulty distribution across every "
+            "question. Each question has a `difficulty` of `easy`, `medium`, or "
+            "`hard`. Include a balanced mix in every list.\n\n"
+            "For the role-specific section, populate ONE of (or more if relevant):\n"
+            "  - coding_problems: if role_type is coding/devops/data (with algorithmic leanings).\n"
+            "  - system_design_prompts: always when seniority is senior/staff/principal.\n"
+            "  - case_studies: if role_type is business/pm/design/research.\n"
+            "  - data_challenges: if role_type is data.\n\n"
+            "Respond as strict JSON with these top-level keys:\n"
             "{\n"
+            '  "role_type": "coding|data|devops|design|pm|business|research|generic",\n'
             '  "elevator_pitch": "2-3 sentence self intro the candidate can open with",\n'
             '  "talking_points": ["5-7 strongest selling points tied to the JD"],\n'
             '  "behavioral_questions": [\n'
-            '     {"question": "...", "why_asked": "...", "answer_outline": "S-T-A-R style"}\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "S: ... T: ... A: ... R: ...", "difficulty": "easy|medium|hard"}\n'
             "  ],\n"
             '  "technical_questions": [\n'
-            '     {"question": "...", "why_asked": "...", "answer_outline": "..."}\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "...", "difficulty": "easy|medium|hard"}\n'
             "  ],\n"
             '  "company_specific": [\n'
-            '     {"question": "...", "why_asked": "...", "answer_outline": "..."}\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "...", "difficulty": "easy|medium|hard"}\n'
             "  ],\n"
-            '  "gaps_to_address": ["skills/experience in the JD not clearly in the resume — with a 1-line mitigation"],\n'
+            '  "coding_problems": [\n'
+            '     {"title": "...", "difficulty": "easy|medium|hard",\n'
+            '      "problem_statement": "Clear prompt, like a LeetCode description.",\n'
+            '      "constraints": ["..."],\n'
+            '      "examples": [{"input": "...", "output": "...", "explanation": "optional"}],\n'
+            '      "hints": ["progressive hints — give structure, not solution"],\n'
+            '      "approach": "2-4 sentence outline of the intended approach",\n'
+            '      "complexity": "Time: O(...), Space: O(...)",\n'
+            '      "skill_tags": ["array", "hash-map"]}\n'
+            "  ],\n"
+            '  "case_studies": [\n'
+            '     {"title": "...", "difficulty": "easy|medium|hard",\n'
+            '      "scenario": "2-4 sentence business situation",\n'
+            '      "subtasks": ["bullets the candidate must solve"],\n'
+            '      "evaluation_criteria": ["what the interviewer looks for"],\n'
+            '      "hints": ["nudges, not answers"]}\n'
+            "  ],\n"
+            '  "system_design_prompts": [\n'
+            '     {"title": "...", "difficulty": "easy|medium|hard",\n'
+            '      "scope": "1 sentence — what is being designed",\n'
+            '      "requirements": ["functional + non-functional"],\n'
+            '      "suggested_components": ["API gateway", "DB", ...],\n'
+            '      "discussion_points": ["tradeoffs to surface"]}\n'
+            "  ],\n"
+            '  "data_challenges": [\n'
+            '     {"title": "...", "difficulty": "easy|medium|hard",\n'
+            '      "scenario": "realistic dataset / problem",\n'
+            '      "deliverable": "what answer or artefact to produce",\n'
+            '      "hints": ["statistical or SQL nudges"]}\n'
+            "  ],\n"
+            '  "gaps_to_address": ["JD requirements not obvious in the resume — with a 1-line mitigation"],\n'
             '  "questions_to_ask_them": ["5-7 thoughtful questions for the interviewer"],\n'
-            '  "red_flags": ["2-4 possible tough questions about gaps or pivots with short defences"]\n'
+            '  "red_flags": [\n'
+            '     {"question": "possible tough probe", "answer_outline": "1-2 sentence defence", "difficulty": "medium|hard"}\n'
+            "  ]\n"
             "}\n"
-            "Return 5-7 behavioral, 5-7 technical, 3-5 company_specific questions. "
-            "Keep answer_outline under 40 words each. No markdown, no preamble."
+            "Counts: behavioral 6-8 (mix of easy/medium/hard), technical 6-8, "
+            "company_specific 3-5, red_flags 3-5. For coding/system_design/case_studies "
+            "return 3-5 items each if relevant to the role. For data_challenges return "
+            "3-5 if role is data-focused. Leave arrays empty (never null) if not relevant. "
+            "Keep answer_outline under 60 words. No markdown headers, no preamble."
         )
 
         schema = {
+            "role_type": str,
             "elevator_pitch": str,
             "talking_points": list,
             "behavioral_questions": list,
             "technical_questions": list,
             "company_specific": list,
+            "coding_problems": list,
+            "case_studies": list,
+            "system_design_prompts": list,
+            "data_challenges": list,
             "gaps_to_address": list,
             "questions_to_ask_them": list,
             "red_flags": list,
         }
 
         result = gemini_json(
-            prompt, max_tokens=6000, temperature=0.55, model=GEMINI_PRO, schema=schema
+            prompt, max_tokens=9000, temperature=0.55, model=GEMINI_PRO, schema=schema
         )
 
         pack = {
@@ -892,6 +944,384 @@ def generate_interview_prep(record_id):
     except Exception as e:
         logger.exception("Interview prep error: %s", e)
         return jsonify({"error": f"Failed to generate prep: {str(e)[:200]}"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailoring-records/<record_id>/practice-question
+# Generate a single fresh question in a category + difficulty, avoiding
+# the set of hashes the client says it has already seen. Used by the
+# "Give me another" / flashcard / mock-interview flows.
+# ------------------------------------------------------------------
+_PRACTICE_CATEGORIES = {
+    "behavioral", "technical", "company", "coding",
+    "system_design", "case_study", "data_challenge",
+}
+_DIFFICULTIES = {"easy", "medium", "hard"}
+
+
+@resume_bp.route("/tailoring-records/<record_id>/practice-question", methods=["POST"])
+@jwt_required()
+def practice_question(record_id):
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"practice_q:{client_ip}", max_requests=60, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    category = (data.get("category") or "behavioral").lower()
+    difficulty = (data.get("difficulty") or "medium").lower()
+    seen_titles = data.get("seen_titles") or []  # list of strings/titles to avoid repeating
+    seen_titles = [str(t).strip()[:200] for t in seen_titles if t][:30]
+    focus = InputSanitizer.sanitize_string(data.get("focus") or "", max_length=200)
+
+    if category not in _PRACTICE_CATEGORIES:
+        return jsonify({"error": "Invalid category"}), 400
+    if difficulty not in _DIFFICULTIES:
+        return jsonify({"error": "Invalid difficulty"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+
+        versions, _ = ensure_versions(record)
+        current_id = record.get("current_version_id")
+        current = next((v for v in versions if v.get("version_id") == current_id), None) \
+            or (versions[-1] if versions else None)
+        tailored = (current or {}).get("tailored_resume") or {}
+        jd_analysis = record.get("jd_analysis") or {}
+        jd_text = (record.get("jd_text") or "")[:4000]
+
+        job_title = jd_analysis.get("job_title") or "the role"
+
+        # Condensed resume signal
+        summary = tailored.get("summary", "")
+        skills_flat = []
+        for k, v in (tailored.get("skills") or {}).items():
+            if isinstance(v, list) and v:
+                skills_flat.append(f"{k}: {', '.join(v[:6])}")
+        exp_flat = [
+            f"{e.get('title','')} @ {e.get('company','')}"
+            for e in (tailored.get("experience") or [])[:4]
+        ]
+
+        avoid_block = ""
+        if seen_titles:
+            avoid_block = (
+                "\nThe candidate has ALREADY seen these items, so return a DIFFERENT "
+                "question (different angle, different topic):\n- "
+                + "\n- ".join(seen_titles[:20])
+            )
+
+        focus_block = f"\nFocus specifically on: {focus}" if focus else ""
+
+        category_instructions = {
+            "behavioral": (
+                "Generate ONE behavioral interview question with a STAR-format answer outline."
+            ),
+            "technical": (
+                "Generate ONE technical question the interviewer could ask — specific to the "
+                "technologies in the JD. Provide a concise answer outline."
+            ),
+            "company": (
+                "Generate ONE question that probes cultural fit or motivation for this company."
+            ),
+            "coding": (
+                "Generate ONE algorithmic / coding problem the interviewer could give on a "
+                "whiteboard. Include problem_statement, constraints, examples, hints (nudges "
+                "not answers), approach, complexity, and skill_tags."
+            ),
+            "system_design": (
+                "Generate ONE system design prompt. Include scope, requirements (functional + "
+                "non-functional), suggested_components, and discussion_points for tradeoffs."
+            ),
+            "case_study": (
+                "Generate ONE business / product case study. Include scenario, subtasks, "
+                "evaluation_criteria, and hints."
+            ),
+            "data_challenge": (
+                "Generate ONE data-analysis or SQL challenge. Include scenario, deliverable, "
+                "and hints."
+            ),
+        }[category]
+
+        prompt = (
+            f"You are an elite interview coach. Role: {job_title}. "
+            f"Target difficulty: {difficulty}. "
+            f"{category_instructions}\n\n"
+            f"=== JOB DESCRIPTION (excerpt) ===\n{jd_text}\n\n"
+            f"=== CANDIDATE CONTEXT ===\nSummary: {summary}\n"
+            f"Roles: {' | '.join(exp_flat)}\n"
+            f"Skills: {' | '.join(skills_flat[:5])}\n"
+            f"{focus_block}{avoid_block}\n\n"
+            "Return strict JSON. For behavioral/technical/company/red_flags use this shape:\n"
+            '{"category": "' + category + '", "difficulty": "' + difficulty + '",'
+            ' "question": {"question": "...", "why_asked": "...", "answer_outline": "...", "difficulty": "' + difficulty + '"}}\n'
+            "For coding: question object has title, problem_statement, constraints[], "
+            "examples[{input,output,explanation?}], hints[], approach, complexity, skill_tags[], difficulty.\n"
+            "For system_design: title, scope, requirements[], suggested_components[], discussion_points[], difficulty.\n"
+            "For case_study: title, scenario, subtasks[], evaluation_criteria[], hints[], difficulty.\n"
+            "For data_challenge: title, scenario, deliverable, hints[], difficulty.\n"
+            "No markdown, no preamble."
+        )
+
+        from services.gemini_client import gemini_json, GEMINI_PRO
+        result = gemini_json(
+            prompt, max_tokens=2800, temperature=0.75, model=GEMINI_PRO
+        )
+        return jsonify({"category": category, "difficulty": difficulty, **(result or {})}), 200
+    except Exception as e:
+        logger.exception("Practice question error: %s", e)
+        return jsonify({"error": f"Failed to generate question: {str(e)[:200]}"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailoring-records/<record_id>/chat
+# Context-aware AI interview coach. Gemini receives the resume + JD as
+# system context and the most recent messages, then replies. History is
+# persisted on the record (capped at last 40 messages).
+# ------------------------------------------------------------------
+_CHAT_HISTORY_CAP = 40
+
+
+@resume_bp.route("/tailoring-records/<record_id>/chat", methods=["POST"])
+@jwt_required()
+def interview_chat(record_id):
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"interview_chat:{client_ip}", max_requests=60, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    message = InputSanitizer.sanitize_string(data.get("message") or "", max_length=4000)
+    reset = bool(data.get("reset", False))
+
+    if reset:
+        try:
+            db = DBConnect().get_db()
+            db.tailoring_records.update_one(
+                {"record_id": record_id, "user_email": user_email},
+                {"$set": {"interview_chat": [], "updated_at": datetime.utcnow()}},
+            )
+            return jsonify({"messages": []}), 200
+        except Exception as e:
+            logger.exception("Chat reset error: %s", e)
+            return jsonify({"error": "Failed to reset chat"}), 500
+
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+
+        history = list(record.get("interview_chat") or [])[-(_CHAT_HISTORY_CAP - 1):]
+
+        # Build context
+        versions, _ = ensure_versions(record)
+        current_id = record.get("current_version_id")
+        current = next((v for v in versions if v.get("version_id") == current_id), None) \
+            or (versions[-1] if versions else None)
+        tailored = (current or {}).get("tailored_resume") or {}
+        jd_analysis = record.get("jd_analysis") or {}
+        jd_text = (record.get("jd_text") or "")[:3500]
+
+        contact_name = (tailored.get("contact") or {}).get("name") or "The candidate"
+        job_title = jd_analysis.get("job_title") or "the role"
+        company = jd_analysis.get("company") or ""
+
+        summary = tailored.get("summary", "")
+        exp_compact = []
+        for e in (tailored.get("experience") or [])[:4]:
+            bullets = "; ".join((e.get("bullets") or [])[:3])
+            exp_compact.append(f"- {e.get('title','')} @ {e.get('company','')}: {bullets}")
+        skills_flat = []
+        for k, v in (tailored.get("skills") or {}).items():
+            if isinstance(v, list) and v:
+                skills_flat.append(f"{k}: {', '.join(v[:6])}")
+
+        system_preamble = (
+            f"You are a personal interview coach for {contact_name}, preparing for "
+            f"{job_title}{' at ' + company if company and company != 'Not specified' else ''}. "
+            "You have full knowledge of their resume and the job description below. "
+            "Ground every answer in this context. Use a collaborative, practical tone. "
+            "Offer concrete examples, mini-drills, or STAR-structured answers when relevant. "
+            "Never pretend to be the interviewer unless explicitly asked to role-play. "
+            "Keep replies under 250 words unless the user asks for more.\n\n"
+            f"=== JD ({job_title}{' / ' + company if company else ''}) ===\n{jd_text}\n"
+            f"Required skills: {', '.join((jd_analysis.get('required_skills') or [])[:20])}\n"
+            f"Keywords: {', '.join((jd_analysis.get('keywords') or [])[:20])}\n\n"
+            f"=== RESUME ===\nSummary: {summary}\n"
+            + "\n".join(exp_compact) + "\n"
+            + ("Skills: " + " | ".join(skills_flat[:6]) if skills_flat else "")
+        )
+
+        # Convert stored messages to Gemini-friendly text
+        convo = []
+        for m in history:
+            role = "User" if m.get("role") == "user" else "Coach"
+            convo.append(f"{role}: {m.get('content','')}")
+        convo.append(f"User: {message}")
+        convo_text = "\n\n".join(convo[-20:])  # keep recent turns within prompt budget
+
+        prompt = (
+            f"{system_preamble}\n\n"
+            "=== CONVERSATION SO FAR ===\n"
+            f"{convo_text}\n\n"
+            "Respond ONLY as strict JSON: {\"reply\": \"your coach response\"}. "
+            "Keep the reply warm, practical, and under 250 words unless the user "
+            "asked for more depth. Offer drills, example answers, or STAR templates "
+            "when relevant. No markdown headers; light markdown bullets are fine."
+        )
+
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+        result = gemini_json(
+            prompt=prompt,
+            max_tokens=1500,
+            temperature=0.55,
+            model=GEMINI_FLASH,
+            schema={"reply": str},
+        )
+        reply = ((result or {}).get("reply") or "").strip()
+        if not reply:
+            reply = "I'm not sure I caught that — could you rephrase?"
+
+        now = datetime.utcnow()
+        new_history = history + [
+            {"role": "user", "content": message, "at": now},
+            {"role": "assistant", "content": reply, "at": now},
+        ]
+        new_history = new_history[-_CHAT_HISTORY_CAP:]
+        db.tailoring_records.update_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"$set": {"interview_chat": new_history, "updated_at": now}},
+        )
+        # Serialize for response
+        out_msgs = [
+            {**m, "at": m["at"].isoformat() if hasattr(m.get("at"), "isoformat") else m.get("at")}
+            for m in new_history
+        ]
+        return jsonify({"reply": reply, "messages": out_msgs}), 200
+    except Exception as e:
+        logger.exception("Interview chat error: %s", e)
+        return jsonify({"error": f"Chat failed: {str(e)[:200]}"}), 500
+
+
+@resume_bp.route("/tailoring-records/<record_id>/chat", methods=["GET"])
+@jwt_required()
+def get_interview_chat(record_id):
+    user_email = get_jwt_identity()
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"interview_chat": 1, "_id": 0},
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+        msgs = record.get("interview_chat") or []
+        out = [
+            {**m, "at": m["at"].isoformat() if hasattr(m.get("at"), "isoformat") else m.get("at")}
+            for m in msgs
+        ]
+        return jsonify({"messages": out}), 200
+    except Exception as e:
+        logger.exception("Get chat error: %s", e)
+        return jsonify({"error": "Failed to load chat"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailoring-records/<record_id>/mock-evaluate
+# Scores a user's answer to a question (0-100), lists strengths,
+# improvements, and a model "ideal answer" grounded in the JD + resume.
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>/mock-evaluate", methods=["POST"])
+@jwt_required()
+def mock_evaluate(record_id):
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"mock_eval:{client_ip}", max_requests=60, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    question = InputSanitizer.sanitize_string(data.get("question") or "", max_length=1500)
+    user_answer = InputSanitizer.sanitize_string(data.get("user_answer") or "", max_length=5000)
+    category = (data.get("category") or "behavioral").lower()
+    if not question or not user_answer:
+        return jsonify({"error": "question and user_answer are required"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+
+        versions, _ = ensure_versions(record)
+        current_id = record.get("current_version_id")
+        current = next((v for v in versions if v.get("version_id") == current_id), None) \
+            or (versions[-1] if versions else None)
+        tailored = (current or {}).get("tailored_resume") or {}
+        jd_analysis = record.get("jd_analysis") or {}
+        job_title = jd_analysis.get("job_title") or "the role"
+
+        summary = tailored.get("summary", "")
+        skills_flat = []
+        for k, v in (tailored.get("skills") or {}).items():
+            if isinstance(v, list) and v:
+                skills_flat.append(f"{k}: {', '.join(v[:6])}")
+
+        prompt = (
+            f"You are a strict but fair interview evaluator for {job_title}. "
+            "Score the candidate's answer on a 0-100 scale across: relevance, "
+            "clarity, specificity/metrics, structure (STAR when behavioral), and "
+            "technical accuracy. Ground feedback in the resume context below and "
+            "the job description. Do NOT invent resume facts.\n\n"
+            f"=== JOB ===\n{job_title}\n"
+            f"Required skills: {', '.join((jd_analysis.get('required_skills') or [])[:20])}\n\n"
+            f"=== RESUME CONTEXT ===\nSummary: {summary}\n"
+            f"Skills: {' | '.join(skills_flat[:4])}\n\n"
+            f"=== QUESTION ({category}) ===\n{question}\n\n"
+            f"=== CANDIDATE'S ANSWER ===\n{user_answer}\n\n"
+            "Return strict JSON:\n"
+            "{\n"
+            '  "score": 0-100 integer,\n'
+            '  "verdict": "one short sentence summary",\n'
+            '  "strengths": ["2-4 concrete things the answer did well"],\n'
+            '  "improvements": ["2-4 concrete improvements with examples"],\n'
+            '  "missing_points": ["bullets the interviewer expected but did not hear"],\n'
+            '  "model_answer": "A concise, strong ideal answer tailored to this candidate (<=150 words)"\n'
+            "}"
+        )
+
+        schema = {
+            "score": int,
+            "verdict": str,
+            "strengths": list,
+            "improvements": list,
+            "missing_points": list,
+            "model_answer": str,
+        }
+
+        from services.gemini_client import gemini_json, GEMINI_PRO
+        result = gemini_json(
+            prompt, max_tokens=2000, temperature=0.3, model=GEMINI_PRO, schema=schema
+        )
+        return jsonify({"evaluation": result}), 200
+    except Exception as e:
+        logger.exception("Mock evaluate error: %s", e)
+        return jsonify({"error": f"Evaluation failed: {str(e)[:200]}"}), 500
 
 
 # ------------------------------------------------------------------

@@ -1,278 +1,48 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { apiService } from "@/lib/api";
-import type { InterviewPrepContent, TailoringRecord } from "@/types/resume";
+import type {
+  InterviewPrepContent, TailoringRecord, QDifficulty,
+} from "@/types/resume";
 import { formatDate } from "@/components/resume/ResumeDashboard";
+import { normalize, difficultyChip } from "./InterviewPrep/prepUtils";
+import type { NormalizedPrep } from "./InterviewPrep/prepUtils";
+import {
+  Spinner, CopyButton, DifficultyBadge, EmptyState,
+  QuestionCard, BulletCard, CodingCard, CaseCard, SystemDesignCard, DataChallengeCard,
+} from "./InterviewPrep/PracticeCards";
+import CoachChat from "./InterviewPrep/CoachChat";
+import MockInterview from "./InterviewPrep/MockInterview";
 
-// ─── Defensive parsing of Gemini fields ────────────────────────────────────
-// Gemini sometimes returns: (a) a proper array; (b) a JSON-encoded string of
-// an array; (c) a plain prose string. The prior renderer treated (b) as prose
-// and split on newlines, exposing raw `[`, `]` tokens in the UI. This parses
-// each case safely.
+type TopTab = "overview" | "questions" | "practical" | "edge" | "mock" | "coach";
+type QSubTab = "behavioral" | "technical" | "company" | "tough";
+type PracticalSubTab = "coding" | "system_design" | "case_study" | "data_challenge";
 
-function sanitize(s: string): string {
-  return s
-    .replace(/^[\s"'\[\{`]+/, "")
-    .replace(/[\s"'\]\}`]+$/, "")
-    .replace(/^\*\*|\*\*$/g, "")
-    .replace(/\*\*(.+?)\*\*/g, "$1") // drop bold markdown
-    .replace(/\s+/g, " ")
-    .trim();
-}
+const Q_SUBTABS: { key: QSubTab; label: string; icon: string }[] = [
+  { key: "behavioral", label: "Behavioral", icon: "🧠" },
+  { key: "technical",  label: "Technical",  icon: "⚙" },
+  { key: "company",    label: "Company",    icon: "🏢" },
+  { key: "tough",      label: "Tough Qs",   icon: "🔥" },
+];
 
-function tryParseJSON(raw: string): unknown | null {
-  const s = raw.trim();
-  if (!s) return null;
-  const looksJson = /^[\[\{]/.test(s) || /^```/.test(s);
-  if (!looksJson) return null;
-  const cleaned = s.replace(/^```(?:json)?\s*/i, "").replace(/```$/, "").trim();
-  try { return JSON.parse(cleaned); } catch { /* fall through */ }
-  // Fallback: some responses quote individual items with backticks or escape them
-  try {
-    const unescaped = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
-    return JSON.parse(unescaped);
-  } catch { return null; }
-}
+const PRACTICAL_SUBTABS: { key: PracticalSubTab; label: string; icon: string }[] = [
+  { key: "coding",         label: "Coding",        icon: "💻" },
+  { key: "system_design",  label: "System Design", icon: "🏗" },
+  { key: "case_study",     label: "Case Studies",  icon: "📊" },
+  { key: "data_challenge", label: "Data",          icon: "🔢" },
+];
 
-function asStrArray(v: unknown): string[] {
-  if (Array.isArray(v)) return v.flatMap(x => asStrArray(x));
-  if (v && typeof v === "object") {
-    const q = (v as any).question ?? (v as any).q ?? (v as any).text;
-    if (q) return [sanitize(String(q))];
-  }
-  if (typeof v === "string") {
-    const parsed = tryParseJSON(v);
-    if (parsed !== null && parsed !== v) return asStrArray(parsed);
-    const cleaned = sanitize(v);
-    if (!cleaned) return [];
-    // If it still looks like a JSON array of items, split on commas between
-    // closing and opening quotes; otherwise split on sentence breaks.
-    if (/",\s*"/.test(v)) {
-      return v.split(/",\s*"/).map(sanitize).filter(Boolean);
-    }
-    return cleaned.split(/(?<=\.)\s+(?=[A-Z])|\n+|;\s+/).map(s => s.trim()).filter(Boolean);
-  }
-  return [];
-}
+const ROLE_LABELS: Record<string, string> = {
+  coding: "Coding / SWE",
+  data: "Data / ML",
+  devops: "DevOps / SRE",
+  design: "Design",
+  pm: "Product / PM",
+  business: "Business / Consulting",
+  research: "Research",
+  generic: "General",
+};
 
-interface QItem { question: string; why_asked?: string; answer_outline?: string }
-
-function asQArray(v: unknown): QItem[] {
-  if (Array.isArray(v)) return v.flatMap(asQArray);
-  if (v && typeof v === "object") {
-    const q = (v as any).question ?? (v as any).q;
-    if (q) {
-      return [{
-        question: sanitize(String(q)),
-        why_asked: (v as any).why_asked ? sanitize(String((v as any).why_asked)) : undefined,
-        answer_outline: (v as any).answer_outline ?? (v as any).defense
-          ? sanitize(String((v as any).answer_outline ?? (v as any).defense))
-          : undefined,
-      }];
-    }
-  }
-  if (typeof v === "string") {
-    const parsed = tryParseJSON(v);
-    if (parsed !== null && parsed !== v) return asQArray(parsed);
-    const cleaned = sanitize(v);
-    if (cleaned) return [{ question: cleaned }];
-  }
-  return [];
-}
-
-// Detect STAR structure in an answer outline and break it into parts
-function splitStar(s?: string): { label: string; text: string }[] | null {
-  if (!s) return null;
-  const m = s.match(/\bS:\s*(.+?)\s*T:\s*(.+?)\s*A:\s*(.+?)\s*R:\s*(.+)$/);
-  if (!m) return null;
-  return [
-    { label: "Situation", text: m[1] },
-    { label: "Task", text: m[2] },
-    { label: "Action", text: m[3] },
-    { label: "Result", text: m[4] },
-  ];
-}
-
-// ─── UI atoms ─────────────────────────────────────────────────────────────
-function Spinner({ className = "w-4 h-4" }: { className?: string }) {
-  return <span className={`inline-block rounded-full border-2 border-current border-t-transparent animate-spin ${className}`} />;
-}
-
-function CopyButton({ text, title = "Copy" }: { text: string; title?: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <button
-      onClick={async (e) => {
-        e.stopPropagation();
-        try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200); }
-        catch { /* noop */ }
-      }}
-      title={title}
-      className="shrink-0 inline-flex items-center justify-center w-6 h-6 rounded text-gray-400 hover:text-purple-500 hover:bg-purple-500/10 transition-colors"
-    >
-      {copied ? (
-        <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
-      ) : (
-        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" /></svg>
-      )}
-    </button>
-  );
-}
-
-// ─── Question card ────────────────────────────────────────────────────────
-function QuestionCard({
-  q,
-  index,
-  reviewed,
-  onToggleReviewed,
-}: {
-  q: QItem;
-  index: number;
-  reviewed: boolean;
-  onToggleReviewed: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const star = useMemo(() => splitStar(q.answer_outline), [q.answer_outline]);
-
-  return (
-    <div className={`group rounded-xl border overflow-hidden transition-all ${
-      reviewed
-        ? "border-emerald-500/30 bg-emerald-500/5"
-        : "border-gray-200 dark:border-gray-800/60 bg-white/60 dark:bg-gray-900/40 hover:border-purple-500/30"
-    }`}>
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        {/* Review checkbox */}
-        <button
-          onClick={onToggleReviewed}
-          title={reviewed ? "Mark as not reviewed" : "Mark as reviewed"}
-          className={`shrink-0 mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
-            reviewed
-              ? "bg-emerald-500 border-emerald-500 text-white"
-              : "border-gray-300 dark:border-gray-600 hover:border-emerald-400"
-          }`}
-        >
-          {reviewed && (
-            <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={4} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
-            </svg>
-          )}
-        </button>
-
-        {/* Number badge */}
-        <span className="shrink-0 mt-0.5 inline-flex w-5 h-5 items-center justify-center rounded-md bg-purple-500/10 text-purple-600 dark:text-purple-300 text-[10px] font-bold tabular-nums">
-          {index + 1}
-        </span>
-
-        {/* Question (click to expand) */}
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="flex-1 min-w-0 text-left"
-        >
-          <p className={`text-[12.5px] leading-snug ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-800 dark:text-gray-200"}`}>
-            {q.question}
-          </p>
-          {!open && q.answer_outline && (
-            <p className="text-[10.5px] text-gray-400 dark:text-gray-500 mt-1 line-clamp-1 italic">
-              {q.answer_outline}
-            </p>
-          )}
-        </button>
-
-        <CopyButton text={`Q: ${q.question}${q.answer_outline ? `\nA: ${q.answer_outline}` : ""}`} />
-        <button
-          onClick={() => setOpen(o => !o)}
-          className="shrink-0 w-6 h-6 rounded text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
-          <svg className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
-          </svg>
-        </button>
-      </div>
-
-      {open && (q.why_asked || q.answer_outline) && (
-        <div className="border-t border-gray-200 dark:border-gray-800/60 bg-gray-50/40 dark:bg-gray-900/20 px-3 py-3 space-y-2.5">
-          {q.why_asked && (
-            <div className="flex gap-2">
-              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-purple-500 dark:text-purple-400 w-14">Why</span>
-              <p className="text-[11.5px] text-gray-600 dark:text-gray-300 leading-relaxed">{q.why_asked}</p>
-            </div>
-          )}
-          {q.answer_outline && (
-            star ? (
-              <div className="pl-16 -ml-16">
-                <div className="flex gap-2 mb-1.5">
-                  <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-14">Answer</span>
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 italic">STAR framework</span>
-                </div>
-                <div className="ml-16 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                  {star.map(p => (
-                    <div key={p.label} className="rounded-md bg-white dark:bg-gray-900/60 border border-emerald-500/20 px-2 py-1.5">
-                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">{p.label}</p>
-                      <p className="text-[11px] text-gray-700 dark:text-gray-300 leading-snug mt-0.5">{p.text}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-emerald-500 dark:text-emerald-400 w-14">Answer</span>
-                <p className="text-[11.5px] text-gray-700 dark:text-gray-300 leading-relaxed flex-1">{q.answer_outline}</p>
-              </div>
-            )
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Bullet-list card (for talking points, gaps, etc.) ───────────────────
-function BulletCard({
-  text,
-  index,
-  accent,
-  reviewed,
-  onToggleReviewed,
-}: {
-  text: string;
-  index: number;
-  accent: "purple" | "amber" | "red" | "emerald" | "blue";
-  reviewed: boolean;
-  onToggleReviewed: () => void;
-}) {
-  const colorMap = {
-    purple:  { bg: "bg-purple-500/10",  text: "text-purple-600 dark:text-purple-300",   dot: "bg-purple-400" },
-    amber:   { bg: "bg-amber-500/10",   text: "text-amber-600 dark:text-amber-300",     dot: "bg-amber-400" },
-    red:     { bg: "bg-red-500/10",     text: "text-red-600 dark:text-red-300",         dot: "bg-red-400" },
-    emerald: { bg: "bg-emerald-500/10", text: "text-emerald-600 dark:text-emerald-300", dot: "bg-emerald-400" },
-    blue:    { bg: "bg-blue-500/10",    text: "text-blue-600 dark:text-blue-300",       dot: "bg-blue-400" },
-  }[accent];
-
-  return (
-    <div className={`rounded-lg border px-3 py-2 flex items-start gap-2.5 transition-all ${
-      reviewed ? "border-emerald-500/30 bg-emerald-500/5 opacity-70" : `border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/40 hover:border-${accent}-500/30`
-    }`}>
-      <button
-        onClick={onToggleReviewed}
-        className={`shrink-0 mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center transition-colors ${
-          reviewed ? "bg-emerald-500 border-emerald-500 text-white" : "border-gray-300 dark:border-gray-600 hover:border-emerald-400"
-        }`}
-      >
-        {reviewed && <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" strokeWidth={4} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>}
-      </button>
-      <span className={`shrink-0 inline-flex w-5 h-5 items-center justify-center rounded-md ${colorMap.bg} ${colorMap.text} text-[10px] font-bold tabular-nums`}>
-        {index + 1}
-      </span>
-      <p className={`flex-1 text-[12px] leading-relaxed ${reviewed ? "text-gray-500 dark:text-gray-500" : "text-gray-700 dark:text-gray-300"}`}>{text}</p>
-      <CopyButton text={text} />
-    </div>
-  );
-}
-
-// ─── Tab definitions ──────────────────────────────────────────────────────
-type TabKey = "overview" | "behavioral" | "technical" | "company" | "asks" | "gaps" | "tough";
-
-// ─── Main ─────────────────────────────────────────────────────────────────
 export default function InterviewPrepTab() {
   const [records, setRecords] = useState<TailoringRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -281,9 +51,14 @@ export default function InterviewPrepTab() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [search, setSearch] = useState("");
-  const [qSearch, setQSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [topTab, setTopTab] = useState<TopTab>("overview");
+  const [qSub, setQSub] = useState<QSubTab>("behavioral");
+  const [practicalSub, setPracticalSub] = useState<PracticalSubTab>("coding");
+  const [diffFilter, setDiffFilter] = useState<QDifficulty | "all">("all");
+  const [fetchingMore, setFetchingMore] = useState<string | null>(null); // key = category
+  const [coachPrompt, setCoachPrompt] = useState<string | null>(null);
 
+  // ── Load records
   useEffect(() => {
     (async () => {
       const resp = await apiService.listTailoringRecords();
@@ -302,7 +77,7 @@ export default function InterviewPrepTab() {
     [records, selectedId],
   );
 
-  // Reviewed-question persistence: localStorage keyed by record_id.
+  // ── Reviewed-items persistence (localStorage per record)
   const reviewedKey = selectedId ? `prep-reviewed:${selectedId}` : null;
   const [reviewed, setReviewed] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -316,14 +91,12 @@ export default function InterviewPrepTab() {
     setReviewed(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
-      if (reviewedKey) {
-        try { localStorage.setItem(reviewedKey, JSON.stringify([...next])); } catch { /* noop */ }
-      }
+      if (reviewedKey) { try { localStorage.setItem(reviewedKey, JSON.stringify([...next])); } catch {} }
       return next;
     });
   }, [reviewedKey]);
 
-  // Load prep when selection changes
+  // ── Load prep when selection changes
   useEffect(() => {
     if (!selectedId) { setContent(null); setGeneratedAt(null); return; }
     const rec = records.find(r => r.record_id === selectedId);
@@ -332,10 +105,7 @@ export default function InterviewPrepTab() {
     (async () => {
       const full = await apiService.getTailoringRecord(selectedId);
       const prep = full.data?.record?.interview_prep;
-      if (prep?.content) {
-        setContent(prep.content);
-        setGeneratedAt(prep.generated_at || null);
-      }
+      if (prep?.content) { setContent(prep.content); setGeneratedAt(prep.generated_at || null); }
     })();
   }, [selectedId, records]);
 
@@ -368,46 +138,89 @@ export default function InterviewPrepTab() {
     );
   }, [records, search]);
 
-  // Normalise all fields once and memoise
-  const norm = useMemo(() => {
-    if (!content) return null;
-    return {
-      pitch: content.elevator_pitch ? sanitize(content.elevator_pitch) : "",
-      talking: asStrArray(content.talking_points),
-      behavioral: asQArray(content.behavioral_questions),
-      technical: asQArray(content.technical_questions),
-      company: asQArray(content.company_specific),
-      gaps: asStrArray(content.gaps_to_address),
-      tough: asQArray(content.red_flags),
-      asks: asStrArray(content.questions_to_ask_them),
-    };
-  }, [content]);
+  const norm: NormalizedPrep | null = useMemo(() => normalize(content), [content]);
 
-  // Optional question search across behavioural / technical / company
-  const qFilter = (items: QItem[]): QItem[] => {
-    const q = qSearch.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(x => `${x.question} ${x.why_asked || ""} ${x.answer_outline || ""}`.toLowerCase().includes(q));
-  };
-  const bFilter = (items: string[]): string[] => {
-    const q = qSearch.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(x => x.toLowerCase().includes(q));
+  // ── "Get another" — fetch a fresh question from backend, append to content
+  const fetchAnother = useCallback(async (
+    category: "behavioral" | "technical" | "company" | "coding" | "system_design" | "case_study" | "data_challenge",
+    difficulty: QDifficulty,
+  ) => {
+    if (!selectedId) return;
+    setFetchingMore(category);
+
+    const seen: string[] = [];
+    if (norm) {
+      if (category === "behavioral") seen.push(...norm.behavioral.map(q => q.question));
+      if (category === "technical") seen.push(...norm.technical.map(q => q.question));
+      if (category === "company") seen.push(...norm.company.map(q => q.question));
+      if (category === "coding") seen.push(...norm.coding.map(c => c.title));
+      if (category === "system_design") seen.push(...norm.systemDesign.map(c => c.title));
+      if (category === "case_study") seen.push(...norm.cases.map(c => c.title));
+      if (category === "data_challenge") seen.push(...norm.data.map(c => c.title));
+    }
+
+    const r = await apiService.getPracticeQuestion(selectedId, {
+      category, difficulty, seen_titles: seen.slice(-20),
+    });
+    setFetchingMore(null);
+    if (r.error || !r.data?.question) {
+      toast.error("Couldn't get another", { description: r.error });
+      return;
+    }
+    // Append into local content
+    setContent(prev => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      const q = r.data!.question;
+      switch (category) {
+        case "behavioral":    next.behavioral_questions = [...(prev.behavioral_questions || []), q]; break;
+        case "technical":     next.technical_questions  = [...(prev.technical_questions  || []), q]; break;
+        case "company":       next.company_specific     = [...(prev.company_specific     || []), q]; break;
+        case "coding":        next.coding_problems      = [...(prev.coding_problems      || []), q]; break;
+        case "system_design": next.system_design_prompts = [...(prev.system_design_prompts || []), q]; break;
+        case "case_study":    next.case_studies         = [...(prev.case_studies         || []), q]; break;
+        case "data_challenge": next.data_challenges     = [...(prev.data_challenges      || []), q]; break;
+      }
+      return next;
+    });
+    toast.success("Added a fresh question");
+  }, [selectedId, norm]);
+
+  const askCoach = useCallback((prompt: string) => {
+    setCoachPrompt(prompt);
+    setTopTab("coach");
+  }, []);
+
+  // ── Difficulty filter helper
+  const applyDiff = <T extends { difficulty?: QDifficulty }>(items: T[]): T[] => {
+    if (diffFilter === "all") return items;
+    return items.filter(x => x.difficulty === diffFilter);
   };
 
-  const counts = norm ? {
-    overview: 0,
-    behavioral: norm.behavioral.length,
-    technical: norm.technical.length,
-    company: norm.company.length,
-    asks: norm.asks.length,
-    gaps: norm.gaps.length,
-    tough: norm.tough.length,
+  const totalItems = norm ? (
+    norm.behavioral.length + norm.technical.length + norm.company.length
+    + norm.coding.length + norm.cases.length + norm.systemDesign.length + norm.data.length
+    + norm.gaps.length + norm.tough.length + norm.asks.length + norm.talking.length
+  ) : 0;
+  const progress = totalItems > 0 ? Math.round((reviewed.size / totalItems) * 100) : 0;
+
+  // Which practical sub-tabs have content / are worth showing?
+  const practicalAvailable = norm ? {
+    coding: norm.coding.length > 0,
+    system_design: norm.systemDesign.length > 0,
+    case_study: norm.cases.length > 0,
+    data_challenge: norm.data.length > 0,
   } : null;
+  const hasAnyPractical = practicalAvailable && Object.values(practicalAvailable).some(Boolean);
 
-  const totalItems = norm ? norm.behavioral.length + norm.technical.length + norm.company.length + norm.gaps.length + norm.tough.length + norm.asks.length + norm.talking.length : 0;
-  const reviewedCount = reviewed.size;
-  const progress = totalItems > 0 ? Math.round((reviewedCount / totalItems) * 100) : 0;
+  // Auto-pick a practical subtab that has content
+  useEffect(() => {
+    if (!practicalAvailable) return;
+    if (!practicalAvailable[practicalSub]) {
+      const first = (Object.keys(practicalAvailable) as PracticalSubTab[]).find(k => practicalAvailable[k]);
+      if (first) setPracticalSub(first);
+    }
+  }, [practicalAvailable, practicalSub]);
 
   if (loading) {
     return <div className="animate-pulse h-24 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />;
@@ -422,29 +235,27 @@ export default function InterviewPrepTab() {
     );
   }
 
-  const TABS: { key: TabKey; label: string; icon: string; count?: number }[] = [
-    { key: "overview",   label: "Overview",    icon: "✨" },
-    { key: "behavioral", label: "Behavioral",  icon: "🧠", count: counts?.behavioral },
-    { key: "technical",  label: "Technical",   icon: "⚙",  count: counts?.technical },
-    { key: "company",    label: "Company",     icon: "🏢", count: counts?.company },
-    { key: "asks",       label: "Ask them",    icon: "❓", count: counts?.asks },
-    { key: "gaps",       label: "Gaps",        icon: "⚠",  count: counts?.gaps },
-    { key: "tough",      label: "Tough Qs",    icon: "🔥", count: counts?.tough },
-  ];
+  const TOP_TABS: { key: TopTab; label: string; icon: string; show?: boolean }[] = [
+    { key: "overview",  label: "Overview",    icon: "✨" },
+    { key: "questions", label: "Questions",   icon: "❓" },
+    { key: "practical", label: "Practical",   icon: "🧪", show: !!hasAnyPractical },
+    { key: "edge",      label: "Your Edge",   icon: "🎯" },
+    { key: "mock",      label: "Mock Interview", icon: "🎤" },
+    { key: "coach",     label: "AI Coach",    icon: "🧑‍🏫" },
+  ].filter(t => t.show === undefined || t.show);
 
   return (
     <div className="space-y-4">
-      {/* Header */}
       <div>
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Interview Prep</h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          AI-generated briefs grounded in the exact JD + resume version you applied with.
+          A collaborative practice system — question banks, timed mock answers with AI grading, an always-on coach who knows your resume and JD.
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
-        {/* ── Record picker ── */}
-        <aside className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-2 space-y-1 max-h-[75vh] overflow-y-auto">
+        {/* Record picker */}
+        <aside className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-2 space-y-1 max-h-[80vh] overflow-y-auto">
           <div className="relative mb-1">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
@@ -479,7 +290,7 @@ export default function InterviewPrepTab() {
           })}
         </aside>
 
-        {/* ── Prep content ── */}
+        {/* Main */}
         <main className="space-y-4">
           {!selected ? (
             <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-xs text-gray-500 dark:text-gray-400">
@@ -487,7 +298,7 @@ export default function InterviewPrepTab() {
             </div>
           ) : (
             <>
-              {/* Title card */}
+              {/* Title / generate card */}
               <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gradient-to-br from-purple-500/5 via-white/50 to-transparent dark:from-purple-500/10 dark:via-gray-900/40 dark:to-transparent p-5">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
@@ -498,13 +309,19 @@ export default function InterviewPrepTab() {
                         <span className="text-gray-500 dark:text-gray-400 font-normal"> at {selected.jd_analysis.company}</span>
                       )}
                     </p>
-                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
-                      {generatedAt ? `Generated ${formatDate(generatedAt)}` : "No prep generated yet"}
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                      <span>{generatedAt ? `Generated ${formatDate(generatedAt)}` : "No prep generated yet"}</span>
+                      {norm?.role_type && (
+                        <>
+                          <span>·</span>
+                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 border border-indigo-500/25 text-[10px] font-semibold">{ROLE_LABELS[norm.role_type] || norm.role_type}</span>
+                        </>
+                      )}
                       {totalItems > 0 && (
                         <>
-                          <span className="mx-1.5">·</span>
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{reviewedCount}</span>
-                          <span> of {totalItems} reviewed</span>
+                          <span>·</span>
+                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{reviewed.size}</span>
+                          <span>of {totalItems} reviewed</span>
                         </>
                       )}
                     </p>
@@ -515,18 +332,14 @@ export default function InterviewPrepTab() {
                         onClick={() => handleGenerate(true)}
                         disabled={generating}
                         className="px-3 py-1.5 rounded-md text-[11px] font-medium text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50"
-                      >
-                        {generating ? "Regenerating…" : "Regenerate"}
-                      </button>
+                      >{generating ? "Regenerating…" : "Regenerate"}</button>
                     )}
                     {!content && (
                       <button
                         onClick={() => handleGenerate(false)}
                         disabled={generating}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 shadow-sm shadow-purple-500/25"
-                      >
-                        {generating && <Spinner />} {generating ? "Generating prep…" : "Generate prep"}
-                      </button>
+                      >{generating && <Spinner />} {generating ? "Generating prep…" : "Generate prep"}</button>
                     )}
                   </div>
                 </div>
@@ -534,10 +347,7 @@ export default function InterviewPrepTab() {
                 {totalItems > 0 && (
                   <div className="mt-4">
                     <div className="h-1 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-purple-500 to-emerald-500 transition-all duration-500"
-                        style={{ width: `${progress}%` }}
-                      />
+                      <div className="h-full bg-gradient-to-r from-purple-500 to-emerald-500 transition-all duration-500" style={{ width: `${progress}%` }} />
                     </div>
                     <p className="text-[10px] text-gray-500 dark:text-gray-500 mt-1">{progress}% reviewed</p>
                   </div>
@@ -546,57 +356,40 @@ export default function InterviewPrepTab() {
 
               {!content && !generating && (
                 <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 p-8 text-center text-xs text-gray-500 dark:text-gray-400">
-                  Click <b>Generate prep</b> to create an interview pack grounded in the JD + current resume version.
+                  Click <b>Generate prep</b> to create an interview pack with role-adaptive questions, coding / case / system design problems, and open the AI coach.
                 </div>
               )}
               {generating && !content && (
                 <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 p-8 text-center text-xs text-gray-500 dark:text-gray-400 flex items-center justify-center gap-2">
-                  <Spinner /> Generating prep — usually 10–20 seconds.
+                  <Spinner /> Generating prep — usually 15–30 seconds for a full pack.
                 </div>
               )}
 
               {content && norm && (
                 <>
-                  {/* Tab bar */}
-                  <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800/60 pb-0.5 -mx-1 px-1">
-                    {TABS.map(t => {
-                      const isActive = activeTab === t.key;
-                      const count = t.count;
+                  {/* Top-level tabs */}
+                  <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800/60 pb-0.5">
+                    {TOP_TABS.map(t => {
+                      const isActive = topTab === t.key;
                       return (
                         <button
                           key={t.key}
-                          onClick={() => setActiveTab(t.key)}
+                          onClick={() => setTopTab(t.key)}
                           className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-[11px] font-medium transition-all border-b-2 ${
                             isActive
                               ? "border-purple-500 text-gray-900 dark:text-gray-100 bg-purple-500/5"
                               : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                           }`}
                         >
-                          <span>{t.icon}</span>
-                          <span>{t.label}</span>
-                          {typeof count === "number" && count > 0 && (
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full tabular-nums font-bold ${isActive ? "bg-purple-500/20 text-purple-600 dark:text-purple-300" : "bg-gray-100 dark:bg-gray-800 text-gray-500"}`}>{count}</span>
-                          )}
+                          <span>{t.icon}</span>{t.label}
                         </button>
                       );
                     })}
-                    <div className="flex-1" />
-                    {(activeTab === "behavioral" || activeTab === "technical" || activeTab === "company" || activeTab === "tough" || activeTab === "gaps" || activeTab === "asks") && (
-                      <div className="relative shrink-0 ml-2">
-                        <svg className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>
-                        <input
-                          value={qSearch}
-                          onChange={e => setQSearch(e.target.value)}
-                          placeholder="Filter in view…"
-                          className="pl-7 pr-2 py-1 w-[160px] rounded-md bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-[11px] text-gray-800 dark:text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/30"
-                        />
-                      </div>
-                    )}
                   </div>
 
-                  {/* Tab content */}
                   <div className="pt-2">
-                    {activeTab === "overview" && (
+                    {/* ── Overview ── */}
+                    {topTab === "overview" && (
                       <div className="space-y-4">
                         {norm.pitch && (
                           <div className="rounded-xl border border-purple-500/25 bg-purple-500/5 p-4">
@@ -613,105 +406,206 @@ export default function InterviewPrepTab() {
 
                         {norm.talking.length > 0 && (
                           <div>
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-sm">💪</span>
-                              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300">Talking points</p>
-                              <span className="text-[10px] text-gray-500 dark:text-gray-400">— your strongest selling points</span>
-                            </div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-600 dark:text-gray-300 mb-2">💪 Talking points</p>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                               {norm.talking.map((t, i) => (
-                                <BulletCard
-                                  key={i} index={i} text={t} accent="purple"
+                                <BulletCard key={i} index={i} text={t} accent="purple"
                                   reviewed={reviewed.has(`tp-${i}`)}
-                                  onToggleReviewed={() => toggleReviewed(`tp-${i}`)}
-                                />
+                                  onToggleReviewed={() => toggleReviewed(`tp-${i}`)} />
                               ))}
                             </div>
                           </div>
                         )}
 
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                          {TABS.slice(1).map(t => (
+                        {/* Section counts as jump-links */}
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                          {[
+                            { label: "Behavioral",   count: norm.behavioral.length,   tab: "questions", sub: "behavioral", icon: "🧠" },
+                            { label: "Technical",    count: norm.technical.length,    tab: "questions", sub: "technical",  icon: "⚙" },
+                            { label: "Company",      count: norm.company.length,      tab: "questions", sub: "company",    icon: "🏢" },
+                            { label: "Tough Qs",     count: norm.tough.length,        tab: "questions", sub: "tough",      icon: "🔥" },
+                            { label: "Coding",       count: norm.coding.length,       tab: "practical", sub: "coding",     icon: "💻" },
+                            { label: "System Design",count: norm.systemDesign.length, tab: "practical", sub: "system_design", icon: "🏗" },
+                            { label: "Case Studies", count: norm.cases.length,        tab: "practical", sub: "case_study", icon: "📊" },
+                            { label: "Data",         count: norm.data.length,         tab: "practical", sub: "data_challenge", icon: "🔢" },
+                          ].filter(x => x.count > 0).map(x => (
                             <button
-                              key={t.key}
-                              onClick={() => setActiveTab(t.key)}
+                              key={x.label}
+                              onClick={() => { setTopTab(x.tab as TopTab); if (x.tab === "questions") setQSub(x.sub as QSubTab); if (x.tab === "practical") setPracticalSub(x.sub as PracticalSubTab); }}
                               className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 px-3 py-2.5 text-left hover:border-purple-500/40 hover:bg-purple-500/5 transition-colors"
                             >
                               <div className="flex items-center gap-1.5">
-                                <span className="text-xs">{t.icon}</span>
-                                <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{t.label}</p>
+                                <span className="text-xs">{x.icon}</span>
+                                <p className="text-[11px] font-semibold text-gray-700 dark:text-gray-300">{x.label}</p>
                               </div>
-                              <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{t.count ?? 0}</p>
+                              <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{x.count}</p>
                             </button>
                           ))}
                         </div>
                       </div>
                     )}
 
-                    {activeTab === "behavioral" && (
-                      <div className="space-y-2">
-                        {qFilter(norm.behavioral).map((q, i) => (
-                          <QuestionCard key={i} index={i} q={q}
-                            reviewed={reviewed.has(`b-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`b-${i}`)} />
-                        ))}
-                        {qFilter(norm.behavioral).length === 0 && <EmptyState label="behavioral questions" />}
+                    {/* ── Questions ── */}
+                    {topTab === "questions" && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/60 p-0.5 border border-gray-200 dark:border-gray-800">
+                            {Q_SUBTABS.map(s => (
+                              <button
+                                key={s.key}
+                                onClick={() => setQSub(s.key)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium rounded capitalize ${qSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                              >
+                                <span>{s.icon}</span>{s.label}
+                              </button>
+                            ))}
+                          </div>
+                          <DifficultyFilter value={diffFilter} onChange={setDiffFilter} />
+                          <div className="flex-1" />
+                          {(["behavioral", "technical", "company"].includes(qSub)) && (
+                            <GetAnotherButton
+                              loading={fetchingMore === qSub}
+                              difficulty={diffFilter === "all" ? "medium" : diffFilter}
+                              onClick={(d) => fetchAnother(qSub as any, d)}
+                            />
+                          )}
+                        </div>
+                        {qSub === "behavioral" && (
+                          <QuestionList
+                            items={applyDiff(norm.behavioral)}
+                            keyPrefix="b"
+                            reviewed={reviewed} toggleReviewed={toggleReviewed}
+                            emptyLabel="behavioral questions"
+                            onPractice={(q) => { setTopTab("mock"); /* user can pick it up from mock */ }}
+                            onAskCoach={askCoach}
+                          />
+                        )}
+                        {qSub === "technical" && (
+                          <QuestionList items={applyDiff(norm.technical)} keyPrefix="t"
+                            reviewed={reviewed} toggleReviewed={toggleReviewed}
+                            emptyLabel="technical questions" onAskCoach={askCoach} />
+                        )}
+                        {qSub === "company" && (
+                          <QuestionList items={applyDiff(norm.company)} keyPrefix="c"
+                            reviewed={reviewed} toggleReviewed={toggleReviewed}
+                            emptyLabel="company questions" onAskCoach={askCoach} />
+                        )}
+                        {qSub === "tough" && (
+                          <QuestionList items={applyDiff(norm.tough as any)} keyPrefix="tough"
+                            reviewed={reviewed} toggleReviewed={toggleReviewed}
+                            emptyLabel="tough questions" onAskCoach={askCoach} />
+                        )}
                       </div>
                     )}
 
-                    {activeTab === "technical" && (
-                      <div className="space-y-2">
-                        {qFilter(norm.technical).map((q, i) => (
-                          <QuestionCard key={i} index={i} q={q}
-                            reviewed={reviewed.has(`t-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`t-${i}`)} />
-                        ))}
-                        {qFilter(norm.technical).length === 0 && <EmptyState label="technical questions" />}
+                    {/* ── Practical ── */}
+                    {topTab === "practical" && practicalAvailable && (
+                      <div className="space-y-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/60 p-0.5 border border-gray-200 dark:border-gray-800">
+                            {PRACTICAL_SUBTABS.filter(s => practicalAvailable[s.key]).map(s => (
+                              <button
+                                key={s.key}
+                                onClick={() => setPracticalSub(s.key)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-medium rounded ${practicalSub === s.key ? "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm" : "text-gray-500 dark:text-gray-400"}`}
+                              >
+                                <span>{s.icon}</span>{s.label}
+                              </button>
+                            ))}
+                          </div>
+                          <DifficultyFilter value={diffFilter} onChange={setDiffFilter} />
+                          <div className="flex-1" />
+                          <GetAnotherButton
+                            loading={fetchingMore === practicalSub}
+                            difficulty={diffFilter === "all" ? "medium" : diffFilter}
+                            onClick={(d) => fetchAnother(practicalSub as any, d)}
+                          />
+                        </div>
+
+                        {practicalSub === "coding" && (
+                          <CardList items={applyDiff(norm.coding)} empty="coding problems">
+                            {(p, i) => (
+                              <CodingCard p={p} index={i}
+                                reviewed={reviewed.has(`code-${i}`)}
+                                onToggleReviewed={() => toggleReviewed(`code-${i}`)}
+                                onAskCoach={askCoach} />
+                            )}
+                          </CardList>
+                        )}
+                        {practicalSub === "system_design" && (
+                          <CardList items={applyDiff(norm.systemDesign)} empty="system design prompts">
+                            {(p, i) => (
+                              <SystemDesignCard p={p} index={i}
+                                reviewed={reviewed.has(`sd-${i}`)}
+                                onToggleReviewed={() => toggleReviewed(`sd-${i}`)}
+                                onAskCoach={askCoach} />
+                            )}
+                          </CardList>
+                        )}
+                        {practicalSub === "case_study" && (
+                          <CardList items={applyDiff(norm.cases)} empty="case studies">
+                            {(c, i) => (
+                              <CaseCard c={c} index={i}
+                                reviewed={reviewed.has(`case-${i}`)}
+                                onToggleReviewed={() => toggleReviewed(`case-${i}`)}
+                                onAskCoach={askCoach} />
+                            )}
+                          </CardList>
+                        )}
+                        {practicalSub === "data_challenge" && (
+                          <CardList items={applyDiff(norm.data)} empty="data challenges">
+                            {(d, i) => (
+                              <DataChallengeCard d={d} index={i}
+                                reviewed={reviewed.has(`data-${i}`)}
+                                onToggleReviewed={() => toggleReviewed(`data-${i}`)}
+                                onAskCoach={askCoach} />
+                            )}
+                          </CardList>
+                        )}
                       </div>
                     )}
 
-                    {activeTab === "company" && (
-                      <div className="space-y-2">
-                        {qFilter(norm.company).map((q, i) => (
-                          <QuestionCard key={i} index={i} q={q}
-                            reviewed={reviewed.has(`c-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`c-${i}`)} />
-                        ))}
-                        {qFilter(norm.company).length === 0 && <EmptyState label="company-specific questions" />}
+                    {/* ── Edge: gaps + asks ── */}
+                    {topTab === "edge" && (
+                      <div className="space-y-4">
+                        {norm.gaps.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-300 mb-2">⚠ Gaps to close</p>
+                            <div className="space-y-1.5">
+                              {norm.gaps.map((g, i) => (
+                                <BulletCard key={i} index={i} text={g} accent="amber"
+                                  reviewed={reviewed.has(`g-${i}`)} onToggleReviewed={() => toggleReviewed(`g-${i}`)} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {norm.asks.length > 0 && (
+                          <div>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-300 mb-2">❓ Questions to ask them</p>
+                            <div className="space-y-1.5">
+                              {norm.asks.map((a, i) => (
+                                <BulletCard key={i} index={i} text={a} accent="blue"
+                                  reviewed={reviewed.has(`a-${i}`)} onToggleReviewed={() => toggleReviewed(`a-${i}`)} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {norm.gaps.length === 0 && norm.asks.length === 0 && <EmptyState label="edge notes" />}
                       </div>
                     )}
 
-                    {activeTab === "asks" && (
-                      <div className="space-y-2">
-                        {bFilter(norm.asks).map((a, i) => (
-                          <BulletCard key={i} index={i} text={a} accent="blue"
-                            reviewed={reviewed.has(`a-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`a-${i}`)} />
-                        ))}
-                        {bFilter(norm.asks).length === 0 && <EmptyState label="questions to ask them" />}
-                      </div>
+                    {/* ── Mock Interview ── */}
+                    {topTab === "mock" && (
+                      <MockInterview recordId={selected.record_id} prep={norm} />
                     )}
 
-                    {activeTab === "gaps" && (
-                      <div className="space-y-2">
-                        {bFilter(norm.gaps).map((g, i) => (
-                          <BulletCard key={i} index={i} text={g} accent="amber"
-                            reviewed={reviewed.has(`g-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`g-${i}`)} />
-                        ))}
-                        {bFilter(norm.gaps).length === 0 && <EmptyState label="gaps" />}
-                      </div>
-                    )}
-
-                    {activeTab === "tough" && (
-                      <div className="space-y-2">
-                        {qFilter(norm.tough).map((q, i) => (
-                          <QuestionCard key={i} index={i} q={q}
-                            reviewed={reviewed.has(`tf-${i}`)}
-                            onToggleReviewed={() => toggleReviewed(`tf-${i}`)} />
-                        ))}
-                        {qFilter(norm.tough).length === 0 && <EmptyState label="tough questions" />}
-                      </div>
+                    {/* ── AI Coach ── */}
+                    {topTab === "coach" && (
+                      <CoachChat
+                        recordId={selected.record_id}
+                        externalPrompt={coachPrompt}
+                        onClearExternal={() => setCoachPrompt(null)}
+                      />
                     )}
                   </div>
                 </>
@@ -724,10 +618,98 @@ export default function InterviewPrepTab() {
   );
 }
 
-function EmptyState({ label }: { label: string }) {
+// ─── Small helpers ────────────────────────────────────────────────────────
+
+function DifficultyFilter({
+  value, onChange,
+}: {
+  value: QDifficulty | "all";
+  onChange: (v: QDifficulty | "all") => void;
+}) {
+  const opts: { key: QDifficulty | "all"; label: string }[] = [
+    { key: "all", label: "All" },
+    { key: "easy", label: "Easy" },
+    { key: "medium", label: "Medium" },
+    { key: "hard", label: "Hard" },
+  ];
   return (
-    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-6 text-center">
-      <p className="text-[11px] text-gray-500 dark:text-gray-400">No {label} to show.</p>
+    <div className="inline-flex rounded-lg bg-gray-100 dark:bg-gray-800/60 p-0.5 border border-gray-200 dark:border-gray-800">
+      {opts.map(o => {
+        const active = value === o.key;
+        const chip = o.key === "all" ? { cls: "" } : difficultyChip(o.key);
+        return (
+          <button
+            key={o.key}
+            onClick={() => onChange(o.key)}
+            className={`px-2 py-1 text-[10px] font-medium rounded ${active ? (o.key === "all" ? "bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 shadow-sm" : `${chip.cls} border-0 shadow-sm`) : "text-gray-500 dark:text-gray-400"}`}
+          >{o.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function GetAnotherButton({
+  loading, difficulty, onClick,
+}: {
+  loading: boolean;
+  difficulty: QDifficulty;
+  onClick: (d: QDifficulty) => void;
+}) {
+  return (
+    <button
+      onClick={() => onClick(difficulty)}
+      disabled={loading}
+      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 shadow-sm"
+      title={`Generate a new ${difficulty} question`}
+    >
+      {loading ? <Spinner className="w-3 h-3" /> : <span>+</span>} Get another
+    </button>
+  );
+}
+
+function QuestionList({
+  items, keyPrefix, reviewed, toggleReviewed, emptyLabel, onPractice, onAskCoach,
+}: {
+  items: any[];
+  keyPrefix: string;
+  reviewed: Set<string>;
+  toggleReviewed: (id: string) => void;
+  emptyLabel: string;
+  onPractice?: () => void;
+  onAskCoach?: (prompt: string) => void;
+}) {
+  if (items.length === 0) return <EmptyState label={emptyLabel} />;
+  return (
+    <div className="space-y-2">
+      {items.map((q, i) => (
+        <QuestionCard
+          key={`${keyPrefix}-${i}`}
+          q={q}
+          index={i}
+          reviewed={reviewed.has(`${keyPrefix}-${i}`)}
+          onToggleReviewed={() => toggleReviewed(`${keyPrefix}-${i}`)}
+          onPractice={onPractice}
+          {...(onAskCoach ? { onPractice: () => onAskCoach(`Let's drill this behavioral question together. Question: "${q.question}". Start by asking me to answer, then give me feedback STAR-style.`) } : {})}
+        />
+      ))}
+    </div>
+  );
+}
+
+function CardList<T>({
+  items, empty, children,
+}: {
+  items: T[];
+  empty: string;
+  children: (item: T, index: number) => React.ReactNode;
+}) {
+  if (items.length === 0) return <EmptyState label={empty} />;
+  return (
+    <div className="space-y-2">
+      {items.map((it, i) => (
+        <div key={i}>{children(it, i)}</div>
+      ))}
     </div>
   );
 }

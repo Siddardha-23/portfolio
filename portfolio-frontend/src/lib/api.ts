@@ -1194,16 +1194,7 @@ class ApiService {
   ): Promise<
     ApiResponse<{
       interview_prep: {
-        content: {
-          elevator_pitch?: string;
-          talking_points?: string[];
-          behavioral_questions?: { question: string; why_asked?: string; answer_outline?: string }[];
-          technical_questions?: { question: string; why_asked?: string; answer_outline?: string }[];
-          company_specific?: { question: string; why_asked?: string; answer_outline?: string }[];
-          gaps_to_address?: string[];
-          questions_to_ask_them?: string[];
-          red_flags?: string[];
-        };
+        content: import("../types/resume").InterviewPrepContent;
         generated_at: string;
         grounded_version_id?: string;
       };
@@ -1216,7 +1207,60 @@ class ApiService {
         method: "POST",
         body: JSON.stringify({ force: !!opts?.force }),
       },
-      // Interview prep uses GEMINI_PRO — can take 10-30s
+      90000,
+    );
+  }
+
+  async getPracticeQuestion(
+    recordId: string,
+    body: {
+      category: "behavioral" | "technical" | "company" | "coding"
+        | "system_design" | "case_study" | "data_challenge";
+      difficulty: import("../types/resume").QDifficulty;
+      seen_titles?: string[];
+      focus?: string;
+    },
+  ): Promise<ApiResponse<{ category: string; difficulty: string; question: any }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/practice-question`,
+      { method: "POST", body: JSON.stringify(body) },
+      60000,
+    );
+  }
+
+  async chatWithCoach(
+    recordId: string,
+    message: string,
+  ): Promise<ApiResponse<{ reply: string; messages: import("../types/resume").ChatMessage[] }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/chat`,
+      { method: "POST", body: JSON.stringify({ message }) },
+      60000,
+    );
+  }
+
+  async resetCoachChat(
+    recordId: string,
+  ): Promise<ApiResponse<{ messages: import("../types/resume").ChatMessage[] }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/chat`,
+      { method: "POST", body: JSON.stringify({ reset: true }) },
+    );
+  }
+
+  async getCoachChat(
+    recordId: string,
+  ): Promise<ApiResponse<{ messages: import("../types/resume").ChatMessage[] }>> {
+    return this.request(`/resume/tailoring-records/${recordId}/chat`);
+  }
+
+  async evaluateMockAnswer(
+    recordId: string,
+    body: { question: string; user_answer: string; category?: string },
+  ): Promise<ApiResponse<{ evaluation: import("../types/resume").MockEvaluation }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/mock-evaluate`,
+      { method: "POST", body: JSON.stringify(body) },
       60000,
     );
   }

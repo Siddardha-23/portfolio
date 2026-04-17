@@ -31,6 +31,14 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 from utils.db_connect import DBConnect
 from services.s3_service import get_storage_service
+from services.resume_versioning import (
+    canonical_content_hash,
+    ensure_versions,
+    find_version,
+    latest_version,
+    append_version,
+    serialize_record,
+)
 
 resume_bp = Blueprint("resume", __name__)
 logger = logging.getLogger(__name__)
@@ -467,38 +475,423 @@ def batch_tailor():
 @jwt_required()
 def list_tailoring_records():
     user_email = get_jwt_identity()
+    include_full = request.args.get("include") == "full"
     try:
         db = DBConnect().get_db()
+        projection = {"_id": 0}
         records = list(
-            db.tailoring_records.find(
-                {"user_email": user_email},
-                {
-                    "record_id": 1,
-                    "jd_analysis.job_title": 1,
-                    "jd_analysis.company": 1,
-                    "tailored_resume": 1,
-                    "jd_analysis": 1,
-                    "ats_scores.overall": 1,
-                    "created_at": 1,
-                    "ats_scored_at": 1,
-                    "base_resume_filename": 1,
-                    "_id": 0,
-                },
-            )
+            db.tailoring_records.find({"user_email": user_email}, projection)
             .sort("created_at", -1)
-            .limit(50)
+            .limit(100)
         )
-        # Serialize datetime fields — tolerate legacy records where the value
-        # may already be a string or missing entirely.
+        out = []
         for r in records:
-            for key in ("created_at", "ats_scored_at"):
-                val = r.get(key)
-                if hasattr(val, "isoformat"):
-                    r[key] = val.isoformat()
-        return jsonify({"records": records}), 200
+            versions, migrated = ensure_versions(r)
+            if migrated:
+                # Persist the lazy migration so next reads are cheap.
+                db.tailoring_records.update_one(
+                    {"record_id": r.get("record_id"), "user_email": user_email},
+                    {
+                        "$set": {
+                            "versions": versions,
+                            "current_version_id": versions[-1]["version_id"],
+                        }
+                    },
+                )
+                r["versions"] = versions
+                r.setdefault("current_version_id", versions[-1]["version_id"])
+            if not r.get("current_version_id") and versions:
+                r["current_version_id"] = versions[-1]["version_id"]
+            out.append(serialize_record(r, include_full=include_full))
+        return jsonify({"records": out}), 200
     except Exception as e:
         logger.exception("List tailoring records error: %s", e)
         return jsonify({"error": "Failed to load tailoring history"}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/resume/tailoring-records/<record_id> — Fetch one record (full)
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>", methods=["GET"])
+@jwt_required()
+def get_tailoring_record(record_id):
+    user_email = get_jwt_identity()
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+        versions, migrated = ensure_versions(record)
+        if migrated:
+            db.tailoring_records.update_one(
+                {"record_id": record_id, "user_email": user_email},
+                {
+                    "$set": {
+                        "versions": versions,
+                        "current_version_id": versions[-1]["version_id"],
+                    }
+                },
+            )
+            record["versions"] = versions
+            record["current_version_id"] = versions[-1]["version_id"]
+        return jsonify({"record": serialize_record(record, include_full=True)}), 200
+    except Exception as e:
+        logger.exception("Get tailoring record error: %s", e)
+        return jsonify({"error": "Failed to load record"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailoring-records/<record_id>/versions — Save a new version
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>/versions", methods=["POST"])
+@jwt_required()
+def save_version(record_id):
+    """Append a new version to a tailoring record.
+
+    Idempotent: if the submitted `tailored_resume` has the same content hash
+    as the latest version, no new version is created and the existing one is
+    returned. This lets the frontend safely call this on every edit/regen
+    without bloating the version chain.
+    """
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    tailored_resume = data.get("tailored_resume")
+    source = data.get("source", "edited")
+    user_feedback = data.get("user_feedback")
+    ats_scores = data.get("ats_scores")
+    parent_version_id = data.get("parent_version_id")
+    set_current = bool(data.get("set_current", True))
+
+    if not tailored_resume or not isinstance(tailored_resume, dict):
+        return jsonify({"error": "tailored_resume is required"}), 400
+    if source not in ("initial", "regenerated", "edited"):
+        return jsonify({"error": "invalid source"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+
+        versions, _ = ensure_versions(record)
+        version, created = append_version(
+            versions,
+            tailored_resume,
+            source=source,
+            parent_version_id=parent_version_id,
+            ats_scores=ats_scores,
+            user_feedback=user_feedback,
+        )
+        update = {
+            "$set": {
+                "versions": versions,
+                "updated_at": datetime.utcnow(),
+            }
+        }
+        if set_current:
+            update["$set"]["current_version_id"] = version["version_id"]
+        db.tailoring_records.update_one(
+            {"record_id": record_id, "user_email": user_email},
+            update,
+        )
+        return jsonify({
+            "version_id": version["version_id"],
+            "version_number": version["version_number"],
+            "content_hash": version["content_hash"],
+            "created": created,
+        }), 201 if created else 200
+    except Exception as e:
+        logger.exception("Save version error: %s", e)
+        return jsonify({"error": "Failed to save version"}), 500
+
+
+# ------------------------------------------------------------------
+# PUT /api/resume/tailoring-records/<record_id>/current-version
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>/current-version", methods=["PUT"])
+@jwt_required()
+def set_current_version(record_id):
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    version_id = data.get("version_id")
+    if not version_id:
+        return jsonify({"error": "version_id is required"}), 400
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+        versions, _ = ensure_versions(record)
+        if not find_version(versions, version_id):
+            return jsonify({"error": "Version not found"}), 404
+        db.tailoring_records.update_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"$set": {"current_version_id": version_id, "updated_at": datetime.utcnow()}},
+        )
+        return jsonify({"current_version_id": version_id}), 200
+    except Exception as e:
+        logger.exception("Set current version error: %s", e)
+        return jsonify({"error": "Failed to set current version"}), 500
+
+
+# ------------------------------------------------------------------
+# DELETE /api/resume/tailoring-records/<record_id> — Soft-delete a record
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>", methods=["DELETE"])
+@jwt_required()
+def delete_tailoring_record(record_id):
+    user_email = get_jwt_identity()
+    try:
+        db = DBConnect().get_db()
+        result = db.tailoring_records.delete_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not result.deleted_count:
+            return jsonify({"error": "Record not found"}), 404
+        return jsonify({"message": "Record deleted"}), 200
+    except Exception as e:
+        logger.exception("Delete tailoring record error: %s", e)
+        return jsonify({"error": "Failed to delete record"}), 500
+
+
+# ------------------------------------------------------------------
+# PATCH /api/resume/tailoring-records/<record_id>/application
+# Update application tracker fields for a record.
+# ------------------------------------------------------------------
+_APPLICATION_STATUSES = {
+    "draft", "applied", "interviewing", "offer", "rejected", "withdrawn", "ghosted",
+}
+
+
+@resume_bp.route("/tailoring-records/<record_id>/application", methods=["PATCH"])
+@jwt_required()
+def update_application(record_id):
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+
+    updates = {}
+    status = data.get("status")
+    if status is not None:
+        if status not in _APPLICATION_STATUSES:
+            return jsonify({"error": f"Invalid status. Must be one of {sorted(_APPLICATION_STATUSES)}"}), 400
+        updates["application.status"] = status
+        # Stamp applied_at automatically when transitioning from draft → applied
+        if status == "applied":
+            updates["application.applied_at"] = updates.get("application.applied_at") or datetime.utcnow()
+
+    for field in ("recruiter_name", "recruiter_email", "recruiter_company",
+                  "next_action_note", "notes", "job_url"):
+        if field in data:
+            val = data.get(field)
+            if isinstance(val, str):
+                val = InputSanitizer.sanitize_string(val, max_length=2000)
+            updates[f"application.{field}"] = val
+
+    # Date fields (ISO-8601 strings from frontend) — store as datetime for easier queries
+    for field in ("applied_at", "next_action_date"):
+        if field in data:
+            raw = data.get(field)
+            if raw:
+                try:
+                    updates[f"application.{field}"] = datetime.fromisoformat(
+                        raw.replace("Z", "+00:00")
+                    )
+                except Exception:
+                    return jsonify({"error": f"Invalid {field}"}), 400
+            else:
+                updates[f"application.{field}"] = None
+
+    # Interview dates — array of ISO strings
+    if "interview_dates" in data:
+        raw_list = data.get("interview_dates") or []
+        if not isinstance(raw_list, list):
+            return jsonify({"error": "interview_dates must be a list"}), 400
+        parsed = []
+        for d in raw_list[:20]:
+            try:
+                parsed.append(datetime.fromisoformat(str(d).replace("Z", "+00:00")))
+            except Exception:
+                pass
+        updates["application.interview_dates"] = parsed
+
+    if not updates:
+        return jsonify({"error": "No fields to update"}), 400
+
+    updates["application.updated_at"] = datetime.utcnow()
+    updates["updated_at"] = datetime.utcnow()
+
+    try:
+        db = DBConnect().get_db()
+        result = db.tailoring_records.update_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"$set": updates},
+        )
+        if not result.matched_count:
+            return jsonify({"error": "Record not found"}), 404
+
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"application": 1, "_id": 0},
+        )
+        app = record.get("application") or {}
+        for k in ("applied_at", "next_action_date", "updated_at"):
+            v = app.get(k)
+            if hasattr(v, "isoformat"):
+                app[k] = v.isoformat()
+        if "interview_dates" in app:
+            app["interview_dates"] = [
+                d.isoformat() if hasattr(d, "isoformat") else d
+                for d in (app["interview_dates"] or [])
+            ]
+        return jsonify({"application": app}), 200
+    except Exception as e:
+        logger.exception("Update application error: %s", e)
+        return jsonify({"error": "Failed to update application"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/resume/tailoring-records/<record_id>/interview-prep
+# Generate (or return cached) interview prep pack for a tailoring record.
+# ------------------------------------------------------------------
+@resume_bp.route("/tailoring-records/<record_id>/interview-prep", methods=["POST"])
+@jwt_required()
+def generate_interview_prep(record_id):
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"interview_prep:{client_ip}", max_requests=10, window_seconds=600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get("force", False))
+
+    try:
+        db = DBConnect().get_db()
+        record = db.tailoring_records.find_one(
+            {"record_id": record_id, "user_email": user_email}
+        )
+        if not record:
+            return jsonify({"error": "Record not found"}), 404
+
+        # Return cached pack unless caller forces a regenerate.
+        cached = record.get("interview_prep")
+        if cached and not force:
+            gen = cached.get("generated_at")
+            if hasattr(gen, "isoformat"):
+                cached = {**cached, "generated_at": gen.isoformat()}
+            return jsonify({"interview_prep": cached, "cached": True}), 200
+
+        # Pick the current/latest version for grounding
+        versions, _ = ensure_versions(record)
+        current_id = record.get("current_version_id")
+        current = next((v for v in versions if v.get("version_id") == current_id), None)
+        if current is None:
+            current = versions[-1] if versions else None
+        tailored = (current or {}).get("tailored_resume") or record.get("tailored_resume") or {}
+
+        jd_analysis = record.get("jd_analysis") or {}
+        jd_text = (record.get("jd_text") or "")[:6000]
+
+        contact_name = (tailored.get("contact") or {}).get("name") or "The candidate"
+        job_title = jd_analysis.get("job_title") or "the role"
+        company = jd_analysis.get("company") or ""
+        company_ctx = f" at {company}" if company and company != "Not specified" else ""
+
+        # Compact resume summary for prompt grounding
+        def _compact_resume(r):
+            out = []
+            summ = r.get("summary", "")
+            if summ:
+                out.append(f"Summary: {summ}")
+            for e in (r.get("experience") or [])[:5]:
+                bullets = "; ".join((e.get("bullets") or [])[:4])
+                out.append(
+                    f"- {e.get('title','')} at {e.get('company','')} "
+                    f"({e.get('dates','')}): {bullets}"
+                )
+            skills = r.get("skills") or {}
+            flat = []
+            for k, v in skills.items():
+                if isinstance(v, list) and v:
+                    flat.append(f"{k}: {', '.join(v[:8])}")
+            if flat:
+                out.append("Skills: " + " | ".join(flat[:6]))
+            return "\n".join(out)[:3500]
+
+        resume_ctx = _compact_resume(tailored)
+
+        from services.gemini_client import gemini_json, GEMINI_PRO
+
+        prompt = (
+            f"You are an interview coach preparing {contact_name} for an interview "
+            f"for {job_title}{company_ctx}. Generate a structured prep pack grounded "
+            "ONLY in the provided resume and job description. Do not invent experience "
+            "or metrics that aren't there.\n\n"
+            f"=== JOB DESCRIPTION ===\n{jd_text}\n\n"
+            f"=== JD ANALYSIS ===\n"
+            f"Required skills: {', '.join((jd_analysis.get('required_skills') or [])[:25])}\n"
+            f"Keywords: {', '.join((jd_analysis.get('keywords') or [])[:25])}\n"
+            f"Seniority: {jd_analysis.get('seniority', '')}\n\n"
+            f"=== CANDIDATE RESUME ===\n{resume_ctx}\n\n"
+            "Respond as strict JSON with the following keys:\n"
+            "{\n"
+            '  "elevator_pitch": "2-3 sentence self intro the candidate can open with",\n'
+            '  "talking_points": ["5-7 strongest selling points tied to the JD"],\n'
+            '  "behavioral_questions": [\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "S-T-A-R style"}\n'
+            "  ],\n"
+            '  "technical_questions": [\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "..."}\n'
+            "  ],\n"
+            '  "company_specific": [\n'
+            '     {"question": "...", "why_asked": "...", "answer_outline": "..."}\n'
+            "  ],\n"
+            '  "gaps_to_address": ["skills/experience in the JD not clearly in the resume — with a 1-line mitigation"],\n'
+            '  "questions_to_ask_them": ["5-7 thoughtful questions for the interviewer"],\n'
+            '  "red_flags": ["2-4 possible tough questions about gaps or pivots with short defences"]\n'
+            "}\n"
+            "Return 5-7 behavioral, 5-7 technical, 3-5 company_specific questions. "
+            "Keep answer_outline under 40 words each. No markdown, no preamble."
+        )
+
+        schema = {
+            "elevator_pitch": str,
+            "talking_points": list,
+            "behavioral_questions": list,
+            "technical_questions": list,
+            "company_specific": list,
+            "gaps_to_address": list,
+            "questions_to_ask_them": list,
+            "red_flags": list,
+        }
+
+        result = gemini_json(
+            prompt, max_tokens=6000, temperature=0.55, model=GEMINI_PRO, schema=schema
+        )
+
+        pack = {
+            "content": result,
+            "generated_at": datetime.utcnow(),
+            "grounded_version_id": current.get("version_id") if current else None,
+        }
+        db.tailoring_records.update_one(
+            {"record_id": record_id, "user_email": user_email},
+            {"$set": {"interview_prep": pack, "updated_at": datetime.utcnow()}},
+        )
+        return jsonify({
+            "interview_prep": {**pack, "generated_at": pack["generated_at"].isoformat()},
+            "cached": False,
+        }), 200
+    except Exception as e:
+        logger.exception("Interview prep error: %s", e)
+        return jsonify({"error": f"Failed to generate prep: {str(e)[:200]}"}), 500
 
 
 # ------------------------------------------------------------------
@@ -531,15 +924,42 @@ def save_record():
         col = db.tailoring_records
 
         if record_id:
-            # Update existing record with ATS scores
-            update = {"$set": {"ats_scores": ats_scores, "ats_scored_at": datetime.utcnow()}}
-            col.update_one({"record_id": record_id, "user_email": user_email}, update)
+            # Update existing record — attach ATS scores to the current version
+            # and mirror them at the top level for legacy list queries.
+            existing = col.find_one({"record_id": record_id, "user_email": user_email})
+            if not existing:
+                return jsonify({"error": "Record not found"}), 404
+            versions, _ = ensure_versions(existing)
+            current_id = existing.get("current_version_id") or (
+                latest_version(versions) or {}
+            ).get("version_id")
+            for v in versions:
+                if v.get("version_id") == current_id:
+                    if ats_scores:
+                        v["ats_scores"] = ats_scores
+                    break
+            col.update_one(
+                {"record_id": record_id, "user_email": user_email},
+                {
+                    "$set": {
+                        "versions": versions,
+                        "current_version_id": current_id,
+                        "ats_scores": ats_scores,
+                        "ats_scored_at": datetime.utcnow(),
+                        "updated_at": datetime.utcnow(),
+                    }
+                },
+            )
             return jsonify({"record_id": record_id, "updated": True}), 200
 
-        # Create new record
+        # Create new record with an initial version
         import uuid as _uuid
+        from services.resume_versioning import build_initial_version
 
         rid = str(_uuid.uuid4())
+        initial = build_initial_version(
+            tailored_resume, source="initial", ats_scores=ats_scores
+        )
         record = {
             "record_id": rid,
             "user_email": user_email,
@@ -547,14 +967,17 @@ def save_record():
             "base_resume_s3_key": base_resume_s3_key,
             "jd_text": jd_text[:15000] if jd_text else "",
             "jd_analysis": jd_analysis,
-            "tailored_resume": tailored_resume,
+            "tailored_resume": tailored_resume,  # legacy mirror; versions[0] is canonical
             "ats_scores": ats_scores,
+            "versions": [initial],
+            "current_version_id": initial["version_id"],
             "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
             "ats_scored_at": datetime.utcnow() if ats_scores else None,
         }
         col.insert_one(record)
         logger.info(f"Tailoring record saved: {rid} for {user_email}")
-        return jsonify({"record_id": rid}), 201
+        return jsonify({"record_id": rid, "version_id": initial["version_id"]}), 201
 
     except Exception as e:
         logger.error(f"Save record error: {e}")
@@ -593,62 +1016,147 @@ def get_job(job_id):
 @resume_bp.route("/download", methods=["POST"])
 @jwt_required()
 def download():
+    """Render (or serve cached) PDF/DOCX for a tailored resume.
+
+    Dedup rules:
+      - If `record_id` + `version_id` are provided and `versions.files[format]`
+        exists with a matching content_hash, stream the cached S3 file — no
+        re-render, no new DB row.
+      - If the version's `files[format]` is missing, render, upload to S3,
+        and $set the sub-doc atomically.
+      - If the payload's content_hash differs from the stored version's, a new
+        version is appended first (source='edited'), then cached.
+      - If no `record_id` is provided, fall back to legacy behavior (render +
+        optional S3 upload to user_resumes without dedup linkage).
+    """
     user_email = get_jwt_identity()
     client_ip = get_client_ip(request)
     limiter = get_rate_limiter()
-    if limiter.is_rate_limited(f"resume_download:{client_ip}", max_requests=20, window_seconds=300):
+    if limiter.is_rate_limited(f"resume_download:{client_ip}", max_requests=30, window_seconds=300):
         return jsonify({"error": "Rate limit exceeded"}), 429
 
     data = request.get_json(force=True) or {}
     tailored = data.get("tailored_resume")
     jd_analysis = data.get("jd_analysis", {})
     fmt = data.get("format", "pdf")
+    record_id = data.get("record_id")
+    version_id = data.get("version_id")
+    source = data.get("source", "edited")
+    auto_save_on_edit = bool(data.get("auto_save_on_edit", True))
 
     if not tailored or not isinstance(tailored, dict):
         return jsonify({"error": "tailored_resume is required"}), 400
     if fmt not in ("pdf", "docx"):
         return jsonify({"error": "format must be 'pdf' or 'docx'"}), 400
 
+    mimetype = (
+        "application/pdf" if fmt == "pdf"
+        else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
     try:
         from services.resume_service import get_resume_service
 
         svc = get_resume_service()
+        storage = get_storage_service()
+        db = DBConnect().get_db()
 
-        if fmt == "pdf":
-            file_bytes = svc.renderer.generate_pdf(tailored)
-            mimetype = "application/pdf"
-        else:
-            file_bytes = svc.renderer.generate_docx(tailored)
-            mimetype = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-
-        if not file_bytes or len(file_bytes) < 100:
-            return jsonify({"error": "Failed to generate document"}), 500
-
+        content_hash = canonical_content_hash(tailored)
         filename = svc.renderer.build_filename(tailored, jd_analysis, fmt)
 
-        # Upload generated resume to S3 and store metadata
-        try:
-            storage = get_storage_service()
-            db = DBConnect().get_db()
-            user = db.users.find_one({"email": user_email})
-            if user:
-                user_id = str(user["_id"])
-                job_title = data.get("job_title", "untitled")
-                s3_key = storage.upload_generated_resume(user_id, file_bytes, job_title, fmt)
-                db.user_resumes.insert_one(
-                    {
-                        "user_email": user_email,
-                        "user_id": user_id,
-                        "type": "generated",
-                        "s3_key": s3_key,
-                        "filename": f"{job_title}_tailored.{fmt}",
-                        "generated_at": datetime.utcnow(),
-                        "size_bytes": len(file_bytes),
-                        "job_title": job_title,
-                    }
-                )
-        except Exception as s3_err:
-            logger.warning(f"Failed to save generated resume to S3: {s3_err}")
+        # ── Versioned path (preferred) ──
+        if record_id:
+            record = db.tailoring_records.find_one(
+                {"record_id": record_id, "user_email": user_email}
+            )
+            if not record:
+                return jsonify({"error": "Record not found"}), 404
+
+            versions, migrated = ensure_versions(record)
+            target = find_version(versions, version_id) if version_id else None
+            if target is None:
+                # Fall back to the record's current or latest version
+                cur_id = record.get("current_version_id")
+                target = find_version(versions, cur_id) if cur_id else latest_version(versions)
+
+            # If the submitted content differs from the target version, append
+            # a new version (source='edited') so nothing is lost.
+            if target is None or target.get("content_hash") != content_hash:
+                if auto_save_on_edit:
+                    target, _ = append_version(
+                        versions,
+                        tailored,
+                        source=source if source in ("regenerated", "edited") else "edited",
+                        parent_version_id=target.get("version_id") if target else None,
+                    )
+
+            # Cache hit? Serve from S3, no new row, no re-render.
+            files = target.get("files") or {}
+            cached = files.get(fmt)
+            if cached and cached.get("s3_key") and cached.get("content_hash") == content_hash:
+                try:
+                    file_bytes = storage.get_resume(cached["s3_key"])
+                    return send_file(
+                        io.BytesIO(file_bytes),
+                        mimetype=mimetype,
+                        as_attachment=True,
+                        download_name=cached.get("filename") or filename,
+                    )
+                except Exception as cache_err:
+                    logger.warning("Cached S3 fetch failed, re-rendering: %s", cache_err)
+
+            # Cache miss — render and upload.
+            if fmt == "pdf":
+                file_bytes = svc.renderer.generate_pdf(tailored)
+            else:
+                file_bytes = svc.renderer.generate_docx(tailored)
+            if not file_bytes or len(file_bytes) < 100:
+                return jsonify({"error": "Failed to generate document"}), 500
+
+            s3_key = None
+            try:
+                user = db.users.find_one({"email": user_email})
+                if user:
+                    user_id = str(user["_id"])
+                    job_title = (jd_analysis or {}).get("job_title") or data.get("job_title", "untitled")
+                    s3_key = storage.upload_generated_resume(user_id, file_bytes, job_title, fmt)
+            except Exception as s3_err:
+                logger.warning(f"Failed to upload generated resume to S3: {s3_err}")
+
+            # Attach file cache to the target version atomically.
+            target.setdefault("files", {})
+            target["files"][fmt] = {
+                "s3_key": s3_key,
+                "size_bytes": len(file_bytes),
+                "filename": filename,
+                "content_hash": content_hash,
+                "rendered_at": datetime.utcnow(),
+            }
+            update_set = {
+                "versions": versions,
+                "updated_at": datetime.utcnow(),
+            }
+            if not record.get("current_version_id"):
+                update_set["current_version_id"] = target.get("version_id")
+            db.tailoring_records.update_one(
+                {"record_id": record_id, "user_email": user_email},
+                {"$set": update_set},
+            )
+
+            return send_file(
+                io.BytesIO(file_bytes),
+                mimetype=mimetype,
+                as_attachment=True,
+                download_name=filename,
+            )
+
+        # ── Legacy path (no record_id) — generate once, no DB dedup ──
+        if fmt == "pdf":
+            file_bytes = svc.renderer.generate_pdf(tailored)
+        else:
+            file_bytes = svc.renderer.generate_docx(tailored)
+        if not file_bytes or len(file_bytes) < 100:
+            return jsonify({"error": "Failed to generate document"}), 500
 
         return send_file(
             io.BytesIO(file_bytes),
@@ -657,7 +1165,7 @@ def download():
             download_name=filename,
         )
     except Exception as e:
-        logger.error(f"Resume download error: {e}")
+        logger.exception(f"Resume download error: {e}")
         return jsonify({"error": "Failed to generate document"}), 500
 
 

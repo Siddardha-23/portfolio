@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, Fragment } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { apiService } from "@/lib/api";
 import AuthGate from "@/components/AuthGate";
@@ -9,10 +9,8 @@ import { lazy, Suspense } from "react";
 import { toast } from "sonner";
 import ResumeDashboard, {
   type BaseResume,
-  type GeneratedResume,
   formatDate,
   formatBytes,
-  DownloadIcon,
   TrashIcon,
 } from "@/components/resume/ResumeDashboard";
 import type {
@@ -24,6 +22,9 @@ import type {
 
 const ResumeEditor = lazy(() => import("@/components/resume/ResumeEditor"));
 const BatchTailor = lazy(() => import("@/components/resume/BatchTailor"));
+const InterviewPrepTab = lazy(() => import("@/components/resume/InterviewPrepTab"));
+const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab"));
+const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -263,7 +264,7 @@ function ChevronIcon({
   );
 }
 
-type NavTab = "tailor" | "batch" | "my-resumes" | "tailored" | "profile";
+type NavTab = "tailor" | "batch" | "my-resumes" | "tailored" | "applications" | "interview" | "profile";
 
 const ROLE_OPTIONS = [
   "Software Engineer",
@@ -1680,274 +1681,616 @@ function MyResumesTab() {
 }
 
 // ─── Tailored Resumes tab ───────────────────────────────────────────────────
+interface TailoringVersion {
+  version_id: string;
+  version_number: number;
+  source: "initial" | "regenerated" | "edited";
+  parent_version_id?: string | null;
+  content_hash: string;
+  created_at: string;
+  ats_scores?: { overall?: number } | null;
+  user_feedback?: string | null;
+  files?: Record<string, { s3_key?: string; filename?: string; size_bytes?: number; rendered_at?: string } | null>;
+}
+interface TailoringRecord {
+  record_id: string;
+  user_email: string;
+  jd_text?: string;
+  jd_analysis?: {
+    job_title?: string;
+    company?: string;
+    required_skills?: string[];
+    keywords?: string[];
+    location?: string;
+    seniority?: string;
+  };
+  base_resume_filename?: string;
+  base_resume_s3_key?: string;
+  ats_scores?: { overall?: number } | null;
+  created_at: string;
+  updated_at?: string;
+  current_version_id?: string;
+  versions?: TailoringVersion[];
+}
+
+type SortKey = "newest" | "oldest" | "ats";
+
+const sourceBadge: Record<TailoringVersion["source"], { label: string; cls: string }> = {
+  initial: { label: "Initial", cls: "bg-purple-500/15 text-purple-600 dark:text-purple-300 border-purple-500/25" },
+  regenerated: { label: "Regenerated", cls: "bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/25" },
+  edited: { label: "Edited", cls: "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/25" },
+};
+
+function atsColor(score?: number): string {
+  if (score === undefined || score === null) return "text-gray-400";
+  if (score >= 80) return "text-emerald-500";
+  if (score >= 60) return "text-amber-500";
+  return "text-red-500";
+}
+
+function FilterInput({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="flex flex-col gap-1 min-w-0">
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const STATUS_CHIP: Record<string, { label: string; cls: string }> = {
+  draft:        { label: "Draft",        cls: "bg-gray-500/15 text-gray-600 dark:text-gray-300 border-gray-500/25" },
+  applied:      { label: "Applied",      cls: "bg-purple-500/15 text-purple-600 dark:text-purple-300 border-purple-500/25" },
+  interviewing: { label: "Interviewing", cls: "bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/25" },
+  offer:        { label: "Offer",        cls: "bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/25" },
+  rejected:     { label: "Rejected",     cls: "bg-red-500/15 text-red-600 dark:text-red-300 border-red-500/25" },
+  ghosted:      { label: "Ghosted",      cls: "bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/25" },
+  withdrawn:    { label: "Withdrawn",    cls: "bg-gray-400/15 text-gray-500 dark:text-gray-400 border-gray-400/25" },
+};
+
 function TailoredResumesTab() {
-  const [records, setRecords] = useState<any[]>([]);
-  const [generatedFiles, setGeneratedFiles] = useState<GeneratedResume[]>([]);
+  const [records, setRecords] = useState<TailoringRecord[]>([]);
+  const [legacyFiles, setLegacyFiles] = useState<
+    { s3_key: string; filename?: string; job_title?: string; generated_at?: string }[]
+  >([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [expandedRecord, setExpandedRecord] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const [diffRecord, setDiffRecord] = useState<TailoringRecord | null>(null);
+
+  // Filters
+  const [search, setSearch] = useState("");
+  const [companyFilter, setCompanyFilter] = useState<string>("all");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+  const [atsMin, setAtsMin] = useState<number>(0);
+  const [hasRegensOnly, setHasRegensOnly] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>("newest");
 
   const fetchAll = useCallback(async () => {
-    const [recordsResp, filesResp] = await Promise.all([
+    setLoading(true);
+    const [recResp, legResp] = await Promise.all([
       apiService.listTailoringRecords(),
       apiService.listGeneratedResumes(),
     ]);
-    if (recordsResp.data) setRecords(recordsResp.data.records || []);
-    if (filesResp.data) setGeneratedFiles(filesResp.data.generated || []);
-    if (recordsResp.error && filesResp.error)
-      setError(recordsResp.error || filesResp.error);
+    if (recResp.data) setRecords((recResp.data.records || []) as TailoringRecord[]);
+    if (legResp.data) setLegacyFiles((legResp.data.generated || []) as any);
+    if (recResp.error) setError(recResp.error);
     setLoading(false);
   }, []);
-  useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleDownloadRecord = useCallback(
-    async (tailoredResume: any, jdAnalysis: any, fmt: "pdf" | "docx") => {
-      const key = `${jdAnalysis?.job_title}-${fmt}`;
-      setDownloading(key);
-      const r = await apiService.downloadTailoredResume(
-        tailoredResume,
-        jdAnalysis,
-        fmt,
-      );
-      setDownloading(null);
-      if (r.error) {
-        toast.error("Download failed");
+  // Derived filter lists
+  const { companies, roles } = useMemo(() => {
+    const c = new Set<string>(), r = new Set<string>();
+    records.forEach(rec => {
+      const co = rec.jd_analysis?.company;
+      const ro = rec.jd_analysis?.job_title;
+      if (co && co !== "Not specified") c.add(co);
+      if (ro) r.add(ro);
+    });
+    return { companies: Array.from(c).sort(), roles: Array.from(r).sort() };
+  }, [records]);
+
+  // Apply filters + sort
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const from = dateFrom ? new Date(dateFrom).getTime() : null;
+    const to = dateTo ? new Date(dateTo).getTime() + 86400000 : null;
+    let list = records.filter(rec => {
+      const title = rec.jd_analysis?.job_title || "";
+      const company = rec.jd_analysis?.company || "";
+      if (q) {
+        const hay = `${title} ${company}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      if (companyFilter !== "all" && company !== companyFilter) return false;
+      if (roleFilter !== "all" && title !== roleFilter) return false;
+      const ts = rec.created_at ? new Date(rec.created_at).getTime() : 0;
+      if (from && ts < from) return false;
+      if (to && ts > to) return false;
+      const ats = rec.ats_scores?.overall;
+      if (atsMin > 0 && (ats === undefined || ats < atsMin)) return false;
+      if (hasRegensOnly && (rec.versions?.length || 0) < 2) return false;
+      return true;
+    });
+    list = list.slice().sort((a, b) => {
+      if (sortKey === "ats") {
+        const sa = a.ats_scores?.overall ?? -1;
+        const sb = b.ats_scores?.overall ?? -1;
+        return sb - sa;
+      }
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return sortKey === "newest" ? tb - ta : ta - tb;
+    });
+    return list;
+  }, [records, search, companyFilter, roleFilter, dateFrom, dateTo, atsMin, hasRegensOnly, sortKey]);
+
+  // Prevent the filter-derived values from going stale when filters are reset
+  const resetFilters = useCallback(() => {
+    setSearch(""); setCompanyFilter("all"); setRoleFilter("all");
+    setDateFrom(""); setDateTo(""); setAtsMin(0); setHasRegensOnly(false); setSortKey("newest");
+  }, []);
+
+  // When a record is expanded for the first time, lazy-fetch the full record
+  // so we have jd_text + version bodies available for download/reference.
+  const [jdOpenFor, setJdOpenFor] = useState<Set<string>>(new Set());
+  const toggleExpanded = useCallback(async (id: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    const rec = records.find(r => r.record_id === id);
+    if (rec && rec.jd_text === undefined) {
+      const full = await apiService.getTailoringRecord(id);
+      if (full.data?.record) {
+        setRecords(prev => prev.map(r => r.record_id === id ? { ...r, ...full.data!.record } : r));
+      }
+    }
+  }, [records]);
+  const toggleJd = useCallback((id: string) => {
+    setJdOpenFor(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const copyJd = useCallback(async (text: string) => {
+    try { await navigator.clipboard.writeText(text); toast.success("JD copied"); }
+    catch { toast.error("Copy failed"); }
+  }, []);
+
+  const handleDownloadVersion = useCallback(async (
+    rec: TailoringRecord,
+    version: TailoringVersion,
+    fmt: "pdf" | "docx",
+  ) => {
+    const key = `${rec.record_id}-${version.version_id}-${fmt}`;
+    setDownloading(key);
+    // Need the full tailored_resume JSON — fetch if we don't have it
+    let tailored = (version as any).tailored_resume;
+    if (!tailored) {
+      const fullResp = await apiService.getTailoringRecord(rec.record_id);
+      if (fullResp.error || !fullResp.data?.record) {
+        setDownloading(null);
+        toast.error("Failed to load version content");
         return;
       }
-      if (r.data) {
-        const u = URL.createObjectURL(r.data);
-        const a = document.createElement("a");
-        a.href = u;
-        a.download = r.filename || `resume.${fmt}`;
-        a.click();
-        URL.revokeObjectURL(u);
-        toast.success(`Downloaded as ${fmt.toUpperCase()}`);
+      const full = fullResp.data.record as TailoringRecord;
+      const v = full.versions?.find(vv => vv.version_id === version.version_id);
+      tailored = (v as any)?.tailored_resume;
+      if (!tailored) {
+        setDownloading(null);
+        toast.error("Version content missing");
+        return;
       }
-    },
-    [],
-  );
+    }
+    const r = await apiService.downloadTailoredResume(
+      tailored,
+      (rec.jd_analysis || {}) as any,
+      fmt,
+      {
+        recordId: rec.record_id,
+        versionId: version.version_id,
+        source: version.source,
+        autoSaveOnEdit: false,
+      },
+    );
+    setDownloading(null);
+    if (r.error) { toast.error("Download failed", { description: r.error }); return; }
+    if (r.data) {
+      const u = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = u; a.download = r.filename || `resume.${fmt}`;
+      a.click(); URL.revokeObjectURL(u);
+      toast.success(`Downloaded ${fmt.toUpperCase()}`);
+      // Refresh record to pick up the new file cache
+      fetchAll();
+    }
+  }, [fetchAll]);
 
-  const handleDownloadFile = useCallback(
-    async (s3Key: string, filename?: string) => {
-      setDownloading(s3Key);
-      try {
-        const blob = await apiService.downloadResumeFile(s3Key);
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename || "resume.pdf";
-        a.click();
-        URL.revokeObjectURL(url);
-      } catch {
-        toast.error("Download failed");
-      }
-      setDownloading(null);
-    },
-    [],
-  );
+  const handleSetCurrent = useCallback(async (recordId: string, versionId: string) => {
+    const resp = await apiService.setCurrentResumeVersion(recordId, versionId);
+    if (resp.error) { toast.error("Failed to set current version"); return; }
+    toast.success("Marked as current version");
+    setRecords(prev => prev.map(r =>
+      r.record_id === recordId ? { ...r, current_version_id: versionId } : r,
+    ));
+  }, []);
 
-  if (loading)
+  const handleDeleteRecord = useCallback(async (recordId: string) => {
+    if (!window.confirm("Delete this tailoring record and all its versions? This cannot be undone.")) return;
+    setDeleting(recordId);
+    const resp = await apiService.deleteTailoringRecord(recordId);
+    setDeleting(null);
+    if (resp.error) { toast.error("Delete failed"); return; }
+    toast.success("Record deleted");
+    setRecords(prev => prev.filter(r => r.record_id !== recordId));
+  }, []);
+
+  if (loading) {
     return (
       <div className="animate-pulse space-y-3">
-        <div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />
-        <div className="h-16 rounded-xl bg-gray-100/20 dark:bg-gray-800/30" />
+        <div className="h-14 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />
+        <div className="h-20 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />
+        <div className="h-20 rounded-xl bg-gray-100/20 dark:bg-gray-800/30" />
       </div>
     );
+  }
 
-  const hasContent = records.length > 0 || generatedFiles.length > 0;
+  const selectCls = "w-full px-2.5 py-1.5 rounded-md bg-gray-100 dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-xs text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500/30";
+  const inputCls = selectCls;
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
-          Tailoring History
-        </h2>
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          All your tailored resumes with JD details and ATS scores
-        </p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">Parsed Resumes</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {records.length} tailoring session{records.length === 1 ? "" : "s"} · {filtered.length} shown
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={fetchAll}
+          className="text-xs px-2.5 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800/40 transition-colors"
+        >
+          Refresh
+        </button>
       </div>
+
       {error && (
-        <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30">
-          <p className="text-sm text-red-300">{error}</p>
+        <div className="px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/30">
+          <p className="text-sm text-red-500">{error}</p>
         </div>
       )}
-      {!hasContent ? (
+
+      {/* Filter bar */}
+      {records.length > 0 && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-3 space-y-2">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <FilterInput label="Search">
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="role, company…"
+                className={inputCls}
+              />
+            </FilterInput>
+            <FilterInput label="Company">
+              <select value={companyFilter} onChange={e => setCompanyFilter(e.target.value)} className={selectCls}>
+                <option value="all">All</option>
+                {companies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </FilterInput>
+            <FilterInput label="Role">
+              <select value={roleFilter} onChange={e => setRoleFilter(e.target.value)} className={selectCls}>
+                <option value="all">All</option>
+                {roles.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </FilterInput>
+            <FilterInput label="From">
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className={inputCls} />
+            </FilterInput>
+            <FilterInput label="To">
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className={inputCls} />
+            </FilterInput>
+            <FilterInput label={`ATS ≥ ${atsMin}`}>
+              <input type="range" min={0} max={100} step={5} value={atsMin} onChange={e => setAtsMin(Number(e.target.value))} className="w-full accent-purple-500" />
+            </FilterInput>
+          </div>
+          <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+            <div className="flex items-center gap-3">
+              <label className="inline-flex items-center gap-1.5 text-[11px] text-gray-600 dark:text-gray-400 cursor-pointer select-none">
+                <input type="checkbox" checked={hasRegensOnly} onChange={e => setHasRegensOnly(e.target.checked)} className="accent-purple-500" />
+                Only with multiple versions
+              </label>
+              <div className="flex items-center gap-1 text-[11px]">
+                <span className="text-gray-500 dark:text-gray-400">Sort:</span>
+                {([["newest","Newest"],["oldest","Oldest"],["ats","Best ATS"]] as [SortKey,string][]).map(([k,lbl]) => (
+                  <button
+                    key={k}
+                    onClick={() => setSortKey(k)}
+                    className={`px-2 py-0.5 rounded ${sortKey === k ? "bg-purple-500/20 text-purple-600 dark:text-purple-300" : "text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"}`}
+                  >{lbl}</button>
+                ))}
+              </div>
+            </div>
+            <button onClick={resetFilters} className="text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">Reset</button>
+          </div>
+        </div>
+      )}
+
+      {/* Records */}
+      {records.length === 0 ? (
         <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/40 p-10 text-center">
           <SparklesIcon className="w-8 h-8 text-gray-400 dark:text-gray-500 mx-auto mb-3" />
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            No tailored resumes yet
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">No tailored resumes yet</p>
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
             Go to the Tailor tab and paste a job description to create one
           </p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-900/40 p-8 text-center">
+          <p className="text-sm text-gray-600 dark:text-gray-400">No matches for the current filters.</p>
+          <button onClick={resetFilters} className="mt-2 text-xs text-purple-500 hover:text-purple-400">Clear filters</button>
+        </div>
       ) : (
-        <div className="space-y-3">
-          {/* Tailoring records with full data */}
-          {records.map((r, idx) => {
-            const title = r.jd_analysis?.job_title || "Untitled Role";
-            const company = r.jd_analysis?.company;
-            const atsScore = r.ats_scores?.overall;
-            const isExpanded = expandedRecord === r.record_id;
+        <div className="space-y-2.5">
+          {filtered.map(rec => {
+            const title = rec.jd_analysis?.job_title || "Untitled Role";
+            const company = rec.jd_analysis?.company;
+            const ats = rec.ats_scores?.overall;
+            const isOpen = expanded.has(rec.record_id);
+            const versions = (rec.versions || []).slice().sort((a, b) => b.version_number - a.version_number);
+            const currentId = rec.current_version_id || versions[0]?.version_id;
             return (
-              <div
-                key={r.record_id || idx}
-                className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 overflow-hidden"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setExpandedRecord(isExpanded ? null : r.record_id)
-                  }
-                  className="w-full px-5 py-4 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-purple-400" />
-                    <div className="min-w-0 flex-1 text-left">
+              <div key={rec.record_id} className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-lg shadow-black/5 dark:shadow-black/20 overflow-hidden">
+                <div className="px-4 py-3 flex items-center gap-3 hover:bg-gray-100/50 dark:hover:bg-gray-800/20 transition-colors">
+                  <button type="button" onClick={() => toggleExpanded(rec.record_id)} className="flex items-center gap-3 min-w-0 flex-1 text-left">
+                    <div className="w-2 h-2 rounded-full shrink-0 bg-purple-400" />
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                        {title}
-                        {company && company !== "Not specified"
-                          ? ` at ${company}`
-                          : ""}
+                        {title}{company && company !== "Not specified" ? ` · ${company}` : ""}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {formatDate(r.created_at || "")}
-                        {atsScore !== undefined && (
-                          <span
-                            className={`ml-2 font-semibold ${atsScore >= 80 ? "text-emerald-500" : atsScore >= 60 ? "text-amber-500" : "text-red-500"}`}
-                          >
-                            ATS: {atsScore}/100
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 flex items-center gap-2 flex-wrap">
+                        <span>{formatDate(rec.created_at || "")}</span>
+                        <span>·</span>
+                        <span>{versions.length} version{versions.length === 1 ? "" : "s"}</span>
+                        {ats !== undefined && (
+                          <>
+                            <span>·</span>
+                            <span className={`font-semibold ${atsColor(ats)}`}>ATS {ats}/100</span>
+                          </>
+                        )}
+                        {(() => {
+                          const s = rec.application?.status || "draft";
+                          const chip = STATUS_CHIP[s];
+                          if (!chip) return null;
+                          return (
+                            <span className={`px-1.5 py-0.5 rounded border text-[10px] font-semibold ${chip.cls}`}>
+                              {chip.label}
+                            </span>
+                          );
+                        })()}
+                        {rec.interview_prep?.generated_at && (
+                          <span className="px-1.5 py-0.5 rounded border text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20">
+                            Prep ready
                           </span>
                         )}
                       </p>
                     </div>
-                  </div>
-                  <ChevronIcon
-                    open={isExpanded}
-                    className="w-4 h-4 text-gray-500 dark:text-gray-400 shrink-0"
-                  />
-                </button>
-                {isExpanded && r.tailored_resume && (
-                  <div className="border-t border-gray-200 dark:border-gray-800/60 px-5 py-4 space-y-4">
-                    {/* Quick actions */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        onClick={() =>
-                          handleDownloadRecord(
-                            r.tailored_resume,
-                            r.jd_analysis,
-                            "pdf",
-                          )
-                        }
-                        disabled={downloading !== null}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 transition-all"
-                      >
-                        <DocumentArrowDownIcon className="w-3.5 h-3.5" />
-                        PDF
-                      </button>
-                      <button
-                        onClick={() =>
-                          handleDownloadRecord(
-                            r.tailored_resume,
-                            r.jd_analysis,
-                            "docx",
-                          )
-                        }
-                        disabled={downloading !== null}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50 transition-all"
-                      >
-                        <DocumentArrowDownIcon className="w-3.5 h-3.5" />
-                        DOCX
-                      </button>
-                      {r.jd_analysis?.required_skills?.length > 0 && (
-                        <span className="text-[11px] text-gray-500 dark:text-gray-400 ml-2">
-                          {r.jd_analysis.required_skills.length} required skills
+                    <ChevronIcon open={isOpen} className="w-4 h-4 text-gray-400 shrink-0" />
+                  </button>
+                  <button
+                    type="button"
+                    title="Delete record"
+                    disabled={deleting === rec.record_id}
+                    onClick={() => handleDeleteRecord(rec.record_id)}
+                    className="p-1.5 rounded-md text-gray-400 hover:text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                  >
+                    <TrashIcon className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {isOpen && (
+                  <div className="border-t border-gray-200 dark:border-gray-800/60 px-4 py-3 space-y-3">
+                    {/* Job description panel — always show key analysis facts; JD text lazy-fetched + collapsible */}
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-800/60 bg-gray-50/60 dark:bg-gray-900/30 p-3">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                          Job description
                         </span>
-                      )}
-                    </div>
-                    {/* Summary preview */}
-                    {r.tailored_resume?.summary && (
-                      <div>
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-                          Summary
-                        </p>
-                        <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed line-clamp-3">
-                          {r.tailored_resume.summary}
-                        </p>
+                        <div className="flex items-center gap-1">
+                          {rec.jd_text ? (
+                            <button
+                              onClick={() => copyJd(rec.jd_text || "")}
+                              className="text-[10px] px-2 py-0.5 rounded text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-800/60"
+                            >Copy</button>
+                          ) : null}
+                          {rec.jd_text ? (
+                            <button
+                              onClick={() => toggleJd(rec.record_id)}
+                              className="text-[10px] px-2 py-0.5 rounded text-purple-500 hover:text-purple-400 hover:bg-purple-500/10"
+                            >{jdOpenFor.has(rec.record_id) ? "Hide JD" : "View JD"}</button>
+                          ) : (
+                            <span className="text-[10px] text-gray-400 italic">loading…</span>
+                          )}
+                        </div>
                       </div>
-                    )}
-                    {/* Skills preview */}
-                    {r.tailored_resume?.skills &&
-                      Object.keys(r.tailored_resume.skills).length > 0 && (
-                        <div>
-                          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">
-                            Skills
-                          </p>
-                          <div className="flex flex-wrap gap-1">
-                            {Object.values(r.tailored_resume.skills)
-                              .flat()
-                              .slice(0, 15)
-                              .map((s: any, si: number) => (
-                                <span
-                                  key={si}
-                                  className="px-2 py-0.5 rounded text-[10px] font-medium bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/15"
-                                >
-                                  {s}
-                                </span>
-                              ))}
-                            {Object.values(r.tailored_resume.skills).flat()
-                              .length > 15 && (
-                              <span className="text-[10px] text-gray-500 dark:text-gray-400 self-center">
-                                +
-                                {Object.values(r.tailored_resume.skills).flat()
-                                  .length - 15}{" "}
-                                more
-                              </span>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+                        <div><span className="text-gray-500 dark:text-gray-400">Role: </span><span className="text-gray-800 dark:text-gray-200">{rec.jd_analysis?.job_title || "—"}</span></div>
+                        <div><span className="text-gray-500 dark:text-gray-400">Company: </span><span className="text-gray-800 dark:text-gray-200">{rec.jd_analysis?.company && rec.jd_analysis.company !== "Not specified" ? rec.jd_analysis.company : "—"}</span></div>
+                        {rec.jd_analysis?.location && (
+                          <div><span className="text-gray-500 dark:text-gray-400">Location: </span><span className="text-gray-800 dark:text-gray-200">{rec.jd_analysis.location}</span></div>
+                        )}
+                        {rec.jd_analysis?.seniority && (
+                          <div><span className="text-gray-500 dark:text-gray-400">Seniority: </span><span className="text-gray-800 dark:text-gray-200">{rec.jd_analysis.seniority}</span></div>
+                        )}
+                      </div>
+                      {rec.jd_analysis?.required_skills && rec.jd_analysis.required_skills.length > 0 && (
+                        <div className="mt-2">
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">Required skills: </span>
+                          <div className="inline-flex flex-wrap gap-1 mt-0.5">
+                            {rec.jd_analysis.required_skills.slice(0, 20).map((s, si) => (
+                              <span key={si} className="px-1.5 py-0.5 rounded text-[10px] bg-purple-500/10 text-purple-600 dark:text-purple-300 border border-purple-500/15">{s}</span>
+                            ))}
+                            {rec.jd_analysis.required_skills.length > 20 && (
+                              <span className="text-[10px] text-gray-500 self-center">+{rec.jd_analysis.required_skills.length - 20}</span>
                             )}
                           </div>
                         </div>
                       )}
+                      {jdOpenFor.has(rec.record_id) && rec.jd_text && (
+                        <div className="mt-2 max-h-64 overflow-y-auto rounded-md bg-white dark:bg-gray-900/60 border border-gray-200 dark:border-gray-800/60 p-2.5">
+                          <pre className="text-[11px] text-gray-700 dark:text-gray-300 whitespace-pre-wrap font-sans leading-relaxed">{rec.jd_text}</pre>
+                        </div>
+                      )}
+                    </div>
+
+                    {versions.length >= 2 && (
+                      <div className="flex items-center justify-end">
+                        <button
+                          onClick={() => setDiffRecord(rec)}
+                          className="text-[11px] px-2.5 py-1 rounded-md text-purple-500 hover:text-purple-400 hover:bg-purple-500/10 border border-purple-500/25"
+                        >
+                          Compare versions
+                        </button>
+                      </div>
+                    )}
+                    {versions.length === 0 ? (
+                      <p className="text-xs text-gray-500 dark:text-gray-400">No versions yet — open the record in the Tailor tab.</p>
+                    ) : null}
+                    {versions.map(v => {
+                      const isCurrent = v.version_id === currentId;
+                      const cacheP = v.files?.pdf;
+                      const cacheD = v.files?.docx;
+                      const dlPdfKey = `${rec.record_id}-${v.version_id}-pdf`;
+                      const dlDocxKey = `${rec.record_id}-${v.version_id}-docx`;
+                      const badge = sourceBadge[v.source];
+                      const vAts = v.ats_scores?.overall;
+                      return (
+                        <div key={v.version_id} className="rounded-lg border border-gray-200 dark:border-gray-800/50 bg-gray-50/60 dark:bg-gray-900/30 px-3 py-2.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">v{v.version_number}</span>
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
+                            {isCurrent && <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border border-emerald-500/25">Current</span>}
+                            {vAts !== undefined && (
+                              <span className={`text-[11px] font-medium ${atsColor(vAts)}`}>ATS {vAts}</span>
+                            )}
+                            <span className="text-[10px] text-gray-500 dark:text-gray-400 ml-auto">{formatDate(v.created_at)}</span>
+                          </div>
+                          {v.user_feedback && (
+                            <p className="mt-1.5 text-[11px] italic text-gray-500 dark:text-gray-400 line-clamp-2">“{v.user_feedback}”</p>
+                          )}
+                          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                            <button
+                              onClick={() => handleDownloadVersion(rec, v, "pdf")}
+                              disabled={downloading !== null}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 transition-all"
+                            >
+                              <DocumentArrowDownIcon className="w-3 h-3" />
+                              {downloading === dlPdfKey ? "…" : cacheP ? "PDF" : "PDF (render)"}
+                            </button>
+                            <button
+                              onClick={() => handleDownloadVersion(rec, v, "docx")}
+                              disabled={downloading !== null}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 disabled:opacity-50 transition-all"
+                            >
+                              <DocumentArrowDownIcon className="w-3 h-3" />
+                              {downloading === dlDocxKey ? "…" : cacheD ? "DOCX" : "DOCX (render)"}
+                            </button>
+                            {!isCurrent && (
+                              <button
+                                onClick={() => handleSetCurrent(rec.record_id, v.version_id)}
+                                className="px-2.5 py-1 rounded-md text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                              >
+                                Set as current
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
 
-          {/* Legacy generated files (no tailoring record) */}
-          {generatedFiles.length > 0 && records.length > 0 && (
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 pt-2">
-              Downloaded Files
-            </p>
-          )}
-          {generatedFiles.map((r) => (
-            <div
-              key={r.s3_key}
-              className="flex items-center justify-between px-5 py-3.5 rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 hover:bg-gray-100 dark:hover:bg-gray-800/20 transition-colors"
-            >
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0 bg-gray-400" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm text-gray-800 dark:text-gray-200 truncate">
-                    {r.job_title || r.filename || "Tailored Resume"}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {formatDate(r.generated_at || r.created_at || "")}
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => handleDownloadFile(r.s3_key, r.filename)}
-                disabled={downloading === r.s3_key}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 hover:text-purple-300 hover:bg-purple-500/10 rounded-md transition-colors disabled:opacity-50"
-              >
-                <DownloadIcon className="w-3.5 h-3.5" />
-                {downloading === r.s3_key ? "..." : "Download"}
-              </button>
+      {/* Version diff modal */}
+      {diffRecord && (
+        <Suspense fallback={null}>
+          <VersionDiffViewer record={diffRecord} onClose={() => setDiffRecord(null)} />
+        </Suspense>
+      )}
+
+      {/* Earlier downloads — preserves access to pre-versioning generated files */}
+      {legacyFiles.length > 0 && (
+        <div className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/40 dark:bg-gray-900/20 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setLegacyOpen(o => !o)}
+            className="w-full px-4 py-2.5 flex items-center justify-between hover:bg-gray-100/50 dark:hover:bg-gray-800/20"
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">
+              Earlier downloads ({legacyFiles.length})
+            </span>
+            <ChevronIcon open={legacyOpen} className="w-3.5 h-3.5 text-gray-400" />
+          </button>
+          {legacyOpen && (
+            <div className="border-t border-gray-200 dark:border-gray-800/60 p-2 space-y-1.5">
+              {legacyFiles.map(f => {
+                const dlKey = `legacy-${f.s3_key}`;
+                return (
+                  <div key={f.s3_key} className="flex items-center gap-3 px-2 py-1.5 rounded-md hover:bg-gray-100/60 dark:hover:bg-gray-800/30">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-gray-800 dark:text-gray-200 truncate">
+                        {f.job_title || f.filename || "Tailored resume"}
+                      </p>
+                      <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                        {formatDate(f.generated_at || "")}
+                      </p>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        setDownloading(dlKey);
+                        try {
+                          const blob = await apiService.downloadResumeFile(f.s3_key);
+                          const u = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = u; a.download = f.filename || "resume.pdf";
+                          a.click(); URL.revokeObjectURL(u);
+                        } catch { toast.error("Download failed"); }
+                        setDownloading(null);
+                      }}
+                      disabled={downloading === dlKey}
+                      className="text-[11px] px-2 py-1 rounded-md text-gray-500 dark:text-gray-400 hover:text-purple-500 hover:bg-purple-500/10 disabled:opacity-50"
+                    >
+                      {downloading === dlKey ? "…" : "Download"}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm("Delete this earlier download?")) return;
+                        const resp = await apiService.deleteResume(f.s3_key);
+                        if (resp.error) { toast.error("Delete failed"); return; }
+                        setLegacyFiles(prev => prev.filter(x => x.s3_key !== f.s3_key));
+                      }}
+                      className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded"
+                    >
+                      <TrashIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -2453,14 +2796,8 @@ function TailorTab() {
           timestamp: Date.now(),
         },
       ]);
-      saveRecord(analysis, tailorResp.data.tailored_resume, jdText);
-      apiService
-        .downloadTailoredResume(
-          tailorResp.data.tailored_resume,
-          analysis,
-          "pdf",
-        )
-        .catch(() => {});
+      // Await so downstream downloads / regenerations see recordIdRef set.
+      await saveRecord(analysis, tailorResp.data.tailored_resume, jdText);
     }
 
     function cleanup() {
@@ -2488,6 +2825,13 @@ function TailorTab() {
         result.tailored_resume,
         result.jd_analysis,
         fmt,
+        {
+          recordId: recordIdRef.current || undefined,
+          // Backend auto-saves a new version only if the content differs from
+          // the record's latest one, so this is a safe default.
+          source: "edited",
+          autoSaveOnEdit: true,
+        },
       );
       setDownloading(null);
       if (r.error) {
@@ -2557,6 +2901,19 @@ function TailorTab() {
         },
         ...v,
       ]);
+      // Persist the regenerated version to the tailoring record so it's
+      // never lost — nothing about this download flow overwrites the
+      // previous version; each regeneration becomes its own versioned entry.
+      if (recordIdRef.current) {
+        apiService
+          .saveResumeVersion(recordIdRef.current, {
+            tailored_resume: resp.data!.tailored_resume,
+            source: "regenerated",
+            user_feedback: regenFeedback.trim() || undefined,
+            set_current: true,
+          })
+          .catch(() => { /* silent — best-effort */ });
+      }
       setRegenFeedback("");
       setRegenView("regenerated");
       setInspectorTab("ats");
@@ -4425,7 +4782,15 @@ function TailorTab() {
               <ResumeEditor
                 resume={result.tailored_resume}
                 jdAnalysis={result.jd_analysis}
+                recordId={recordIdRef.current || undefined}
                 onBack={() => setEditing(false)}
+                onEditedVersionSaved={(versionId) => {
+                  if (recordIdRef.current) {
+                    apiService
+                      .setCurrentResumeVersion(recordIdRef.current, versionId)
+                      .catch(() => {});
+                  }
+                }}
               />
             </Suspense>
           </div>
@@ -4456,6 +4821,16 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
     key: "tailored",
     label: "Tailored Resumes",
     icon: <DocumentArrowDownIcon className="w-4 h-4" />,
+  },
+  {
+    key: "applications",
+    label: "Applications",
+    icon: <ClipboardIcon className="w-4 h-4" />,
+  },
+  {
+    key: "interview",
+    label: "Interview Prep",
+    icon: <SparklesIcon className="w-4 h-4" />,
   },
   {
     key: "profile",
@@ -4596,6 +4971,28 @@ export default function ResumeParser() {
           )}
           {activeNav === "my-resumes" && <MyResumesTab />}
           {activeNav === "tailored" && <TailoredResumesTab />}
+          {activeNav === "applications" && (
+            <Suspense
+              fallback={
+                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading applications…</span>
+                </div>
+              }
+            >
+              <ApplicationsTab />
+            </Suspense>
+          )}
+          {activeNav === "interview" && (
+            <Suspense
+              fallback={
+                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading prep…</span>
+                </div>
+              }
+            >
+              <InterviewPrepTab />
+            </Suspense>
+          )}
           {activeNav === "profile" && <ProfileTab />}
         </main>
 

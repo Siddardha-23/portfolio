@@ -1053,6 +1053,12 @@ class ApiService {
     tailoredResume: import("../types/resume").TailoredFullResume,
     jdAnalysis: import("../types/resume").JDAnalysis,
     format: "pdf" | "docx",
+    opts?: {
+      recordId?: string;
+      versionId?: string;
+      source?: "initial" | "regenerated" | "edited";
+      autoSaveOnEdit?: boolean;
+    },
   ): Promise<{ data?: Blob; error?: string; filename?: string }> {
     const token = this.getToken();
     const url = `${this.baseURL}/resume/download`;
@@ -1071,6 +1077,10 @@ class ApiService {
           jd_analysis: jdAnalysis,
           format,
           job_title: jdAnalysis.job_title || "untitled",
+          record_id: opts?.recordId,
+          version_id: opts?.versionId,
+          source: opts?.source,
+          auto_save_on_edit: opts?.autoSaveOnEdit ?? true,
         }),
         signal: controller.signal,
       });
@@ -1090,6 +1100,125 @@ class ApiService {
         error: error instanceof Error ? error.message : "Download failed",
       };
     }
+  }
+
+  // ============================================
+  // Tailoring record versioning
+  // ============================================
+
+  async saveResumeVersion(
+    recordId: string,
+    data: {
+      tailored_resume: import("../types/resume").TailoredFullResume;
+      source: "initial" | "regenerated" | "edited";
+      user_feedback?: string;
+      ats_scores?: import("../types/resume").ATSScores;
+      parent_version_id?: string;
+      set_current?: boolean;
+    },
+  ): Promise<
+    ApiResponse<{
+      version_id: string;
+      version_number: number;
+      content_hash: string;
+      created: boolean;
+    }>
+  > {
+    return this.request(`/resume/tailoring-records/${recordId}/versions`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async setCurrentResumeVersion(
+    recordId: string,
+    versionId: string,
+  ): Promise<ApiResponse<{ current_version_id: string }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/current-version`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ version_id: versionId }),
+      },
+    );
+  }
+
+  async getTailoringRecord(
+    recordId: string,
+  ): Promise<ApiResponse<{ record: any }>> {
+    return this.request(`/resume/tailoring-records/${recordId}`);
+  }
+
+  async deleteTailoringRecord(
+    recordId: string,
+  ): Promise<ApiResponse<any>> {
+    return this.request(`/resume/tailoring-records/${recordId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async updateApplication(
+    recordId: string,
+    patch: {
+      status?:
+        | "draft"
+        | "applied"
+        | "interviewing"
+        | "offer"
+        | "rejected"
+        | "withdrawn"
+        | "ghosted";
+      applied_at?: string | null;
+      next_action_date?: string | null;
+      next_action_note?: string;
+      notes?: string;
+      recruiter_name?: string;
+      recruiter_email?: string;
+      recruiter_company?: string;
+      job_url?: string;
+      interview_dates?: string[];
+    },
+  ): Promise<ApiResponse<{ application: any }>> {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/application`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      },
+    );
+  }
+
+  async generateInterviewPrep(
+    recordId: string,
+    opts?: { force?: boolean },
+  ): Promise<
+    ApiResponse<{
+      interview_prep: {
+        content: {
+          elevator_pitch?: string;
+          talking_points?: string[];
+          behavioral_questions?: { question: string; why_asked?: string; answer_outline?: string }[];
+          technical_questions?: { question: string; why_asked?: string; answer_outline?: string }[];
+          company_specific?: { question: string; why_asked?: string; answer_outline?: string }[];
+          gaps_to_address?: string[];
+          questions_to_ask_them?: string[];
+          red_flags?: string[];
+        };
+        generated_at: string;
+        grounded_version_id?: string;
+      };
+      cached: boolean;
+    }>
+  > {
+    return this.request(
+      `/resume/tailoring-records/${recordId}/interview-prep`,
+      {
+        method: "POST",
+        body: JSON.stringify({ force: !!opts?.force }),
+      },
+      // Interview prep uses GEMINI_PRO — can take 10-30s
+      60000,
+    );
   }
 
   // ============================================

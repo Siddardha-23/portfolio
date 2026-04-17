@@ -177,10 +177,12 @@ function LivePreview({ resume }: { resume: TailoredFullResume }) {
 interface ResumeEditorProps {
   resume: TailoredFullResume;
   jdAnalysis?: JDAnalysis;
+  recordId?: string;
   onBack: () => void;
+  onEditedVersionSaved?: (versionId: string) => void;
 }
 
-export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack }: ResumeEditorProps) {
+export default function ResumeEditor({ resume: initialResume, jdAnalysis, recordId, onBack, onEditedVersionSaved }: ResumeEditorProps) {
   const [resume, setResume] = useState<TailoredFullResume>(() => JSON.parse(JSON.stringify(initialResume)));
   const [downloading, setDownloading] = useState<'pdf' | 'docx' | null>(null);
   const [view, setView] = useState<'split' | 'edit' | 'preview'>('split');
@@ -375,10 +377,33 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
     });
   }, []);
 
-  // Download
+  // Download — pushes the edited resume through the versioned download flow.
+  // The backend appends a new version iff content_hash changed; repeated
+  // downloads of the same content reuse the cached S3 file.
   const handleDownload = useCallback(async (fmt: 'pdf' | 'docx') => {
     setDownloading(fmt);
-    const r = await apiService.downloadTailoredResume(resume, jdAnalysis || {} as JDAnalysis, fmt);
+    // If the user edited the resume, persist it as a new version before
+    // rendering so the version chain stays ahead of the file cache.
+    if (recordId && isModified) {
+      const save = await apiService.saveResumeVersion(recordId, {
+        tailored_resume: resume,
+        source: 'edited',
+        set_current: true,
+      });
+      if (save.data?.version_id && save.data.created) {
+        onEditedVersionSaved?.(save.data.version_id);
+      }
+    }
+    const r = await apiService.downloadTailoredResume(
+      resume,
+      jdAnalysis || ({} as JDAnalysis),
+      fmt,
+      {
+        recordId: recordId,
+        source: 'edited',
+        autoSaveOnEdit: true,
+      },
+    );
     setDownloading(null);
     if (r.error) { toast.error('Download failed', { description: r.error }); return; }
     if (r.data) {
@@ -390,7 +415,7 @@ export default function ResumeEditor({ resume: initialResume, jdAnalysis, onBack
       URL.revokeObjectURL(u);
       toast.success(`Resume downloaded as ${fmt.toUpperCase()}`);
     }
-  }, [resume, jdAnalysis]);
+  }, [resume, jdAnalysis, recordId, isModified, onEditedVersionSaved]);
 
   // Reset to original
   const handleReset = useCallback(() => {

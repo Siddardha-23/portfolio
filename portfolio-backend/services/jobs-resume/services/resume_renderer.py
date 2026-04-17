@@ -476,51 +476,211 @@ class ResumeRenderer:
         return pdf_bytes
 
     # ------------------------------------------------------------------
-    # DOCX generation (python-docx)
+    # DOCX generation (python-docx) — mirrors the PDF renderer's layout
     # ------------------------------------------------------------------
 
-    def generate_docx(self, tailored: Dict[str, Any]) -> bytes:
-        """Generate a single-page DOCX matching the LaTeX resume template."""
+    # Usable page height in pt (A4 297mm - 0.4in*2 margins ≈ 277mm ≈ 785pt).
+    _DOCX_AVAIL_PT = 785.0
+
+    def _estimate_docx_height_pt(
+        self,
+        tailored: Dict[str, Any],
+        *,
+        body_size: float,
+        line_spacing: float,
+        section_gap: float,
+        entry_gap: float,
+        skill_gap: float,
+        header_gap: float,
+    ) -> float:
+        """Heuristic height estimator in points.
+
+        python-docx can't render, so we estimate: each paragraph contributes
+        (line_count * line_spacing) + paragraph_before/after spacing. Line count
+        is derived by dividing text length by a characters-per-line constant
+        based on body_size (smaller font ⇒ more chars/line).
+        """
+        # Usable width in mm * (chars per mm at given pt). Times at 10pt
+        # averages ~2.1 chars/mm in our 197mm-wide text box → ~414 chars/line.
+        # Scale inversely with font size.
+        scale = 10.0 / max(body_size, 6.0)
+        chars_per_line = 95 * scale  # rough but stable
+        h = 0.0
+
+        def para(text: str, size: float = None, bullet: bool = False) -> float:
+            s = size or body_size
+            line_h = s * 1.15  # ~1.15 line spacing equivalent
+            if not text:
+                return line_h + 2
+            length = len(text) + (3 if bullet else 0)
+            lines = max(1, int(length / chars_per_line) + (1 if length % chars_per_line else 0))
+            return lines * line_h + 1.5
+
+        # Name + contact + HR
+        h += 17 * 1.15 + 2        # name
+        contact = tailored.get("contact", {})
+        if any(contact.get(k) for k in ("phone", "email", "linkedin", "github")):
+            h += 10.5 * 1.15 + 1  # contact line
+        h += 4                     # HR line
+        h += header_gap
+
+        def section(title: str) -> float:
+            return 11 * 1.15 + 2 + section_gap
+
+        def header_block(left: str, dates: str) -> float:
+            return max(11 * 1.15, body_size * 1.15) + 2
+
+        if tailored.get("summary"):
+            h += section("SUMMARY")
+            h += para(tailored["summary"])
+
+        experience = tailored.get("experience", []) or []
+        if experience:
+            h += section("EXPERIENCE")
+            for i, exp in enumerate(experience):
+                h += header_block(exp.get("company", ""), exp.get("dates", ""))
+                if exp.get("title"):
+                    h += 10.5 * 1.15 + 1
+                for b in exp.get("bullets", []) or []:
+                    h += para(b, bullet=True)
+                if i < len(experience) - 1:
+                    h += entry_gap
+
+        projects = tailored.get("projects", []) or []
+        if projects:
+            h += section("PROJECTS")
+            for i, proj in enumerate(projects):
+                h += header_block(proj.get("name", ""), proj.get("dates", ""))
+                for b in proj.get("bullets", []) or []:
+                    h += para(b, bullet=True)
+                if i < len(projects) - 1:
+                    h += entry_gap
+
+        skills = tailored.get("skills", {}) or {}
+        skill_rows = [v for v in skills.values() if v]
+        if skill_rows:
+            h += section("TECHNICAL SKILLS")
+            for sk in skill_rows:
+                text = ", ".join(sk) if isinstance(sk, list) else str(sk)
+                h += para(text) + skill_gap
+
+        education = tailored.get("education", []) or []
+        if education:
+            h += section("EDUCATION")
+            for edu in education:
+                inst = edu.get("institution", "")
+                degree = edu.get("degree", "")
+                if inst or degree:
+                    h += para(f"{inst} | {degree}")
+
+        return h
+
+    def _render_docx(
+        self,
+        tailored: Dict[str, Any],
+        *,
+        body_size: float,
+        title_size: float,
+        header_size: float,
+        section_gap: float,
+        entry_gap: float,
+        skill_gap: float,
+        header_gap: float,
+    ) -> bytes:
+        """Render a DOCX mirroring the PDF layout with the given spacing knobs."""
         from docx import Document
-        from docx.shared import Pt, Inches, Mm
+        from docx.shared import Pt, Inches, Mm, Emu
         from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
         from docx.oxml.ns import qn
+        from docx.oxml import OxmlElement
 
         FONT = "Times New Roman"
         doc = Document()
 
-        # A4 page, 0.4in margins
+        # A4 page, 0.5in L/R margins (match PDF _MARGIN_LR = 12.7mm), 0.3in top.
         for section in doc.sections:
             section.page_width = Mm(210)
             section.page_height = Mm(297)
-            section.top_margin = Inches(0.4)
-            section.bottom_margin = Inches(0.4)
-            section.left_margin = Inches(0.4)
-            section.right_margin = Inches(0.4)
+            section.top_margin = Inches(0.3)
+            section.bottom_margin = Inches(0.6)
+            section.left_margin = Inches(0.5)
+            section.right_margin = Inches(0.5)
 
-        # Set Normal style defaults
+        # Normal style
         style = doc.styles["Normal"]
         style.font.name = FONT
-        style.font.size = Pt(10)
+        style.font.size = Pt(body_size)
         style.paragraph_format.space_after = Pt(0)
         style.paragraph_format.space_before = Pt(0)
-        style.paragraph_format.line_spacing = Pt(11)
+        style.paragraph_format.line_spacing = 1.1
 
-        # Usable width for tab stops (A4 width - margins)
-        page_w = Mm(210) - 2 * Inches(0.4)
+        # Usable width in EMU for right-aligned tab stops (page_width - L - R)
+        usable_w_emu = section.page_width - section.left_margin - section.right_margin
 
+        # ------------------- helpers -------------------
+        def set_run_font(run, size_pt: float, bold=False, italic=False, color="000000"):
+            run.font.name = FONT
+            run.font.size = Pt(size_pt)
+            run.bold = bold
+            run.italic = italic
+            # Ensure Times font for East Asian fallback (prevents font swap in Word)
+            rPr = run._element.get_or_add_rPr()
+            rFonts = rPr.find(qn("w:rFonts"))
+            if rFonts is None:
+                rFonts = OxmlElement("w:rFonts")
+                rPr.append(rFonts)
+            for attr in ("w:ascii", "w:hAnsi", "w:cs", "w:eastAsia"):
+                rFonts.set(qn(attr), FONT)
+            c = OxmlElement("w:color")
+            c.set(qn("w:val"), color)
+            rPr.append(c)
+
+        def tight(p, before=0.0, after=0.0):
+            p.paragraph_format.space_before = Pt(before)
+            p.paragraph_format.space_after = Pt(after)
+            p.paragraph_format.line_spacing = 1.1
+
+        def add_bottom_border(p, size="6"):
+            pPr = p._p.get_or_add_pPr()
+            pBdr = OxmlElement("w:pBdr")
+            bottom = OxmlElement("w:bottom")
+            bottom.set(qn("w:val"), "single")
+            bottom.set(qn("w:sz"), size)
+            bottom.set(qn("w:space"), "1")
+            bottom.set(qn("w:color"), "000000")
+            pBdr.append(bottom)
+            pPr.append(pBdr)
+
+        def add_section_header(title: str):
+            p = doc.add_paragraph()
+            run = p.add_run(title.upper())
+            set_run_font(run, header_size, bold=True)
+            tight(p, before=section_gap, after=1.0)
+            add_bottom_border(p, size="4")
+
+        def add_bullet(text: str, indent_emu=None):
+            p = doc.add_paragraph()
+            # Manual bullet: filled circle + space, with hanging indent. Using a
+            # raw paragraph (not List Bullet style) avoids Word's auto-numbering
+            # XML which can drift across versions.
+            r_dot = p.add_run("\u2022  ")
+            set_run_font(r_dot, body_size, bold=True)
+            r = p.add_run(text)
+            set_run_font(r, body_size)
+            # Indent bullet glyph + hang text under it.
+            p.paragraph_format.left_indent = Inches(0.32)
+            p.paragraph_format.first_line_indent = Inches(-0.18)
+            tight(p, before=0.5, after=0.3)
+
+        # ------------------- HEADER -------------------
         contact = tailored.get("contact", {})
-
-        # ── Name (centered, bold, large) ──
+        name = (contact.get("name", "") or "Resume").strip()
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(contact.get("name", "").strip() or "Resume")
-        run.bold = True
-        run.font.size = Pt(20)
-        run.font.name = FONT
-        p.paragraph_format.space_after = Pt(1)
+        run = p.add_run(name.upper())
+        set_run_font(run, title_size, bold=True)
+        tight(p, before=0, after=1.0)
 
-        # ── Contact line (centered, with clickable hyperlinks) ──
         contact_fields = []
         for key in ("phone", "email", "linkedin", "github"):
             val = contact.get(key, "")
@@ -532,149 +692,108 @@ class ResumeRenderer:
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             for i, (display, href) in enumerate(contact_fields):
                 if href:
-                    self._add_docx_hyperlink(p, display, href, FONT, Pt(9))
+                    self._add_docx_hyperlink(p, display, href, FONT, Pt(body_size + 0.5))
                 else:
                     run = p.add_run(display)
-                    run.font.size = Pt(9)
-                    run.font.name = FONT
+                    set_run_font(run, body_size + 0.5)
                 if i < len(contact_fields) - 1:
-                    run = p.add_run(" | ")
-                    run.font.size = Pt(9)
-                    run.font.name = FONT
-            p.paragraph_format.space_after = Pt(2)
+                    sep = p.add_run(" | ")
+                    set_run_font(sep, body_size + 0.5)
+            tight(p, before=0, after=header_gap)
 
-        # ── HR line (bottom border on an empty paragraph) ──
-        p = doc.add_paragraph()
-        p.paragraph_format.space_before = Pt(0)
-        p.paragraph_format.space_after = Pt(2)
-        pPr = p._p.get_or_add_pPr()
-        pBdr = pPr.makeelement(qn("w:pBdr"), {})
-        bottom = pBdr.makeelement(
-            qn("w:bottom"),
-            {qn("w:val"): "single", qn("w:sz"): "6",
-             qn("w:space"): "1", qn("w:color"): "000000"},
-        )
-        pBdr.append(bottom)
-        pPr.append(pBdr)
-
-        def add_section_header(title: str):
-            p = doc.add_paragraph()
-            run = p.add_run(title.upper())
-            run.bold = True
-            run.font.size = Pt(11)
-            run.font.name = FONT
-            p.paragraph_format.space_before = Pt(3)
-            p.paragraph_format.space_after = Pt(1)
-            pPr = p._p.get_or_add_pPr()
-            pBdr = pPr.makeelement(qn("w:pBdr"), {})
-            bottom = pBdr.makeelement(
-                qn("w:bottom"),
-                {qn("w:val"): "single", qn("w:sz"): "4",
-                 qn("w:space"): "1", qn("w:color"): "000000"},
-            )
-            pBdr.append(bottom)
-            pPr.append(pBdr)
-
-        def add_bullet(text: str):
-            p = doc.add_paragraph(style="List Bullet")
-            run = p.add_run(text)
-            run.font.size = Pt(10)
-            run.font.name = FONT
-            p.paragraph_format.space_after = Pt(0)
-            p.paragraph_format.space_before = Pt(0)
-            p.paragraph_format.left_indent = Pt(12)
-
-        # ── SUMMARY ──
+        # ------------------- SUMMARY -------------------
         summary = tailored.get("summary", "")
         if summary:
-            add_section_header("Summary")
+            add_section_header("Professional Summary")
             p = doc.add_paragraph()
             run = p.add_run(summary)
-            run.font.size = Pt(10)
-            run.font.name = FONT
-            p.paragraph_format.space_after = Pt(0)
+            set_run_font(run, body_size)
+            tight(p, before=1.0, after=0.5)
 
-        # ── EXPERIENCE ──
-        experience = tailored.get("experience", [])
+        # ------------------- helper for a company/dates header line -------------------
+        def header_line(left_bold: str, dates: str, bold_size: float):
+            p = doc.add_paragraph()
+            if dates:
+                p.paragraph_format.tab_stops.add_tab_stop(
+                    usable_w_emu, WD_TAB_ALIGNMENT.RIGHT)
+            r1 = p.add_run(left_bold)
+            set_run_font(r1, bold_size, bold=True)
+            if dates:
+                r2 = p.add_run(f"\t{dates}")
+                set_run_font(r2, body_size)
+            tight(p, before=1.5, after=0.0)
+            return p
+
+        # ------------------- EXPERIENCE -------------------
+        experience = tailored.get("experience", []) or []
         if experience:
             add_section_header("Experience")
-            for exp in experience:
+            for i, exp in enumerate(experience):
                 company = exp.get("company", "")
                 location = exp.get("location", "")
                 dates = exp.get("dates", "")
                 company_line = f"{company}, {location}" if location else company
+                header_line(company_line, dates, bold_size=body_size + 1)
 
-                # Company (bold) + Dates (right-aligned via tab stop)
-                p = doc.add_paragraph()
-                p.paragraph_format.tab_stops.add_tab_stop(
-                    page_w, WD_TAB_ALIGNMENT.RIGHT)
-                run = p.add_run(company_line)
-                run.bold = True
-                run.font.size = Pt(11)
-                run.font.name = FONT
-                if dates:
-                    run2 = p.add_run(f"\t{dates}")
-                    run2.font.size = Pt(10)
-                    run2.font.name = FONT
-                p.paragraph_format.space_before = Pt(1.5)
-                p.paragraph_format.space_after = Pt(0)
-
-                # Job title (italic)
                 title = exp.get("title", "")
                 if title:
                     p2 = doc.add_paragraph()
-                    run2 = p2.add_run(title)
-                    run2.italic = True
-                    run2.font.size = Pt(10)
-                    run2.font.name = FONT
-                    p2.paragraph_format.space_after = Pt(0)
+                    r = p2.add_run(title)
+                    set_run_font(r, body_size + 0.5, italic=True)
+                    tight(p2, before=0, after=0.5)
 
-                for b in exp.get("bullets", []):
+                for b in exp.get("bullets", []) or []:
                     add_bullet(b)
+                if i < len(experience) - 1:
+                    # Gap between experience entries via an empty spacer para
+                    spacer = doc.add_paragraph()
+                    tight(spacer, before=entry_gap, after=0)
 
-        # ── PROJECTS ──
-        projects = tailored.get("projects", [])
+        # ------------------- PROJECTS -------------------
+        projects = tailored.get("projects", []) or []
         if projects:
             add_section_header("Projects")
-            for proj in projects:
-                p = doc.add_paragraph()
-                run = p.add_run(proj.get("name", ""))
-                run.bold = True
-                run.font.size = Pt(11)
-                run.font.name = FONT
-                p.paragraph_format.space_before = Pt(1.5)
-                p.paragraph_format.space_after = Pt(0)
+            for i, proj in enumerate(projects):
+                name = proj.get("name", "")
+                dates = proj.get("dates", "")
+                header_line(name, dates, bold_size=body_size + 1)
 
-                for b in proj.get("bullets", []):
+                tech = proj.get("tech", "")
+                if tech:
+                    p2 = doc.add_paragraph()
+                    r = p2.add_run(tech)
+                    set_run_font(r, body_size, italic=True, color="555555")
+                    tight(p2, before=0, after=0.5)
+
+                for b in proj.get("bullets", []) or []:
                     add_bullet(b)
+                if i < len(projects) - 1:
+                    spacer = doc.add_paragraph()
+                    tight(spacer, before=entry_gap, after=0)
 
-        # ── TECHNICAL SKILLS ──
-        skills = tailored.get("skills", {})
-        if skills:
+        # ------------------- TECHNICAL SKILLS -------------------
+        skills = tailored.get("skills", {}) or {}
+        if any(v for v in skills.values()):
             add_section_header("Technical Skills")
             for category, skill_list in skills.items():
                 if not skill_list:
                     continue
                 p = doc.add_paragraph()
-                run_cat = p.add_run(f"{category}: ")
-                run_cat.bold = True
-                run_cat.font.size = Pt(10)
-                run_cat.font.name = FONT
+                r_cat = p.add_run(f"{category}: ")
+                set_run_font(r_cat, body_size, bold=True)
                 sk = ", ".join(skill_list) if isinstance(skill_list, list) else str(skill_list)
-                run_sk = p.add_run(sk)
-                run_sk.font.size = Pt(10)
-                run_sk.font.name = FONT
-                p.paragraph_format.space_after = Pt(0)
+                r_sk = p.add_run(sk)
+                set_run_font(r_sk, body_size)
+                tight(p, before=skill_gap, after=0)
 
-        # ── EDUCATION ──
-        education = tailored.get("education", [])
+        # ------------------- EDUCATION -------------------
+        education = tailored.get("education", []) or []
         if education:
-            # Deduplicate by (institution, degree) and skip empty entries
             seen_edu = set()
             deduped_education = []
             for edu in education:
-                inst = edu.get("institution", "").strip()
-                degree = edu.get("degree", "").strip()
+                inst = (edu.get("institution", "") or "").strip()
+                degree = (edu.get("degree", "") or "").strip()
                 if not inst and not degree:
                     continue
                 key = (inst.lower(), degree.lower())
@@ -686,12 +805,12 @@ class ResumeRenderer:
             if deduped_education:
                 add_section_header("Education")
                 for edu in deduped_education:
-                    inst = edu.get("institution", "")
-                    location = edu.get("location", "")
-                    degree = edu.get("degree", "")
-                    dates = edu.get("dates", "")
+                    inst = edu.get("institution", "") or ""
+                    location = edu.get("location", "") or ""
+                    degree = edu.get("degree", "") or ""
+                    dates = edu.get("dates", "") or ""
+                    gpa = edu.get("gpa", "") or ""
 
-                    # Safety net: strip date patterns baked into degree by AI
                     if degree and re.search(
                         r'\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\w*\s+\d{4}\b',
                         degree, re.IGNORECASE,
@@ -705,26 +824,114 @@ class ResumeRenderer:
                             degree = cleaned
 
                     inst_part = f"{inst}, {location}" if inst and location else inst
-                    left_parts = [x for x in [inst_part, degree] if x]
-                    left_text = " | ".join(left_parts)
+                    parts = [x for x in [inst_part, degree] if x]
+                    if gpa:
+                        parts.append(f"GPA: {gpa}")
+                    left_text = " | ".join(parts)
 
                     p = doc.add_paragraph()
-                    p.paragraph_format.tab_stops.add_tab_stop(
-                        page_w, WD_TAB_ALIGNMENT.RIGHT)
-                    run = p.add_run(left_text)
-                    run.bold = True
-                    run.font.size = Pt(10)
-                    run.font.name = FONT
                     if dates:
-                        run2 = p.add_run(f"\t{dates}")
-                        run2.font.size = Pt(10)
-                        run2.font.name = FONT
-                    p.paragraph_format.space_before = Pt(1)
-                    p.paragraph_format.space_after = Pt(0)
+                        p.paragraph_format.tab_stops.add_tab_stop(
+                            usable_w_emu, WD_TAB_ALIGNMENT.RIGHT)
+                    r = p.add_run(left_text)
+                    set_run_font(r, body_size)
+                    if dates:
+                        r2 = p.add_run(f"\t{dates}")
+                        set_run_font(r2, body_size)
+                    tight(p, before=1.0, after=0)
 
         buf = io.BytesIO()
         doc.save(buf)
         return buf.getvalue()
+
+    def generate_docx(self, tailored: Dict[str, Any]) -> bytes:
+        """Generate a single-page DOCX that adaptively fills an A4 page.
+
+        Mirrors the PDF renderer's two-pass strategy:
+          Pass 1: estimate content height at body=10pt with minimum gaps.
+          Pass 2: shrink font to 9.5/9pt if estimated overflow; then distribute
+                  remaining whitespace across section/entry/skill gaps so the
+                  page fills naturally (same visual density as the PDF).
+        """
+        avail = self._DOCX_AVAIL_PT
+
+        # Minimum spacing knobs (pt)
+        min_section_gap = 2.0
+        min_entry_gap = 2.0
+        min_skill_gap = 0.0
+        min_header_gap = 2.0
+
+        # Max ceilings so fills don't explode on short resumes
+        max_section_gap = 12.0
+        max_entry_gap = 10.0
+        max_skill_gap = 4.0
+        max_header_gap = 10.0
+
+        # Try decreasing font sizes until content fits
+        for body_size, title_size, header_size in (
+            (10.0, 17.0, 11.0),
+            (9.5, 16.5, 10.5),
+            (9.0, 16.0, 10.0),
+        ):
+            min_h = self._estimate_docx_height_pt(
+                tailored,
+                body_size=body_size,
+                line_spacing=1.1,
+                section_gap=min_section_gap,
+                entry_gap=min_entry_gap,
+                skill_gap=min_skill_gap,
+                header_gap=min_header_gap,
+            )
+            if min_h <= avail:
+                break
+
+        # Count slots for fill distribution
+        n_sections = 0
+        n_entry_gaps = 0
+        n_skill_rows = 0
+        if tailored.get("summary"):
+            n_sections += 1
+        exp = tailored.get("experience", []) or []
+        if exp:
+            n_sections += 1
+            n_entry_gaps += max(0, len(exp) - 1)
+        proj = tailored.get("projects", []) or []
+        if proj:
+            n_sections += 1
+            n_entry_gaps += max(0, len(proj) - 1)
+        skills = tailored.get("skills", {}) or {}
+        skill_rows = [v for v in skills.values() if v]
+        if skill_rows:
+            n_sections += 1
+            n_skill_rows = len(skill_rows)
+        if tailored.get("education"):
+            n_sections += 1
+
+        # Distribute remaining whitespace (weights mirror the PDF renderer's)
+        remaining = max(0, avail - min_h)
+        total_weight = (
+            max(n_sections, 1) * 4
+            + max(n_entry_gaps, 1) * 3
+            + 1 * 1            # header gap
+            + max(n_skill_rows, 1) * 0.5
+        )
+        unit = (remaining / total_weight) if total_weight > 0 and remaining > 0 else 0
+
+        section_gap = min(min_section_gap + unit * 4, max_section_gap)
+        entry_gap = min(min_entry_gap + unit * 3, max_entry_gap)
+        skill_gap = min(min_skill_gap + unit * 0.5, max_skill_gap)
+        header_gap = min(min_header_gap + unit * 1, max_header_gap)
+
+        return self._render_docx(
+            tailored,
+            body_size=body_size,
+            title_size=title_size,
+            header_size=header_size,
+            section_gap=section_gap,
+            entry_gap=entry_gap,
+            skill_gap=skill_gap,
+            header_gap=header_gap,
+        )
 
     # ------------------------------------------------------------------
     # DOCX hyperlink helper

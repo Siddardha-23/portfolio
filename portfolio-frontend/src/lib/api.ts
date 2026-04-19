@@ -1276,8 +1276,16 @@ class ApiService {
       users_30d: number;
       total_parsed_resumes: number;
       total_base_resumes: number;
-      total_generated_resumes: number;
+      legacy_generated_resumes: number;
       total_tailoring_sessions: number;
+      tailoring_7d: number;
+      tailoring_30d: number;
+      total_versions: number;
+      cached_pdf_files: number;
+      cached_docx_files: number;
+      total_applications: number;
+      applications_by_status: Record<string, number>;
+      total_interview_prep_packs: number;
     }>("/admin/stats");
   }
 
@@ -1327,8 +1335,33 @@ class ApiService {
     return this.request<{ resumes: any[] }>("/admin/resumes");
   }
 
-  async getAdminTailoring() {
-    return this.request<{ records: any[] }>("/admin/tailoring");
+  async getAdminTailoring(opts?: { status?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set("status", opts.status);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const qs = params.toString();
+    return this.request<{ records: any[] }>(
+      `/admin/tailoring${qs ? `?${qs}` : ""}`,
+    );
+  }
+
+  async getAdminTailoringDetail(
+    recordId: string,
+    includeCurrentResume = false,
+  ) {
+    const qs = includeCurrentResume ? "?include_current_resume=1" : "";
+    return this.request<{ record: any }>(
+      `/admin/tailoring/${encodeURIComponent(recordId)}${qs}`,
+    );
+  }
+
+  async getAdminApplications(status?: string) {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request<{ applications: any[] }>(`/admin/applications${qs}`);
+  }
+
+  async getAdminInterviewPrep() {
+    return this.request<{ prep_packs: any[] }>("/admin/interview-prep");
   }
 
   async getAdminResumeUrl(

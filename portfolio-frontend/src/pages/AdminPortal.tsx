@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 const SUPER_ADMIN_EMAIL = 'mannesiddardha@gmail.com';
 
-type Tab = 'dashboard' | 'users' | 'resumes' | 'tailoring';
+type Tab = 'dashboard' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep';
 
 interface AdminStats {
   total_users: number;
@@ -13,9 +13,58 @@ interface AdminStats {
   users_30d: number;
   total_parsed_resumes: number;
   total_base_resumes: number;
-  total_generated_resumes: number;
+  legacy_generated_resumes: number;
   total_tailoring_sessions: number;
+  tailoring_7d: number;
+  tailoring_30d: number;
+  total_versions: number;
+  cached_pdf_files: number;
+  cached_docx_files: number;
+  total_applications: number;
+  applications_by_status: Record<string, number>;
+  total_interview_prep_packs: number;
 }
+
+interface AdminApplication {
+  record_id: string;
+  user_email: string;
+  job_title?: string;
+  company?: string;
+  ats_overall?: number;
+  status?: string;
+  applied_at?: string | null;
+  next_action_date?: string | null;
+  next_action_note?: string;
+  recruiter_name?: string;
+  recruiter_email?: string;
+  recruiter_company?: string;
+  job_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+interface AdminPrepPack {
+  record_id: string;
+  user_email: string;
+  jd_analysis?: { job_title?: string; company?: string };
+  interview_prep?: {
+    generated_at?: string;
+    grounded_version_id?: string;
+    content?: { role_type?: string };
+  };
+  application?: { status?: string };
+  created_at?: string;
+}
+
+const APPLICATION_STATUS_CHIP: Record<string, string> = {
+  draft:        'bg-gray-500/15 text-gray-400 border-gray-500/25',
+  applied:      'bg-indigo-500/15 text-indigo-400 border-indigo-500/25',
+  interviewing: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+  offer:        'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+  rejected:     'bg-red-500/15 text-red-400 border-red-500/25',
+  ghosted:      'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  withdrawn:    'bg-gray-400/15 text-gray-500 border-gray-400/25',
+};
 
 interface AdminUser {
   id: string;
@@ -294,6 +343,8 @@ export default function AdminPortal() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [resumes, setResumes] = useState<any[]>([]);
   const [tailoring, setTailoring] = useState<any[]>([]);
+  const [applications, setApplications] = useState<AdminApplication[]>([]);
+  const [prepPacks, setPrepPacks] = useState<AdminPrepPack[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -338,6 +389,22 @@ export default function AdminPortal() {
     setLoading(false);
   }, []);
 
+  const fetchApplications = useCallback(async () => {
+    setLoading(true);
+    const res = await apiService.getAdminApplications();
+    if (res.data?.applications) setApplications(res.data.applications as AdminApplication[]);
+    else if (res.error) setError(res.error);
+    setLoading(false);
+  }, []);
+
+  const fetchPrepPacks = useCallback(async () => {
+    setLoading(true);
+    const res = await apiService.getAdminInterviewPrep();
+    if (res.data?.prep_packs) setPrepPacks(res.data.prep_packs as AdminPrepPack[]);
+    else if (res.error) setError(res.error);
+    setLoading(false);
+  }, []);
+
   const fetchUserDetail = useCallback(async (email: string) => {
     setLoading(true);
     const res = await apiService.getAdminUserDetail(email);
@@ -357,7 +424,9 @@ export default function AdminPortal() {
     if (tab === 'users') fetchUsers();
     else if (tab === 'resumes') fetchResumes();
     else if (tab === 'tailoring') fetchTailoring();
-  }, [tab, isSuperAdmin, fetchUsers, fetchResumes, fetchTailoring]);
+    else if (tab === 'applications') fetchApplications();
+    else if (tab === 'prep') fetchPrepPacks();
+  }, [tab, isSuperAdmin, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
 
   const handleSignOut = () => {
     logout();
@@ -370,6 +439,8 @@ export default function AdminPortal() {
     else if (tab === 'users') fetchUsers();
     else if (tab === 'resumes') fetchResumes();
     else if (tab === 'tailoring') fetchTailoring();
+    else if (tab === 'applications') fetchApplications();
+    else if (tab === 'prep') fetchPrepPacks();
   };
 
   // Auth guards
@@ -408,6 +479,8 @@ export default function AdminPortal() {
     { key: 'users', label: 'Users', icon: <IconUsers className="w-4 h-4" /> },
     { key: 'resumes', label: 'Parsed Resumes', icon: <IconDocument className="w-4 h-4" /> },
     { key: 'tailoring', label: 'Tailoring', icon: <IconBolt className="w-4 h-4" /> },
+    { key: 'applications', label: 'Applications', icon: <IconDocument className="w-4 h-4" /> },
+    { key: 'prep', label: 'Interview Prep', icon: <IconChart className="w-4 h-4" /> },
   ];
 
   return (
@@ -527,13 +600,63 @@ export default function AdminPortal() {
                   <StatCard label="Total Users" value={stats.total_users} sub={`+${stats.users_7d} this week`} icon={<IconUsers />} color="indigo" />
                   <StatCard label="Parsed Resumes" value={stats.total_parsed_resumes} icon={<IconDocument />} color="emerald" />
                   <StatCard label="Base Uploads" value={stats.total_base_resumes} icon={<IconUpload />} color="amber" />
-                  <StatCard label="Tailoring Sessions" value={stats.total_tailoring_sessions} icon={<IconBolt />} color="violet" />
+                  <StatCard label="Tailoring Sessions" value={stats.total_tailoring_sessions} sub={`+${stats.tailoring_7d ?? 0} this week`} icon={<IconBolt />} color="violet" />
                 </div>
 
-                {/* Secondary Stats */}
+                {/* Secondary Stats — versions + cache */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <StatCard
+                    label="Total Versions"
+                    value={stats.total_versions ?? 0}
+                    sub={`~${stats.total_tailoring_sessions > 0 ? (stats.total_versions / stats.total_tailoring_sessions).toFixed(1) : '0'} per session`}
+                    icon={<IconBolt className="w-5 h-5" />}
+                    color="violet"
+                  />
+                  <StatCard
+                    label="Cached PDFs"
+                    value={stats.cached_pdf_files ?? 0}
+                    sub="Rendered + on S3"
+                    icon={<IconDocument className="w-5 h-5" />}
+                    color="rose"
+                  />
+                  <StatCard
+                    label="Cached DOCXs"
+                    value={stats.cached_docx_files ?? 0}
+                    sub="Rendered + on S3"
+                    icon={<IconDocument className="w-5 h-5" />}
+                    color="cyan"
+                  />
+                  <StatCard
+                    label="Legacy downloads"
+                    value={stats.legacy_generated_resumes ?? 0}
+                    sub="Pre-refactor user_resumes rows"
+                    icon={<IconDocument className="w-5 h-5" />}
+                    color="amber"
+                  />
+                </div>
+
+                {/* Applications + Prep + Parse Rate */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatCard label="Users (30 days)" value={stats.users_30d} sub="New registrations" icon={<IconUsers className="w-5 h-5" />} color="cyan" />
-                  <StatCard label="Generated Resumes" value={stats.total_generated_resumes} sub="PDF/DOCX downloads" icon={<IconDocument className="w-5 h-5" />} color="rose" />
+                  <StatCard
+                    label="Applications"
+                    value={stats.total_applications ?? 0}
+                    sub={
+                      Object.entries(stats.applications_by_status || {})
+                        .filter(([, n]) => n > 0)
+                        .slice(0, 3)
+                        .map(([k, n]) => `${n} ${k}`)
+                        .join(' · ') || 'No status set'
+                    }
+                    icon={<IconDocument className="w-5 h-5" />}
+                    color="indigo"
+                  />
+                  <StatCard
+                    label="Interview Prep"
+                    value={stats.total_interview_prep_packs ?? 0}
+                    sub={`${stats.total_tailoring_sessions > 0 ? Math.round((stats.total_interview_prep_packs / stats.total_tailoring_sessions) * 100) : 0}% of sessions`}
+                    icon={<IconChart className="w-5 h-5" />}
+                    color="emerald"
+                  />
                   <StatCard
                     label="Parse Rate"
                     value={stats.total_users > 0 ? `${Math.round((stats.total_parsed_resumes / stats.total_users) * 100)}%` : '0%'}
@@ -542,6 +665,30 @@ export default function AdminPortal() {
                     color="emerald"
                   />
                 </div>
+
+                {/* Application pipeline mini-chart */}
+                {stats.applications_by_status && Object.keys(stats.applications_by_status).length > 0 && (
+                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+                    <h3 className="text-sm font-semibold text-white mb-3">Application Pipeline</h3>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {['draft','applied','interviewing','offer','rejected','ghosted','withdrawn'].map(status => {
+                        const count = stats.applications_by_status[status] || 0;
+                        if (count === 0) return null;
+                        const chip = APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25';
+                        return (
+                          <button
+                            key={status}
+                            onClick={() => { setTab('applications'); fetchApplications(); }}
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${chip} text-xs font-medium capitalize hover:opacity-80 transition`}
+                          >
+                            <span>{status}</span>
+                            <span className="font-bold tabular-nums">{count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Activity Feed */}
                 <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
@@ -680,6 +827,159 @@ export default function AdminPortal() {
           </>
         )}
 
+        {/* ──── Applications Tab ──── */}
+        {tab === 'applications' && (
+          <>
+            {loading ? <Spinner /> : applications.length === 0 ? (
+              <EmptyState message="No application tracker data yet" />
+            ) : (
+              <div className="space-y-4">
+                {/* Status filter chips */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {['all','applied','interviewing','offer','rejected','ghosted','withdrawn','draft'].map(st => {
+                    const count = st === 'all' ? applications.length : applications.filter(a => a.status === st).length;
+                    if (st !== 'all' && count === 0) return null;
+                    const active = false; // filtering handled below
+                    const chip = st === 'all' ? 'bg-white/5 text-gray-300 border-white/10' : (APPLICATION_STATUS_CHIP[st] || 'bg-gray-500/15 text-gray-400 border-gray-500/25');
+                    return (
+                      <button
+                        key={st}
+                        onClick={() => {
+                          if (st === 'all') fetchApplications();
+                          else apiService.getAdminApplications(st).then(r => {
+                            if (r.data?.applications) setApplications(r.data.applications as AdminApplication[]);
+                          });
+                        }}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[11px] font-medium capitalize ${chip} ${active ? 'ring-2 ring-indigo-500/50' : ''}`}
+                      >
+                        {st}<span className="font-bold tabular-nums">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role · Company</th>
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Status</th>
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Applied</th>
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Next Action</th>
+                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Recruiter</th>
+                        <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">ATS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {applications.map((a, i) => {
+                        const chip = a.status ? (APPLICATION_STATUS_CHIP[a.status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
+                        return (
+                          <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                            <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{a.user_email}</td>
+                            <td className="px-4 py-3.5 text-xs">
+                              <div className="text-gray-300 font-medium">{a.job_title || '\u2014'}</div>
+                              <div className="text-gray-500">{a.company || '\u2014'}</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              {a.status ? (
+                                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${chip}`}>{a.status}</span>
+                              ) : (
+                                <span className="text-xs text-gray-700">\u2014</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{a.applied_at ? formatRelative(a.applied_at) : '\u2014'}</td>
+                            <td className="px-4 py-3.5 text-xs">
+                              {a.next_action_date ? (
+                                <div>
+                                  <div className="text-gray-300">{formatRelative(a.next_action_date)}</div>
+                                  {a.next_action_note && <div className="text-gray-500 italic">{a.next_action_note}</div>}
+                                </div>
+                              ) : (<span className="text-gray-700">\u2014</span>)}
+                            </td>
+                            <td className="px-4 py-3.5 text-xs">
+                              {(a.recruiter_name || a.recruiter_email) ? (
+                                <div>
+                                  <div className="text-gray-300">{a.recruiter_name || '\u2014'}</div>
+                                  {a.recruiter_email && <div className="text-gray-500 font-mono text-[10px]">{a.recruiter_email}</div>}
+                                </div>
+                              ) : (<span className="text-gray-700">\u2014</span>)}
+                            </td>
+                            <td className="px-4 py-3.5 text-center">
+                              {a.ats_overall != null ? (
+                                <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
+                                  a.ats_overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
+                                  a.ats_overall >= 60 ? 'bg-amber-500/15 text-amber-400' :
+                                  'bg-red-500/15 text-red-400'
+                                }`}>{a.ats_overall}</span>
+                              ) : (<span className="text-xs text-gray-700">\u2014</span>)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ──── Interview Prep Tab ──── */}
+        {tab === 'prep' && (
+          <>
+            {loading ? <Spinner /> : prepPacks.length === 0 ? (
+              <EmptyState message="No interview prep packs generated yet" />
+            ) : (
+              <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role · Company</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role Type</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">App Status</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Generated</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Session Created</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prepPacks.map((p, i) => {
+                      const st = p.application?.status;
+                      const stChip = st ? (APPLICATION_STATUS_CHIP[st] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
+                      return (
+                        <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                          <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{p.user_email}</td>
+                          <td className="px-4 py-3.5 text-xs">
+                            <div className="text-gray-300 font-medium">{p.jd_analysis?.job_title || '\u2014'}</div>
+                            <div className="text-gray-500">{p.jd_analysis?.company || '\u2014'}</div>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            {p.interview_prep?.content?.role_type ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border bg-indigo-500/15 text-indigo-300 border-indigo-500/25">
+                                {p.interview_prep.content.role_type}
+                              </span>
+                            ) : (<span className="text-xs text-gray-700">\u2014</span>)}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            {st ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${stChip}`}>{st}</span>
+                            ) : (<span className="text-xs text-gray-700">\u2014</span>)}
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">
+                            {p.interview_prep?.generated_at ? formatRelative(p.interview_prep.generated_at) : '\u2014'}
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{formatRelative(p.created_at || null)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ──── Tailoring Tab ──── */}
         {tab === 'tailoring' && (
           <>
@@ -693,36 +993,78 @@ export default function AdminPortal() {
                       <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
                       <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Job Title</th>
                       <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Company</th>
+                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Versions</th>
+                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Files</th>
+                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Status</th>
+                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Prep</th>
                       <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Created</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">ATS Score</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Base File</th>
+                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">ATS</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tailoring.map((r, i) => (
-                      <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                        <td className="px-4 py-3.5 font-mono text-xs text-gray-300">{r.user_email}</td>
-                        <td className="px-4 py-3.5 text-gray-300 text-xs font-medium">{r.jd_analysis?.job_title || '\u2014'}</td>
-                        <td className="px-4 py-3.5 text-gray-400 text-xs">{r.jd_analysis?.company || '\u2014'}</td>
-                        <td className="px-4 py-3.5 text-gray-500 text-xs">{formatRelative(r.created_at)}</td>
-                        <td className="px-4 py-3.5 text-center">
-                          {r.ats_scores?.overall != null ? (
-                            <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
-                              r.ats_scores.overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
-                              r.ats_scores.overall >= 60 ? 'bg-amber-500/15 text-amber-400' :
-                              'bg-red-500/15 text-red-400'
-                            }`}>
-                              {r.ats_scores.overall}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-gray-700">\u2014</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-gray-500 text-xs truncate max-w-[180px]">
-                          {r.base_resume_filename || '\u2014'}
-                        </td>
-                      </tr>
-                    ))}
+                    {tailoring.map((r, i) => {
+                      const s = r._summary || {};
+                      const status = s.application_status;
+                      const statusChip = status ? (APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
+                      return (
+                        <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                          <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{r.user_email}</td>
+                          <td className="px-4 py-3.5 text-gray-300 text-xs font-medium">{r.jd_analysis?.job_title || '\u2014'}</td>
+                          <td className="px-4 py-3.5 text-gray-400 text-xs">{r.jd_analysis?.company || '\u2014'}</td>
+                          <td className="px-4 py-3.5 text-center">
+                            {s.version_count ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 text-violet-300 text-[10px] font-semibold border border-violet-500/25">
+                                v{s.current_version_number ?? s.version_count}/{s.version_count}
+                                {s.current_source && s.current_source !== 'initial' && (
+                                  <span className="text-[8px] opacity-70">· {s.current_source}</span>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-700">\u2014</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            {s.files_cached ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 text-[10px] font-semibold">
+                                {s.files_cached}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-700">\u2014</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5">
+                            {status ? (
+                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${statusChip}`}>
+                                {status}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-700">\u2014</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-center">
+                            {s.interview_prep_ready ? (
+                              <span className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-emerald-500/15 text-emerald-400 text-[10px]">\u2713</span>
+                            ) : (
+                              <span className="text-xs text-gray-700">\u2014</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{formatRelative(r.created_at)}</td>
+                          <td className="px-4 py-3.5 text-center">
+                            {r.ats_scores?.overall != null ? (
+                              <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
+                                r.ats_scores.overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
+                                r.ats_scores.overall >= 60 ? 'bg-amber-500/15 text-amber-400' :
+                                'bg-red-500/15 text-red-400'
+                              }`}>
+                                {r.ats_scores.overall}
+                              </span>
+                            ) : (
+                              <span className="text-xs text-gray-700">\u2014</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1284,40 +1626,76 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
             <div className="p-5"><EmptyState message="No tailoring sessions" /></div>
           ) : (
             <div className="divide-y divide-white/5">
-              {tailoring_records.map((r: any, i: number) => (
-                <div key={i} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-sm text-white font-medium">
-                        {r.jd_analysis?.job_title || 'Unknown Role'}
-                      </p>
-                      {r.jd_analysis?.company && (
-                        <p className="text-[11px] text-gray-400 mt-0.5">at {r.jd_analysis.company}</p>
-                      )}
-                      {r.base_resume_filename && (
-                        <p className="text-[10px] text-gray-600 mt-1">Base: {r.base_resume_filename}</p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                      {r.ats_scores?.overall != null && (
-                        <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl ${
-                          r.ats_scores.overall >= 80 ? 'bg-emerald-500/10' :
-                          r.ats_scores.overall >= 60 ? 'bg-amber-500/10' : 'bg-red-500/10'
-                        }`}>
-                          <span className={`text-lg font-bold tabular-nums ${
-                            r.ats_scores.overall >= 80 ? 'text-emerald-400' :
-                            r.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'
-                          }`}>
-                            {r.ats_scores.overall}
-                          </span>
-                          <span className="text-[9px] text-gray-500 uppercase tracking-wider">ATS</span>
+              {tailoring_records.map((r: any, i: number) => {
+                const s = r._summary || {};
+                const status = s.application_status;
+                const statusChip = status ? (APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
+                return (
+                  <div key={i} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm text-white font-medium">
+                          {r.jd_analysis?.job_title || 'Unknown Role'}
+                        </p>
+                        {r.jd_analysis?.company && (
+                          <p className="text-[11px] text-gray-400 mt-0.5">at {r.jd_analysis.company}</p>
+                        )}
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                          {s.version_count > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-violet-500/15 text-violet-300 border-violet-500/25">
+                              v{s.current_version_number ?? s.version_count}/{s.version_count}
+                              {s.current_source && s.current_source !== 'initial' && (
+                                <span className="opacity-70 text-[9px]">· {s.current_source}</span>
+                              )}
+                            </span>
+                          )}
+                          {s.files_cached > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-emerald-500/15 text-emerald-400 border-emerald-500/25">
+                              {s.files_cached} file{s.files_cached !== 1 ? 's' : ''} cached
+                            </span>
+                          )}
+                          {status && (
+                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${statusChip}`}>
+                              {status}
+                            </span>
+                          )}
+                          {s.interview_prep_ready && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-blue-500/15 text-blue-400 border-blue-500/25">
+                              \u2713 Prep
+                            </span>
+                          )}
                         </div>
-                      )}
-                      <span className="text-[10px] text-gray-600">{formatRelative(r.created_at)}</span>
+                        {r.base_resume_filename && (
+                          <p className="text-[10px] text-gray-600 mt-2">Base: {r.base_resume_filename}</p>
+                        )}
+                        {s.recruiter_name && (
+                          <p className="text-[10px] text-gray-500 mt-1">Recruiter: {s.recruiter_name}{s.recruiter_company ? ` · ${s.recruiter_company}` : ''}</p>
+                        )}
+                        {s.next_action_date && (
+                          <p className="text-[10px] text-amber-400 mt-1">Next: {formatRelative(s.next_action_date)}{s.next_action_note ? ` · ${s.next_action_note}` : ''}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                        {r.ats_scores?.overall != null && (
+                          <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl ${
+                            r.ats_scores.overall >= 80 ? 'bg-emerald-500/10' :
+                            r.ats_scores.overall >= 60 ? 'bg-amber-500/10' : 'bg-red-500/10'
+                          }`}>
+                            <span className={`text-lg font-bold tabular-nums ${
+                              r.ats_scores.overall >= 80 ? 'text-emerald-400' :
+                              r.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'
+                            }`}>
+                              {r.ats_scores.overall}
+                            </span>
+                            <span className="text-[9px] text-gray-500 uppercase tracking-wider">ATS</span>
+                          </div>
+                        )}
+                        <span className="text-[10px] text-gray-600">{formatRelative(r.created_at)}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

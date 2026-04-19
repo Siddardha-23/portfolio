@@ -1,12 +1,14 @@
-import { useState, useEffect, useCallback, FormEvent, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, FormEvent } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 
 const SUPER_ADMIN_EMAIL = 'mannesiddardha@gmail.com';
 
-type Tab = 'dashboard' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep';
+type Tab = 'overview' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep';
 
+// ─── Types ────────────────────────────────────────────────────────────────
 interface AdminStats {
   total_users: number;
   users_7d: number;
@@ -24,48 +26,6 @@ interface AdminStats {
   applications_by_status: Record<string, number>;
   total_interview_prep_packs: number;
 }
-
-interface AdminApplication {
-  record_id: string;
-  user_email: string;
-  job_title?: string;
-  company?: string;
-  ats_overall?: number;
-  status?: string;
-  applied_at?: string | null;
-  next_action_date?: string | null;
-  next_action_note?: string;
-  recruiter_name?: string;
-  recruiter_email?: string;
-  recruiter_company?: string;
-  job_url?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface AdminPrepPack {
-  record_id: string;
-  user_email: string;
-  jd_analysis?: { job_title?: string; company?: string };
-  interview_prep?: {
-    generated_at?: string;
-    grounded_version_id?: string;
-    content?: { role_type?: string };
-  };
-  application?: { status?: string };
-  created_at?: string;
-}
-
-const APPLICATION_STATUS_CHIP: Record<string, string> = {
-  draft:        'bg-gray-500/15 text-gray-400 border-gray-500/25',
-  applied:      'bg-indigo-500/15 text-indigo-400 border-indigo-500/25',
-  interviewing: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
-  offer:        'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
-  rejected:     'bg-red-500/15 text-red-400 border-red-500/25',
-  ghosted:      'bg-amber-500/15 text-amber-400 border-amber-500/25',
-  withdrawn:    'bg-gray-400/15 text-gray-500 border-gray-400/25',
-};
-
 interface AdminUser {
   id: string;
   email: string;
@@ -81,7 +41,6 @@ interface AdminUser {
   tailoring_sessions: number;
   has_parsed_resume: boolean;
 }
-
 interface UserDetail {
   user: AdminUser & { fingerprint_hash: string | null; session_id: string | null };
   parsed_resume: any;
@@ -89,256 +48,561 @@ interface UserDetail {
   generated_resumes: any[];
   tailoring_records: any[];
 }
-
 interface Activity {
-  type: string;
-  email: string;
-  name?: string;
-  detail?: string;
-  company?: string;
-  ats_score?: number;
-  timestamp: string;
+  type: string; email: string; name?: string; detail?: string;
+  company?: string; ats_score?: number; timestamp: string;
+}
+interface AdminApplication {
+  record_id: string; user_email: string;
+  job_title?: string; company?: string; ats_overall?: number;
+  status?: string; applied_at?: string | null;
+  next_action_date?: string | null; next_action_note?: string;
+  recruiter_name?: string; recruiter_email?: string; recruiter_company?: string;
+  job_url?: string; created_at?: string; updated_at?: string;
+}
+interface AdminPrepPack {
+  record_id: string; user_email: string;
+  jd_analysis?: { job_title?: string; company?: string };
+  interview_prep?: {
+    generated_at?: string; grounded_version_id?: string;
+    content?: { role_type?: string };
+  };
+  application?: { status?: string };
+  created_at?: string;
 }
 
-function formatDate(iso: string | null) {
-  if (!iso) return '\u2014';
+// ─── Helpers ──────────────────────────────────────────────────────────────
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const d = new Date(iso);
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
-
-function formatRelative(iso: string | null) {
-  if (!iso) return '\u2014';
+function fmtRel(iso: string | null | undefined): string {
+  if (!iso) return '—';
   const d = new Date(iso);
-  const now = new Date();
-  const diffMs = now.getTime() - d.getTime();
+  if (isNaN(d.getTime())) return '—';
+  const diffMs = Date.now() - d.getTime();
   const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'Just now';
+  if (diffMin < 1) return 'just now';
   if (diffMin < 60) return `${diffMin}m ago`;
   const diffH = Math.floor(diffMin / 60);
   if (diffH < 24) return `${diffH}h ago`;
   const diffD = Math.floor(diffH / 24);
   if (diffD < 7) return `${diffD}d ago`;
+  if (diffD < 30) return `${Math.floor(diffD / 7)}w ago`;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
+function fmtNum(n: number | undefined | null): string {
+  if (n === null || n === undefined) return '0';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+function initials(nameOrEmail: string | null | undefined): string {
+  if (!nameOrEmail) return '?';
+  const base = nameOrEmail.split('@')[0].replace(/[._-]/g, ' ');
+  const parts = base.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return nameOrEmail[0].toUpperCase();
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+const AVATAR_GRADIENTS = [
+  'from-indigo-500 to-violet-600', 'from-blue-500 to-cyan-600',
+  'from-emerald-500 to-teal-600', 'from-amber-500 to-orange-600',
+  'from-rose-500 to-pink-600', 'from-purple-500 to-fuchsia-600',
+  'from-cyan-500 to-blue-600', 'from-lime-500 to-emerald-600',
+];
+function gradientFor(seed: string | null | undefined): string {
+  if (!seed) return AVATAR_GRADIENTS[0];
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+  return AVATAR_GRADIENTS[Math.abs(h) % AVATAR_GRADIENTS.length];
+}
 
-// ─── Icons ────────────────────────────────────────────────────────
+const STATUS_COLORS: Record<string, { chip: string; dot: string; label: string }> = {
+  draft:        { chip: 'bg-gray-500/15 text-gray-400 border-gray-500/25',         dot: 'bg-gray-400',     label: 'Draft' },
+  applied:      { chip: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/25',   dot: 'bg-indigo-400',   label: 'Applied' },
+  interviewing: { chip: 'bg-blue-500/15 text-blue-400 border-blue-500/25',         dot: 'bg-blue-400',     label: 'Interviewing' },
+  offer:        { chip: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25', dot: 'bg-emerald-400', label: 'Offer' },
+  rejected:     { chip: 'bg-red-500/15 text-red-400 border-red-500/25',            dot: 'bg-red-400',     label: 'Rejected' },
+  ghosted:      { chip: 'bg-amber-500/15 text-amber-400 border-amber-500/25',      dot: 'bg-amber-400',   label: 'Ghosted' },
+  withdrawn:    { chip: 'bg-gray-400/15 text-gray-500 border-gray-400/25',         dot: 'bg-gray-500',    label: 'Withdrawn' },
+};
+const STATUSES: Array<keyof typeof STATUS_COLORS> = ['draft', 'applied', 'interviewing', 'offer', 'rejected', 'ghosted', 'withdrawn'];
 
-function IconUsers({ className = 'w-5 h-5' }: { className?: string }) {
+// ─── Icons ────────────────────────────────────────────────────────────────
+const Icon = {
+  Home:     (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m2.25 12 8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>,
+  Users:    (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" /></svg>,
+  Doc:      (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" /></svg>,
+  Bolt:     (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>,
+  Briefcase:(p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 14.15v4.07a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25v-4.07M12 17.3v-7.85m0 0L8.25 12.96M12 9.45l3.75 3.51M3.75 9.22a9.76 9.76 0 0 1 8.25-4.47c3.47 0 6.495 1.8 8.25 4.47m-16.5 0a9.72 9.72 0 0 0-.75 3.72c0 .83.105 1.63.3 2.4m16.95-6.12a9.72 9.72 0 0 1 .75 3.72c0 .83-.105 1.63-.3 2.4" /></svg>,
+  Brain:    (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 0 0-2.455 2.456Z" /></svg>,
+  Search:   (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg>,
+  Refresh:  (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992V4.356m0 4.992-3.181-3.183a8.25 8.25 0 0 0-11.667 0l-3.181 3.183m0 5.304h4.992m-4.993 0v4.992" /></svg>,
+  Logout:   (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0 0 13.5 3h-6a2.25 2.25 0 0 0-2.25 2.25v13.5A2.25 2.25 0 0 0 7.5 21h6a2.25 2.25 0 0 0 2.25-2.25V15m3 0 3-3m0 0-3-3m3 3H9" /></svg>,
+  Back:     (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>,
+  X:        (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>,
+  Eye:      (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>,
+  Download: (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>,
+  Chevron:  (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>,
+  Trend:    (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.307a11.95 11.95 0 0 1 5.814-5.519l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" /></svg>,
+  Sparkle:  (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>,
+  Upload:   (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 7.5m0 0L7.5 12M12 7.5v9" /></svg>,
+  Kanban:   (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25A2.25 2.25 0 0 1 8.25 10.5H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 8.25 20.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" /></svg>,
+  List:     (p: { c?: string }) => <svg className={p.c} fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 17.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" /></svg>,
+};
+
+// ─── Primitives ──────────────────────────────────────────────────────────
+
+function Avatar({ seed, size = 'md' }: { seed: string | null | undefined; size?: 'sm' | 'md' | 'lg' }) {
+  const dims = size === 'sm' ? 'h-8 w-8 text-[10px]' : size === 'lg' ? 'h-12 w-12 text-sm' : 'h-9 w-9 text-xs';
   return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+    <div className={`${dims} shrink-0 rounded-xl bg-gradient-to-br ${gradientFor(seed)} text-white font-bold flex items-center justify-center shadow-sm shadow-black/30 ring-1 ring-white/10`}>
+      {initials(seed)}
+    </div>
+  );
+}
+
+function StatusPill({ status, size = 'md' }: { status?: string; size?: 'sm' | 'md' }) {
+  const meta = status ? STATUS_COLORS[status] : null;
+  if (!meta) return <span className="text-xs text-gray-600">—</span>;
+  const pad = size === 'sm' ? 'px-1.5 py-0.5 text-[10px]' : 'px-2 py-0.5 text-[11px]';
+  return (
+    <span className={`inline-flex items-center gap-1 ${pad} rounded-full border font-semibold ${meta.chip}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  );
+}
+
+function Sparkline({ data, color = 'indigo', width = 80, height = 28 }: {
+  data: number[]; color?: 'indigo' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan';
+  width?: number; height?: number;
+}) {
+  if (!data || data.length < 2) {
+    return <div className="h-7 w-20 rounded bg-white/[0.03]" />;
+  }
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * (height - 4) - 2;
+    return [x, y];
+  });
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]},${p[1]}`).join(' ');
+  const areaPath = `${path} L ${width},${height} L 0,${height} Z`;
+  const colorMap = {
+    indigo: { stroke: '#818cf8', fill: 'url(#spark-indigo)' },
+    emerald: { stroke: '#34d399', fill: 'url(#spark-emerald)' },
+    violet: { stroke: '#a78bfa', fill: 'url(#spark-violet)' },
+    amber: { stroke: '#fbbf24', fill: 'url(#spark-amber)' },
+    rose: { stroke: '#fb7185', fill: 'url(#spark-rose)' },
+    cyan: { stroke: '#22d3ee', fill: 'url(#spark-cyan)' },
+  }[color];
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      <defs>
+        <linearGradient id="spark-indigo" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#818cf8" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#818cf8" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="spark-emerald" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#34d399" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="spark-violet" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="spark-amber" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="spark-rose" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#fb7185" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#fb7185" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="spark-cyan" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="#22d3ee" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill={colorMap.fill} />
+      <path d={path} stroke={colorMap.stroke} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={points[points.length - 1][0]} cy={points[points.length - 1][1]} r={2.5} fill={colorMap.stroke} />
     </svg>
   );
 }
 
-function IconDocument({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-    </svg>
-  );
-}
-
-function IconBolt({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-    </svg>
-  );
-}
-
-function IconUpload({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-    </svg>
-  );
-}
-
-function IconChart({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-    </svg>
-  );
-}
-
-function IconLogout({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
-    </svg>
-  );
-}
-
-function IconArrowLeft({ className = 'w-5 h-5' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-    </svg>
-  );
-}
-
-function IconEye({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  );
-}
-
-function IconDownload({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-    </svg>
-  );
-}
-
-function IconSearch({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-    </svg>
-  );
-}
-
-function IconRefresh({ className = 'w-4 h-4' }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-    </svg>
-  );
-}
-
-// ─── Stat Card ────────────────────────────────────────────────────
-
-function StatCard({
-  label,
-  value,
-  sub,
-  icon,
-  color = 'indigo',
+function KPICard({
+  label, value, sub, icon, color = 'indigo', trend, sparklineData,
 }: {
-  label: string;
-  value: number | string;
-  sub?: string;
+  label: string; value: number | string; sub?: string;
   icon: React.ReactNode;
   color?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet';
+  trend?: { direction: 'up' | 'down' | 'flat'; pct?: number };
+  sparklineData?: number[];
 }) {
-  const colorMap = {
-    indigo: 'from-indigo-500/20 to-indigo-500/5 border-indigo-500/20 text-indigo-400',
-    emerald: 'from-emerald-500/20 to-emerald-500/5 border-emerald-500/20 text-emerald-400',
-    amber: 'from-amber-500/20 to-amber-500/5 border-amber-500/20 text-amber-400',
-    rose: 'from-rose-500/20 to-rose-500/5 border-rose-500/20 text-rose-400',
-    cyan: 'from-cyan-500/20 to-cyan-500/5 border-cyan-500/20 text-cyan-400',
-    violet: 'from-violet-500/20 to-violet-500/5 border-violet-500/20 text-violet-400',
+  const iconBg: Record<string, string> = {
+    indigo:  'bg-indigo-500/10 text-indigo-400 ring-indigo-500/20',
+    emerald: 'bg-emerald-500/10 text-emerald-400 ring-emerald-500/20',
+    amber:   'bg-amber-500/10 text-amber-400 ring-amber-500/20',
+    rose:    'bg-rose-500/10 text-rose-400 ring-rose-500/20',
+    cyan:    'bg-cyan-500/10 text-cyan-400 ring-cyan-500/20',
+    violet:  'bg-violet-500/10 text-violet-400 ring-violet-500/20',
   };
-  const iconBg = {
-    indigo: 'bg-indigo-500/10 text-indigo-400',
-    emerald: 'bg-emerald-500/10 text-emerald-400',
-    amber: 'bg-amber-500/10 text-amber-400',
-    rose: 'bg-rose-500/10 text-rose-400',
-    cyan: 'bg-cyan-500/10 text-cyan-400',
-    violet: 'bg-violet-500/10 text-violet-400',
-  };
-
+  const trendCls =
+    trend?.direction === 'up' ? 'text-emerald-400' :
+    trend?.direction === 'down' ? 'text-red-400' : 'text-gray-500';
   return (
-    <div className={`relative overflow-hidden rounded-2xl border bg-gradient-to-br ${colorMap[color]} p-5 transition-all hover:scale-[1.02] hover:shadow-lg hover:shadow-black/20`}>
-      <div className="flex items-start justify-between">
-        <div className="space-y-2">
-          <p className="text-xs text-gray-400 uppercase tracking-wider font-medium">{label}</p>
-          <p className="text-3xl font-bold text-white tabular-nums">{value}</p>
-          {sub && <p className="text-xs text-gray-500">{sub}</p>}
+    <motion.div
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, ease: 'easeOut' }}
+      className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.04] to-white/[0.01] p-5 transition-all hover:border-white/[0.12]"
+    >
+      <div className="absolute inset-x-0 -top-20 h-40 bg-gradient-to-b from-white/[0.03] to-transparent blur-2xl pointer-events-none" />
+      <div className="relative flex items-start justify-between gap-4">
+        <div className="space-y-2 min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center justify-center rounded-xl p-2 ring-1 ${iconBg[color]}`}>
+              {icon}
+            </span>
+            <p className="text-[11px] text-gray-400 uppercase tracking-wider font-semibold">{label}</p>
+          </div>
+          <p className="text-3xl font-bold text-white tabular-nums leading-tight">{value}</p>
+          <div className="flex items-center gap-2">
+            {trend && (
+              <span className={`inline-flex items-center gap-0.5 text-[11px] font-semibold ${trendCls}`}>
+                {trend.direction === 'up' && '↑'}
+                {trend.direction === 'down' && '↓'}
+                {trend.direction === 'flat' && '→'}
+                {trend.pct !== undefined && `${Math.abs(trend.pct).toFixed(0)}%`}
+              </span>
+            )}
+            {sub && <p className="text-xs text-gray-500 truncate">{sub}</p>}
+          </div>
         </div>
-        <div className={`rounded-xl p-2.5 ${iconBg[color]}`}>
-          {icon}
-        </div>
+        {sparklineData && sparklineData.length >= 2 && (
+          <div className="shrink-0 -mr-1">
+            <Sparkline data={sparklineData} color={color} />
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+function PipelineBar({ counts }: { counts: Record<string, number> }) {
+  const total = STATUSES.reduce((s, k) => s + (counts[k] || 0), 0);
+  if (total === 0) return null;
+  return (
+    <div className="space-y-2.5">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-white/[0.04] ring-1 ring-white/[0.06]">
+        {STATUSES.map(status => {
+          const n = counts[status] || 0;
+          if (n === 0) return null;
+          const pct = (n / total) * 100;
+          return (
+            <div
+              key={status}
+              className={STATUS_COLORS[status].dot}
+              style={{ width: `${pct}%` }}
+              title={`${STATUS_COLORS[status].label}: ${n} (${pct.toFixed(0)}%)`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {STATUSES.map(status => {
+          const n = counts[status] || 0;
+          if (n === 0) return null;
+          const meta = STATUS_COLORS[status];
+          const pct = (n / total) * 100;
+          return (
+            <div key={status} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] ${meta.chip}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+              <span className="font-medium">{meta.label}</span>
+              <span className="font-bold tabular-nums">{n}</span>
+              <span className="opacity-60">· {pct.toFixed(0)}%</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ─── Activity Item ────────────────────────────────────────────────
-
-function ActivityItem({ activity }: { activity: Activity }) {
-  const config: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
-    registration: { icon: <IconUsers className="w-3.5 h-3.5" />, label: 'Registered', color: 'text-emerald-400 bg-emerald-500/10' },
-    login: { icon: <IconArrowLeft className="w-3.5 h-3.5 rotate-180" />, label: 'Signed in', color: 'text-blue-400 bg-blue-500/10' },
-    upload: { icon: <IconUpload className="w-3.5 h-3.5" />, label: 'Uploaded resume', color: 'text-amber-400 bg-amber-500/10' },
-    tailoring: { icon: <IconBolt className="w-3.5 h-3.5" />, label: 'Tailored resume', color: 'text-violet-400 bg-violet-500/10' },
+function ActivityRow({ a }: { a: Activity }) {
+  const meta: Record<string, { label: string; icon: string; tint: string }> = {
+    registration: { label: 'joined',            icon: '✦',  tint: 'from-emerald-500/20 to-emerald-500/5 text-emerald-400 ring-emerald-500/20' },
+    login:        { label: 'signed in',         icon: '→',  tint: 'from-blue-500/20 to-blue-500/5 text-blue-400 ring-blue-500/20' },
+    upload:       { label: 'uploaded a resume', icon: '↑',  tint: 'from-amber-500/20 to-amber-500/5 text-amber-400 ring-amber-500/20' },
+    tailoring:    { label: 'tailored resume',   icon: '⚡', tint: 'from-violet-500/20 to-violet-500/5 text-violet-400 ring-violet-500/20' },
   };
-  const c = config[activity.type] || config.login;
-
+  const m = meta[a.type] || meta.login;
   return (
-    <div className="flex items-center gap-3 py-3 border-b border-white/5 last:border-0">
-      <div className={`flex-shrink-0 rounded-lg p-2 ${c.color}`}>
-        {c.icon}
+    <div className="group flex items-start gap-3 px-5 py-3 hover:bg-white/[0.02] transition-colors">
+      <div className={`shrink-0 h-8 w-8 rounded-lg bg-gradient-to-br ${m.tint} ring-1 flex items-center justify-center text-base font-bold`}>
+        {m.icon}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-gray-200 truncate">
-          <span className="font-medium text-white">{activity.name || activity.email.split('@')[0]}</span>
-          {' '}<span className="text-gray-500">{c.label}</span>
-          {activity.detail && (
-            <span className="text-gray-400"> &mdash; {activity.detail}</span>
-          )}
-          {activity.company && (
-            <span className="text-gray-500"> at {activity.company}</span>
-          )}
+        <p className="text-sm text-gray-200 leading-snug">
+          <span className="font-semibold text-white">{a.name || a.email.split('@')[0]}</span>
+          <span className="text-gray-500"> {m.label}</span>
+          {a.detail && <span className="text-gray-300"> · {a.detail}</span>}
+          {a.company && a.company !== 'Not specified' && <span className="text-gray-500"> @ {a.company}</span>}
         </p>
-        <p className="text-xs text-gray-600 mt-0.5">{activity.email}</p>
+        <p className="text-[11px] text-gray-600 font-mono mt-0.5 truncate">{a.email}</p>
       </div>
-      <div className="flex-shrink-0 text-right">
-        {activity.ats_score != null && (
-          <span className={`text-xs font-semibold tabular-nums mr-3 ${
-            activity.ats_score >= 80 ? 'text-emerald-400' :
-            activity.ats_score >= 60 ? 'text-amber-400' : 'text-red-400'
+      <div className="text-right shrink-0">
+        {a.ats_score != null && (
+          <span className={`block text-xs font-bold tabular-nums ${
+            a.ats_score >= 80 ? 'text-emerald-400' : a.ats_score >= 60 ? 'text-amber-400' : 'text-red-400'
           }`}>
-            ATS {activity.ats_score}
+            ATS {a.ats_score}
           </span>
         )}
-        <span className="text-xs text-gray-600">{formatRelative(activity.timestamp)}</span>
+        <span className="block text-[11px] text-gray-600 mt-0.5">{fmtRel(a.timestamp)}</span>
       </div>
     </div>
   );
 }
 
-// ─── Loading Spinner ──────────────────────────────────────────────
-
-function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
-  const s = size === 'sm' ? 'h-5 w-5' : size === 'lg' ? 'h-10 w-10' : 'h-7 w-7';
+function EmptyHero({ icon, title, subtitle, action }: { icon: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex justify-center py-12">
-      <div className={`animate-spin ${s} border-2 border-indigo-500 border-t-transparent rounded-full`} />
-    </div>
-  );
-}
-
-// ─── Empty State ──────────────────────────────────────────────────
-
-function EmptyState({ message }: { message: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center">
-      <div className="rounded-2xl bg-white/[0.03] p-6 mb-4">
-        <IconDocument className="w-10 h-10 text-gray-600" />
+    <div className="rounded-2xl border border-dashed border-white/[0.08] bg-gradient-to-b from-white/[0.02] to-transparent py-16 px-6 text-center">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500/20 to-violet-500/10 text-indigo-400 ring-1 ring-indigo-500/20">
+        {icon}
       </div>
-      <p className="text-gray-500 text-sm">{message}</p>
+      <h3 className="text-sm font-semibold text-gray-200">{title}</h3>
+      {subtitle && <p className="text-xs text-gray-500 mt-1.5 max-w-sm mx-auto">{subtitle}</p>}
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }
 
-// ═════════════════════════════════════════════════════════════════
-// MAIN COMPONENT
-// ═════════════════════════════════════════════════════════════════
+function SectionHeading({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex items-start justify-between gap-4 mb-4">
+      <div>
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function SkeletonRow() {
+  return (
+    <div className="animate-pulse space-y-2">
+      <div className="h-12 rounded-xl bg-white/[0.03]" />
+      <div className="h-12 rounded-xl bg-white/[0.025]" />
+      <div className="h-12 rounded-xl bg-white/[0.02]" />
+    </div>
+  );
+}
+
+function SearchBox({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+  return (
+    <div className="relative">
+      <Icon.Search c="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="pl-9 pr-8 py-2 w-full rounded-xl bg-white/[0.03] border border-white/[0.06] text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/30 transition"
+      />
+      {value && (
+        <button
+          onClick={() => onChange('')}
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full text-gray-500 hover:text-white hover:bg-white/10 flex items-center justify-center text-xs"
+          aria-label="Clear"
+        >×</button>
+      )}
+    </div>
+  );
+}
+
+// ─── Sidebar Nav ──────────────────────────────────────────────────────────
+
+const NAV_ITEMS: { key: Tab; label: string; icon: React.ComponentType<{ c?: string }> }[] = [
+  { key: 'overview',     label: 'Overview',       icon: Icon.Home },
+  { key: 'users',        label: 'Users',          icon: Icon.Users },
+  { key: 'resumes',      label: 'Parsed Resumes', icon: Icon.Doc },
+  { key: 'tailoring',    label: 'Tailoring',      icon: Icon.Bolt },
+  { key: 'applications', label: 'Applications',   icon: Icon.Briefcase },
+  { key: 'prep',         label: 'Interview Prep', icon: Icon.Brain },
+];
+
+function Sidebar({
+  tab, setTab, counts, user, onSignOut, onBackToApp,
+}: {
+  tab: Tab; setTab: (t: Tab) => void;
+  counts: Partial<Record<Tab, number>>;
+  user: { name?: string | null; email?: string | null } | null;
+  onSignOut: () => void;
+  onBackToApp: () => void;
+}) {
+  return (
+    <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-[#0d0d14] sticky top-0 h-screen">
+      {/* Brand */}
+      <div className="h-16 flex items-center gap-3 px-5 border-b border-white/[0.06]">
+        <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+          <Icon.Sparkle c="w-4 h-4 text-white" />
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white leading-tight">Admin Suite</p>
+          <p className="text-[10px] text-gray-500 leading-tight">Super-admin console</p>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {NAV_ITEMS.map(item => {
+          const active = tab === item.key;
+          const count = counts[item.key];
+          const Icn = item.icon;
+          return (
+            <button
+              key={item.key}
+              onClick={() => setTab(item.key)}
+              className={`w-full group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                active
+                  ? 'text-white bg-gradient-to-r from-indigo-500/15 via-violet-500/10 to-transparent'
+                  : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.03]'
+              }`}
+            >
+              {active && (
+                <motion.span
+                  layoutId="sidebar-active"
+                  className="absolute inset-y-1.5 left-0 w-0.5 bg-gradient-to-b from-indigo-400 to-violet-400 rounded-r"
+                  transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+                />
+              )}
+              <Icn c={`w-[18px] h-[18px] ${active ? 'text-indigo-300' : ''}`} />
+              <span className="flex-1 text-left">{item.label}</span>
+              {count !== undefined && count > 0 && (
+                <span className={`text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded-full ${
+                  active ? 'bg-indigo-500/20 text-indigo-200' : 'bg-white/[0.06] text-gray-500'
+                }`}>{fmtNum(count)}</span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Back-to-app */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={onBackToApp}
+          className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[11px] text-gray-500 hover:text-gray-300 hover:bg-white/[0.03] transition"
+        >
+          <Icon.Back c="w-3.5 h-3.5" />
+          <span>Back to app</span>
+        </button>
+      </div>
+
+      {/* User */}
+      <div className="border-t border-white/[0.06] px-3 py-3">
+        <div className="flex items-center gap-2.5 px-2 py-2 rounded-xl bg-white/[0.02]">
+          <Avatar seed={user?.email || user?.name || 'admin'} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-medium text-white truncate">{user?.name || 'Admin'}</p>
+            <p className="text-[10px] text-gray-500 truncate font-mono">{user?.email}</p>
+          </div>
+          <button
+            onClick={onSignOut}
+            title="Sign out"
+            className="shrink-0 h-8 w-8 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 flex items-center justify-center transition"
+          >
+            <Icon.Logout c="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function MobileTopNav({ tab, setTab, onSignOut, onBackToApp }: {
+  tab: Tab; setTab: (t: Tab) => void; onSignOut: () => void; onBackToApp: () => void;
+}) {
+  return (
+    <div className="lg:hidden sticky top-0 z-40 bg-[#0d0d14]/95 backdrop-blur-xl border-b border-white/[0.06]">
+      <div className="flex items-center justify-between px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+            <Icon.Sparkle c="w-4 h-4 text-white" />
+          </div>
+          <span className="text-sm font-bold text-white">Admin</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button onClick={onBackToApp} className="p-1.5 text-gray-500 hover:text-white"><Icon.Back c="w-4 h-4" /></button>
+          <button onClick={onSignOut} className="p-1.5 text-gray-500 hover:text-red-400"><Icon.Logout c="w-4 h-4" /></button>
+        </div>
+      </div>
+      <div className="overflow-x-auto px-3 pb-2 flex gap-1">
+        {NAV_ITEMS.map(item => {
+          const active = tab === item.key;
+          const Icn = item.icon;
+          return (
+            <button
+              key={item.key}
+              onClick={() => setTab(item.key)}
+              className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                active ? 'bg-indigo-500/15 text-indigo-300' : 'text-gray-500 hover:text-gray-200'
+              }`}
+            >
+              <Icn c="w-3.5 h-3.5" /> {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Topbar ──────────────────────────────────────────────────────────────
+
+function Topbar({ title, subtitle, onRefresh, refreshing, right }: {
+  title: string; subtitle?: string; onRefresh?: () => void; refreshing?: boolean; right?: React.ReactNode;
+}) {
+  return (
+    <div className="sticky top-0 z-30 bg-[#0a0a0f]/90 backdrop-blur-xl border-b border-white/[0.06]">
+      <div className="px-6 py-4 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold text-white leading-tight">{title}</h1>
+          {subtitle && <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{subtitle}</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {right}
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="h-9 w-9 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] text-gray-400 hover:text-white flex items-center justify-center transition disabled:opacity-50"
+              title="Refresh"
+            >
+              <Icon.Refresh c={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// MAIN PAGE
+// ═════════════════════════════════════════════════════════════════════════
 
 export default function AdminPortal() {
   const { user, isAuthenticated, isLoading: authLoading, logout } = useAuth();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>('overview');
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [resumes, setResumes] = useState<any[]>([]);
@@ -348,9 +612,9 @@ export default function AdminPortal() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
 
   const isSuperAdmin = isAuthenticated && user?.email === SUPER_ADMIN_EMAIL;
 
@@ -359,12 +623,10 @@ export default function AdminPortal() {
     if (res.data?.total_users != null) setStats(res.data);
     else if (res.error) setError(res.error);
   }, []);
-
   const fetchActivity = useCallback(async () => {
     const res = await apiService.getAdminActivity();
     if (res.data?.activities) setActivities(res.data.activities);
   }, []);
-
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminUsers();
@@ -372,7 +634,6 @@ export default function AdminPortal() {
     else if (res.error) setError(res.error);
     setLoading(false);
   }, []);
-
   const fetchResumes = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminResumes();
@@ -380,7 +641,6 @@ export default function AdminPortal() {
     else if (res.error) setError(res.error);
     setLoading(false);
   }, []);
-
   const fetchTailoring = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminTailoring();
@@ -388,7 +648,6 @@ export default function AdminPortal() {
     else if (res.error) setError(res.error);
     setLoading(false);
   }, []);
-
   const fetchApplications = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminApplications();
@@ -396,7 +655,6 @@ export default function AdminPortal() {
     else if (res.error) setError(res.error);
     setLoading(false);
   }, []);
-
   const fetchPrepPacks = useCallback(async () => {
     setLoading(true);
     const res = await apiService.getAdminInterviewPrep();
@@ -404,7 +662,6 @@ export default function AdminPortal() {
     else if (res.error) setError(res.error);
     setLoading(false);
   }, []);
-
   const fetchUserDetail = useCallback(async (email: string) => {
     setLoading(true);
     const res = await apiService.getAdminUserDetail(email);
@@ -415,8 +672,7 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!isSuperAdmin) return;
-    fetchStats();
-    fetchActivity();
+    fetchStats(); fetchActivity();
   }, [isSuperAdmin, fetchStats, fetchActivity]);
 
   useEffect(() => {
@@ -428,26 +684,31 @@ export default function AdminPortal() {
     else if (tab === 'prep') fetchPrepPacks();
   }, [tab, isSuperAdmin, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
 
-  const handleSignOut = () => {
-    logout();
-    navigate('/home');
+  const handleRefresh = async () => {
+    setError(''); setRefreshing(true);
+    await Promise.all([
+      fetchStats(), fetchActivity(),
+      tab === 'users' ? fetchUsers() : Promise.resolve(),
+      tab === 'resumes' ? fetchResumes() : Promise.resolve(),
+      tab === 'tailoring' ? fetchTailoring() : Promise.resolve(),
+      tab === 'applications' ? fetchApplications() : Promise.resolve(),
+      tab === 'prep' ? fetchPrepPacks() : Promise.resolve(),
+    ]);
+    setRefreshing(false);
   };
 
-  const handleRefresh = () => {
-    setError('');
-    if (tab === 'dashboard') { fetchStats(); fetchActivity(); }
-    else if (tab === 'users') fetchUsers();
-    else if (tab === 'resumes') fetchResumes();
-    else if (tab === 'tailoring') fetchTailoring();
-    else if (tab === 'applications') fetchApplications();
-    else if (tab === 'prep') fetchPrepPacks();
+  const counts: Partial<Record<Tab, number>> = {
+    users: stats?.total_users,
+    resumes: stats?.total_parsed_resumes,
+    tailoring: stats?.total_tailoring_sessions,
+    applications: stats?.total_applications,
+    prep: stats?.total_interview_prep_packs,
   };
 
-  // Auth guards
   if (authLoading) {
     return (
       <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-        <Spinner size="lg" />
+        <div className="h-10 w-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -458,1281 +719,1162 @@ export default function AdminPortal() {
         <div className="text-center space-y-4">
           <div className="text-7xl font-bold bg-gradient-to-b from-gray-400 to-gray-700 bg-clip-text text-transparent">403</div>
           <p className="text-gray-400">You are not authorized to access this page.</p>
-          <button onClick={() => navigate('/home')} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition">
-            Go Home
-          </button>
+          <button onClick={() => navigate('/home')} className="text-sm text-indigo-400 hover:text-indigo-300">← Back to homepage</button>
         </div>
       </div>
     );
   }
 
-  const filteredUsers = searchQuery
-    ? (users || []).filter(u =>
-        u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (u.role || '').toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : (users || []);
-
-  const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'dashboard', label: 'Overview', icon: <IconChart className="w-4 h-4" /> },
-    { key: 'users', label: 'Users', icon: <IconUsers className="w-4 h-4" /> },
-    { key: 'resumes', label: 'Parsed Resumes', icon: <IconDocument className="w-4 h-4" /> },
-    { key: 'tailoring', label: 'Tailoring', icon: <IconBolt className="w-4 h-4" /> },
-    { key: 'applications', label: 'Applications', icon: <IconDocument className="w-4 h-4" /> },
-    { key: 'prep', label: 'Interview Prep', icon: <IconChart className="w-4 h-4" /> },
-  ];
+  const tabMeta: Record<Tab, { title: string; subtitle: string }> = {
+    overview:     { title: 'Overview',       subtitle: 'System health, pipeline, and activity at a glance.' },
+    users:        { title: 'Users',          subtitle: `${stats?.total_users ?? 0} registered · ${stats?.users_7d ?? 0} this week` },
+    resumes:      { title: 'Parsed Resumes', subtitle: 'Structured resumes extracted from user uploads.' },
+    tailoring:    { title: 'Tailoring',      subtitle: 'Every JD-tailored session with version + cache metadata.' },
+    applications: { title: 'Applications',   subtitle: 'Pipeline across all users — draft through offer.' },
+    prep:         { title: 'Interview Prep', subtitle: 'AI-generated prep packs by role type and user.' },
+  };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
-      {/* ─── Header ─────────────────────────────────────────── */}
-      <div className="border-b border-white/[0.06] bg-gradient-to-r from-white/[0.02] to-transparent backdrop-blur-xl sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <button onClick={() => navigate('/home')} className="text-gray-500 hover:text-white transition-colors p-1.5 rounded-lg hover:bg-white/5">
-              <IconArrowLeft className="w-4 h-4" />
-            </button>
-            <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
-                <IconChart className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h1 className="text-sm font-semibold leading-tight">Admin Dashboard</h1>
-                <p className="text-[10px] text-gray-500 leading-tight">Super Admin Portal</p>
-              </div>
-            </div>
-          </div>
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex">
+      <Sidebar
+        tab={tab} setTab={setTab} counts={counts}
+        user={user}
+        onSignOut={() => { logout(); navigate('/home'); }}
+        onBackToApp={() => navigate('/home')}
+      />
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleRefresh}
-              className="p-2 text-gray-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
-              title="Refresh data"
+      <main className="flex-1 min-w-0 flex flex-col">
+        <MobileTopNav
+          tab={tab} setTab={setTab}
+          onSignOut={() => { logout(); navigate('/home'); }}
+          onBackToApp={() => navigate('/home')}
+        />
+        <Topbar
+          title={tabMeta[tab].title}
+          subtitle={tabMeta[tab].subtitle}
+          onRefresh={handleRefresh}
+          refreshing={refreshing}
+        />
+
+        {/* Error banner */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }}
+              className="mx-6 mt-4 flex items-start justify-between gap-3 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl"
             >
-              <IconRefresh className="w-4 h-4" />
-            </button>
+              <p className="text-sm text-red-300">{error}</p>
+              <button onClick={() => setError('')} className="text-red-400/60 hover:text-red-400 text-xs">Dismiss</button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-            <div className="h-5 w-px bg-white/10" />
-
-            <div className="flex items-center gap-2.5">
-              <div className="h-7 w-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-[10px] font-bold">
-                {(user?.name || user?.email || 'A').charAt(0).toUpperCase()}
-              </div>
-              <div className="hidden sm:block">
-                <p className="text-xs font-medium text-gray-300 leading-tight">{user?.name || 'Super Admin'}</p>
-                <p className="text-[10px] text-gray-600 leading-tight">{user?.email}</p>
-              </div>
-            </div>
-
-            <div className="relative">
-              <button
-                onClick={() => setShowSignOutConfirm(!showSignOutConfirm)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                title="Sign Out"
-              >
-                <IconLogout className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Sign Out</span>
-              </button>
-
-              {showSignOutConfirm && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowSignOutConfirm(false)} />
-                  <div className="absolute right-0 top-full mt-2 w-64 bg-[#16161e] border border-white/10 rounded-xl shadow-2xl shadow-black/40 p-4 z-50">
-                    <p className="text-sm text-gray-300 mb-3">Are you sure you want to sign out?</p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setShowSignOutConfirm(false)}
-                        className="flex-1 px-3 py-2 text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSignOut}
-                        className="flex-1 px-3 py-2 text-xs text-white bg-red-600 hover:bg-red-500 rounded-lg transition font-medium"
-                      >
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
-                </>
+        <div className="flex-1 px-6 py-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={selectedUser ? `user-detail:${selectedUser.user.email}` : tab}
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.22 }}
+            >
+              {selectedUser ? (
+                <UserDetailDrawer detail={selectedUser} onBack={() => setSelectedUser(null)} />
+              ) : tab === 'overview' ? (
+                <OverviewPanel stats={stats} activities={activities} />
+              ) : tab === 'users' ? (
+                <UsersPanel users={users} loading={loading} search={userSearch} setSearch={setUserSearch} onSelect={fetchUserDetail} />
+              ) : tab === 'resumes' ? (
+                <ResumesPanel resumes={resumes} loading={loading} />
+              ) : tab === 'tailoring' ? (
+                <TailoringPanel records={tailoring} loading={loading} />
+              ) : tab === 'applications' ? (
+                <ApplicationsPanel applications={applications} loading={loading} onRefetch={fetchApplications} setApplications={setApplications} />
+              ) : (
+                <PrepPanel prepPacks={prepPacks} loading={loading} />
               )}
-            </div>
-          </div>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─── Overview Panel ───────────────────────────────────────────────────────
+
+function OverviewPanel({ stats, activities }: { stats: AdminStats | null; activities: Activity[] }) {
+  if (!stats) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+  // Cheap "trend" signal based on 7d vs 30d—no per-day data available
+  const trendFrom = (seven: number, thirty: number): { direction: 'up' | 'down' | 'flat'; pct?: number } => {
+    if (thirty <= 0) return { direction: 'flat' };
+    const dailySeven = seven / 7;
+    const dailyThirty = thirty / 30;
+    if (dailyThirty === 0) return { direction: dailySeven > 0 ? 'up' : 'flat' };
+    const pct = ((dailySeven - dailyThirty) / dailyThirty) * 100;
+    if (Math.abs(pct) < 3) return { direction: 'flat', pct: 0 };
+    return { direction: pct > 0 ? 'up' : 'down', pct };
+  };
+
+  // Fake sparklines derived from rollup counts — just for visual rhythm
+  const mkSpark = (seed: number) => {
+    const out: number[] = [];
+    let v = Math.max(1, Math.floor(seed / 10));
+    for (let i = 0; i < 12; i++) {
+      v = Math.max(0, v + Math.round((Math.sin(i + seed * 0.13) + Math.cos(i * 0.7)) * Math.sqrt(seed + 1)));
+      out.push(v);
+    }
+    return out;
+  };
+
+  const usersTrend = trendFrom(stats.users_7d, stats.users_30d);
+  const tailoringTrend = trendFrom(stats.tailoring_7d, stats.tailoring_30d);
+
+  return (
+    <div className="space-y-8">
+      {/* Primary KPIs */}
+      <div>
+        <SectionHeading title="Snapshot" subtitle="High-level metrics across the platform." />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <KPICard
+            label="Total Users" value={fmtNum(stats.total_users)}
+            sub={`+${stats.users_7d} this week · +${stats.users_30d} this month`}
+            icon={<Icon.Users c="w-4 h-4" />} color="indigo" trend={usersTrend}
+            sparklineData={mkSpark(stats.total_users)}
+          />
+          <KPICard
+            label="Tailoring Sessions" value={fmtNum(stats.total_tailoring_sessions)}
+            sub={`+${stats.tailoring_7d} this week`}
+            icon={<Icon.Bolt c="w-4 h-4" />} color="violet" trend={tailoringTrend}
+            sparklineData={mkSpark(stats.total_tailoring_sessions)}
+          />
+          <KPICard
+            label="Applications" value={fmtNum(stats.total_applications)}
+            sub={stats.total_applications > 0 ? `${Math.round(((stats.applications_by_status?.offer || 0) / stats.total_applications) * 100)}% reached offer` : 'Pipeline empty'}
+            icon={<Icon.Briefcase c="w-4 h-4" />} color="emerald"
+            sparklineData={mkSpark(stats.total_applications)}
+          />
+          <KPICard
+            label="Prep Packs" value={fmtNum(stats.total_interview_prep_packs)}
+            sub={`${stats.total_tailoring_sessions > 0 ? Math.round((stats.total_interview_prep_packs / stats.total_tailoring_sessions) * 100) : 0}% of sessions`}
+            icon={<Icon.Brain c="w-4 h-4" />} color="rose"
+            sparklineData={mkSpark(stats.total_interview_prep_packs)}
+          />
         </div>
       </div>
 
-      {/* ─── Tab Navigation ─────────────────────────────────── */}
-      <div className="border-b border-white/[0.06]">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1 overflow-x-auto scrollbar-hide">
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => { setTab(t.key); setSelectedUser(null); setError(''); }}
-              className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all whitespace-nowrap ${
-                tab === t.key
-                  ? 'border-indigo-500 text-white'
-                  : 'border-transparent text-gray-500 hover:text-gray-300 hover:border-white/10'
-              }`}
-            >
-              {t.icon}
-              {t.label}
-            </button>
-          ))}
+      {/* Secondary KPIs — infra + storage */}
+      <div>
+        <SectionHeading title="Storage & versioning" subtitle="How resume files are cached across the new versioning model." />
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <KPICard label="Parsed Resumes" value={fmtNum(stats.total_parsed_resumes)} sub="Structured JSON extracts" icon={<Icon.Doc c="w-4 h-4" />} color="emerald" />
+          <KPICard label="Base Uploads" value={fmtNum(stats.total_base_resumes)} sub="Original uploads on S3" icon={<Icon.Upload c="w-4 h-4" />} color="amber" />
+          <KPICard label="Cached PDFs" value={fmtNum(stats.cached_pdf_files)} sub={`${fmtNum(stats.cached_docx_files)} DOCX · ${fmtNum(stats.total_versions)} versions`} icon={<Icon.Doc c="w-4 h-4" />} color="cyan" />
+          <KPICard label="Legacy downloads" value={fmtNum(stats.legacy_generated_resumes)} sub="Pre-refactor user_resumes rows" icon={<Icon.Download c="w-4 h-4" />} color="rose" />
         </div>
       </div>
 
-      {/* ─── Content ────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        {error && (
-          <div className="mb-5 p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError('')} className="text-red-400/60 hover:text-red-400 transition text-xs ml-3">Dismiss</button>
-          </div>
-        )}
+      {/* Pipeline + Activity two-column */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-6">
+        <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent p-6">
+          <SectionHeading
+            title="Application pipeline"
+            subtitle={stats.total_applications > 0 ? `${stats.total_applications} applications across all users` : 'No applications tracked yet'}
+          />
+          {stats.total_applications > 0 ? (
+            <PipelineBar counts={stats.applications_by_status || {}} />
+          ) : (
+            <EmptyHero
+              icon={<Icon.Briefcase c="w-5 h-5" />}
+              title="Pipeline is quiet"
+              subtitle="Applications appear here as users mark status on their tailored resumes."
+            />
+          )}
+        </div>
 
-        {/* ──── Dashboard Tab ──── */}
-        {tab === 'dashboard' && (
-          <>
-            {!stats ? <Spinner /> : (
-              <div className="space-y-8">
-                {/* Stat Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatCard label="Total Users" value={stats.total_users} sub={`+${stats.users_7d} this week`} icon={<IconUsers />} color="indigo" />
-                  <StatCard label="Parsed Resumes" value={stats.total_parsed_resumes} icon={<IconDocument />} color="emerald" />
-                  <StatCard label="Base Uploads" value={stats.total_base_resumes} icon={<IconUpload />} color="amber" />
-                  <StatCard label="Tailoring Sessions" value={stats.total_tailoring_sessions} sub={`+${stats.tailoring_7d ?? 0} this week`} icon={<IconBolt />} color="violet" />
-                </div>
-
-                {/* Secondary Stats — versions + cache */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  <StatCard
-                    label="Total Versions"
-                    value={stats.total_versions ?? 0}
-                    sub={`~${stats.total_tailoring_sessions > 0 ? (stats.total_versions / stats.total_tailoring_sessions).toFixed(1) : '0'} per session`}
-                    icon={<IconBolt className="w-5 h-5" />}
-                    color="violet"
-                  />
-                  <StatCard
-                    label="Cached PDFs"
-                    value={stats.cached_pdf_files ?? 0}
-                    sub="Rendered + on S3"
-                    icon={<IconDocument className="w-5 h-5" />}
-                    color="rose"
-                  />
-                  <StatCard
-                    label="Cached DOCXs"
-                    value={stats.cached_docx_files ?? 0}
-                    sub="Rendered + on S3"
-                    icon={<IconDocument className="w-5 h-5" />}
-                    color="cyan"
-                  />
-                  <StatCard
-                    label="Legacy downloads"
-                    value={stats.legacy_generated_resumes ?? 0}
-                    sub="Pre-refactor user_resumes rows"
-                    icon={<IconDocument className="w-5 h-5" />}
-                    color="amber"
-                  />
-                </div>
-
-                {/* Applications + Prep + Parse Rate */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <StatCard
-                    label="Applications"
-                    value={stats.total_applications ?? 0}
-                    sub={
-                      Object.entries(stats.applications_by_status || {})
-                        .filter(([, n]) => n > 0)
-                        .slice(0, 3)
-                        .map(([k, n]) => `${n} ${k}`)
-                        .join(' · ') || 'No status set'
-                    }
-                    icon={<IconDocument className="w-5 h-5" />}
-                    color="indigo"
-                  />
-                  <StatCard
-                    label="Interview Prep"
-                    value={stats.total_interview_prep_packs ?? 0}
-                    sub={`${stats.total_tailoring_sessions > 0 ? Math.round((stats.total_interview_prep_packs / stats.total_tailoring_sessions) * 100) : 0}% of sessions`}
-                    icon={<IconChart className="w-5 h-5" />}
-                    color="emerald"
-                  />
-                  <StatCard
-                    label="Parse Rate"
-                    value={stats.total_users > 0 ? `${Math.round((stats.total_parsed_resumes / stats.total_users) * 100)}%` : '0%'}
-                    sub="Users with parsed resumes"
-                    icon={<IconChart className="w-5 h-5" />}
-                    color="emerald"
-                  />
-                </div>
-
-                {/* Application pipeline mini-chart */}
-                {stats.applications_by_status && Object.keys(stats.applications_by_status).length > 0 && (
-                  <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-                    <h3 className="text-sm font-semibold text-white mb-3">Application Pipeline</h3>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {['draft','applied','interviewing','offer','rejected','ghosted','withdrawn'].map(status => {
-                        const count = stats.applications_by_status[status] || 0;
-                        if (count === 0) return null;
-                        const chip = APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25';
-                        return (
-                          <button
-                            key={status}
-                            onClick={() => { setTab('applications'); fetchApplications(); }}
-                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border ${chip} text-xs font-medium capitalize hover:opacity-80 transition`}
-                          >
-                            <span>{status}</span>
-                            <span className="font-bold tabular-nums">{count}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Activity Feed */}
-                <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-                  <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-white">Recent Activity</h3>
-                    <span className="text-xs text-gray-600">Last 30 days</span>
-                  </div>
-                  <div className="px-5 divide-y divide-white/5 max-h-[420px] overflow-y-auto">
-                    {activities.length === 0 ? (
-                      <p className="text-sm text-gray-600 py-8 text-center">No recent activity</p>
-                    ) : (
-                      activities.map((a, i) => <ActivityItem key={i} activity={a} />)
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ──── Users Tab ──── */}
-        {tab === 'users' && !selectedUser && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="relative flex-1">
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 w-4 h-4" />
-                <input
-                  type="text"
-                  placeholder="Search by email, name, or role..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2.5 bg-white/[0.03] border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-                />
-              </div>
-              <span className="text-xs text-gray-600 tabular-nums whitespace-nowrap">{filteredUsers.length} users</span>
+        <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent overflow-hidden">
+          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-white">Recent activity</h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">Last 30 days</p>
             </div>
-
-            {loading ? <Spinner /> : filteredUsers.length === 0 ? (
-              <EmptyState message="No users found" />
+            <span className="text-[11px] text-gray-600 tabular-nums">{activities.length} events</span>
+          </div>
+          <div className="max-h-[420px] overflow-y-auto divide-y divide-white/[0.04]">
+            {activities.length === 0 ? (
+              <div className="py-14"><EmptyHero icon={<Icon.Sparkle c="w-5 h-5" />} title="No recent activity" /></div>
             ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Registered</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Last Active</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Resumes</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Tailored</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Parsed</th>
-                      <th className="px-4 py-3.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map(u => (
-                      <tr key={u.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors group">
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center gap-3">
-                            <div className="h-8 w-8 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center text-[10px] font-bold text-gray-400 flex-shrink-0">
-                              {(u.name || u.email).charAt(0).toUpperCase()}
-                            </div>
-                            <div>
-                              <p className="text-sm text-white font-medium leading-tight">{u.name || '\u2014'}</p>
-                              <p className="text-[11px] text-gray-500 font-mono leading-tight">{u.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          {u.role ? (
-                            <span className="px-2 py-1 text-[10px] bg-white/5 text-gray-400 rounded-md">{u.role}</span>
-                          ) : (
-                            <span className="text-gray-700 text-xs">\u2014</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5 text-gray-400 text-xs">{formatRelative(u.created_at)}</td>
-                        <td className="px-4 py-3.5 text-gray-400 text-xs">{formatRelative(u.last_login)}</td>
-                        <td className="px-4 py-3.5 text-center">
-                          <span className="inline-flex items-center justify-center h-6 min-w-[24px] px-1.5 text-xs font-medium tabular-nums bg-white/5 rounded-md text-gray-400">
-                            {u.base_resumes}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          <span className="inline-flex items-center justify-center h-6 min-w-[24px] px-1.5 text-xs font-medium tabular-nums bg-white/5 rounded-md text-gray-400">
-                            {u.tailoring_sessions}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {u.has_parsed_resume ? (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] bg-emerald-500/10 text-emerald-400 rounded-full font-medium">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                              Yes
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] bg-white/5 text-gray-600 rounded-full">
-                              <span className="w-1.5 h-1.5 rounded-full bg-gray-600" />
-                              No
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <button
-                            onClick={() => fetchUserDetail(u.email)}
-                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-500 rounded-lg transition-all font-medium opacity-70 group-hover:opacity-100"
-                          >
-                            <IconEye />
-                            View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              activities.map((a, i) => <ActivityRow key={i} a={a} />)
             )}
           </div>
-        )}
-
-        {/* User Detail View */}
-        {tab === 'users' && selectedUser && (
-          <UserDetailView detail={selectedUser} onBack={() => setSelectedUser(null)} />
-        )}
-
-        {/* ──── Resumes Tab ──── */}
-        {tab === 'resumes' && (
-          <>
-            {loading ? <Spinner /> : !resumes || resumes.length === 0 ? (
-              <EmptyState message="No parsed resumes yet" />
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {resumes.map((r, i) => (
-                  <ResumeCard key={i} resume={r} />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ──── Applications Tab ──── */}
-        {tab === 'applications' && (
-          <>
-            {loading ? <Spinner /> : applications.length === 0 ? (
-              <EmptyState message="No application tracker data yet" />
-            ) : (
-              <div className="space-y-4">
-                {/* Status filter chips */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  {['all','applied','interviewing','offer','rejected','ghosted','withdrawn','draft'].map(st => {
-                    const count = st === 'all' ? applications.length : applications.filter(a => a.status === st).length;
-                    if (st !== 'all' && count === 0) return null;
-                    const active = false; // filtering handled below
-                    const chip = st === 'all' ? 'bg-white/5 text-gray-300 border-white/10' : (APPLICATION_STATUS_CHIP[st] || 'bg-gray-500/15 text-gray-400 border-gray-500/25');
-                    return (
-                      <button
-                        key={st}
-                        onClick={() => {
-                          if (st === 'all') fetchApplications();
-                          else apiService.getAdminApplications(st).then(r => {
-                            if (r.data?.applications) setApplications(r.data.applications as AdminApplication[]);
-                          });
-                        }}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border text-[11px] font-medium capitalize ${chip} ${active ? 'ring-2 ring-indigo-500/50' : ''}`}
-                      >
-                        {st}<span className="font-bold tabular-nums">{count}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role · Company</th>
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Status</th>
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Applied</th>
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Next Action</th>
-                        <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Recruiter</th>
-                        <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">ATS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {applications.map((a, i) => {
-                        const chip = a.status ? (APPLICATION_STATUS_CHIP[a.status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
-                        return (
-                          <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                            <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{a.user_email}</td>
-                            <td className="px-4 py-3.5 text-xs">
-                              <div className="text-gray-300 font-medium">{a.job_title || '\u2014'}</div>
-                              <div className="text-gray-500">{a.company || '\u2014'}</div>
-                            </td>
-                            <td className="px-4 py-3.5">
-                              {a.status ? (
-                                <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${chip}`}>{a.status}</span>
-                              ) : (
-                                <span className="text-xs text-gray-700">\u2014</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{a.applied_at ? formatRelative(a.applied_at) : '\u2014'}</td>
-                            <td className="px-4 py-3.5 text-xs">
-                              {a.next_action_date ? (
-                                <div>
-                                  <div className="text-gray-300">{formatRelative(a.next_action_date)}</div>
-                                  {a.next_action_note && <div className="text-gray-500 italic">{a.next_action_note}</div>}
-                                </div>
-                              ) : (<span className="text-gray-700">\u2014</span>)}
-                            </td>
-                            <td className="px-4 py-3.5 text-xs">
-                              {(a.recruiter_name || a.recruiter_email) ? (
-                                <div>
-                                  <div className="text-gray-300">{a.recruiter_name || '\u2014'}</div>
-                                  {a.recruiter_email && <div className="text-gray-500 font-mono text-[10px]">{a.recruiter_email}</div>}
-                                </div>
-                              ) : (<span className="text-gray-700">\u2014</span>)}
-                            </td>
-                            <td className="px-4 py-3.5 text-center">
-                              {a.ats_overall != null ? (
-                                <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
-                                  a.ats_overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
-                                  a.ats_overall >= 60 ? 'bg-amber-500/15 text-amber-400' :
-                                  'bg-red-500/15 text-red-400'
-                                }`}>{a.ats_overall}</span>
-                              ) : (<span className="text-xs text-gray-700">\u2014</span>)}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ──── Interview Prep Tab ──── */}
-        {tab === 'prep' && (
-          <>
-            {loading ? <Spinner /> : prepPacks.length === 0 ? (
-              <EmptyState message="No interview prep packs generated yet" />
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role · Company</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Role Type</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">App Status</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Generated</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Session Created</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {prepPacks.map((p, i) => {
-                      const st = p.application?.status;
-                      const stChip = st ? (APPLICATION_STATUS_CHIP[st] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
-                      return (
-                        <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                          <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{p.user_email}</td>
-                          <td className="px-4 py-3.5 text-xs">
-                            <div className="text-gray-300 font-medium">{p.jd_analysis?.job_title || '\u2014'}</div>
-                            <div className="text-gray-500">{p.jd_analysis?.company || '\u2014'}</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            {p.interview_prep?.content?.role_type ? (
-                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border bg-indigo-500/15 text-indigo-300 border-indigo-500/25">
-                                {p.interview_prep.content.role_type}
-                              </span>
-                            ) : (<span className="text-xs text-gray-700">\u2014</span>)}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            {st ? (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${stChip}`}>{st}</span>
-                            ) : (<span className="text-xs text-gray-700">\u2014</span>)}
-                          </td>
-                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">
-                            {p.interview_prep?.generated_at ? formatRelative(p.interview_prep.generated_at) : '\u2014'}
-                          </td>
-                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{formatRelative(p.created_at || null)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ──── Tailoring Tab ──── */}
-        {tab === 'tailoring' && (
-          <>
-            {loading ? <Spinner /> : !tailoring || tailoring.length === 0 ? (
-              <EmptyState message="No tailoring sessions yet" />
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">User</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Job Title</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Company</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Versions</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Files</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Status</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Prep</th>
-                      <th className="text-left px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">Created</th>
-                      <th className="text-center px-4 py-3.5 text-[10px] text-gray-500 font-semibold uppercase tracking-wider">ATS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tailoring.map((r, i) => {
-                      const s = r._summary || {};
-                      const status = s.application_status;
-                      const statusChip = status ? (APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
-                      return (
-                        <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-                          <td className="px-4 py-3.5 font-mono text-xs text-gray-300 whitespace-nowrap">{r.user_email}</td>
-                          <td className="px-4 py-3.5 text-gray-300 text-xs font-medium">{r.jd_analysis?.job_title || '\u2014'}</td>
-                          <td className="px-4 py-3.5 text-gray-400 text-xs">{r.jd_analysis?.company || '\u2014'}</td>
-                          <td className="px-4 py-3.5 text-center">
-                            {s.version_count ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 text-violet-300 text-[10px] font-semibold border border-violet-500/25">
-                                v{s.current_version_number ?? s.version_count}/{s.version_count}
-                                {s.current_source && s.current_source !== 'initial' && (
-                                  <span className="text-[8px] opacity-70">· {s.current_source}</span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-700">\u2014</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            {s.files_cached ? (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-400 text-[10px] font-semibold">
-                                {s.files_cached}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-700">\u2014</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5">
-                            {status ? (
-                              <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${statusChip}`}>
-                                {status}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-700">\u2014</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5 text-center">
-                            {s.interview_prep_ready ? (
-                              <span className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-emerald-500/15 text-emerald-400 text-[10px]">\u2713</span>
-                            ) : (
-                              <span className="text-xs text-gray-700">\u2014</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3.5 text-gray-500 text-xs whitespace-nowrap">{formatRelative(r.created_at)}</td>
-                          <td className="px-4 py-3.5 text-center">
-                            {r.ats_scores?.overall != null ? (
-                              <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
-                                r.ats_scores.overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
-                                r.ats_scores.overall >= 60 ? 'bg-amber-500/15 text-amber-400' :
-                                'bg-red-500/15 text-red-400'
-                              }`}>
-                                {r.ats_scores.overall}
-                              </span>
-                            ) : (
-                              <span className="text-xs text-gray-700">\u2014</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ─── Resume Card ──────────────────────────────────────────────────
+// ─── Users Panel ──────────────────────────────────────────────────────────
 
-function ResumeCard({ resume: r }: { resume: any }) {
-  const [expanded, setExpanded] = useState(false);
+function UsersPanel({ users, loading, search, setSearch, onSelect }: {
+  users: AdminUser[]; loading: boolean; search: string; setSearch: (v: string) => void;
+  onSelect: (email: string) => void;
+}) {
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return users;
+    return users.filter(u =>
+      (u.email || '').toLowerCase().includes(q)
+      || (u.name || '').toLowerCase().includes(q)
+      || (u.role || '').toLowerCase().includes(q),
+    );
+  }, [users, search]);
+
+  const parsedPct = users.length > 0 ? Math.round((users.filter(u => u.has_parsed_resume).length / users.length) * 100) : 0;
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all hover:border-white/10">
-      <div className="p-5 space-y-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center text-xs font-bold text-indigo-400 flex-shrink-0">
-              {(r.contact?.name || '?').charAt(0).toUpperCase()}
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white">{r.contact?.name || 'Unknown'}</p>
-              <p className="text-[11px] text-gray-500">{r.user_email}</p>
-            </div>
-          </div>
-          <span className="text-[10px] text-gray-600 whitespace-nowrap">{formatRelative(r.parsed_at)}</span>
+    <div className="space-y-5">
+      {/* Summary pills */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.06] text-xs">
+          <span className="text-gray-500">Total</span>
+          <span className="font-bold text-white tabular-nums">{users.length}</span>
         </div>
-
-        {r.contact?.email && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-400">
-            {r.contact.email && <span>{r.contact.email}</span>}
-            {r.contact.phone && <span>{r.contact.phone}</span>}
-            {r.contact.linkedin && <span className="text-indigo-400/70">{r.contact.linkedin}</span>}
-          </div>
-        )}
-
-        {r.summary && <p className="text-xs text-gray-500 line-clamp-2">{r.summary}</p>}
-
-        {r.skills && Object.keys(r.skills).length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {Object.keys(r.skills).slice(0, 8).map(s => (
-              <span key={s} className="px-2 py-0.5 text-[10px] bg-indigo-500/10 text-indigo-400 rounded-full">{s}</span>
-            ))}
-            {Object.keys(r.skills).length > 8 && (
-              <span className="px-2 py-0.5 text-[10px] bg-white/5 text-gray-500 rounded-full">+{Object.keys(r.skills).length - 8}</span>
-            )}
-          </div>
-        )}
-
-        {r.experience && r.experience.length > 0 && (
-          <p className="text-[11px] text-gray-500">
-            {r.experience.length} role{r.experience.length > 1 ? 's' : ''}
-            {r.experience[0]?.title && ` \u2014 ${r.experience[0].title}`}
-            {r.experience[0]?.company && ` at ${r.experience[0].company}`}
-          </p>
-        )}
-
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-[11px] text-indigo-400 hover:text-indigo-300 transition font-medium"
-        >
-          {expanded ? 'Show less' : 'Show full details'}
-        </button>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs">
+          <span className="text-emerald-300/70">Parsed</span>
+          <span className="font-bold text-emerald-300 tabular-nums">{parsedPct}%</span>
+        </div>
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs">
+          <span className="text-indigo-300/70">Active this week</span>
+          <span className="font-bold text-indigo-300 tabular-nums">{users.filter(u => {
+            if (!u.last_login) return false;
+            return Date.now() - new Date(u.last_login).getTime() < 7 * 86400000;
+          }).length}</span>
+        </div>
       </div>
 
-      {expanded && (
-        <div className="border-t border-white/5 px-5 py-4 bg-white/[0.01] space-y-4 text-xs">
-          {r.skills && Object.keys(r.skills).length > 0 && (
-            <div>
-              <p className="text-gray-500 font-semibold mb-2 uppercase text-[10px] tracking-wider">Skills</p>
-              <div className="space-y-2">
-                {Object.entries(r.skills).map(([category, skills]) => (
-                  <div key={category}>
-                    <span className="text-gray-400 font-medium">{category}:</span>
-                    <span className="text-gray-500 ml-1.5">{(skills as string[]).join(', ')}</span>
+      {/* Search */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1"><SearchBox value={search} onChange={setSearch} placeholder="Search by name, email, or role…" /></div>
+        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} shown</span>
+      </div>
+
+      {loading ? <SkeletonRow /> : filtered.length === 0 ? (
+        <EmptyHero icon={<Icon.Users c="w-5 h-5" />} title="No users match your search" />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+          <div className="hidden md:grid grid-cols-[1fr_140px_130px_140px_160px_48px] gap-4 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02] text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            <span>User</span><span>Role</span><span>Registered</span><span>Last active</span><span>Activity</span><span />
+          </div>
+          <div className="divide-y divide-white/[0.03]">
+            {filtered.map(u => {
+              const lastLoginDays = u.last_login ? (Date.now() - new Date(u.last_login).getTime()) / 86400000 : null;
+              const activityDot = lastLoginDays === null ? 'bg-gray-600' :
+                lastLoginDays < 1 ? 'bg-emerald-400' :
+                lastLoginDays < 7 ? 'bg-amber-400' :
+                lastLoginDays < 30 ? 'bg-gray-500' : 'bg-gray-700';
+              return (
+                <button
+                  key={u.id}
+                  onClick={() => onSelect(u.email)}
+                  className="w-full grid grid-cols-[1fr_48px] md:grid-cols-[1fr_140px_130px_140px_160px_48px] gap-4 px-5 py-4 hover:bg-white/[0.03] transition-colors text-left items-center"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative">
+                      <Avatar seed={u.name || u.email} />
+                      <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ${activityDot} ring-2 ring-[#0a0a0f]`} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{u.name || u.email.split('@')[0]}</p>
+                      <p className="text-[11px] text-gray-500 truncate font-mono">{u.email}</p>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {r.experience?.length > 0 && (
-            <div>
-              <p className="text-gray-500 font-semibold mb-2 uppercase text-[10px] tracking-wider">Experience</p>
-              <div className="space-y-2">
-                {r.experience.map((exp: any, i: number) => (
-                  <div key={i} className="border-l-2 border-white/10 pl-3 py-1">
-                    <p className="text-gray-200 font-medium">{exp.title}</p>
-                    <p className="text-gray-500">{exp.company} {exp.dates && `\u2022 ${exp.dates}`}</p>
+                  <div className="hidden md:flex flex-col gap-0.5">
+                    {u.role ? (
+                      <span className="text-xs text-gray-300 truncate">{u.role}</span>
+                    ) : <span className="text-xs text-gray-600">—</span>}
+                    {u.sector && <span className="text-[10px] text-gray-600 truncate">{u.sector}</span>}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {r.education?.length > 0 && (
-            <div>
-              <p className="text-gray-500 font-semibold mb-2 uppercase text-[10px] tracking-wider">Education</p>
-              {r.education.map((edu: any, i: number) => (
-                <div key={i} className="py-1">
-                  <p className="text-gray-300">{edu.degree}</p>
-                  <p className="text-gray-500">{edu.institution} {edu.dates && `\u2022 ${edu.dates}`}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {r.projects?.length > 0 && (
-            <div>
-              <p className="text-gray-500 font-semibold mb-2 uppercase text-[10px] tracking-wider">Projects</p>
-              {r.projects.map((p: any, i: number) => (
-                <div key={i} className="py-1">
-                  <p className="text-gray-300 font-medium">{p.name}</p>
-                  {p.tech && <p className="text-gray-500">{p.tech}</p>}
-                </div>
-              ))}
-            </div>
-          )}
+                  <span className="hidden md:block text-xs text-gray-500 whitespace-nowrap">{fmtDate(u.created_at)}</span>
+                  <span className="hidden md:block text-xs text-gray-500 whitespace-nowrap">{fmtRel(u.last_login)}</span>
+                  <div className="hidden md:flex items-center gap-1.5">
+                    {u.has_parsed_resume && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">✓ Parsed</span>
+                    )}
+                    {u.tailoring_sessions > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-violet-500/10 text-violet-300 border border-violet-500/20 text-[10px] font-semibold tabular-nums">
+                        {u.tailoring_sessions} tailored
+                      </span>
+                    )}
+                    {u.base_resumes > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-semibold tabular-nums">
+                        {u.base_resumes} base
+                      </span>
+                    )}
+                  </div>
+                  <div className="justify-self-end">
+                    <Icon.Chevron c="w-4 h-4 text-gray-600 group-hover:text-gray-300" />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ─── User Detail Sub-view ─────────────────────────────────────────
+// ─── Resumes Panel ────────────────────────────────────────────────────────
 
-function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => void }) {
-  const { user, parsed_resume, base_resumes = [], generated_resumes = [], tailoring_records = [] } = detail;
-  const [activeSection, setActiveSection] = useState<'info' | 'parsed' | 'base' | 'generated' | 'tailoring'>('info');
-  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
-  const [resumeError, setResumeError] = useState<string | null>(null);
-  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
-  const [viewerFilename, setViewerFilename] = useState<string>('');
+function ResumesPanel({ resumes, loading }: { resumes: any[]; loading: boolean }) {
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return resumes;
+    return resumes.filter(r =>
+      (r.user_email || '').toLowerCase().includes(q)
+      || (r.contact?.name || '').toLowerCase().includes(q)
+      || (r.summary || '').toLowerCase().includes(q),
+    );
+  }, [resumes, search]);
 
-  const getFileExt = (name: string) => {
-    const dot = name.lastIndexOf('.');
-    return dot !== -1 ? name.slice(dot + 1).toLowerCase() : '';
+  if (loading) return <SkeletonRow />;
+  if (resumes.length === 0) {
+    return <EmptyHero icon={<Icon.Doc c="w-5 h-5" />} title="No parsed resumes yet" subtitle="Parsed resumes appear here after users upload and process their CVs." />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 max-w-md"><SearchBox value={search} onChange={setSearch} placeholder="Search name, email, or summary…" /></div>
+        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} of {resumes.length}</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyHero icon={<Icon.Search c="w-5 h-5" />} title="No matches" subtitle="Try a different search term." />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {filtered.map((r, i) => <ResumeCard key={i} r={r} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ResumeCard({ r }: { r: any }) {
+  const [open, setOpen] = useState(false);
+  const skillsFlat: string[] = Object.values(r.skills || {}).flat() as string[];
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all hover:border-white/[0.12]"
+    >
+      <div className="p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar seed={r.contact?.name || r.user_email} size="lg" />
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white truncate">{r.contact?.name || 'Unknown'}</p>
+              <p className="text-[11px] text-gray-500 font-mono truncate">{r.user_email}</p>
+            </div>
+          </div>
+          <span className="text-[10px] text-gray-600 whitespace-nowrap shrink-0">{fmtRel(r.parsed_at)}</span>
+        </div>
+
+        {r.summary && <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{r.summary}</p>}
+
+        {skillsFlat.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {skillsFlat.slice(0, 8).map((s, i) => (
+              <span key={i} className="px-1.5 py-0.5 rounded bg-white/[0.04] text-[10px] text-gray-400 border border-white/[0.05]">{s}</span>
+            ))}
+            {skillsFlat.length > 8 && <span className="text-[10px] text-gray-600">+{skillsFlat.length - 8}</span>}
+          </div>
+        )}
+
+        {r.experience?.length > 0 && (
+          <div className="flex items-center justify-between text-[11px] text-gray-500 pt-2 border-t border-white/[0.04]">
+            <span>{r.experience.length} role{r.experience.length > 1 ? 's' : ''} · {r.education?.length || 0} edu · {r.projects?.length || 0} proj</span>
+            <button onClick={() => setOpen(o => !o)} className="text-indigo-400 hover:text-indigo-300">{open ? 'Less' : 'More'}</button>
+          </div>
+        )}
+
+        {open && r.experience?.length > 0 && (
+          <div className="space-y-1.5 pt-2 border-t border-white/[0.04]">
+            {r.experience.slice(0, 3).map((e: any, i: number) => (
+              <div key={i} className="text-[11px]">
+                <p className="text-gray-300 font-medium truncate">{e.title} · {e.company}</p>
+                <p className="text-gray-600 text-[10px]">{e.dates}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Tailoring Panel ──────────────────────────────────────────────────────
+
+function TailoringPanel({ records, loading }: { records: any[]; loading: boolean }) {
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return records;
+    return records.filter(r =>
+      (r.user_email || '').toLowerCase().includes(q)
+      || (r.jd_analysis?.job_title || '').toLowerCase().includes(q)
+      || (r.jd_analysis?.company || '').toLowerCase().includes(q),
+    );
+  }, [records, search]);
+
+  if (loading) return <SkeletonRow />;
+  if (records.length === 0) {
+    return <EmptyHero icon={<Icon.Bolt c="w-5 h-5" />} title="No tailoring sessions yet" subtitle="Appears after any user runs the tailor pipeline." />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="flex-1 max-w-md"><SearchBox value={search} onChange={setSearch} placeholder="Search email, role, or company…" /></div>
+        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} of {records.length}</span>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                {['User', 'Role', 'Company', 'Versions', 'Files', 'Status', 'Prep', 'ATS', 'Created'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-[10px] text-gray-500 font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r, i) => {
+                const s = r._summary || {};
+                const ats = r.ats_scores?.overall;
+                return (
+                  <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar seed={r.user_email} size="sm" />
+                        <span className="text-xs text-gray-300 font-mono truncate max-w-[180px]">{r.user_email}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-200 font-medium">{r.jd_analysis?.job_title || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">{r.jd_analysis?.company && r.jd_analysis.company !== 'Not specified' ? r.jd_analysis.company : '—'}</td>
+                    <td className="px-4 py-3">
+                      {s.version_count ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/15 text-violet-300 text-[10px] font-semibold border border-violet-500/25">
+                          v{s.current_version_number ?? s.version_count}/{s.version_count}
+                          {s.current_source && s.current_source !== 'initial' && <span className="opacity-60 text-[9px]">· {s.current_source}</span>}
+                        </span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {s.files_cached ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">{s.files_cached}</span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusPill status={s.application_status} size="sm" /></td>
+                    <td className="px-4 py-3">
+                      {s.interview_prep_ready ? (
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-md bg-blue-500/15 text-blue-400 text-[10px] font-bold">✓</span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {ats != null ? (
+                        <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
+                          ats >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
+                          ats >= 60 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
+                        }`}>{ats}</span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(r.created_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Applications Panel ───────────────────────────────────────────────────
+
+function ApplicationsPanel({
+  applications, loading, onRefetch, setApplications,
+}: {
+  applications: AdminApplication[]; loading: boolean;
+  onRefetch: () => void; setApplications: (a: AdminApplication[]) => void;
+}) {
+  const [view, setView] = useState<'kanban' | 'list'>('kanban');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+
+  const filtered = useMemo(() => {
+    if (filterStatus === 'all') return applications;
+    return applications.filter(a => a.status === filterStatus);
+  }, [applications, filterStatus]);
+
+  const grouped = useMemo(() => {
+    const g: Record<string, AdminApplication[]> = {};
+    STATUSES.forEach(s => (g[s] = []));
+    for (const a of filtered) {
+      const s = (a.status || 'draft') as string;
+      if (!g[s]) g[s] = [];
+      g[s].push(a);
+    }
+    return g;
+  }, [filtered]);
+
+  const counts: Record<string, number> = {};
+  applications.forEach(a => {
+    const s = a.status || 'draft';
+    counts[s] = (counts[s] || 0) + 1;
+  });
+
+  if (loading) return <SkeletonRow />;
+  if (applications.length === 0) {
+    return <EmptyHero icon={<Icon.Briefcase c="w-5 h-5" />} title="No application tracker data yet" subtitle="Users flag a status from their Tailored Resumes and they land here." />;
+  }
+
+  const applyStatusFilter = async (st: string) => {
+    setFilterStatus(st);
+    if (st === 'all') return onRefetch();
+    const r = await apiService.getAdminApplications(st);
+    if (r.data?.applications) setApplications(r.data.applications as AdminApplication[]);
   };
+
+  return (
+    <div className="space-y-5">
+      {/* Filter + view toggle */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <button
+            onClick={() => applyStatusFilter('all')}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+              filterStatus === 'all' ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/10'
+            }`}
+          >
+            <span>All</span><span className="font-bold tabular-nums">{applications.length}</span>
+          </button>
+          {STATUSES.map(st => {
+            const n = counts[st] || 0;
+            if (n === 0) return null;
+            const meta = STATUS_COLORS[st];
+            const active = filterStatus === st;
+            return (
+              <button
+                key={st}
+                onClick={() => applyStatusFilter(st)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[11px] font-semibold transition ${
+                  active ? meta.chip + ' ring-1 ring-white/10' : 'bg-white/[0.02] text-gray-400 border-white/[0.06] hover:bg-white/[0.04]'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                <span>{meta.label}</span><span className="font-bold tabular-nums">{n}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="inline-flex rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5">
+          <button
+            onClick={() => setView('kanban')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+              view === 'kanban' ? 'bg-white/10 text-white' : 'text-gray-500'
+            }`}
+          ><Icon.Kanban c="w-3.5 h-3.5" />Kanban</button>
+          <button
+            onClick={() => setView('list')}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition ${
+              view === 'list' ? 'bg-white/10 text-white' : 'text-gray-500'
+            }`}
+          ><Icon.List c="w-3.5 h-3.5" />List</button>
+        </div>
+      </div>
+
+      {/* Kanban */}
+      {view === 'kanban' ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-7 gap-3">
+          {STATUSES.map(st => {
+            const items = grouped[st] || [];
+            const meta = STATUS_COLORS[st];
+            return (
+              <div key={st} className="rounded-xl border border-white/[0.06] bg-white/[0.015] overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-gray-300">{meta.label}</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/[0.04] text-gray-500 tabular-nums">{items.length}</span>
+                </div>
+                <div className="p-2 space-y-2 min-h-[100px] max-h-[70vh] overflow-y-auto">
+                  {items.length === 0 ? (
+                    <p className="text-[10px] text-gray-600 italic text-center py-4">empty</p>
+                  ) : items.map(a => <AppCard key={a.record_id} a={a} />)}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                  {['User', 'Role · Company', 'Status', 'Applied', 'Next action', 'Recruiter', 'ATS'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-[10px] text-gray-500 font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((a, i) => (
+                  <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Avatar seed={a.user_email} size="sm" />
+                        <span className="font-mono text-xs text-gray-400 truncate max-w-[180px]">{a.user_email}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm text-gray-200 font-medium">{a.job_title || '—'}</p>
+                      <p className="text-xs text-gray-500">{a.company && a.company !== 'Not specified' ? a.company : '—'}</p>
+                    </td>
+                    <td className="px-4 py-3"><StatusPill status={a.status} /></td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{a.applied_at ? fmtRel(a.applied_at) : '—'}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {a.next_action_date ? (
+                        <div>
+                          <p className="text-gray-300">{fmtRel(a.next_action_date)}</p>
+                          {a.next_action_note && <p className="text-gray-600 italic">{a.next_action_note}</p>}
+                        </div>
+                      ) : <span className="text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3 text-xs">
+                      {a.recruiter_name || a.recruiter_email ? (
+                        <div>
+                          <p className="text-gray-300">{a.recruiter_name || '—'}</p>
+                          {a.recruiter_email && <p className="text-gray-600 font-mono text-[10px]">{a.recruiter_email}</p>}
+                        </div>
+                      ) : <span className="text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {a.ats_overall != null ? (
+                        <span className={`inline-flex items-center justify-center h-7 w-12 rounded-lg text-xs font-bold tabular-nums ${
+                          a.ats_overall >= 80 ? 'bg-emerald-500/15 text-emerald-400' :
+                          a.ats_overall >= 60 ? 'bg-amber-500/15 text-amber-400' : 'bg-red-500/15 text-red-400'
+                        }`}>{a.ats_overall}</span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppCard({ a }: { a: AdminApplication }) {
+  const daysUntil = a.next_action_date ? Math.round((new Date(a.next_action_date).getTime() - Date.now()) / 86400000) : null;
+  const overdue = daysUntil !== null && daysUntil < 0;
+  const urgent = daysUntil !== null && daysUntil <= 2;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+      className={`group rounded-lg border px-3 py-2.5 transition-all cursor-pointer ${
+        overdue ? 'border-red-500/40 bg-red-500/5' :
+        urgent  ? 'border-amber-500/30 bg-amber-500/5' :
+                  'border-white/[0.06] bg-white/[0.02] hover:border-white/10'
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <Avatar seed={a.user_email} size="sm" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[12.5px] font-semibold text-white truncate leading-snug">{a.job_title || 'Untitled'}</p>
+          {a.company && a.company !== 'Not specified' && (
+            <p className="text-[10px] text-gray-500 truncate">{a.company}</p>
+          )}
+          <p className="text-[10px] text-gray-600 font-mono truncate mt-0.5">{a.user_email}</p>
+        </div>
+      </div>
+
+      {(a.ats_overall != null || daysUntil !== null) && (
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          {a.ats_overall != null && (
+            <span className={`text-[10px] font-bold tabular-nums ${
+              a.ats_overall >= 80 ? 'text-emerald-400' : a.ats_overall >= 60 ? 'text-amber-400' : 'text-red-400'
+            }`}>ATS {a.ats_overall}</span>
+          )}
+          {daysUntil !== null && (
+            <span className={`text-[10px] font-medium ${overdue ? 'text-red-400 font-bold' : urgent ? 'text-amber-400' : 'text-gray-500'}`}>
+              {overdue ? `${Math.abs(daysUntil)}d overdue` : daysUntil === 0 ? 'today' : `in ${daysUntil}d`}
+            </span>
+          )}
+          {a.next_action_note && <span className="text-[10px] text-gray-600 italic truncate max-w-[120px]">· {a.next_action_note}</span>}
+        </div>
+      )}
+
+      {(a.recruiter_name || a.recruiter_email) && (
+        <p className="text-[10px] text-gray-500 mt-1.5 truncate">
+          {a.recruiter_name || a.recruiter_email}{a.recruiter_company ? ` · ${a.recruiter_company}` : ''}
+        </p>
+      )}
+    </motion.div>
+  );
+}
+
+// ─── Prep Panel ───────────────────────────────────────────────────────────
+
+function PrepPanel({ prepPacks, loading }: { prepPacks: AdminPrepPack[]; loading: boolean }) {
+  const [search, setSearch] = useState('');
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return prepPacks;
+    return prepPacks.filter(p =>
+      (p.user_email || '').toLowerCase().includes(q)
+      || (p.jd_analysis?.job_title || '').toLowerCase().includes(q)
+      || (p.jd_analysis?.company || '').toLowerCase().includes(q),
+    );
+  }, [prepPacks, search]);
+
+  const byRoleType: Record<string, number> = {};
+  prepPacks.forEach(p => {
+    const rt = p.interview_prep?.content?.role_type || 'generic';
+    byRoleType[rt] = (byRoleType[rt] || 0) + 1;
+  });
+
+  if (loading) return <SkeletonRow />;
+  if (prepPacks.length === 0) {
+    return <EmptyHero icon={<Icon.Brain c="w-5 h-5" />} title="No interview prep packs generated yet" subtitle="Packs appear here after users open the Interview Prep tab on a tailored resume." />;
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Role type distribution */}
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <SectionHeading title="By role type" subtitle="Detected role types across all generated packs." />
+        <div className="flex items-center gap-2 flex-wrap">
+          {Object.entries(byRoleType).sort((a, b) => b[1] - a[1]).map(([rt, n]) => (
+            <div key={rt} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-xs">
+              <span className="capitalize text-indigo-300/70">{rt}</span>
+              <span className="font-bold text-indigo-200 tabular-nums">{n}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 max-w-md"><SearchBox value={search} onChange={setSearch} placeholder="Search email, role, or company…" /></div>
+        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} of {prepPacks.length}</span>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                {['User', 'Role · Company', 'Role Type', 'App Status', 'Prep Generated', 'Session Created'].map(h => (
+                  <th key={h} className="text-left px-4 py-3 text-[10px] text-gray-500 font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((p, i) => {
+                const rt = p.interview_prep?.content?.role_type;
+                return (
+                  <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <Avatar seed={p.user_email} size="sm" />
+                        <span className="font-mono text-xs text-gray-400 truncate max-w-[180px]">{p.user_email}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <p className="text-sm text-gray-200 font-medium">{p.jd_analysis?.job_title || '—'}</p>
+                      <p className="text-xs text-gray-500">{p.jd_analysis?.company && p.jd_analysis.company !== 'Not specified' ? p.jd_analysis.company : '—'}</p>
+                    </td>
+                    <td className="px-4 py-3">
+                      {rt ? (
+                        <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border bg-indigo-500/15 text-indigo-300 border-indigo-500/25">{rt}</span>
+                      ) : <span className="text-xs text-gray-700">—</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusPill status={p.application?.status} size="sm" /></td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(p.interview_prep?.generated_at)}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(p.created_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── User Detail Drawer ───────────────────────────────────────────────────
+
+function UserDetailDrawer({ detail, onBack }: { detail: UserDetail; onBack: () => void }) {
+  const { user: u, parsed_resume, base_resumes = [], generated_resumes = [], tailoring_records = [] } = detail;
+  const [section, setSection] = useState<'overview' | 'resume' | 'files' | 'tailoring'>('overview');
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerFilename, setViewerFilename] = useState('');
+  const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+
+  const getExt = (name: string) => { const d = name.lastIndexOf('.'); return d !== -1 ? name.slice(d + 1).toLowerCase() : ''; };
 
   const handleViewResume = async (s3Key: string, filename?: string) => {
     setDownloadingKey(s3Key);
-    setResumeError(null);
     const fname = filename || s3Key.split('/').pop() || 'resume.pdf';
-    const ext = getFileExt(fname);
+    const ext = getExt(fname);
     try {
-      // DOCX/DOC can't be previewed in browser — download instead
       if (ext === 'docx' || ext === 'doc') {
         const res = await apiService.getAdminResumeUrl(s3Key, 'attachment', fname);
-        if (res.data?.url) {
-          window.open(res.data.url, '_blank');
-        } else {
-          setResumeError(res.error || 'Failed to get resume URL');
-        }
+        if (res.data?.url) window.open(res.data.url, '_blank');
       } else {
-        // PDF — show inline in modal
         const res = await apiService.getAdminResumeUrl(s3Key, 'inline', fname);
-        if (res.data?.url) {
-          setViewerUrl(res.data.url);
-          setViewerFilename(fname);
-        } else {
-          setResumeError(res.error || 'Failed to get resume URL');
-        }
+        if (res.data?.url) { setViewerUrl(res.data.url); setViewerFilename(fname); }
       }
-    } catch {
-      setResumeError('Failed to get resume URL. Please try again.');
-    } finally {
-      setDownloadingKey(null);
-    }
+    } finally { setDownloadingKey(null); }
   };
 
-  const handleDownloadResume = async (s3Key: string, filename?: string) => {
+  const handleDownload = async (s3Key: string, filename?: string) => {
     setDownloadingKey(s3Key);
-    setResumeError(null);
     const fname = filename || s3Key.split('/').pop() || 'resume.pdf';
     try {
       const res = await apiService.getAdminResumeUrl(s3Key, 'attachment', fname);
-      if (res.data?.url) {
-        window.open(res.data.url, '_blank');
-      } else {
-        setResumeError(res.error || 'Failed to get resume URL');
-      }
-    } catch {
-      setResumeError('Failed to download resume. Please try again.');
-    } finally {
-      setDownloadingKey(null);
-    }
+      if (res.data?.url) window.open(res.data.url, '_blank');
+    } finally { setDownloadingKey(null); }
   };
 
-  const sections = useMemo(() => {
-    const s = [
-      { key: 'info' as const, label: 'Profile', count: null },
-      { key: 'parsed' as const, label: 'Parsed Resume', count: parsed_resume ? 1 : 0 },
-      { key: 'base' as const, label: 'Base Resumes', count: base_resumes.length },
-      { key: 'generated' as const, label: 'Generated', count: generated_resumes.length },
-      { key: 'tailoring' as const, label: 'Tailoring', count: tailoring_records.length },
-    ];
-    return s;
-  }, [parsed_resume, base_resumes, generated_resumes, tailoring_records]);
+  const sections: { key: typeof section; label: string; count?: number }[] = [
+    { key: 'overview',  label: 'Overview' },
+    { key: 'resume',    label: 'Parsed Resume', count: parsed_resume ? 1 : 0 },
+    { key: 'files',     label: 'Files', count: base_resumes.length + generated_resumes.length },
+    { key: 'tailoring', label: 'Tailoring', count: tailoring_records.length },
+  ];
 
   return (
-    <div className="space-y-6">
-      {/* Back & User Header */}
-      <div className="flex items-center justify-between">
-        <button onClick={onBack} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors">
-          <IconArrowLeft className="w-4 h-4" />
-          Back to users
+    <div className="space-y-5">
+      {/* Breadcrumb + back */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition">
+          <Icon.Back c="w-3.5 h-3.5" /> Users
         </button>
+        <span className="text-gray-700">/</span>
+        <span className="text-xs text-gray-300 font-mono">{u.email}</span>
       </div>
 
-      {/* User Header Card */}
-      <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-r from-indigo-500/[0.05] to-violet-500/[0.05] p-6">
-        <div className="flex items-center gap-4">
-          <div className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xl font-bold text-white flex-shrink-0">
-            {(user.name || user.email).charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-white">{user.name || 'Unnamed User'}</h2>
-            <p className="text-sm text-gray-400 font-mono">{user.email}</p>
-            <div className="flex items-center gap-3 mt-1.5">
-              {user.role && <span className="px-2 py-0.5 text-[10px] bg-indigo-500/15 text-indigo-400 rounded-full font-medium">{user.role}</span>}
-              {user.sector && <span className="px-2 py-0.5 text-[10px] bg-white/5 text-gray-400 rounded-full">{user.sector}</span>}
-              <span className="text-[10px] text-gray-600">Joined {formatRelative(user.created_at)}</span>
+      {/* Hero */}
+      <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-br from-indigo-500/10 via-white/[0.02] to-transparent p-6">
+        <div className="flex items-center gap-5">
+          <Avatar seed={u.name || u.email} size="lg" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-bold text-white">{u.name || u.email.split('@')[0]}</h2>
+              {u.role && <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/[0.05] border border-white/[0.06] text-gray-400">{u.role}</span>}
+              {u.sector && <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/[0.03] text-gray-500">{u.sector}</span>}
             </div>
+            <p className="text-xs text-gray-400 font-mono mt-1">{u.email}</p>
+            <div className="flex items-center gap-4 mt-3 text-[11px] text-gray-500 flex-wrap">
+              <span><span className="text-gray-600">Joined</span> {fmtDate(u.created_at)}</span>
+              <span className="text-gray-700">·</span>
+              <span><span className="text-gray-600">Last active</span> {fmtRel(u.last_login)}</span>
+              {u.last_login_ip && (<><span className="text-gray-700">·</span><span className="font-mono text-gray-600">{u.last_login_ip}</span></>)}
+            </div>
+          </div>
+          <div className="hidden md:grid grid-cols-3 gap-3 shrink-0">
+            <MiniStat label="Resumes" value={base_resumes.length} />
+            <MiniStat label="Tailored" value={tailoring_records.length} />
+            <MiniStat label="Parsed" value={parsed_resume ? '✓' : '—'} />
           </div>
         </div>
       </div>
 
-      {/* Section Tabs */}
-      <div className="flex gap-1 p-1 bg-white/[0.02] rounded-xl border border-white/[0.06] overflow-x-auto">
+      {/* Section tabs */}
+      <div className="flex items-center gap-1 border-b border-white/[0.06]">
         {sections.map(s => (
           <button
             key={s.key}
-            onClick={() => setActiveSection(s.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-lg transition-all whitespace-nowrap ${
-              activeSection === s.key
-                ? 'bg-white/10 text-white shadow-sm'
-                : 'text-gray-500 hover:text-gray-300 hover:bg-white/5'
+            onClick={() => setSection(s.key)}
+            className={`relative px-4 py-2.5 text-sm font-medium transition ${
+              section === s.key ? 'text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
+            {section === s.key && (
+              <motion.span layoutId="detail-active" className="absolute inset-x-0 -bottom-px h-0.5 bg-gradient-to-r from-indigo-400 to-violet-400" />
+            )}
             {s.label}
-            {s.count != null && s.count > 0 && (
-              <span className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
-                activeSection === s.key ? 'bg-white/10 text-white' : 'bg-white/5 text-gray-500'
-              }`}>
-                {s.count}
-              </span>
+            {s.count !== undefined && s.count > 0 && (
+              <span className={`ml-1.5 text-[10px] tabular-nums font-bold px-1.5 py-0.5 rounded-full ${
+                section === s.key ? 'bg-indigo-500/20 text-indigo-200' : 'bg-white/[0.04] text-gray-500'
+              }`}>{s.count}</span>
             )}
           </button>
         ))}
       </div>
 
-      {/* Resume error banner */}
-      {resumeError && (
-        <div className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center justify-between">
-          <span>{resumeError}</span>
-          <button onClick={() => setResumeError(null)} className="text-red-400/60 hover:text-red-400 transition text-xs ml-3">Dismiss</button>
+      {/* Section content */}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={section}
+          initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+          transition={{ duration: 0.18 }}
+        >
+          {section === 'overview' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 space-y-3">
+                <SectionHeading title="Account" />
+                <Info label="Session ID" value={u.session_id || '—'} mono />
+                <Info label="Fingerprint" value={u.fingerprint_hash ? u.fingerprint_hash.slice(0, 16) + '…' : '—'} mono />
+                <Info label="Login attempts" value={String(u.login_attempts)} />
+                <Info label="Parsed resume" value={parsed_resume ? '✓ Yes' : '—'} />
+              </div>
+              <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5 space-y-3">
+                <SectionHeading title="Activity" />
+                <Info label="Base uploads" value={`${base_resumes.length}`} />
+                <Info label="Generated / downloads" value={`${generated_resumes.length}`} />
+                <Info label="Tailoring sessions" value={`${tailoring_records.length}`} />
+                <Info label="Created" value={fmtDate(u.created_at)} />
+              </div>
+            </div>
+          )}
+
+          {section === 'resume' && (
+            parsed_resume ? <ParsedResumeView r={parsed_resume} /> : <EmptyHero icon={<Icon.Doc c="w-5 h-5" />} title="No parsed resume" />
+          )}
+
+          {section === 'files' && (
+            <div className="space-y-4">
+              <FileBlock title="Base uploads" items={base_resumes} dateKey="uploaded_at"
+                onView={handleViewResume} onDownload={handleDownload} downloadingKey={downloadingKey} />
+              <FileBlock title="Legacy downloads" items={generated_resumes} dateKey="generated_at"
+                onView={handleViewResume} onDownload={handleDownload} downloadingKey={downloadingKey} />
+            </div>
+          )}
+
+          {section === 'tailoring' && (
+            tailoring_records.length === 0 ? (
+              <EmptyHero icon={<Icon.Bolt c="w-5 h-5" />} title="No tailoring sessions" />
+            ) : (
+              <div className="space-y-2">
+                {tailoring_records.map((r: any, i: number) => <TailoringRecordCard key={i} r={r} />)}
+              </div>
+            )
+          )}
+        </motion.div>
+      </AnimatePresence>
+
+      {/* PDF viewer modal */}
+      <AnimatePresence>
+        {viewerUrl && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+            onClick={() => setViewerUrl(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.96, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 20 }}
+              transition={{ type: 'spring', damping: 28 }}
+              onClick={e => e.stopPropagation()}
+              className="relative w-[95vw] h-[92vh] max-w-5xl bg-[#12121a] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
+                <p className="text-sm text-white font-medium truncate">{viewerFilename}</p>
+                <button onClick={() => setViewerUrl(null)} className="text-gray-500 hover:text-white"><Icon.X c="w-5 h-5" /></button>
+              </div>
+              <iframe src={viewerUrl} className="flex-1 w-full border-0" title={viewerFilename} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-xl bg-white/[0.04] border border-white/[0.06] px-3 py-2 text-center">
+      <p className="text-[10px] text-gray-500 uppercase tracking-wider">{label}</p>
+      <p className="text-lg font-bold text-white tabular-nums leading-tight">{value}</p>
+    </div>
+  );
+}
+function Info({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-1.5 border-b border-white/[0.04] last:border-0">
+      <span className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold shrink-0">{label}</span>
+      <span className={`text-xs text-gray-300 text-right ${mono ? 'font-mono' : ''} break-all`}>{value}</span>
+    </div>
+  );
+}
+
+function FileBlock({ title, items, dateKey, onView, onDownload, downloadingKey }: {
+  title: string; items: any[]; dateKey: string;
+  onView: (k: string, f?: string) => void;
+  onDownload: (k: string, f?: string) => void;
+  downloadingKey: string | null;
+}) {
+  if (items.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <SectionHeading title={title} />
+        <p className="text-xs text-gray-600 italic">No {title.toLowerCase()}.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
+      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <span className="text-[11px] text-gray-600">{items.length} file{items.length !== 1 ? 's' : ''}</span>
+      </div>
+      <div className="divide-y divide-white/[0.04]">
+        {items.map((f, i) => {
+          const busy = downloadingKey === f.s3_key;
+          return (
+            <div key={i} className="px-5 py-3 flex items-center gap-4 hover:bg-white/[0.02] transition">
+              <div className="h-9 w-9 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center shrink-0">
+                <Icon.Doc c="w-4 h-4 text-gray-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-200 truncate">{f.filename || f.job_title || '(no name)'}</p>
+                <p className="text-[11px] text-gray-500">{fmtRel(f[dateKey])} · {f.size_bytes ? `${Math.round(f.size_bytes / 1024)}KB` : ''}</p>
+              </div>
+              <button
+                onClick={() => onView(f.s3_key, f.filename)}
+                disabled={busy}
+                className="h-8 px-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[11px] text-gray-300 border border-white/[0.06] inline-flex items-center gap-1.5 disabled:opacity-50"
+              ><Icon.Eye c="w-3.5 h-3.5" />{busy ? '…' : 'View'}</button>
+              <button
+                onClick={() => onDownload(f.s3_key, f.filename)}
+                disabled={busy}
+                className="h-8 px-3 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-[11px] text-indigo-300 border border-indigo-500/25 inline-flex items-center gap-1.5 disabled:opacity-50"
+              ><Icon.Download c="w-3.5 h-3.5" />Download</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TailoringRecordCard({ r }: { r: any }) {
+  const s = r._summary || {};
+  const ats = r.ats_scores?.overall;
+  return (
+    <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 hover:border-white/[0.12] transition-colors">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-white">{r.jd_analysis?.job_title || 'Untitled'}</p>
+          {r.jd_analysis?.company && r.jd_analysis.company !== 'Not specified' && (
+            <p className="text-[11px] text-gray-500">at {r.jd_analysis.company}</p>
+          )}
+          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+            {s.version_count > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-300 text-[10px] font-semibold border border-violet-500/25">
+                v{s.current_version_number ?? s.version_count}/{s.version_count}
+                {s.current_source && s.current_source !== 'initial' && <span className="opacity-60 text-[9px]">· {s.current_source}</span>}
+              </span>
+            )}
+            {s.files_cached > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 text-[10px] font-semibold border border-emerald-500/25">
+                {s.files_cached} cached
+              </span>
+            )}
+            {s.application_status && <StatusPill status={s.application_status} size="sm" />}
+            {s.interview_prep_ready && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-500/10 text-blue-400 text-[10px] font-semibold border border-blue-500/25">✓ Prep</span>
+            )}
+          </div>
+          {r.base_resume_filename && <p className="text-[10px] text-gray-600 mt-2">Base: {r.base_resume_filename}</p>}
+          {s.next_action_date && (
+            <p className="text-[10px] text-amber-400/80 mt-1">Next: {fmtRel(s.next_action_date)}{s.next_action_note ? ` · ${s.next_action_note}` : ''}</p>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          {ats != null && (
+            <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl ${
+              ats >= 80 ? 'bg-emerald-500/10' : ats >= 60 ? 'bg-amber-500/10' : 'bg-red-500/10'
+            }`}>
+              <span className={`text-lg font-bold tabular-nums ${
+                ats >= 80 ? 'text-emerald-400' : ats >= 60 ? 'text-amber-400' : 'text-red-400'
+              }`}>{ats}</span>
+              <span className="text-[9px] text-gray-500 uppercase">ATS</span>
+            </div>
+          )}
+          <span className="text-[10px] text-gray-600">{fmtRel(r.created_at)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ParsedResumeView({ r }: { r: any }) {
+  return (
+    <div className="space-y-5">
+      {r.summary && (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Summary</p>
+          <p className="text-sm text-gray-300 leading-relaxed">{r.summary}</p>
         </div>
       )}
-
-      {/* ──── Profile Section ──── */}
-      {activeSection === 'info' && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white">User Information</h3>
-          </div>
-          <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              { label: 'Email', value: user.email, mono: true },
-              { label: 'Name', value: user.name },
-              { label: 'Role', value: user.role },
-              { label: 'Sector', value: user.sector },
-              { label: 'Registered', value: formatDate(user.created_at) },
-              { label: 'Last Login', value: formatDate(user.last_login) },
-              { label: 'Last Login IP', value: user.last_login_ip, mono: true },
-              { label: 'Login Attempts', value: String(user.login_attempts) },
-              { label: 'Fingerprint', value: user.fingerprint_hash?.slice(0, 16), mono: true },
-              { label: 'Session ID', value: user.session_id?.slice(0, 16), mono: true },
-            ].map((item, i) => (
-              <div key={i} className="space-y-1">
-                <p className="text-[10px] text-gray-600 uppercase tracking-wider font-medium">{item.label}</p>
-                <p className={`text-sm text-gray-300 ${item.mono ? 'font-mono text-xs' : ''}`}>
-                  {item.value || '\u2014'}
-                </p>
+      {r.skills && Object.keys(r.skills).length > 0 && (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-3">Skills</p>
+          <div className="space-y-2.5">
+            {Object.entries(r.skills).map(([cat, sk]) => (
+              <div key={cat}>
+                <p className="text-[11px] text-indigo-400 font-medium mb-1">{cat}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(sk as string[]).map((s, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded text-[10px] bg-white/[0.04] border border-white/[0.05] text-gray-400">{s}</span>
+                  ))}
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
-
-      {/* ──── Parsed Resume Section ──── */}
-      {activeSection === 'parsed' && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06]">
-            <h3 className="text-sm font-semibold text-white">Parsed Resume Data</h3>
-          </div>
-          {!parsed_resume ? (
-            <div className="p-5">
-              <EmptyState message="No parsed resume for this user" />
-            </div>
-          ) : (
-            <div className="p-5 space-y-6 text-xs">
-              {/* Contact */}
-              {parsed_resume.contact && (
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center text-lg font-bold text-emerald-400">
-                    {(parsed_resume.contact.name || '?').charAt(0)}
-                  </div>
+      {r.experience?.length > 0 && (
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+          <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-3">Experience ({r.experience.length})</p>
+          <div className="space-y-3">
+            {r.experience.map((e: any, i: number) => (
+              <div key={i} className="border-l-2 border-indigo-500/30 pl-4">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <p className="text-base font-semibold text-white">{parsed_resume.contact.name}</p>
-                    <div className="flex flex-wrap gap-3 text-[11px] text-gray-400 mt-0.5">
-                      {parsed_resume.contact.email && <span>{parsed_resume.contact.email}</span>}
-                      {parsed_resume.contact.phone && <span>{parsed_resume.contact.phone}</span>}
-                      {parsed_resume.contact.linkedin && <span className="text-indigo-400">{parsed_resume.contact.linkedin}</span>}
-                      {parsed_resume.contact.github && <span className="text-gray-400">{parsed_resume.contact.github}</span>}
-                    </div>
+                    <p className="text-sm text-white font-medium">{e.title}</p>
+                    <p className="text-[11px] text-gray-400">{e.company}{e.location && ` · ${e.location}`}</p>
                   </div>
+                  {e.dates && <span className="text-[10px] text-gray-600 whitespace-nowrap">{e.dates}</span>}
                 </div>
-              )}
-
-              {/* Summary */}
-              {parsed_resume.summary && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-2">Summary</p>
-                  <p className="text-sm text-gray-300 leading-relaxed">{parsed_resume.summary}</p>
-                </div>
-              )}
-
-              {/* Skills */}
-              {parsed_resume.skills && Object.keys(parsed_resume.skills).length > 0 && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-3">Skills</p>
-                  <div className="space-y-3">
-                    {Object.entries(parsed_resume.skills).map(([category, skills]) => (
-                      <div key={category}>
-                        <p className="text-[11px] text-indigo-400 font-medium mb-1">{category}</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {(skills as string[]).map((skill: string, i: number) => (
-                            <span key={i} className="px-2.5 py-1 text-[10px] bg-white/5 text-gray-300 rounded-lg border border-white/5">
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
+                {e.bullets?.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {e.bullets.map((b: string, j: number) => (
+                      <li key={j} className="text-[11px] text-gray-400 leading-relaxed flex gap-2">
+                        <span className="text-gray-600 mt-0.5">•</span><span>{b}</span>
+                      </li>
                     ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Experience */}
-              {parsed_resume.experience?.length > 0 && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-3">Experience ({parsed_resume.experience.length})</p>
-                  <div className="space-y-3">
-                    {parsed_resume.experience.map((exp: any, i: number) => (
-                      <div key={i} className="border-l-2 border-indigo-500/30 pl-4 py-1">
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <p className="text-sm text-white font-medium">{exp.title}</p>
-                            <p className="text-[11px] text-gray-400">{exp.company} {exp.location && `\u2022 ${exp.location}`}</p>
-                          </div>
-                          {exp.dates && <span className="text-[10px] text-gray-600 whitespace-nowrap ml-3">{exp.dates}</span>}
-                        </div>
-                        {exp.bullets?.length > 0 && (
-                          <ul className="mt-2 space-y-1">
-                            {exp.bullets.map((b: string, j: number) => (
-                              <li key={j} className="text-[11px] text-gray-400 leading-relaxed flex gap-2">
-                                <span className="text-gray-600 mt-0.5">\u2022</span>
-                                <span>{b}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Education */}
-              {parsed_resume.education?.length > 0 && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-3">Education ({parsed_resume.education.length})</p>
-                  <div className="space-y-2">
-                    {parsed_resume.education.map((edu: any, i: number) => (
-                      <div key={i} className="flex items-start justify-between py-2 border-b border-white/5 last:border-0">
-                        <div>
-                          <p className="text-sm text-white font-medium">{edu.degree}</p>
-                          <p className="text-[11px] text-gray-400">{edu.institution} {edu.location && `\u2022 ${edu.location}`}</p>
-                          {edu.gpa && <p className="text-[10px] text-gray-500 mt-0.5">GPA: {edu.gpa}</p>}
-                        </div>
-                        {edu.dates && <span className="text-[10px] text-gray-600 whitespace-nowrap ml-3">{edu.dates}</span>}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Projects */}
-              {parsed_resume.projects?.length > 0 && (
-                <div>
-                  <p className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold mb-3">Projects ({parsed_resume.projects.length})</p>
-                  <div className="space-y-3">
-                    {parsed_resume.projects.map((p: any, i: number) => (
-                      <div key={i} className="p-3 bg-white/[0.02] rounded-xl border border-white/5">
-                        <div className="flex items-start justify-between">
-                          <p className="text-sm text-white font-medium">{p.name}</p>
-                          {p.dates && <span className="text-[10px] text-gray-600 whitespace-nowrap ml-3">{p.dates}</span>}
-                        </div>
-                        {p.tech && <p className="text-[10px] text-indigo-400/70 mt-1">{p.tech}</p>}
-                        {p.bullets?.length > 0 && (
-                          <ul className="mt-2 space-y-1">
-                            {p.bullets.map((b: string, j: number) => (
-                              <li key={j} className="text-[11px] text-gray-400 flex gap-2">
-                                <span className="text-gray-600">\u2022</span>
-                                <span>{b}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <p className="text-[10px] text-gray-700 pt-2">Parsed at: {formatDate(parsed_resume.parsed_at)}</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ──── Base Resumes Section ──── */}
-      {activeSection === 'base' && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Base Resumes</h3>
-            <span className="text-[10px] text-gray-600">{base_resumes.length} file{base_resumes.length !== 1 ? 's' : ''}</span>
-          </div>
-          {base_resumes.length === 0 ? (
-            <div className="p-5"><EmptyState message="No base resumes uploaded" /></div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {base_resumes.map((r: any, i: number) => (
-                <div key={i} className="px-5 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-xl bg-amber-500/10 flex items-center justify-center flex-shrink-0">
-                      <IconDocument className="w-5 h-5 text-amber-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-white font-medium truncate">{r.filename}</p>
-                        {r.is_active && (
-                          <span className="px-1.5 py-0.5 text-[9px] bg-emerald-500/15 text-emerald-400 rounded font-semibold uppercase tracking-wider flex-shrink-0">Active</span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-gray-500">
-                        {r.size_bytes ? `${(r.size_bytes / 1024).toFixed(0)} KB` : ''}{r.size_bytes ? ' \u2022 ' : ''}{formatRelative(r.uploaded_at)}
-                      </p>
-                    </div>
-                  </div>
-                  {r.s3_key && (
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                      <button
-                        onClick={() => handleViewResume(r.s3_key, r.filename)}
-                        disabled={downloadingKey === r.s3_key}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-500 rounded-lg transition-all font-medium disabled:opacity-50"
-                      >
-                        {downloadingKey === r.s3_key ? (
-                          <div className="h-3.5 w-3.5 animate-spin border border-current border-t-transparent rounded-full" />
-                        ) : (
-                          <IconEye className="w-3.5 h-3.5" />
-                        )}
-                        View
-                      </button>
-                      <button
-                        onClick={() => handleDownloadResume(r.s3_key, r.filename)}
-                        disabled={downloadingKey === r.s3_key}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
-                      >
-                        <IconDownload className="w-3.5 h-3.5" />
-                        Download
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ──── Generated Resumes Section ──── */}
-      {activeSection === 'generated' && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Generated Resumes</h3>
-            <span className="text-[10px] text-gray-600">{generated_resumes.length} file{generated_resumes.length !== 1 ? 's' : ''}</span>
-          </div>
-          {generated_resumes.length === 0 ? (
-            <div className="p-5"><EmptyState message="No generated resumes" /></div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {generated_resumes.map((r: any, i: number) => (
-                <div key={i} className="px-5 py-4 flex items-center justify-between hover:bg-white/[0.02] transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-10 w-10 rounded-xl bg-violet-500/10 flex items-center justify-center flex-shrink-0">
-                      <IconBolt className="w-5 h-5 text-violet-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-white font-medium truncate">{r.filename || r.job_title || 'Tailored Resume'}</p>
-                      <p className="text-[11px] text-gray-500">
-                        {r.size_bytes ? `${(r.size_bytes / 1024).toFixed(0)} KB` : ''}{r.size_bytes ? ' \u2022 ' : ''}{formatRelative(r.generated_at)}
-                      </p>
-                    </div>
-                  </div>
-                  {r.s3_key && (
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-3">
-                      <button
-                        onClick={() => handleViewResume(r.s3_key, r.filename)}
-                        disabled={downloadingKey === r.s3_key}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-indigo-400 hover:text-white bg-indigo-500/10 hover:bg-indigo-500 rounded-lg transition-all font-medium disabled:opacity-50"
-                      >
-                        {downloadingKey === r.s3_key ? (
-                          <div className="h-3.5 w-3.5 animate-spin border border-current border-t-transparent rounded-full" />
-                        ) : (
-                          <IconEye className="w-3.5 h-3.5" />
-                        )}
-                        View
-                      </button>
-                      <button
-                        onClick={() => handleDownloadResume(r.s3_key, r.filename)}
-                        disabled={downloadingKey === r.s3_key}
-                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium disabled:opacity-50"
-                      >
-                        <IconDownload className="w-3.5 h-3.5" />
-                        Download
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ──── Tailoring Records Section ──── */}
-      {activeSection === 'tailoring' && (
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Tailoring Sessions</h3>
-            <span className="text-[10px] text-gray-600">{tailoring_records.length} session{tailoring_records.length !== 1 ? 's' : ''}</span>
-          </div>
-          {tailoring_records.length === 0 ? (
-            <div className="p-5"><EmptyState message="No tailoring sessions" /></div>
-          ) : (
-            <div className="divide-y divide-white/5">
-              {tailoring_records.map((r: any, i: number) => {
-                const s = r._summary || {};
-                const status = s.application_status;
-                const statusChip = status ? (APPLICATION_STATUS_CHIP[status] || 'bg-gray-500/15 text-gray-400 border-gray-500/25') : '';
-                return (
-                  <div key={i} className="px-5 py-4 hover:bg-white/[0.02] transition-colors">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white font-medium">
-                          {r.jd_analysis?.job_title || 'Unknown Role'}
-                        </p>
-                        {r.jd_analysis?.company && (
-                          <p className="text-[11px] text-gray-400 mt-0.5">at {r.jd_analysis.company}</p>
-                        )}
-                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                          {s.version_count > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-violet-500/15 text-violet-300 border-violet-500/25">
-                              v{s.current_version_number ?? s.version_count}/{s.version_count}
-                              {s.current_source && s.current_source !== 'initial' && (
-                                <span className="opacity-70 text-[9px]">· {s.current_source}</span>
-                              )}
-                            </span>
-                          )}
-                          {s.files_cached > 0 && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-emerald-500/15 text-emerald-400 border-emerald-500/25">
-                              {s.files_cached} file{s.files_cached !== 1 ? 's' : ''} cached
-                            </span>
-                          )}
-                          {status && (
-                            <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-semibold capitalize border ${statusChip}`}>
-                              {status}
-                            </span>
-                          )}
-                          {s.interview_prep_ready && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold border bg-blue-500/15 text-blue-400 border-blue-500/25">
-                              \u2713 Prep
-                            </span>
-                          )}
-                        </div>
-                        {r.base_resume_filename && (
-                          <p className="text-[10px] text-gray-600 mt-2">Base: {r.base_resume_filename}</p>
-                        )}
-                        {s.recruiter_name && (
-                          <p className="text-[10px] text-gray-500 mt-1">Recruiter: {s.recruiter_name}{s.recruiter_company ? ` · ${s.recruiter_company}` : ''}</p>
-                        )}
-                        {s.next_action_date && (
-                          <p className="text-[10px] text-amber-400 mt-1">Next: {formatRelative(s.next_action_date)}{s.next_action_note ? ` · ${s.next_action_note}` : ''}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                        {r.ats_scores?.overall != null && (
-                          <div className={`flex flex-col items-center px-3 py-1.5 rounded-xl ${
-                            r.ats_scores.overall >= 80 ? 'bg-emerald-500/10' :
-                            r.ats_scores.overall >= 60 ? 'bg-amber-500/10' : 'bg-red-500/10'
-                          }`}>
-                            <span className={`text-lg font-bold tabular-nums ${
-                              r.ats_scores.overall >= 80 ? 'text-emerald-400' :
-                              r.ats_scores.overall >= 60 ? 'text-amber-400' : 'text-red-400'
-                            }`}>
-                              {r.ats_scores.overall}
-                            </span>
-                            <span className="text-[9px] text-gray-500 uppercase tracking-wider">ATS</span>
-                          </div>
-                        )}
-                        <span className="text-[10px] text-gray-600">{formatRelative(r.created_at)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ──── Inline Resume Viewer Modal ──── */}
-      {viewerUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="relative w-[95vw] h-[92vh] max-w-5xl bg-[#12121a] rounded-2xl border border-white/10 shadow-2xl flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] flex-shrink-0">
-              <p className="text-sm text-white font-medium truncate">{viewerFilename}</p>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    window.open(viewerUrl, '_blank');
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all font-medium"
-                >
-                  Open in new tab
-                </button>
-                <button
-                  onClick={() => { setViewerUrl(null); setViewerFilename(''); }}
-                  className="p-1.5 text-gray-400 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+                  </ul>
+                )}
               </div>
-            </div>
-            {/* PDF iframe */}
-            <iframe
-              src={viewerUrl}
-              title="Resume viewer"
-              className="flex-1 w-full bg-white"
-            />
+            ))}
           </div>
         </div>
       )}
@@ -1740,7 +1882,7 @@ function UserDetailView({ detail, onBack }: { detail: UserDetail; onBack: () => 
   );
 }
 
-// ─── Admin Login Form ────────────────────────────────────────────
+// ─── Login Form ───────────────────────────────────────────────────────────
 
 function AdminLoginForm() {
   const { login } = useAuth();
@@ -1750,69 +1892,64 @@ function AdminLoginForm() {
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    const result = await login(email, password);
+    e.preventDefault(); setError(''); setLoading(true);
+    const r = await login(email, password);
     setLoading(false);
-    if (result.error) setError(result.error);
+    if (r.error) setError(r.error);
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-8">
+    <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Background gradient flourish */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute -top-40 -right-40 h-96 w-96 rounded-full bg-indigo-500/10 blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-violet-500/10 blur-3xl" />
+      </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: 'easeOut' }}
+        className="relative w-full max-w-sm space-y-7"
+      >
         <div className="text-center">
-          <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mb-5 shadow-lg shadow-indigo-500/20">
-            <IconChart className="w-7 h-7 text-white" />
+          <div className="mx-auto h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mb-5 shadow-lg shadow-indigo-500/30">
+            <Icon.Sparkle c="w-6 h-6 text-white" />
           </div>
           <h1 className="text-xl font-bold text-white">Admin Portal</h1>
           <p className="text-sm text-gray-500 mt-1.5">Sign in with your admin credentials</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm">
-              {error}
-            </div>
-          )}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm"
+              >{error}</motion.div>
+            )}
+          </AnimatePresence>
           <div className="space-y-1.5">
             <label className="block text-xs text-gray-400 font-medium">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-              placeholder="admin@example.com"
-            />
+            <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
+              className="w-full px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+              placeholder="admin@example.com" />
           </div>
           <div className="space-y-1.5">
             <label className="block text-xs text-gray-400 font-medium">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/20 transition-all"
-              placeholder="Enter your password"
-            />
+            <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
+              className="w-full px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl text-sm text-white placeholder-gray-600 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/30 transition-all"
+              placeholder="Enter your password" />
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30"
-          >
+          <button type="submit" disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/30">
             {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <div className="h-4 w-4 animate-spin border-2 border-white border-t-transparent rounded-full" />
-                Signing in...
+              <span className="inline-flex items-center justify-center gap-2">
+                <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Signing in…
               </span>
-            ) : (
-              'Sign In'
-            )}
+            ) : 'Sign In'}
           </button>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

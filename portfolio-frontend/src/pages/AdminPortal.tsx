@@ -1535,20 +1535,50 @@ function UserDetailDrawer({ detail, onBack }: { detail: UserDetail; onBack: () =
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerFilename, setViewerFilename] = useState('');
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [viewerError, setViewerError] = useState('');
 
   const getExt = (name: string) => { const d = name.lastIndexOf('.'); return d !== -1 ? name.slice(d + 1).toLowerCase() : ''; };
 
+  // Revoke any blob URL when the modal closes so we don't leak memory.
+  const closeViewer = useCallback(() => {
+    if (viewerUrl && viewerUrl.startsWith('blob:')) URL.revokeObjectURL(viewerUrl);
+    setViewerUrl(null); setViewerFilename(''); setViewerError('');
+  }, [viewerUrl]);
+  useEffect(() => {
+    return () => { if (viewerUrl && viewerUrl.startsWith('blob:')) URL.revokeObjectURL(viewerUrl); };
+  }, [viewerUrl]);
+
   const handleViewResume = async (s3Key: string, filename?: string) => {
-    setDownloadingKey(s3Key);
+    setDownloadingKey(s3Key); setViewerError('');
     const fname = filename || s3Key.split('/').pop() || 'resume.pdf';
     const ext = getExt(fname);
     try {
       if (ext === 'docx' || ext === 'doc') {
+        // DOCX can't preview inline — download instead.
         const res = await apiService.getAdminResumeUrl(s3Key, 'attachment', fname);
         if (res.data?.url) window.open(res.data.url, '_blank');
-      } else {
-        const res = await apiService.getAdminResumeUrl(s3Key, 'inline', fname);
-        if (res.data?.url) { setViewerUrl(res.data.url); setViewerFilename(fname); }
+        return;
+      }
+      // PDF — fetch the presigned URL as a blob so the iframe loads from a
+      // blob: URL (CSP `frame-src 'self' blob:` allows that) instead of
+      // from the cross-origin S3 host (which CSP blocks).
+      const res = await apiService.getAdminResumeUrl(s3Key, 'inline', fname);
+      if (!res.data?.url) {
+        setViewerError(res.error || 'Failed to get resume URL');
+        return;
+      }
+      try {
+        const resp = await fetch(res.data.url);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob = await resp.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        setViewerUrl(blobUrl);
+        setViewerFilename(fname);
+      } catch (fetchErr) {
+        // Cross-origin fetch failed (CORS, network, etc.) — fall back to
+        // a new-tab open so the user still gets the file.
+        console.warn('Inline preview fetch failed, opening in new tab:', fetchErr);
+        window.open(res.data.url, '_blank');
       }
     } finally { setDownloadingKey(null); }
   };
@@ -1680,13 +1710,26 @@ function UserDetailDrawer({ detail, onBack }: { detail: UserDetail; onBack: () =
         </motion.div>
       </AnimatePresence>
 
-      {/* PDF viewer modal */}
+      {/* Inline error banner */}
+      <AnimatePresence>
+        {viewerError && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm flex items-start justify-between gap-3 px-4 py-3 bg-red-500/15 border border-red-500/30 rounded-xl shadow-lg shadow-red-500/10 backdrop-blur-sm"
+          >
+            <p className="text-sm text-red-200">{viewerError}</p>
+            <button onClick={() => setViewerError('')} className="text-red-400/60 hover:text-red-400 text-xs">Close</button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PDF viewer modal — uses blob: URLs to sidestep CSP frame-src */}
       <AnimatePresence>
         {viewerUrl && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-            onClick={() => setViewerUrl(null)}
+            onClick={closeViewer}
           >
             <motion.div
               initial={{ scale: 0.96, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, y: 20 }}
@@ -1696,9 +1739,16 @@ function UserDetailDrawer({ detail, onBack }: { detail: UserDetail; onBack: () =
             >
               <div className="flex items-center justify-between px-5 py-3 border-b border-white/[0.06] shrink-0">
                 <p className="text-sm text-white font-medium truncate">{viewerFilename}</p>
-                <button onClick={() => setViewerUrl(null)} className="text-gray-500 hover:text-white"><Icon.X c="w-5 h-5" /></button>
+                <div className="flex items-center gap-1">
+                  <a
+                    href={viewerUrl} download={viewerFilename}
+                    className="h-8 px-3 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] text-[11px] text-gray-300 border border-white/[0.06] inline-flex items-center gap-1.5"
+                    title="Download this file"
+                  ><Icon.Download c="w-3.5 h-3.5" />Download</a>
+                  <button onClick={closeViewer} className="h-8 w-8 rounded-lg text-gray-500 hover:text-white hover:bg-white/[0.06] flex items-center justify-center"><Icon.X c="w-5 h-5" /></button>
+                </div>
               </div>
-              <iframe src={viewerUrl} className="flex-1 w-full border-0" title={viewerFilename} />
+              <iframe src={viewerUrl} className="flex-1 w-full border-0 bg-[#1a1a24]" title={viewerFilename} />
             </motion.div>
           </motion.div>
         )}

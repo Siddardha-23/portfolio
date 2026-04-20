@@ -464,7 +464,8 @@ function TechNewsFeed({
       }
     }
     if (activeTag) {
-      list = list.filter(i => (i.tags || []).some(t => t.toLowerCase() === activeTag.toLowerCase()));
+      const target = activeTag.toLowerCase();
+      list = list.filter(i => (i.tags || []).some(t => typeof t === 'string' && t.toLowerCase() === target));
     }
     return list;
   }, [items, activeCategory, activeTag]);

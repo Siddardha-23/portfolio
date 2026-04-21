@@ -91,11 +91,11 @@ export function JobSearchPanel({
       {hasSearched && !loading && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
               {filters.date_posted === 'today' ? 'Fresh Job Opportunities' : `Job Opportunities (${filters.date_posted})`}
             </h2>
             {jobs.length > 0 && (
-              <Badge variant="secondary" className="text-xs">{jobs.length}</Badge>
+              <Badge variant="outline" className="text-xs bg-white dark:bg-gray-900 border-gray-200 dark:border-white/[0.1]">{jobs.length}</Badge>
             )}
             {batchMeta && batchMeta.cache_hits > 0 && (
               <span
@@ -120,7 +120,7 @@ export function JobSearchPanel({
               key={company}
               variant="outline"
               size="sm"
-              className="h-7 text-xs whitespace-nowrap flex-shrink-0 rounded-full"
+              className="h-7 text-xs whitespace-nowrap flex-shrink-0 rounded-full border-gray-200 bg-gray-50 text-gray-700 hover:bg-white hover:text-gray-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
               onClick={() => handleCompanyChip(company)}
               disabled={loading}
             >
@@ -138,12 +138,17 @@ export function JobSearchPanel({
             className="flex-1"
           />
           <div className="flex gap-2">
-            <Button type="submit" disabled={loading || !localQuery.trim() || !filtersLoaded}>
+            <Button
+              type="submit"
+              className="bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-950 dark:hover:bg-white"
+              disabled={loading || !localQuery.trim() || !filtersLoaded}
+            >
               {loading ? 'Searching...' : 'Search'}
             </Button>
             <Button
               type="button"
               variant="outline"
+              className="border-gray-200 dark:border-white/[0.1]"
               disabled={loading || savingFilters || !filtersLoaded}
               onClick={handleSaveFilters}
             >
@@ -289,7 +294,7 @@ export function JobSearchPanel({
 
       {/* Batch errors warning */}
       {batchMeta && batchMeta.errors.length > 0 && (
-        <p className="text-xs text-yellow-600 dark:text-yellow-400">
+        <p className="text-xs text-amber-700 dark:text-amber-300">
           Some queries had issues: {batchMeta.errors.length} failed
         </p>
       )}

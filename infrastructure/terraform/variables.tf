@@ -70,6 +70,12 @@ variable "apify_api_key" {
   default     = ""
 }
 
+variable "apify_actor_memory_mb" {
+  description = "Memory assigned to Apify actor runs used by job search"
+  type        = number
+  default     = 2048
+}
+
 variable "job_search_password_hash" {
   description = "Bcrypt hash of the job search dashboard password"
   type        = string

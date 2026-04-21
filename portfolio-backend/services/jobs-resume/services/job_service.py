@@ -110,6 +110,10 @@ TOP_COMPANY_CAREER_URLS = [
     "https://www.infosys.com/careers",
 ]
 
+COMPANY_CAREER_BATCH_SIZE = 3
+COMPANY_CAREER_MAX_BATCHES = 6
+COMPANY_CAREER_MAX_JOBS_PER_COMPANY = 2
+
 
 def _make_cache_key(params: dict) -> str:
     """Create a deterministic MD5 hash from query parameters."""
@@ -422,21 +426,37 @@ class JobService:
         payload: Dict[str, Any],
         max_items: int = 50,
         timeout_seconds: int = 120,
+        memory_mb: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         token = self._get_apify_token()
         actor_path = quote(actor_id.replace("/", "~"), safe="")
         url = f"{self.APIFY_BASE}/{actor_path}/run-sync-get-dataset-items"
+        if memory_mb is None:
+            memory_mb = self._get_apify_memory_mb()
         params = {
             "token": token,
             "format": "json",
             "clean": "true",
             "timeout": str(timeout_seconds),
             "maxItems": str(max_items),
+            "memory": str(memory_mb),
         }
         resp = requests.post(url, params=params, json=payload, timeout=timeout_seconds + 20)
         resp.raise_for_status()
         data = resp.json()
         return data if isinstance(data, list) else []
+
+    @staticmethod
+    def _get_apify_memory_mb() -> int:
+        raw = _get_config_value("APIFY_ACTOR_MEMORY_MB", "1024")
+        try:
+            return max(512, min(int(raw), 8192))
+        except (TypeError, ValueError):
+            return 1024
+
+    @staticmethod
+    def _chunks(items: List[str], size: int) -> List[List[str]]:
+        return [items[i:i + size] for i in range(0, len(items), size)]
 
     def _search_apify_jobs(
         self,
@@ -463,7 +483,7 @@ class JobService:
         errors: List[str] = []
         seen_ids: set = set()
 
-        def _collect(src: str, q: str) -> List[Dict[str, Any]]:
+        def _collect(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
             actor = self._actor_id(src)
             payload = self._build_apify_input(
                 source=src,
@@ -473,8 +493,41 @@ class JobService:
                 remote_only=remote_only,
                 employment_type=employment_type,
                 experience_level=experience_level,
+                company_urls=company_urls,
             )
-            raw_items = self._run_apify_actor(actor, payload, max_items=50 if src != "company" else 80)
+            try:
+                raw_items = self._run_apify_actor(
+                    actor,
+                    payload,
+                    max_items=40 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
+                    timeout_seconds=120 if src != "company" else 90,
+                )
+            except Exception:
+                if src != "company" or not company_urls or len(company_urls) == 1:
+                    raise
+                raw_items = []
+                for url in company_urls:
+                    single_payload = self._build_apify_input(
+                        source=src,
+                        query=q,
+                        location=location,
+                        date_posted=date_posted,
+                        remote_only=remote_only,
+                        employment_type=employment_type,
+                        experience_level=experience_level,
+                        company_urls=[url],
+                    )
+                    try:
+                        raw_items.extend(
+                            self._run_apify_actor(
+                                actor,
+                                single_payload,
+                                max_items=COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
+                                timeout_seconds=75,
+                            )
+                        )
+                    except Exception as e:
+                        logger.warning(f"Company career scrape failed for {url}: {e}")
             return [self._normalize_apify_job(item, src) for item in raw_items]
 
         tasks = []
@@ -482,7 +535,12 @@ class JobService:
             max_queries_per_source = 2 if source == "all" else 4
             for src in selected:
                 if src == "company":
-                    tasks.append(pool.submit(_collect, src, queries[0] if queries else ""))
+                    url_batches = self._chunks(
+                        TOP_COMPANY_CAREER_URLS,
+                        COMPANY_CAREER_BATCH_SIZE,
+                    )[:COMPANY_CAREER_MAX_BATCHES]
+                    for urls in url_batches:
+                        tasks.append(pool.submit(_collect, src, queries[0] if queries else "", urls))
                     continue
                 for q in queries[:max_queries_per_source]:
                     tasks.append(pool.submit(_collect, src, q))
@@ -534,6 +592,7 @@ class JobService:
         remote_only: bool,
         employment_type: str,
         experience_level: str,
+        company_urls: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         days = self._date_posted_days(date_posted)
         location = location or "United States"
@@ -599,8 +658,8 @@ class JobService:
                 "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "US"},
             }
         return {
-            "startUrls": [{"url": url} for url in TOP_COMPANY_CAREER_URLS],
-            "maxJobsPerCompany": 4,
+            "startUrls": [{"url": url} for url in (company_urls or TOP_COMPANY_CAREER_URLS[:COMPANY_CAREER_BATCH_SIZE])],
+            "maxJobsPerCompany": COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
             "includeClosed": False,
             "outputFormat": "jobs",
         }

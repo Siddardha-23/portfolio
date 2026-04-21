@@ -42,6 +42,7 @@ locals {
         SSM_APIFY_API_KEY            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
         SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
         SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        APIFY_ACTOR_MEMORY_MB        = tostring(var.apify_actor_memory_mb)
         RESUME_S3_BUCKET             = aws_s3_bucket.resumes.id
       }
     }
@@ -68,33 +69,33 @@ locals {
   # API Gateway route-to-service mapping
   api_routes = {
     # Visitor service routes
-    "POST /api/info"              = "visitor"
-    "ANY /api/info/{proxy+}"      = "visitor"
-    "ANY /api/session/{proxy+}"   = "visitor"
-    "POST /api/contact"           = "visitor"
-    "ANY /api/contact/{proxy+}"   = "visitor"
-    "ANY /api/geo/{proxy+}"       = "visitor"
-    "POST /api/geo/lookup"        = "visitor"
-    "GET /api/health"             = "visitor"
+    "POST /api/info"            = "visitor"
+    "ANY /api/info/{proxy+}"    = "visitor"
+    "ANY /api/session/{proxy+}" = "visitor"
+    "POST /api/contact"         = "visitor"
+    "ANY /api/contact/{proxy+}" = "visitor"
+    "ANY /api/geo/{proxy+}"     = "visitor"
+    "POST /api/geo/lookup"      = "visitor"
+    "GET /api/health"           = "visitor"
 
     # Auth service routes
-    "ANY /api/auth/{proxy+}"      = "auth"
-    "ANY /api/admin/{proxy+}"     = "auth"
+    "ANY /api/auth/{proxy+}"  = "auth"
+    "ANY /api/admin/{proxy+}" = "auth"
 
     # Jobs-resume service routes
-    "ANY /api/jobs/{proxy+}"             = "jobs-resume"
-    "ANY /api/resume/{proxy+}"           = "jobs-resume"
-    "GET /api/tech-chronicle"            = "jobs-resume"
-    "ANY /api/tech-chronicle/{proxy+}"   = "jobs-resume"
+    "ANY /api/jobs/{proxy+}"           = "jobs-resume"
+    "ANY /api/resume/{proxy+}"         = "jobs-resume"
+    "GET /api/tech-chronicle"          = "jobs-resume"
+    "ANY /api/tech-chronicle/{proxy+}" = "jobs-resume"
 
     # Chat service routes
-    "POST /api/chat"              = "chat"
-    "ANY /api/chat/{proxy+}"      = "chat"
+    "POST /api/chat"         = "chat"
+    "ANY /api/chat/{proxy+}" = "chat"
 
     # Infra service routes
-    "ANY /api/infra/{proxy+}"     = "infra"
-    "GET /api/trace"              = "infra"
-    "ANY /api/trace/{proxy+}"     = "infra"
+    "ANY /api/infra/{proxy+}" = "infra"
+    "GET /api/trace"          = "infra"
+    "ANY /api/trace/{proxy+}" = "infra"
   }
 }
 

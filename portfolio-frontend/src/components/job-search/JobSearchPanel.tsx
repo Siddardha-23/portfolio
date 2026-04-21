@@ -109,7 +109,7 @@ export function JobSearchPanel({
       {hasSearched && !loading && (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/15 to-indigo-500/15 text-purple-600 dark:text-purple-300">
               <Sparkles className="h-4 w-4" />
             </div>
             <div>
@@ -119,7 +119,7 @@ export function JobSearchPanel({
               <p className="text-xs text-muted-foreground">
                 {jobs.length > 0 ? `${jobs.length} ranked matches` : 'No matches yet'}
                 {batchMeta && batchMeta.cache_hits > 0 && (
-                  <span className="ml-1 text-primary/70">· {batchMeta.cache_hits} cached</span>
+                  <span className="ml-1 text-purple-500/80 dark:text-purple-400/80">· {batchMeta.cache_hits} cached</span>
                 )}
               </p>
             </div>
@@ -129,7 +129,7 @@ export function JobSearchPanel({
             size="sm"
             onClick={handleRefresh}
             disabled={loading}
-            className="gap-1.5 border-primary/25 text-primary hover:bg-primary/10 hover:text-primary"
+            className="gap-1.5 border-purple-500/30 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Refresh all sources
@@ -139,7 +139,8 @@ export function JobSearchPanel({
 
       {/* Search panel */}
       <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur-sm">
-        <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-primary/10 blur-3xl" aria-hidden />
+        <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-purple-500/10 blur-3xl" aria-hidden />
+        <div className="pointer-events-none absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-indigo-500/10 blur-3xl" aria-hidden />
         <div className="relative space-y-4">
           {/* Company chips */}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
@@ -149,7 +150,7 @@ export function JobSearchPanel({
                 type="button"
                 onClick={() => handleCompanyChip(company)}
                 disabled={loading}
-                className="flex h-7 flex-shrink-0 items-center rounded-full border border-border/60 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary disabled:opacity-50 whitespace-nowrap"
+                className="flex h-7 flex-shrink-0 items-center rounded-full border border-border/60 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-purple-500/40 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 disabled:opacity-50 whitespace-nowrap"
               >
                 {company}
               </button>
@@ -170,7 +171,7 @@ export function JobSearchPanel({
             <div className="flex gap-2">
               <Button
                 type="submit"
-                className="h-10 gap-1.5 bg-primary px-5 text-primary-foreground hover:bg-primary/90"
+                className="h-10 gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 px-5 text-white shadow-sm shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500 hover:shadow-purple-500/30"
                 disabled={loading || !localQuery.trim() || !filtersLoaded}
               >
                 <Search className="h-3.5 w-3.5" />
@@ -338,7 +339,7 @@ export function JobSearchPanel({
               <Badge
                 key={src}
                 variant="outline"
-                className={`gap-1 text-[10px] font-normal ${count > 0 ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
+                className={`gap-1 text-[10px] font-normal ${count > 0 ? 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300' : 'border-border text-muted-foreground'}`}
               >
                 <span className="font-medium">{SOURCE_LABELS[src] || src}</span>
                 <span className="opacity-70">·</span>
@@ -428,8 +429,8 @@ export function JobSearchPanel({
 
       {/* Empty state */}
       {!loading && jobs.length === 0 && hasSearched && (
-        <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-14 text-center space-y-3">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+        <div className="rounded-2xl border border-dashed border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-transparent py-14 text-center space-y-3">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-500/15 to-indigo-500/15 text-purple-600 dark:text-purple-300">
             <Search className="h-5 w-5" />
           </div>
           <p className="text-sm text-muted-foreground">
@@ -449,13 +450,13 @@ export function JobSearchPanel({
       )}
 
       {!loading && jobs.length === 0 && !hasSearched && (
-        <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-14 text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Sparkles className="h-5 w-5" />
+        <div className="rounded-2xl border border-dashed border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-transparent py-14 text-center space-y-2">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-500/30">
+            <Sparkles className="h-6 w-6" />
           </div>
           <p className="text-sm font-medium">Ready when you are</p>
           <p className="text-xs text-muted-foreground">
-            Run a search or click <span className="text-primary">Refresh all sources</span> after searching once to pull fresh listings.
+            Run a search or click <span className="text-purple-600 dark:text-purple-300 font-medium">Refresh all sources</span> after searching once to pull fresh listings.
           </p>
         </div>
       )}

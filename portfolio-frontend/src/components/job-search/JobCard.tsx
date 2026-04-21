@@ -61,7 +61,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
 
   return (
     <>
-      <Card className="group relative flex flex-col overflow-hidden rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
+      <Card className="group relative flex flex-col overflow-hidden rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:border-purple-500/40 hover:shadow-lg hover:shadow-purple-500/10">
         <CardContent className="flex flex-1 flex-col gap-3 p-5">
           {/* Header row */}
           <div className="flex items-start gap-3">
@@ -72,7 +72,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
                 className="h-11 w-11 flex-shrink-0 rounded-lg border border-border/40 bg-background object-contain p-0.5"
               />
             ) : (
-              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-accent/15 text-sm font-semibold text-primary">
+              <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500/15 to-indigo-500/15 text-sm font-semibold text-purple-600 dark:text-purple-300">
                 {job.company.charAt(0).toUpperCase()}
               </div>
             )}
@@ -133,7 +133,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               </Badge>
             )}
             {job.source && (
-              <Badge variant="outline" className="border-primary/30 bg-primary/10 px-1.5 py-0 text-primary">
+              <Badge variant="outline" className="border-purple-500/30 bg-purple-500/10 px-1.5 py-0 text-purple-600 dark:text-purple-300">
                 {job.source}
               </Badge>
             )}
@@ -170,7 +170,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
           <button
             type="button"
             onClick={() => setExpanded(!expanded)}
-            className="flex w-fit items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+            className="flex w-fit items-center gap-1 text-[11px] font-medium text-purple-600 dark:text-purple-300 hover:underline"
           >
             <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
             {expanded ? 'Hide description' : 'Show description'}
@@ -183,7 +183,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               onClick={onQuickApply}
               asChild={!job.apply_link}
               title={apply.fallback ? 'Apply link missing — opens Google search' : 'Opens career page and marks as applied'}
-              className="h-8 gap-1 bg-primary px-3 text-xs text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90"
+              className="h-8 gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 px-3 text-xs text-white shadow-sm shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500 hover:shadow-purple-500/30"
             >
               {job.apply_link ? (
                 <>
@@ -216,7 +216,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
+                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-purple-600 dark:hover:text-purple-300"
                 onClick={() => openAnalysis('summarize')}
                 title="AI summary"
               >
@@ -226,7 +226,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
+                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-purple-600 dark:hover:text-purple-300"
                 onClick={() => openAnalysis('missing_skills')}
                 title="Skill-gap analysis"
               >
@@ -236,7 +236,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
+                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-purple-600 dark:hover:text-purple-300"
                 onClick={() => openAnalysis('cover_letter')}
                 title="Generate cover letter"
               >
@@ -246,7 +246,7 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-primary"
+                className="h-8 gap-1 px-2 text-[11px] text-muted-foreground hover:text-purple-600 dark:hover:text-purple-300"
                 onClick={() => setTailorOpen(true)}
                 title="Tailor resume to this role"
               >

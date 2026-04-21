@@ -34,7 +34,7 @@ function SavedJobCard({ saved, updateJobStatus, unsaveJob }: {
   const job = saved.job_data;
 
   return (
-    <Card className="group overflow-hidden rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm transition-all hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5">
+    <Card className="group overflow-hidden rounded-2xl border-border/60 bg-card/80 backdrop-blur-sm transition-all hover:border-purple-500/40 hover:shadow-lg hover:shadow-purple-500/10">
       <CardContent className="space-y-3 p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -85,7 +85,7 @@ function SavedJobCard({ saved, updateJobStatus, unsaveJob }: {
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1 border-primary/25 text-xs text-primary hover:bg-primary/10 hover:text-primary"
+              className="h-8 gap-1 border-purple-500/30 text-xs text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
               asChild
             >
               <a href={job.apply_link} target="_blank" rel="noopener noreferrer">
@@ -116,7 +116,7 @@ function SavedJobCard({ saved, updateJobStatus, unsaveJob }: {
             />
             <Button
               size="sm"
-              className="h-8 bg-primary text-xs text-primary-foreground hover:bg-primary/90"
+              className="h-8 bg-gradient-to-r from-purple-600 to-indigo-600 text-xs text-white shadow-sm shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500"
               onClick={() => updateJobStatus(saved.job_id, saved.status, notes)}
             >
               Save notes
@@ -135,9 +135,9 @@ function SavedJobCard({ saved, updateJobStatus, unsaveJob }: {
 export function SavedJobsPanel({ savedJobs, updateJobStatus, unsaveJob }: SavedJobsPanelProps) {
   if (savedJobs.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-14 text-center">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Bookmark className="h-5 w-5" />
+      <div className="rounded-2xl border border-dashed border-purple-500/30 bg-gradient-to-b from-purple-500/5 to-transparent py-14 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-500 text-white shadow-lg shadow-purple-500/30">
+          <Bookmark className="h-6 w-6" />
         </div>
         <p className="mt-3 text-sm font-medium">No saved jobs yet</p>
         <p className="mt-1 text-xs text-muted-foreground">

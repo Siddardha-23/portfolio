@@ -125,7 +125,7 @@ MAX_QUERIES_PER_APIFY_SOURCE = 3
 # Max JSearch (RapidAPI) queries per batch — RapidAPI plans meter per call.
 MAX_JSEARCH_QUERIES_PER_BATCH = 4
 # Bump this when the result schema changes so old cached entries are bypassed.
-JOBS_CACHE_VERSION = "v2-parallel-sources"
+JOBS_CACHE_VERSION = "v3-free-actors"
 
 # Tokens that should never end up in stored error strings or responses.
 _SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
@@ -170,10 +170,16 @@ class JobService:
 
     JSEARCH_BASE = "https://jsearch.p.rapidapi.com"
     APIFY_BASE = "https://api.apify.com/v2/acts"
+    # Defaults are pay-per-result actors that fit within Apify's $5/mo free
+    # platform credit — no subscription required. Override any ID via env:
+    # APIFY_LINKEDIN_ACTOR / APIFY_INDEED_ACTOR / APIFY_GOOGLE_ACTOR / etc.
+    # Google Jobs is intentionally blank: JSearch (RapidAPI) already scrapes
+    # Google Jobs, so we let that cover this lane unless the user sets an
+    # explicit Google actor override.
     APIFY_ACTORS = {
-        "linkedin": "automly/linkedin-jobs-scraper",
-        "indeed": "scrapapi/indeed-job-scraper",
-        "google": "parseforge/google-jobs-scraper",
+        "linkedin": "bebity/linkedin-jobs-scraper",
+        "indeed": "misceres/indeed-scraper",
+        "google": "",
         "company": "piotrv1001/company-career-page-scraper",
         "jobright": "",
     }
@@ -490,14 +496,16 @@ class JobService:
         apify_token = self._get_apify_token()
         jsearch_key = self._get_jsearch_key()
 
-        # Pick which sources to fan out to.
+        # Pick which sources to fan out to. An Apify source only joins the
+        # fan-out if its actor ID is configured — otherwise we silently skip
+        # it (e.g. google defaults to empty, so JSearch covers that lane).
         selected: List[str] = []
         if source == "all":
             if apify_token:
-                selected.extend(["linkedin", "indeed", "google"])
-                if self._actor_id("jobright"):
-                    selected.append("jobright")
-                if include_company_careers:
+                for src in ("linkedin", "indeed", "google", "jobright"):
+                    if self._actor_id(src):
+                        selected.append(src)
+                if include_company_careers and self._actor_id("company"):
                     selected.append("company")
             if jsearch_key:
                 selected.append("jsearch")
@@ -506,7 +514,7 @@ class JobService:
                 selected = ["jsearch"]
         else:
             # A specific Apify source was requested.
-            if apify_token:
+            if apify_token and self._actor_id(source):
                 selected = [source]
 
         if not selected:
@@ -717,40 +725,52 @@ class JobService:
         }.get(employment_type, "")
 
         if source == "linkedin":
-            level = {
-                "entry": "entry",
-                "internship": "internship",
-                "associate": "associate",
-                "mid": "mid-senior",
+            # bebity/linkedin-jobs-scraper input schema (the default free
+            # pay-per-result actor). LinkedIn's internal codes:
+            #   publishedAt: "" | "r86400" (24h) | "r604800" (week) | "r2592000" (month)
+            #   contractType: F/P/C/T/I (fulltime/parttime/contract/temp/intern)
+            #   workType: 1 (onsite) | 2 (remote) | 3 (hybrid)
+            #   experienceLevel: 1 (intern) | 2 (entry) | 3 (associate) | 4 (mid-senior) ...
+            bebity_contract = {
+                "FULLTIME": "F",
+                "PARTTIME": "P",
+                "CONTRACTOR": "C",
+                "INTERN": "I",
+            }.get(employment_type, "")
+            bebity_level = {
+                "internship": "1",
+                "entry": "2",
+                "associate": "3",
+                "mid": "4",
             }.get(experience_level, "")
+            bebity_time = (
+                "r86400" if days == 1
+                else "r604800" if days and days <= 7
+                else "r2592000" if days else ""
+            )
             return {
-                "keywords": query,
+                "title": query,
                 "location": location,
-                "geoId": "103644278" if location.lower() in {"united states", "usa", "us"} else "",
-                "workplaceType": "remote" if remote_only else "",
-                "jobType": linkedin_type,
-                "experienceLevel": level,
-                "timePosted": "past-24h" if days == 1 else "past-week" if days and days <= 7 else "past-month" if days else "",
-                "sortBy": "date",
-                "maxResults": 50,
-                "fetchDetails": True,
-                "scrapeCompany": False,
+                "rows": 50,
+                "publishedAt": bebity_time,
+                "workType": "2" if remote_only else "",
+                "contractType": bebity_contract,
+                "experienceLevel": bebity_level,
+                "proxy": {"useApifyProxy": True, "apifyProxyCountry": "US"},
             }
         if source == "indeed":
+            # misceres/indeed-scraper input schema — the most popular free
+            # pay-per-result Indeed scraper. It has no server-side date
+            # filter, so we post-filter in _job_matches_filters.
             return {
-                "countryCode": "us",
-                "query": query,
+                "position": query,
+                "country": "US",
                 "location": location,
-                "remote": "remote" if remote_only else "",
-                "level": "entry_level" if experience_level in ("entry", "internship", "associate") else "",
-                "fromDays": str(days or 0),
-                "sort": "date",
-                "jobType": indeed_type,
-                "maxRows": 60,
-                "maxRowsPerUrl": 30,
-                "includeSimilarJobs": False,
-                "enableUniqueJobs": True,
-                "proxyConfiguration": {"useApifyProxy": False},
+                "maxItems": 50,
+                "parseCompanyDetails": False,
+                "saveOnlyUniqueItems": True,
+                "followApplyRedirects": True,
+                "proxy": {"useApifyProxy": True, "apifyProxyCountry": "US"},
             }
         if source == "google":
             # Google Jobs date-posted filter. Values the scraper accepts:
@@ -814,7 +834,14 @@ class JobService:
             or raw.get("organization")
             or "Unknown"
         )
-        title = raw.get("title") or raw.get("jobTitle") or nested_job.get("title") or nested_job.get("displayTitle") or "Unknown"
+        title = (
+            raw.get("title")
+            or raw.get("jobTitle")
+            or raw.get("positionName")  # misceres/indeed-scraper
+            or nested_job.get("title")
+            or nested_job.get("displayTitle")
+            or "Unknown"
+        )
         description = (
             raw.get("description")
             or raw.get("descriptionText")
@@ -836,7 +863,16 @@ class JobService:
             or "Not specified"
         )
         salary_obj = nested_job.get("salary") if isinstance(nested_job.get("salary"), dict) else {}
-        salary = raw.get("salary") or raw.get("salaryText") or salary_obj.get("text") or ""
+        salary_insights = raw.get("salaryInsights") if isinstance(raw.get("salaryInsights"), dict) else {}
+        salary = (
+            raw.get("salary")
+            or raw.get("salaryText")
+            or raw.get("salarySnippet")
+            or salary_obj.get("text")
+            or salary_insights.get("compensationRange")
+            or salary_insights.get("text")
+            or ""
+        )
         employment_type = raw.get("employmentType") or raw.get("employment_type") or nested_job.get("jobType") or ""
         if isinstance(employment_type, list):
             employment_type = ", ".join(str(t) for t in employment_type)
@@ -858,13 +894,22 @@ class JobService:
             raw.get("applyUrl")
             or raw.get("apply_link")
             or raw.get("jobUrl")
+            or raw.get("externalApplyLink")  # misceres/indeed-scraper
+            or raw.get("link")                # bebity/linkedin-jobs-scraper
             or raw.get("url")
             or first_apply_link
             or nested_apply.get("thirdPartyApplyUrl")
             or nested_apply.get("url")
             or ""
         )
-        logo = raw.get("companyLogo") or raw.get("logo") or nested_branding.get("logoUrl") or ""
+        logo = (
+            raw.get("companyLogo")
+            or raw.get("logoUrl")             # bebity
+            or raw.get("companyLogoUrl")      # misceres
+            or raw.get("logo")
+            or nested_branding.get("logoUrl")
+            or ""
+        )
         is_remote = bool(raw.get("isRemote") or raw.get("remote") or nested_job.get("isRemote") or "remote" in str(location).lower())
         contract = self._is_contract_friendly({"title": title, "description": description, "employment_type": employment_type})
         h1b = self._check_h1b(str(company), description)

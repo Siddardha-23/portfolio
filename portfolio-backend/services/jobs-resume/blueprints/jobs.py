@@ -14,6 +14,54 @@ from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 jobs_bp = Blueprint("jobs", __name__)
 logger = logging.getLogger(__name__)
 
+DEFAULT_JOB_FILTERS = {
+    "query": "software engineer new grad entry level h1b sponsor",
+    "location": "United States",
+    "date_posted": "today",
+    "remote_only": False,
+    "employment_type": "",
+    "h1b_only": False,
+    "visa_or_contract": True,
+    "experience_level": "entry",
+    "source": "all",
+    "include_company_careers": True,
+    "use_resume_recommendations": True,
+}
+
+
+def _as_bool(value, default=False):
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).lower() == "true"
+
+
+def _sanitize_job_filters(data):
+    raw = data if isinstance(data, dict) else {}
+    filters = {
+        **DEFAULT_JOB_FILTERS,
+        "query": InputSanitizer.sanitize_string(raw.get("query", DEFAULT_JOB_FILTERS["query"]), max_length=200),
+        "location": InputSanitizer.sanitize_string(raw.get("location", DEFAULT_JOB_FILTERS["location"]), max_length=100),
+        "remote_only": _as_bool(raw.get("remote_only"), DEFAULT_JOB_FILTERS["remote_only"]),
+        "h1b_only": _as_bool(raw.get("h1b_only"), DEFAULT_JOB_FILTERS["h1b_only"]),
+        "visa_or_contract": _as_bool(raw.get("visa_or_contract"), DEFAULT_JOB_FILTERS["visa_or_contract"]),
+        "include_company_careers": _as_bool(raw.get("include_company_careers"), DEFAULT_JOB_FILTERS["include_company_careers"]),
+        "use_resume_recommendations": _as_bool(raw.get("use_resume_recommendations"), DEFAULT_JOB_FILTERS["use_resume_recommendations"]),
+    }
+    date_posted = raw.get("date_posted", DEFAULT_JOB_FILTERS["date_posted"])
+    filters["date_posted"] = date_posted if date_posted in ("all", "today", "3days", "week", "month") else "today"
+
+    employment_type = raw.get("employment_type", DEFAULT_JOB_FILTERS["employment_type"])
+    filters["employment_type"] = employment_type if employment_type in ("", "FULLTIME", "PARTTIME", "INTERN", "CONTRACTOR") else ""
+
+    experience_level = raw.get("experience_level", DEFAULT_JOB_FILTERS["experience_level"])
+    filters["experience_level"] = experience_level if experience_level in ("", "entry", "internship", "associate", "mid") else "entry"
+
+    source = raw.get("source", DEFAULT_JOB_FILTERS["source"])
+    filters["source"] = source if source in ("all", "linkedin", "indeed", "google", "company") else "all"
+    return filters
+
 
 # ------------------------------------------------------------------
 # GET /api/jobs/search
@@ -324,6 +372,38 @@ def get_resume():
     except Exception as e:
         logger.error(f"Get resume error: {e}")
         return jsonify({"error": "Failed to retrieve resume"}), 500
+
+
+# ------------------------------------------------------------------
+# Saved Job Search Filters
+# ------------------------------------------------------------------
+
+@jobs_bp.route("/filters", methods=["GET"])
+@jwt_required()
+def get_filters():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_service import get_job_service
+        saved = get_job_service().get_saved_filters(user_email=user_email)
+        return jsonify({"filters": saved.get("filters") if saved else None}), 200
+    except Exception as e:
+        logger.error(f"Get saved job filters error: {e}")
+        return jsonify({"error": "Failed to load filters"}), 500
+
+
+@jobs_bp.route("/filters", methods=["PUT"])
+@jwt_required()
+def save_filters():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    filters = _sanitize_job_filters(data.get("filters", data))
+    try:
+        from services.job_service import get_job_service
+        saved = get_job_service().save_filters(filters, user_email=user_email)
+        return jsonify({"filters": saved["filters"], "updated_at": saved.get("updated_at")}), 200
+    except Exception as e:
+        logger.error(f"Save job filters error: {e}")
+        return jsonify({"error": "Failed to save filters"}), 500
 
 
 # ------------------------------------------------------------------

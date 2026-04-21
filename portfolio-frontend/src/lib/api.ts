@@ -667,6 +667,22 @@ class ApiService {
     );
   }
 
+  async getJobFilters() {
+    return this.request<import("../types/jobs").SavedJobFilters>(
+      "/jobs/filters",
+    );
+  }
+
+  async saveJobFilters(filters: import("../types/jobs").JobSearchFilters) {
+    return this.request<import("../types/jobs").SavedJobFilters>(
+      "/jobs/filters",
+      {
+        method: "PUT",
+        body: JSON.stringify({ filters }),
+      },
+    );
+  }
+
   async saveJob(job: import("../types/jobs").Job) {
     return this.request<{ job: import("../types/jobs").SavedJob }>(
       "/jobs/saved",

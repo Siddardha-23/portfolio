@@ -7,6 +7,7 @@ Provides:
 - Resume parsing via Gemini AI
 - Job analysis (summary, missing skills, cover letter)
 - Saved jobs CRUD
+- Saved job search filter preferences
 - H1B sponsor detection
 """
 import hashlib
@@ -134,6 +135,7 @@ class JobService:
         self.jobs_cache = self.db.jobs_cache
         self.user_resumes = self.db.user_resumes
         self.saved_jobs = self.db.saved_jobs
+        self.job_filter_preferences = self.db.job_filter_preferences
         self._ensure_indexes()
 
     def _ensure_indexes(self):
@@ -143,6 +145,7 @@ class JobService:
                 "cached_at", expireAfterSeconds=self.CACHE_TTL_SECONDS
             )
             self.saved_jobs.create_index("job_id", unique=True)
+            self.job_filter_preferences.create_index("user_email", unique=True)
         except Exception as e:
             logger.warning(f"Index creation warning: {e}")
 
@@ -1014,6 +1017,36 @@ class JobService:
     def delete_saved_job(self, job_id: str, user_email: str = "") -> bool:
         result = self.saved_jobs.delete_one({"job_id": job_id, "user_email": user_email})
         return result.deleted_count > 0
+
+    # ------------------------------------------------------------------
+    # Saved Search Filters
+    # ------------------------------------------------------------------
+
+    def get_saved_filters(self, user_email: str) -> Optional[Dict[str, Any]]:
+        result = self.job_filter_preferences.find_one({"user_email": user_email})
+        if not result:
+            return None
+        result["_id"] = str(result["_id"])
+        if hasattr(result.get("updated_at"), "isoformat"):
+            result["updated_at"] = result["updated_at"].isoformat()
+        return result
+
+    def save_filters(self, filters: Dict[str, Any], user_email: str) -> Dict[str, Any]:
+        doc = {
+            "user_email": user_email,
+            "filters": filters,
+            "updated_at": datetime.now(timezone.utc),
+        }
+        self.job_filter_preferences.update_one(
+            {"user_email": user_email},
+            {"$set": doc},
+            upsert=True,
+        )
+        result = self.job_filter_preferences.find_one({"user_email": user_email})
+        result["_id"] = str(result["_id"])
+        if hasattr(result.get("updated_at"), "isoformat"):
+            result["updated_at"] = result["updated_at"].isoformat()
+        return result
 
 
 # Singleton

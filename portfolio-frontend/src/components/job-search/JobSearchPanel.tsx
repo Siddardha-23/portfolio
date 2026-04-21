@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -29,15 +30,22 @@ interface JobSearchPanelProps {
   quickApply: (job: Job) => Promise<void>;
   getJobStatus: (jobId: string) => string | null;
   batchMeta: BatchMeta | null;
-  autoSearchDone: boolean;
+  hasSearched: boolean;
+  filtersLoaded: boolean;
+  savingFilters: boolean;
+  saveFilters: (filters?: JobSearchFilters) => Promise<any>;
 }
 
 export function JobSearchPanel({
   jobs, filters, setFilters, page, totalPages,
   loading, error, searchJobs, batchSearch, saveJob, unsaveJob, isJobSaved,
-  quickApply, getJobStatus, batchMeta, autoSearchDone,
+  quickApply, getJobStatus, batchMeta, hasSearched, filtersLoaded, savingFilters, saveFilters,
 }: JobSearchPanelProps) {
   const [localQuery, setLocalQuery] = useState(filters.query);
+
+  useEffect(() => {
+    setLocalQuery(filters.query);
+  }, [filters.query]);
 
   const handleSearch = (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -49,13 +57,22 @@ export function JobSearchPanel({
   const handleCompanyChip = (company: string) => {
     const query = `${company} entry level new grad h1b sponsor`;
     setLocalQuery(query);
-    const newFilters = { ...filters, query };
-    setFilters(newFilters);
-    searchJobs(newFilters, 1);
+    setFilters({ ...filters, query });
   };
 
   const handleRefresh = () => {
     batchSearch();
+  };
+
+  const handleSaveFilters = async () => {
+    const nextFilters = { ...filters, query: localQuery };
+    setFilters(nextFilters);
+    const resp = await saveFilters(nextFilters);
+    if (resp.error) {
+      toast.error(resp.error);
+      return;
+    }
+    toast.success('Filters saved');
   };
 
   const handleTryExpanded = (datePeriod: 'today' | '3days' | 'week') => {
@@ -69,9 +86,9 @@ export function JobSearchPanel({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Fresh jobs header */}
-      {autoSearchDone && !loading && (
+      {hasSearched && !loading && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">
@@ -95,166 +112,178 @@ export function JobSearchPanel({
         </div>
       )}
 
-      {/* Company chips */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-        {COMPANY_CHIPS.map(company => (
-          <Button
-            key={company}
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs whitespace-nowrap flex-shrink-0"
-            onClick={() => handleCompanyChip(company)}
-            disabled={loading}
-          >
-            {company}
-          </Button>
-        ))}
-      </div>
+      <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-4 space-y-4 shadow-sm">
+        {/* Company chips */}
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+          {COMPANY_CHIPS.map(company => (
+            <Button
+              key={company}
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs whitespace-nowrap flex-shrink-0 rounded-full"
+              onClick={() => handleCompanyChip(company)}
+              disabled={loading}
+            >
+              {company}
+            </Button>
+          ))}
+        </div>
 
-      {/* Search bar */}
-      <form onSubmit={handleSearch} className="flex gap-2">
-        <Input
-          placeholder="e.g. software engineer new grad h1b sponsor"
-          value={localQuery}
-          onChange={e => setLocalQuery(e.target.value)}
-          className="flex-1"
-        />
-        <Button type="submit" disabled={loading || !localQuery.trim()}>
-          {loading ? 'Searching...' : 'Search'}
-        </Button>
-      </form>
-
-      {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-end">
-        <div className="space-y-1">
-          <Label className="text-xs">Location</Label>
+        {/* Search bar */}
+        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
           <Input
-            placeholder="e.g. United States"
-            value={filters.location}
-            onChange={e => setFilters({ ...filters, location: e.target.value })}
-            className="w-40 h-9"
+            placeholder="e.g. software engineer new grad h1b sponsor"
+            value={localQuery}
+            onChange={e => setLocalQuery(e.target.value)}
+            className="flex-1"
           />
-        </div>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={loading || !localQuery.trim() || !filtersLoaded}>
+              {loading ? 'Searching...' : 'Search'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || savingFilters || !filtersLoaded}
+              onClick={handleSaveFilters}
+            >
+              {savingFilters ? 'Saving...' : 'Save Filters'}
+            </Button>
+          </div>
+        </form>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Date Posted</Label>
-          <Select
-            value={filters.date_posted}
-            onValueChange={v => setFilters({ ...filters, date_posted: v as JobSearchFilters['date_posted'] })}
-          >
-            <SelectTrigger className="w-32 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="today">Last 24 hours</SelectItem>
-              <SelectItem value="3days">3 days</SelectItem>
-              <SelectItem value="week">Week</SelectItem>
-              <SelectItem value="month">Month</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Filters */}
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="space-y-1">
+            <Label className="text-xs">Location</Label>
+            <Input
+              placeholder="e.g. United States"
+              value={filters.location}
+              onChange={e => setFilters({ ...filters, location: e.target.value })}
+              className="w-40 h-9"
+            />
+          </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Source</Label>
-          <Select
-            value={filters.source}
-            onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
-          >
-            <SelectTrigger className="w-36 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              <SelectItem value="linkedin">LinkedIn</SelectItem>
-              <SelectItem value="indeed">Indeed</SelectItem>
-              <SelectItem value="google">Google Jobs</SelectItem>
-              <SelectItem value="company">Company sites</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Date Posted</Label>
+            <Select
+              value={filters.date_posted}
+              onValueChange={v => setFilters({ ...filters, date_posted: v as JobSearchFilters['date_posted'] })}
+            >
+              <SelectTrigger className="w-32 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All time</SelectItem>
+                <SelectItem value="today">Last 24 hours</SelectItem>
+                <SelectItem value="3days">3 days</SelectItem>
+                <SelectItem value="week">Week</SelectItem>
+                <SelectItem value="month">Month</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Experience</Label>
-          <Select
-            value={filters.experience_level || 'any'}
-            onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
-          >
-            <SelectTrigger className="w-36 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              <SelectItem value="entry">New grad / entry</SelectItem>
-              <SelectItem value="internship">Internship</SelectItem>
-              <SelectItem value="associate">Associate</SelectItem>
-              <SelectItem value="mid">Mid-level</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Source</Label>
+            <Select
+              value={filters.source}
+              onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
+            >
+              <SelectTrigger className="w-36 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All sources</SelectItem>
+                <SelectItem value="linkedin">LinkedIn</SelectItem>
+                <SelectItem value="indeed">Indeed</SelectItem>
+                <SelectItem value="google">Google Jobs</SelectItem>
+                <SelectItem value="company">Company sites</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="space-y-1">
-          <Label className="text-xs">Type</Label>
-          <Select
-            value={filters.employment_type || 'any'}
-            onValueChange={v => setFilters({ ...filters, employment_type: v === 'any' ? '' : v as JobSearchFilters['employment_type'] })}
-          >
-            <SelectTrigger className="w-32 h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="any">Any</SelectItem>
-              <SelectItem value="FULLTIME">Full-time</SelectItem>
-              <SelectItem value="PARTTIME">Part-time</SelectItem>
-              <SelectItem value="INTERN">Intern</SelectItem>
-              <SelectItem value="CONTRACTOR">Contract</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Experience</Label>
+            <Select
+              value={filters.experience_level || 'any'}
+              onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
+            >
+              <SelectTrigger className="w-36 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any</SelectItem>
+                <SelectItem value="entry">New grad / entry</SelectItem>
+                <SelectItem value="internship">Internship</SelectItem>
+                <SelectItem value="associate">Associate</SelectItem>
+                <SelectItem value="mid">Mid-level</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="flex items-center gap-2 pb-0.5">
-          <Switch
-            checked={filters.remote_only}
-            onCheckedChange={v => setFilters({ ...filters, remote_only: v })}
-            id="remote"
-          />
-          <Label htmlFor="remote" className="text-xs">Remote</Label>
-        </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Type</Label>
+            <Select
+              value={filters.employment_type || 'any'}
+              onValueChange={v => setFilters({ ...filters, employment_type: v === 'any' ? '' : v as JobSearchFilters['employment_type'] })}
+            >
+              <SelectTrigger className="w-32 h-9">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">Any</SelectItem>
+                <SelectItem value="FULLTIME">Full-time</SelectItem>
+                <SelectItem value="PARTTIME">Part-time</SelectItem>
+                <SelectItem value="INTERN">Intern</SelectItem>
+                <SelectItem value="CONTRACTOR">Contract</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-        <div className="flex items-center gap-2 pb-0.5">
-          <Switch
-            checked={filters.h1b_only}
-            onCheckedChange={v => setFilters({ ...filters, h1b_only: v })}
-            id="h1b"
-          />
-          <Label htmlFor="h1b" className="text-xs">H1B Sponsors</Label>
-        </div>
+          <div className="flex items-center gap-2 pb-0.5">
+            <Switch
+              checked={filters.remote_only}
+              onCheckedChange={v => setFilters({ ...filters, remote_only: v })}
+              id="remote"
+            />
+            <Label htmlFor="remote" className="text-xs">Remote</Label>
+          </div>
 
-        <div className="flex items-center gap-2 pb-0.5">
-          <Switch
-            checked={filters.visa_or_contract}
-            onCheckedChange={v => setFilters({ ...filters, visa_or_contract: v })}
-            id="visa-contract"
-          />
-          <Label htmlFor="visa-contract" className="text-xs">H1B or Contract</Label>
-        </div>
+          <div className="flex items-center gap-2 pb-0.5">
+            <Switch
+              checked={filters.h1b_only}
+              onCheckedChange={v => setFilters({ ...filters, h1b_only: v })}
+              id="h1b"
+            />
+            <Label htmlFor="h1b" className="text-xs">H1B Sponsors</Label>
+          </div>
 
-        <div className="flex items-center gap-2 pb-0.5">
-          <Switch
-            checked={filters.use_resume_recommendations}
-            onCheckedChange={v => setFilters({ ...filters, use_resume_recommendations: v })}
-            id="resume-match"
-          />
-          <Label htmlFor="resume-match" className="text-xs">Resume Match</Label>
-        </div>
+          <div className="flex items-center gap-2 pb-0.5">
+            <Switch
+              checked={filters.visa_or_contract}
+              onCheckedChange={v => setFilters({ ...filters, visa_or_contract: v })}
+              id="visa-contract"
+            />
+            <Label htmlFor="visa-contract" className="text-xs">H1B or Contract</Label>
+          </div>
 
-        <div className="flex items-center gap-2 pb-0.5">
-          <Switch
-            checked={filters.include_company_careers}
-            onCheckedChange={v => setFilters({ ...filters, include_company_careers: v })}
-            id="company-sites"
-          />
-          <Label htmlFor="company-sites" className="text-xs">Company Sites</Label>
+          <div className="flex items-center gap-2 pb-0.5">
+            <Switch
+              checked={filters.use_resume_recommendations}
+              onCheckedChange={v => setFilters({ ...filters, use_resume_recommendations: v })}
+              id="resume-match"
+            />
+            <Label htmlFor="resume-match" className="text-xs">Resume Match</Label>
+          </div>
+
+          <div className="flex items-center gap-2 pb-0.5">
+            <Switch
+              checked={filters.include_company_careers}
+              onCheckedChange={v => setFilters({ ...filters, include_company_careers: v })}
+              id="company-sites"
+            />
+            <Label htmlFor="company-sites" className="text-xs">Company Sites</Label>
+          </div>
         </div>
       </div>
 
@@ -323,7 +352,7 @@ export function JobSearchPanel({
       )}
 
       {/* Empty state */}
-      {!loading && jobs.length === 0 && autoSearchDone && (
+      {!loading && jobs.length === 0 && hasSearched && (
         <div className="text-center py-12 space-y-3">
           <p className="text-muted-foreground">
             {filters.date_posted === 'today'
@@ -340,6 +369,14 @@ export function JobSearchPanel({
               </Button>
             </div>
           )}
+        </div>
+      )}
+
+      {!loading && jobs.length === 0 && !hasSearched && (
+        <div className="rounded-xl border border-dashed border-gray-300 dark:border-white/[0.12] bg-gray-50/80 dark:bg-gray-900/30 text-center py-12 px-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            No search has been run yet.
+          </p>
         </div>
       )}
     </div>

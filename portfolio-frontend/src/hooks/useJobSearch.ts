@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { apiService } from '@/lib/api';
 import type { Job, SavedJob, JobSearchFilters, BatchSearchResponse } from '@/types/jobs';
 
@@ -17,7 +17,7 @@ export const COMPANY_CHIPS = [
   'State Farm', 'Deloitte', 'TCS', 'Infosys',
 ];
 
-const DEFAULT_FILTERS: JobSearchFilters = {
+export const DEFAULT_FILTERS: JobSearchFilters = {
   query: 'software engineer new grad entry level h1b sponsor',
   location: 'United States',
   date_posted: 'today',
@@ -46,8 +46,9 @@ export function useJobSearch() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchMeta, setBatchMeta] = useState<BatchMeta | null>(null);
-  const [autoSearchDone, setAutoSearchDone] = useState(false);
-  const autoSearchFired = useRef(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
+  const [savingFilters, setSavingFilters] = useState(false);
 
   // --- Single-query search (manual) ---
   const searchJobs = useCallback(async (searchFilters?: JobSearchFilters, searchPage?: number) => {
@@ -57,6 +58,7 @@ export function useJobSearch() {
     setLoading(true);
     setError(null);
     setBatchMeta(null);
+    setHasSearched(true);
     const p = searchPage || 1;
 
     const resp = await apiService.searchJobs({
@@ -98,6 +100,8 @@ export function useJobSearch() {
   ) => {
     setLoading(true);
     setError(null);
+    setBatchMeta(null);
+    setHasSearched(true);
 
     const f = { ...filters, ...overrides };
     const resp = await apiService.batchSearchJobs({
@@ -135,15 +139,27 @@ export function useJobSearch() {
       errors: data.errors || [],
     });
     setLoading(false);
-    setAutoSearchDone(true);
   }, [filters]);
 
-  // --- Auto-search on mount ---
-  useEffect(() => {
-    if (autoSearchFired.current) return;
-    autoSearchFired.current = true;
-    batchSearch();
-  }, [batchSearch]);
+  // --- Saved filters ---
+  const loadSavedFilters = useCallback(async () => {
+    const resp = await apiService.getJobFilters();
+    if (resp.data?.filters) {
+      setFilters({ ...DEFAULT_FILTERS, ...resp.data.filters });
+    }
+    setFiltersLoaded(true);
+    return resp;
+  }, []);
+
+  const saveFilters = useCallback(async (nextFilters?: JobSearchFilters) => {
+    setSavingFilters(true);
+    const resp = await apiService.saveJobFilters(nextFilters || filters);
+    setSavingFilters(false);
+    if (resp.data?.filters) {
+      setFilters({ ...DEFAULT_FILTERS, ...resp.data.filters });
+    }
+    return resp;
+  }, [filters]);
 
   // --- Saved jobs ---
   const loadSavedJobs = useCallback(async () => {
@@ -212,7 +228,8 @@ export function useJobSearch() {
   // Load saved jobs on mount
   useEffect(() => {
     loadSavedJobs();
-  }, [loadSavedJobs]);
+    loadSavedFilters();
+  }, [loadSavedJobs, loadSavedFilters]);
 
   return {
     jobs,
@@ -224,9 +241,13 @@ export function useJobSearch() {
     setPage,
     loading,
     error,
+    filtersLoaded,
+    savingFilters,
     searchJobs,
     batchSearch,
+    saveFilters,
     loadSavedJobs,
+    loadSavedFilters,
     saveJob,
     unsaveJob,
     updateJobStatus,
@@ -234,6 +255,6 @@ export function useJobSearch() {
     quickApply,
     getJobStatus,
     batchMeta,
-    autoSearchDone,
+    hasSearched,
   };
 }

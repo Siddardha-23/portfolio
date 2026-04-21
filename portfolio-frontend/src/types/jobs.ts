@@ -59,6 +59,11 @@ export interface JobSearchFilters {
   use_resume_recommendations: boolean;
 }
 
+export interface SavedJobFilters {
+  filters: JobSearchFilters | null;
+  updated_at?: string;
+}
+
 export interface BatchSearchParams {
   queries: string[];
   location?: string;

@@ -5,6 +5,7 @@ import AuthGate from "@/components/AuthGate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVisitorTracking } from "@/hooks/useVisitorTracking";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { toast } from "sonner";
 import ResumeDashboard, {
@@ -4997,7 +4998,14 @@ function TailorTab() {
 }
 
 // ─── Page export ────────────────────────────────────────────────────────────
-const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
+type ResumeNavItem = {
+  key: NavTab;
+  label: string;
+  icon: React.ReactNode;
+  badge?: string;
+};
+
+const NAV_ITEMS: ResumeNavItem[] = [
   {
     key: "tailor",
     label: "Tailor",
@@ -5032,6 +5040,7 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
     key: "jobs",
     label: "Job Opportunities",
     icon: <MagnifyingGlassIcon className="w-4 h-4" />,
+    badge: "Beta",
   },
   {
     key: "profile",
@@ -5040,11 +5049,103 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
+function ResumeSectionNav({
+  activeNav,
+  collapsed = false,
+  onSelect,
+}: {
+  activeNav: NavTab;
+  collapsed?: boolean;
+  onSelect: (tab: NavTab) => void;
+}) {
+  return (
+    <nav
+      className={`flex flex-col ${collapsed ? "items-center gap-1.5 px-2" : "gap-1 px-3"}`}
+      aria-label="Resume tailor sections"
+    >
+      {NAV_ITEMS.map((item) => {
+        const active = activeNav === item.key;
+        return (
+          <button
+            key={item.key}
+            onClick={() => onSelect(item.key)}
+            aria-current={active ? "page" : undefined}
+            aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
+            title={collapsed ? `${item.label}${item.badge ? ` - ${item.badge}` : ""}` : undefined}
+            className={`group relative flex h-11 w-full items-center rounded-xl text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
+              collapsed ? "justify-center px-0" : "gap-3 px-3"
+            } ${
+              active
+                ? "bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-transparent text-gray-950 dark:text-white ring-1 ring-indigo-500/20"
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 hover:text-gray-950 dark:hover:bg-white/[0.05] dark:hover:text-white"
+            }`}
+          >
+            {active && (
+              <span
+                className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-gradient-to-b from-indigo-400 to-purple-400"
+                aria-hidden="true"
+              />
+            )}
+            <span
+              className={`relative shrink-0 transition-colors ${
+                active
+                  ? "text-indigo-600 dark:text-indigo-300"
+                  : "text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-300"
+              }`}
+            >
+              {item.icon}
+            </span>
+            {!collapsed && (
+              <>
+                <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+                {item.badge && (
+                  <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                    {item.badge}
+                  </span>
+                )}
+              </>
+            )}
+            {collapsed && item.badge && (
+              <span
+                className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-500/40"
+                aria-hidden="true"
+              />
+            )}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 export default function ResumeParser() {
   const { user } = useAuth();
   const [activeNav, setActiveNav] = useState<NavTab>("tailor");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("resumeParserSidebarCollapsed") === "true";
+  });
   useVisitorTracking("resume-parser");
+
+  const activeNavItem = useMemo(
+    () => NAV_ITEMS.find((item) => item.key === activeNav) ?? NAV_ITEMS[0],
+    [activeNav],
+  );
+
+  const selectNav = useCallback((tab: NavTab) => {
+    setActiveNav(tab);
+    setMobileNavOpen(false);
+    setUserMenuOpen(false);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      "resumeParserSidebarCollapsed",
+      String(sidebarCollapsed),
+    );
+  }, [sidebarCollapsed]);
 
   return (
     <AuthGate
@@ -5058,12 +5159,20 @@ export default function ResumeParser() {
             "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}
       >
-        {/* Frosted glass navbar — highest z-index (z-50), near-opaque background so
-            scrolled content doesn't bleed through, no siblings with matching z. */}
+        {/* Top app bar keeps identity and account actions; sections live in the sidebar. */}
         <header className="sticky top-0 z-50 border-b border-gray-200 dark:border-white/10 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl">
-          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-purple-500/50 to-transparent" />
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="h-14 flex items-center gap-4">
+            <div className="h-14 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                aria-label="Open section navigation"
+                className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+
               {/* Logo */}
               <div className="flex items-center gap-2.5 shrink-0">
                 <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/25">
@@ -5074,38 +5183,19 @@ export default function ResumeParser() {
                 </h1>
               </div>
 
-              {/* Nav pills — center-ish */}
-              <nav
-                className="flex-1 flex items-center gap-1 overflow-x-auto hide-scrollbar"
-                aria-label="Resume tailor sections"
-              >
-                {NAV_ITEMS.map((item) => {
-                  const active = activeNav === item.key;
-                  return (
-                    <button
-                      key={item.key}
-                      onClick={() => setActiveNav(item.key)}
-                      aria-current={active ? "page" : undefined}
-                      className={`relative inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-[13px] font-medium whitespace-nowrap transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/60 ${
-                        active
-                          ? "bg-purple-500/15 text-purple-600 dark:text-purple-300 ring-1 ring-purple-500/30"
-                          : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5"
-                      }`}
-                    >
-                      <span
-                        className={
-                          active
-                            ? "text-purple-500 dark:text-purple-300"
-                            : "text-gray-400 dark:text-gray-500"
-                        }
-                      >
-                        {item.icon}
-                      </span>
-                      <span className="hidden md:inline">{item.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
+              <div className="min-w-0 flex-1">
+                <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-gray-200 bg-gray-50/80 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm shadow-black/[0.02] dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-200">
+                  <span className="shrink-0 text-indigo-500 dark:text-indigo-300">
+                    {activeNavItem.icon}
+                  </span>
+                  <span className="truncate">{activeNavItem.label}</span>
+                  {activeNavItem.badge && (
+                    <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                      {activeNavItem.badge}
+                    </span>
+                  )}
+                </div>
+              </div>
 
               {/* Right actions */}
               <div className="flex items-center gap-1 shrink-0">
@@ -5141,7 +5231,7 @@ export default function ResumeParser() {
                         </div>
                         <button
                           onClick={() => {
-                            setActiveNav("profile");
+                            selectNav("profile");
                             setUserMenuOpen(false);
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
@@ -5157,56 +5247,156 @@ export default function ResumeParser() {
           </div>
         </header>
 
-        <main className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className={activeNav === "tailor" ? "" : "hidden"}>
-            <TailorTab />
+        <AnimatePresence>
+          {mobileNavOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[60] lg:hidden"
+            >
+              <button
+                type="button"
+                aria-label="Close section navigation"
+                className="absolute inset-0 h-full w-full bg-gray-950/60 backdrop-blur-sm"
+                onClick={() => setMobileNavOpen(false)}
+              />
+              <motion.aside
+                initial={{ x: -320 }}
+                animate={{ x: 0 }}
+                exit={{ x: -320 }}
+                transition={{ type: "spring", stiffness: 360, damping: 34 }}
+                className="absolute left-0 top-0 flex h-full w-[min(20rem,calc(100vw-2rem))] flex-col border-r border-gray-200 bg-white shadow-2xl shadow-black/25 dark:border-white/10 dark:bg-gray-950"
+              >
+                <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 dark:border-white/10">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg shadow-purple-500/25">
+                      <SparklesIcon className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-gray-950 dark:text-white">
+                        Resume Tailor
+                      </p>
+                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">
+                        {activeNavItem.label}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileNavOpen(false)}
+                    aria-label="Close section navigation"
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto py-4">
+                  <ResumeSectionNav activeNav={activeNav} onSelect={selectNav} />
+                </div>
+              </motion.aside>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-start gap-5 py-6">
+            <aside
+              className={`hidden lg:flex sticky top-[72px] h-[calc(100vh-88px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white/90 shadow-xl shadow-black/[0.04] backdrop-blur-xl transition-[width] duration-300 dark:border-white/10 dark:bg-gray-950/80 dark:shadow-black/25 ${
+                sidebarCollapsed ? "w-[76px]" : "w-72"
+              }`}
+            >
+              <div
+                className={`flex h-14 shrink-0 items-center border-b border-gray-200 dark:border-white/10 ${
+                  sidebarCollapsed ? "justify-center px-2" : "justify-between px-3"
+                }`}
+              >
+                {!sidebarCollapsed && (
+                  <div className="min-w-0 px-1">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+                      Workspace
+                    </p>
+                    <p className="truncate text-sm font-bold text-gray-950 dark:text-white">
+                      Resume Tools
+                    </p>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSidebarCollapsed((value) => !value)}
+                  aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-expanded={!sidebarCollapsed}
+                  title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+                >
+                  {sidebarCollapsed ? (
+                    <PanelLeftOpen className="h-4 w-4" />
+                  ) : (
+                    <PanelLeftClose className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+              <div className="flex-1 overflow-y-auto py-3">
+                <ResumeSectionNav
+                  activeNav={activeNav}
+                  collapsed={sidebarCollapsed}
+                  onSelect={selectNav}
+                />
+              </div>
+            </aside>
+
+            <main className="min-w-0 flex-1">
+              <div className={activeNav === "tailor" ? "" : "hidden"}>
+                <TailorTab />
+              </div>
+              {activeNav === "batch" && (
+                <Suspense
+                  fallback={
+                    <div className="animate-pulse h-48 rounded-2xl bg-gray-100 dark:bg-gray-800/40" />
+                  }
+                >
+                  <BatchTailor />
+                </Suspense>
+              )}
+              {activeNav === "jobs" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading job opportunities...</span>
+                    </div>
+                  }
+                >
+                  <JobOpportunitiesTab />
+                </Suspense>
+              )}
+              {activeNav === "my-resumes" && <MyResumesTab />}
+              {activeNav === "tailored" && <TailoredResumesTab />}
+              {activeNav === "applications" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading applications…</span>
+                    </div>
+                  }
+                >
+                  <ApplicationsTab />
+                </Suspense>
+              )}
+              {activeNav === "interview" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading prep…</span>
+                    </div>
+                  }
+                >
+                  <InterviewPrepTab />
+                </Suspense>
+              )}
+              {activeNav === "profile" && <ProfileTab />}
+            </main>
           </div>
-          {activeNav === "batch" && (
-            <Suspense
-              fallback={
-                <div className="animate-pulse h-48 rounded-2xl bg-gray-100 dark:bg-gray-800/40" />
-              }
-            >
-              <BatchTailor />
-            </Suspense>
-          )}
-          {activeNav === "jobs" && (
-            <Suspense
-              fallback={
-                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading job opportunities...</span>
-                </div>
-              }
-            >
-              <JobOpportunitiesTab />
-            </Suspense>
-          )}
-          {activeNav === "my-resumes" && <MyResumesTab />}
-          {activeNav === "tailored" && <TailoredResumesTab />}
-          {activeNav === "applications" && (
-            <Suspense
-              fallback={
-                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading applications…</span>
-                </div>
-              }
-            >
-              <ApplicationsTab />
-            </Suspense>
-          )}
-          {activeNav === "interview" && (
-            <Suspense
-              fallback={
-                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading prep…</span>
-                </div>
-              }
-            >
-              <InterviewPrepTab />
-            </Suspense>
-          )}
-          {activeNav === "profile" && <ProfileTab />}
-        </main>
+        </div>
 
         <style>{`
           .hide-scrollbar::-webkit-scrollbar { display: none; }

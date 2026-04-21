@@ -148,6 +148,21 @@ class ResumeService:
             },
         )
 
+    def update_job_partial(self, job_id: str, partial_result: dict) -> None:
+        """Write an in-progress partial result for streaming polls.
+
+        Leaves status at "processing" so the client keeps polling, but
+        refreshes `result` so each poll can render whatever has arrived
+        (e.g. JSearch jobs before LinkedIn's scraper finishes).
+        """
+        try:
+            self.resume_jobs.update_one(
+                {"job_id": job_id, "status": {"$ne": "completed"}},
+                {"$set": {"result": partial_result}},
+            )
+        except Exception as e:
+            logger.warning(f"Partial update for job {job_id} failed: {e}")
+
     def fail_job(self, job_id: str, error: str, error_code: Optional[str] = None):
         """Mark a job as failed with an error message and optional machine-readable code."""
         update: Dict[str, Any] = {
@@ -515,15 +530,25 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 "use_resume_recommendations": bool(payload.get("use_resume_recommendations", True)),
                 "user_email": payload.get("user_email", ""),
             }
+
+            def _stream_partial(partial: dict) -> None:
+                # Preserve page context from the request when streaming.
+                partial = dict(partial)
+                if mode == "single":
+                    partial["page"] = int(payload.get("page", 1) or 1)
+                svc.update_job_partial(job_id, partial)
+
             if mode == "single":
                 result = job_svc.search_jobs(
                     query=payload.get("query", ""),
                     page=int(payload.get("page", 1) or 1),
+                    partial_cb=_stream_partial,
                     **common,
                 )
             else:
                 result = job_svc.batch_search_jobs(
                     queries=payload.get("queries", []),
+                    partial_cb=_stream_partial,
                     **common,
                 )
             svc.complete_job(job_id, result)

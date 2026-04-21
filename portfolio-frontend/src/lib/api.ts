@@ -530,20 +530,23 @@ class ApiService {
   // Job Search endpoints (/api/jobs)
   // ============================================
 
-  async searchJobs(params: {
-    q: string;
-    page?: number;
-    location?: string;
-    date_posted?: string;
-    remote?: boolean;
-    type?: string;
-    h1b_only?: boolean;
-    visa_or_contract?: boolean;
-    experience_level?: string;
-    source?: string;
-    include_company_careers?: boolean;
-    use_resume_recommendations?: boolean;
-  }) {
+  async searchJobs(
+    params: {
+      q: string;
+      page?: number;
+      location?: string;
+      date_posted?: string;
+      remote?: boolean;
+      type?: string;
+      h1b_only?: boolean;
+      visa_or_contract?: boolean;
+      experience_level?: string;
+      source?: string;
+      include_company_careers?: boolean;
+      use_resume_recommendations?: boolean;
+    },
+    onPartial?: (partial: import("../types/jobs").JobSearchResponse) => void,
+  ) {
     const searchParams = new URLSearchParams();
     searchParams.set("q", params.q);
     if (params.page) searchParams.set("page", String(params.page));
@@ -566,12 +569,17 @@ class ApiService {
       return this.pollJob<import("../types/jobs").JobSearchResponse>(
         (submitResp.data as { job_id: string }).job_id,
         300000,
+        undefined,
+        onPartial,
       );
     }
     return submitResp as ApiResponse<import("../types/jobs").JobSearchResponse>;
   }
 
-  async batchSearchJobs(params: import("../types/jobs").BatchSearchParams) {
+  async batchSearchJobs(
+    params: import("../types/jobs").BatchSearchParams,
+    onPartial?: (partial: import("../types/jobs").BatchSearchResponse) => void,
+  ) {
     const submitResp = await this.request<
       { job_id: string } | import("../types/jobs").BatchSearchResponse
     >(
@@ -587,6 +595,8 @@ class ApiService {
       return this.pollJob<import("../types/jobs").BatchSearchResponse>(
         (submitResp.data as { job_id: string }).job_id,
         300000,
+        undefined,
+        onPartial,
       );
     }
     return submitResp as ApiResponse<import("../types/jobs").BatchSearchResponse>;
@@ -763,13 +773,17 @@ class ApiService {
    * Poll a resume job until it completes or fails.
    * - 30s timeout per individual poll request (handles cold Lambda starts)
    * - Retries up to 3 consecutive transient errors before bailing
-   * - 120s hard limit total
+   * - 120s hard limit total by default (callers can raise)
    * - Respects AbortSignal for cancellation
+   * - Optional onPartial fires while the job is still processing so the
+   *   caller can stream in partial results (e.g. job-search sources that
+   *   have finished while others are still running).
    */
   private async pollJob<T>(
     jobId: string,
     maxWaitMs = 120000,
     signal?: AbortSignal,
+    onPartial?: (partial: T) => void,
   ): Promise<ApiResponse<T>> {
     const pollInterval = 2000;
     const startTime = Date.now();
@@ -812,7 +826,14 @@ class ApiService {
         return { error: job.error || "Job failed. Please try again." };
       }
 
-      // Still processing - wait and poll again
+      // Still processing — stream whatever partial result has been written.
+      if (onPartial && job.result) {
+        try {
+          onPartial(job.result as unknown as T);
+        } catch {
+          // Callback errors should never abort polling.
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, pollInterval));
     }
 

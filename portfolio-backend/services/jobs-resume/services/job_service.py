@@ -125,7 +125,7 @@ MAX_QUERIES_PER_APIFY_SOURCE = 3
 # Max JSearch (RapidAPI) queries per batch — RapidAPI plans meter per call.
 MAX_JSEARCH_QUERIES_PER_BATCH = 4
 # Bump this when the result schema changes so old cached entries are bypassed.
-JOBS_CACHE_VERSION = "v3-free-actors"
+JOBS_CACHE_VERSION = "v4-truly-free-actors"
 
 # Tokens that should never end up in stored error strings or responses.
 _SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
@@ -170,16 +170,14 @@ class JobService:
 
     JSEARCH_BASE = "https://jsearch.p.rapidapi.com"
     APIFY_BASE = "https://api.apify.com/v2/acts"
-    # Defaults are pay-per-result actors that fit within Apify's $5/mo free
-    # platform credit — no subscription required. Override any ID via env:
-    # APIFY_LINKEDIN_ACTOR / APIFY_INDEED_ACTOR / APIFY_GOOGLE_ACTOR / etc.
-    # Google Jobs is intentionally blank: JSearch (RapidAPI) already scrapes
-    # Google Jobs, so we let that cover this lane unless the user sets an
-    # explicit Google actor override.
+    # Defaults are "FREE" on the Apify store — no rental, no pay-per-result.
+    # Only Apify platform compute/proxy counts against the free $5/mo credit.
+    # Override any ID via env: APIFY_LINKEDIN_ACTOR / APIFY_INDEED_ACTOR /
+    # APIFY_GOOGLE_ACTOR / APIFY_COMPANY_ACTOR / APIFY_JOBRIGHT_ACTOR.
     APIFY_ACTORS = {
-        "linkedin": "bebity/linkedin-jobs-scraper",
-        "indeed": "misceres/indeed-scraper",
-        "google": "",
+        "linkedin": "worldunboxer/rapid-linkedin-scraper",
+        "indeed": "shahidirfan/indeed-job-scraper",
+        "google": "nuclear_quietude/google-jobs-scraper-api",
         "company": "piotrv1001/company-career-page-scraper",
         "jobright": "",
     }
@@ -223,6 +221,7 @@ class JobService:
         include_company_careers: bool = True,
         use_resume_recommendations: bool = True,
         user_email: str = "",
+        partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
         params = {
             "query": query,
@@ -263,6 +262,7 @@ class JobService:
             source=source,
             include_company_careers=include_company_careers,
             user_email=user_email if use_resume_recommendations else "",
+            partial_cb=partial_cb,
         )
         result["page"] = page
         result.setdefault("total_pages", 1)
@@ -348,6 +348,7 @@ class JobService:
         include_company_careers: bool = True,
         use_resume_recommendations: bool = True,
         user_email: str = "",
+        partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Run multiple search queries in parallel, deduplicate, and re-score."""
         params = {
@@ -386,6 +387,7 @@ class JobService:
             source=source,
             include_company_careers=include_company_careers,
             user_email=user_email if use_resume_recommendations else "",
+            partial_cb=partial_cb,
         )
         result["queries_executed"] = min(len(queries), 6)
         result["cache_hits"] = 0
@@ -482,6 +484,7 @@ class JobService:
         source: str,
         include_company_careers: bool,
         user_email: str,
+        partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Parallel multi-source job search.
 
@@ -489,6 +492,10 @@ class JobService:
         and JSearch (RapidAPI) concurrently in one ThreadPoolExecutor, then
         deduplicates, filters, and re-scores. JSearch is combined — not a
         fallback — so last-24h results from all providers are merged.
+
+        If ``partial_cb`` is provided, it is invoked with a snapshot of the
+        partial result dict after each source completes, so the caller can
+        stream progress to the client.
         """
         supported = {"all", "linkedin", "indeed", "google", "company", "jobright", "jsearch"}
         source = source if source in supported else "all"
@@ -549,7 +556,7 @@ class JobService:
                     actor,
                     payload,
                     max_items=35 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
-                    timeout_seconds=150 if src != "company" else 90,
+                    timeout_seconds=180 if src != "company" else 120,
                     memory_mb=self._get_apify_memory_mb_for_source(src),
                 )
             except Exception:
@@ -573,7 +580,7 @@ class JobService:
                                 actor,
                                 single_payload,
                                 max_items=COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
-                                timeout_seconds=45,
+                                timeout_seconds=60,
                                 memory_mb=self._get_apify_memory_mb_for_source(src),
                             )
                         )
@@ -621,6 +628,8 @@ class JobService:
                     tasks.append(fut)
                     task_meta[fut] = src
 
+            pending_sources = {task_meta[t] for t in tasks}
+
             for future in as_completed(tasks):
                 src = task_meta.get(future, "?")
                 try:
@@ -667,6 +676,31 @@ class JobService:
                         reason = redacted
                     logger.warning("Job source %s failed: %s", src, redacted)
                     errors.append(f"{src}: {reason}")
+
+                # Stream what we have so far to the client.
+                if partial_cb is not None:
+                    pending_sources.discard(src)
+                    try:
+                        partial_scored = self.match_jobs(
+                            list(all_jobs), user_email=user_email,
+                        )
+                        partial_cb({
+                            "jobs": self._prepare_jobs_for_response(partial_scored),
+                            "total": len(partial_scored),
+                            "page": 1,
+                            "total_pages": 1,
+                            "queries_executed": len(queries),
+                            "cache_hits": 0,
+                            "errors": list(errors),
+                            "sources": dict(source_counts),
+                            "pending": sorted(pending_sources),
+                            "streaming": True,
+                        })
+                    except Exception as stream_err:
+                        logger.warning(
+                            "Partial stream callback failed for %s: %s",
+                            src, stream_err,
+                        )
 
         matched = self.match_jobs(all_jobs, user_email=user_email)
         returned_jobs = self._prepare_jobs_for_response(matched)
@@ -724,76 +758,75 @@ class JobService:
             "CONTRACTOR": "contract",
         }.get(employment_type, "")
 
+        # Individual free-actor schemas vary wildly, so we send a permissive
+        # payload containing the common field-name variants. Unknown fields
+        # are ignored by each actor — this lets us swap actor IDs via env
+        # var without retuning inputs.
+        proxy_cfg = {"useApifyProxy": True, "apifyProxyCountry": "US"}
+        days_str = str(days or 0)
+        time_posted = (
+            "past-24h" if days == 1
+            else "past-week" if days and days <= 7
+            else "past-month" if days else ""
+        )
+
         if source == "linkedin":
-            # bebity/linkedin-jobs-scraper input schema (the default free
-            # pay-per-result actor). LinkedIn's internal codes:
-            #   publishedAt: "" | "r86400" (24h) | "r604800" (week) | "r2592000" (month)
-            #   contractType: F/P/C/T/I (fulltime/parttime/contract/temp/intern)
-            #   workType: 1 (onsite) | 2 (remote) | 3 (hybrid)
-            #   experienceLevel: 1 (intern) | 2 (entry) | 3 (associate) | 4 (mid-senior) ...
-            bebity_contract = {
-                "FULLTIME": "F",
-                "PARTTIME": "P",
-                "CONTRACTOR": "C",
-                "INTERN": "I",
-            }.get(employment_type, "")
-            bebity_level = {
-                "internship": "1",
-                "entry": "2",
-                "associate": "3",
-                "mid": "4",
-            }.get(experience_level, "")
-            bebity_time = (
-                "r86400" if days == 1
-                else "r604800" if days and days <= 7
-                else "r2592000" if days else ""
-            )
             return {
-                "title": query,
+                # Keyword variants
+                "keyword": query, "keywords": query, "title": query,
+                "query": query, "searchTerms": query, "position": query,
+                # Location
                 "location": location,
-                "rows": 50,
-                "publishedAt": bebity_time,
+                # Max results variants
+                "maxItems": 50, "maxResults": 50, "rows": 50, "limit": 50,
+                # Date filters
+                "timePosted": time_posted,
+                "datePosted": time_posted,
+                "publishedAt": (
+                    "r86400" if days == 1 else "r604800" if days and days <= 7
+                    else "r2592000" if days else ""
+                ),
+                "fromDays": days_str,
+                # Remote / type
+                "remote": remote_only,
+                "isRemote": remote_only,
                 "workType": "2" if remote_only else "",
-                "contractType": bebity_contract,
-                "experienceLevel": bebity_level,
-                "proxy": {"useApifyProxy": True, "apifyProxyCountry": "US"},
+                # Proxy (both names for compat)
+                "proxy": proxy_cfg,
+                "proxyConfiguration": proxy_cfg,
             }
         if source == "indeed":
-            # misceres/indeed-scraper input schema — the most popular free
-            # pay-per-result Indeed scraper. It has no server-side date
-            # filter, so we post-filter in _job_matches_filters.
             return {
-                "position": query,
-                "country": "US",
+                "keyword": query, "keywords": query, "query": query,
+                "position": query, "searchTerms": query,
+                "country": "US", "countryCode": "us",
                 "location": location,
-                "maxItems": 50,
-                "parseCompanyDetails": False,
-                "saveOnlyUniqueItems": True,
-                "followApplyRedirects": True,
-                "proxy": {"useApifyProxy": True, "apifyProxyCountry": "US"},
+                "maxItems": 50, "maxResults": 50, "limit": 50, "maxRows": 50,
+                "datePosted": days_str,
+                "fromDays": days_str,
+                "remote": remote_only,
+                "isRemote": remote_only,
+                "sort": "date",
+                "proxy": proxy_cfg,
+                "proxyConfiguration": proxy_cfg,
             }
         if source == "google":
-            # Google Jobs date-posted filter. Values the scraper accepts:
-            # "today" | "3days" | "week" | "month". Also send datePosted to
-            # cover scraper versions that use a different key name.
             google_date = {
-                "today": "today",
-                "3days": "3days",
-                "week": "week",
-                "month": "month",
+                "today": "today", "3days": "3days",
+                "week": "week", "month": "month",
             }.get(date_posted, "")
             return {
-                "query": query,
+                "keyword": query, "keywords": query, "query": query,
+                "searchTerms": query, "title": query,
                 "location": location,
-                "countryCode": "us",
-                "languageCode": "en",
-                "maxItems": 50,
+                "countryCode": "us", "country": "US", "languageCode": "en",
+                "maxItems": 50, "maxResults": 50, "limit": 50,
                 "includeDetails": True,
-                "includeRaw": False,
                 "dateFilter": google_date,
                 "datePosted": google_date,
-                "fromDays": str(days or 0),
-                "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "US"},
+                "fromDays": days_str,
+                "proxy": proxy_cfg,
+                "proxyConfiguration": proxy_cfg,
             }
         if source == "jobright":
             return {

@@ -36,6 +36,8 @@ export interface BatchMeta {
   cache_hits: number;
   errors: string[];
   sources?: Record<string, number>;
+  pending?: string[];
+  streaming?: boolean;
 }
 
 export function useJobSearch() {
@@ -62,20 +64,36 @@ export function useJobSearch() {
     setHasSearched(true);
     const p = searchPage || 1;
 
-    const resp = await apiService.searchJobs({
-      q: f.query,
-      page: p,
-      location: f.location,
-      date_posted: f.date_posted,
-      remote: f.remote_only,
-      type: f.employment_type,
-      h1b_only: f.h1b_only,
-      visa_or_contract: f.visa_or_contract,
-      experience_level: f.experience_level,
-      source: f.source,
-      include_company_careers: f.include_company_careers,
-      use_resume_recommendations: f.use_resume_recommendations,
-    });
+    const resp = await apiService.searchJobs(
+      {
+        q: f.query,
+        page: p,
+        location: f.location,
+        date_posted: f.date_posted,
+        remote: f.remote_only,
+        type: f.employment_type,
+        h1b_only: f.h1b_only,
+        visa_or_contract: f.visa_or_contract,
+        experience_level: f.experience_level,
+        source: f.source,
+        include_company_careers: f.include_company_careers,
+        use_resume_recommendations: f.use_resume_recommendations,
+      },
+      (partial) => {
+        let streamed = partial.jobs || [];
+        if (f.h1b_only) streamed = streamed.filter(j => j.h1b_sponsor);
+        setJobs(streamed);
+        setLoading(false);
+        setBatchMeta({
+          queries_executed: 1,
+          cache_hits: 0,
+          errors: partial.errors || [],
+          sources: partial.sources,
+          pending: (partial as any).pending,
+          streaming: true,
+        });
+      },
+    );
 
     if (resp.error) {
       setError(resp.error);
@@ -112,19 +130,35 @@ export function useJobSearch() {
     setHasSearched(true);
 
     const f = { ...filters, ...overrides };
-    const resp = await apiService.batchSearchJobs({
-      queries,
-      location: f.location,
-      date_posted: f.date_posted,
-      remote: f.remote_only,
-      type: f.employment_type,
-      h1b_only: f.h1b_only,
-      visa_or_contract: f.visa_or_contract,
-      experience_level: f.experience_level,
-      source: f.source,
-      include_company_careers: f.include_company_careers,
-      use_resume_recommendations: f.use_resume_recommendations,
-    });
+    const resp = await apiService.batchSearchJobs(
+      {
+        queries,
+        location: f.location,
+        date_posted: f.date_posted,
+        remote: f.remote_only,
+        type: f.employment_type,
+        h1b_only: f.h1b_only,
+        visa_or_contract: f.visa_or_contract,
+        experience_level: f.experience_level,
+        source: f.source,
+        include_company_careers: f.include_company_careers,
+        use_resume_recommendations: f.use_resume_recommendations,
+      },
+      (partial) => {
+        let streamed = partial.jobs || [];
+        if (f.h1b_only) streamed = streamed.filter(j => j.h1b_sponsor);
+        setJobs(streamed);
+        setLoading(false);
+        setBatchMeta({
+          queries_executed: partial.queries_executed ?? queries.length,
+          cache_hits: partial.cache_hits ?? 0,
+          errors: partial.errors || [],
+          sources: partial.sources,
+          pending: (partial as any).pending,
+          streaming: true,
+        });
+      },
+    );
 
     if (resp.error) {
       setError(resp.error);

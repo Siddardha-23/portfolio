@@ -330,10 +330,10 @@ export function JobSearchPanel({
       </div>
 
       {/* Per-source breakdown */}
-      {batchMeta && batchMeta.sources && Object.keys(batchMeta.sources).length > 0 && (
+      {batchMeta && (batchMeta.sources || batchMeta.pending?.length) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Sources</span>
-          {Object.entries(batchMeta.sources)
+          {batchMeta.sources && Object.entries(batchMeta.sources)
             .sort((a, b) => b[1] - a[1])
             .map(([src, count]) => (
               <Badge
@@ -346,6 +346,17 @@ export function JobSearchPanel({
                 <span>{count}</span>
               </Badge>
             ))}
+          {batchMeta.pending?.map(src => (
+            <Badge
+              key={`pending-${src}`}
+              variant="outline"
+              className="gap-1 border-dashed border-purple-400/40 bg-purple-500/5 text-[10px] font-normal text-purple-500 dark:text-purple-300"
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-purple-500" />
+              <span className="font-medium">{SOURCE_LABELS[src] || src}</span>
+              <span className="opacity-70">· loading</span>
+            </Badge>
+          ))}
           {totalFromSources > jobs.length && (
             <span className="text-[10px] text-muted-foreground">
               ({totalFromSources - jobs.length} duplicates merged)

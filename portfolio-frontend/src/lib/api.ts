@@ -537,6 +537,12 @@ class ApiService {
     date_posted?: string;
     remote?: boolean;
     type?: string;
+    h1b_only?: boolean;
+    visa_or_contract?: boolean;
+    experience_level?: string;
+    source?: string;
+    include_company_careers?: boolean;
+    use_resume_recommendations?: boolean;
   }) {
     const searchParams = new URLSearchParams();
     searchParams.set("q", params.q);
@@ -545,6 +551,12 @@ class ApiService {
     if (params.date_posted) searchParams.set("date_posted", params.date_posted);
     if (params.remote) searchParams.set("remote", "true");
     if (params.type) searchParams.set("type", params.type);
+    if (params.h1b_only) searchParams.set("h1b_only", "true");
+    if (params.visa_or_contract) searchParams.set("visa_or_contract", "true");
+    if (params.experience_level) searchParams.set("experience_level", params.experience_level);
+    if (params.source) searchParams.set("source", params.source);
+    searchParams.set("include_company_careers", params.include_company_careers ? "true" : "false");
+    searchParams.set("use_resume_recommendations", params.use_resume_recommendations ? "true" : "false");
     return this.request<{
       jobs: import("../types/jobs").Job[];
       total: number;

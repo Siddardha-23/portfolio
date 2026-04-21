@@ -45,6 +45,16 @@ def search():
     employment_type = request.args.get("type", "")
     if employment_type and employment_type not in ("FULLTIME", "PARTTIME", "INTERN", "CONTRACTOR"):
         employment_type = ""
+    h1b_only = request.args.get("h1b_only", "").lower() == "true"
+    visa_or_contract = request.args.get("visa_or_contract", "").lower() == "true"
+    experience_level = request.args.get("experience_level", "")
+    if experience_level not in ("", "entry", "internship", "associate", "mid"):
+        experience_level = ""
+    source = request.args.get("source", "all")
+    if source not in ("all", "linkedin", "indeed", "google", "company"):
+        source = "all"
+    include_company_careers = request.args.get("include_company_careers", "true").lower() == "true"
+    use_resume_recommendations = request.args.get("use_resume_recommendations", "true").lower() == "true"
 
     try:
         from services.job_service import get_job_service
@@ -57,6 +67,12 @@ def search():
             date_posted=date_posted,
             remote_only=remote_only,
             employment_type=employment_type,
+            h1b_only=h1b_only,
+            visa_or_contract=visa_or_contract,
+            experience_level=experience_level,
+            source=source,
+            include_company_careers=include_company_careers,
+            use_resume_recommendations=use_resume_recommendations,
             user_email=user_email,
         )
         return jsonify(result), 200
@@ -103,6 +119,16 @@ def batch_search():
     employment_type = data.get("type", "")
     if employment_type and employment_type not in ("FULLTIME", "PARTTIME", "INTERN", "CONTRACTOR"):
         employment_type = ""
+    h1b_only = str(data.get("h1b_only", "")).lower() == "true"
+    visa_or_contract = str(data.get("visa_or_contract", "")).lower() == "true"
+    experience_level = data.get("experience_level", "")
+    if experience_level not in ("", "entry", "internship", "associate", "mid"):
+        experience_level = ""
+    source = data.get("source", "all")
+    if source not in ("all", "linkedin", "indeed", "google", "company"):
+        source = "all"
+    include_company_careers = str(data.get("include_company_careers", True)).lower() == "true"
+    use_resume_recommendations = str(data.get("use_resume_recommendations", True)).lower() == "true"
 
     try:
         from services.job_service import get_job_service
@@ -114,6 +140,12 @@ def batch_search():
             date_posted=date_posted,
             remote_only=remote_only,
             employment_type=employment_type,
+            h1b_only=h1b_only,
+            visa_or_contract=visa_or_contract,
+            experience_level=experience_level,
+            source=source,
+            include_company_careers=include_company_careers,
+            use_resume_recommendations=use_resume_recommendations,
             user_email=user_email,
         )
         return jsonify(result), 200

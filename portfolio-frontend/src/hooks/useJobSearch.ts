@@ -3,26 +3,32 @@ import { apiService } from '@/lib/api';
 import type { Job, SavedJob, JobSearchFilters, BatchSearchResponse } from '@/types/jobs';
 
 const DEFAULT_QUERIES = [
-  'cloud engineer entry level',
-  'devops engineer entry level',
-  'SRE entry level',
-  'platform engineer entry level',
-  'full stack developer entry level',
-  'infrastructure engineer entry level',
+  'software engineer new grad entry level h1b sponsor',
+  'cloud engineer entry level contract h1b sponsor',
+  'devops engineer entry level new grad',
+  'SRE entry level new grad',
+  'platform engineer entry level contract',
+  'full stack developer entry level h1b sponsor',
 ];
 
 export const COMPANY_CHIPS = [
-  'AWS', 'Google', 'Microsoft', 'IBM', 'Deloitte',
-  'EY', 'Palo Alto Networks', 'Capital One', 'Accenture', 'Salesforce',
+  'Amazon', 'Google', 'Meta', 'Apple', 'Netflix', 'Microsoft',
+  'Walmart', 'TikTok', 'Lucid', 'Qualcomm', 'Thermo Fisher', 'PayPal',
+  'State Farm', 'Deloitte', 'TCS', 'Infosys',
 ];
 
 const DEFAULT_FILTERS: JobSearchFilters = {
-  query: '',
-  location: '',
+  query: 'software engineer new grad entry level h1b sponsor',
+  location: 'United States',
   date_posted: 'today',
   remote_only: false,
   employment_type: '',
   h1b_only: false,
+  visa_or_contract: true,
+  experience_level: 'entry',
+  source: 'all',
+  include_company_careers: true,
+  use_resume_recommendations: true,
 };
 
 export interface BatchMeta {
@@ -60,6 +66,12 @@ export function useJobSearch() {
       date_posted: f.date_posted,
       remote: f.remote_only,
       type: f.employment_type,
+      h1b_only: f.h1b_only,
+      visa_or_contract: f.visa_or_contract,
+      experience_level: f.experience_level,
+      source: f.source,
+      include_company_careers: f.include_company_careers,
+      use_resume_recommendations: f.use_resume_recommendations,
     });
 
     if (resp.error) {
@@ -94,6 +106,12 @@ export function useJobSearch() {
       date_posted: f.date_posted,
       remote: f.remote_only,
       type: f.employment_type,
+      h1b_only: f.h1b_only,
+      visa_or_contract: f.visa_or_contract,
+      experience_level: f.experience_level,
+      source: f.source,
+      include_company_careers: f.include_company_careers,
+      use_resume_recommendations: f.use_resume_recommendations,
     });
 
     if (resp.error) {

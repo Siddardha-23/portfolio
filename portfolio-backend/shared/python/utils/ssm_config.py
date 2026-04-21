@@ -92,6 +92,8 @@ def get_all_secrets() -> Dict[str, str]:
         'IPINFO_TOKEN': os.getenv('SSM_IPINFO_TOKEN'),
         'GEMINI_API_KEY': os.getenv('SSM_GEMINI_API_KEY'),
         'JSEARCH_API_KEY': os.getenv('SSM_JSEARCH_API_KEY'),
+        'APIFY_API_KEY': os.getenv('SSM_APIFY_API_KEY'),
+        'APIFY_TOKEN': os.getenv('SSM_APIFY_TOKEN'),
         'JOB_SEARCH_PASSWORD_HASH': os.getenv('SSM_JOB_SEARCH_PASSWORD_HASH'),
         'GITHUB_PAT': os.getenv('SSM_GITHUB_PAT'),
     }
@@ -193,6 +195,14 @@ class SSMConfig:
     @property
     def JSEARCH_API_KEY(self) -> Optional[str]:
         return self._get('JSEARCH_API_KEY', 'JSEARCH_API_KEY')
+
+    @property
+    def APIFY_API_KEY(self) -> Optional[str]:
+        return self._get('APIFY_API_KEY', 'APIFY_API_KEY')
+
+    @property
+    def APIFY_TOKEN(self) -> Optional[str]:
+        return self._get('APIFY_TOKEN', 'APIFY_TOKEN')
 
     @property
     def JOB_SEARCH_PASSWORD_HASH(self) -> Optional[str]:

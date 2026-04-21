@@ -25,6 +25,7 @@ const BatchTailor = lazy(() => import("@/components/resume/BatchTailor"));
 const InterviewPrepTab = lazy(() => import("@/components/resume/InterviewPrepTab"));
 const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab"));
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
+const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ function ChevronIcon({
   );
 }
 
-type NavTab = "tailor" | "batch" | "my-resumes" | "tailored" | "applications" | "interview" | "profile";
+type NavTab = "tailor" | "batch" | "jobs" | "my-resumes" | "tailored" | "applications" | "interview" | "profile";
 
 const ROLE_OPTIONS = [
   "Software Engineer",
@@ -5008,6 +5009,11 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
     icon: <ClipboardIcon className="w-4 h-4" />,
   },
   {
+    key: "jobs",
+    label: "Job Opportunities",
+    icon: <MagnifyingGlassIcon className="w-4 h-4" />,
+  },
+  {
     key: "my-resumes",
     label: "My Resumes",
     icon: <FileIcon className="w-4 h-4" />,
@@ -5162,6 +5168,17 @@ export default function ResumeParser() {
               }
             >
               <BatchTailor />
+            </Suspense>
+          )}
+          {activeNav === "jobs" && (
+            <Suspense
+              fallback={
+                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Loading job opportunities...</span>
+                </div>
+              }
+            >
+              <JobOpportunitiesTab />
             </Suspense>
           )}
           {activeNav === "my-resumes" && <MyResumesTab />}

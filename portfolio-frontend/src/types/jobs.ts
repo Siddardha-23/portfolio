@@ -11,6 +11,9 @@ export interface Job {
   date_posted: string;
   is_remote: boolean;
   h1b_sponsor: boolean;
+  contract_friendly?: boolean;
+  source?: string;
+  posted_text?: string;
   match_score: number;
   matched_skills: string[];
   missing_skills: string[];
@@ -49,6 +52,11 @@ export interface JobSearchFilters {
   remote_only: boolean;
   employment_type: '' | 'FULLTIME' | 'PARTTIME' | 'INTERN' | 'CONTRACTOR';
   h1b_only: boolean;
+  visa_or_contract: boolean;
+  experience_level: '' | 'entry' | 'internship' | 'associate' | 'mid';
+  source: 'all' | 'linkedin' | 'indeed' | 'google' | 'company';
+  include_company_careers: boolean;
+  use_resume_recommendations: boolean;
 }
 
 export interface BatchSearchParams {
@@ -57,6 +65,12 @@ export interface BatchSearchParams {
   date_posted?: string;
   remote?: boolean;
   type?: string;
+  h1b_only?: boolean;
+  visa_or_contract?: boolean;
+  experience_level?: string;
+  source?: string;
+  include_company_careers?: boolean;
+  use_resume_recommendations?: boolean;
 }
 
 export interface BatchSearchResponse {

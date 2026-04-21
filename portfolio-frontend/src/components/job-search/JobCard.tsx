@@ -74,9 +74,12 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Badge className="text-[10px] px-1.5 py-0 bg-purple-500/80 text-white hover:bg-purple-500/80">Interview</Badge>
             )}
             {job.h1b_sponsor && <Badge variant="default" className="text-[10px] px-1.5 py-0">H1B</Badge>}
+            {job.contract_friendly && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Contract</Badge>}
             {job.is_remote && <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Remote</Badge>}
             {job.salary && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{job.salary}</Badge>}
             {job.employment_type && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{job.employment_type}</Badge>}
+            {job.source && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{job.source}</Badge>}
+            {job.posted_text && <Badge variant="outline" className="text-[10px] px-1.5 py-0">{job.posted_text}</Badge>}
           </div>
 
           {/* Matched skills */}

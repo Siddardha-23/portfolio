@@ -63,6 +63,13 @@ variable "jsearch_api_key" {
   default     = ""
 }
 
+variable "apify_api_key" {
+  description = "Apify API token for job listing scrapers"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "job_search_password_hash" {
   description = "Bcrypt hash of the job search dashboard password"
   type        = string

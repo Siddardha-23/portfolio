@@ -112,6 +112,28 @@ resource "aws_ssm_parameter" "jsearch_api_key" {
 }
 
 # -----------------------------------------------------------------------------
+# Apify API Key (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "apify_api_key" {
+  count       = var.apify_api_key != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/apify-api-key"
+  description = "Apify API token for job listing scrapers"
+  type        = "SecureString"
+  value       = var.apify_api_key
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-apify-api-key"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Job Search Password Hash (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "job_search_password_hash" {
@@ -196,6 +218,7 @@ output "ssm_parameter_paths" {
     ipinfo_token             = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
     gemini_api_key           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
     jsearch_api_key          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
+    apify_api_key            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : "not configured"
     job_search_password_hash = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
     github_pat               = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
     allowed_origins          = aws_ssm_parameter.allowed_origins.name

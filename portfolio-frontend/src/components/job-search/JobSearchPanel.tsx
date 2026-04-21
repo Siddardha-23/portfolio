@@ -47,7 +47,7 @@ export function JobSearchPanel({
   };
 
   const handleCompanyChip = (company: string) => {
-    const query = `${company} entry level`;
+    const query = `${company} entry level new grad h1b sponsor`;
     setLocalQuery(query);
     const newFilters = { ...filters, query };
     setFilters(newFilters);
@@ -70,12 +70,12 @@ export function JobSearchPanel({
 
   return (
     <div className="space-y-4">
-      {/* Today's Jobs header */}
+      {/* Fresh jobs header */}
       {autoSearchDone && !loading && (
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h2 className="text-lg font-semibold">
-              {filters.date_posted === 'today' ? "Today's Jobs" : `Jobs (${filters.date_posted})`}
+              {filters.date_posted === 'today' ? 'Fresh Job Opportunities' : `Job Opportunities (${filters.date_posted})`}
             </h2>
             {jobs.length > 0 && (
               <Badge variant="secondary" className="text-xs">{jobs.length}</Badge>
@@ -114,7 +114,7 @@ export function JobSearchPanel({
       {/* Search bar */}
       <form onSubmit={handleSearch} className="flex gap-2">
         <Input
-          placeholder="e.g. cloud engineer entry level"
+          placeholder="e.g. software engineer new grad h1b sponsor"
           value={localQuery}
           onChange={e => setLocalQuery(e.target.value)}
           className="flex-1"
@@ -147,10 +147,48 @@ export function JobSearchPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All time</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
+              <SelectItem value="today">Last 24 hours</SelectItem>
               <SelectItem value="3days">3 days</SelectItem>
               <SelectItem value="week">Week</SelectItem>
               <SelectItem value="month">Month</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Source</Label>
+          <Select
+            value={filters.source}
+            onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
+          >
+            <SelectTrigger className="w-36 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sources</SelectItem>
+              <SelectItem value="linkedin">LinkedIn</SelectItem>
+              <SelectItem value="indeed">Indeed</SelectItem>
+              <SelectItem value="google">Google Jobs</SelectItem>
+              <SelectItem value="company">Company sites</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs">Experience</Label>
+          <Select
+            value={filters.experience_level || 'any'}
+            onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
+          >
+            <SelectTrigger className="w-36 h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">Any</SelectItem>
+              <SelectItem value="entry">New grad / entry</SelectItem>
+              <SelectItem value="internship">Internship</SelectItem>
+              <SelectItem value="associate">Associate</SelectItem>
+              <SelectItem value="mid">Mid-level</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -190,6 +228,33 @@ export function JobSearchPanel({
             id="h1b"
           />
           <Label htmlFor="h1b" className="text-xs">H1B Sponsors</Label>
+        </div>
+
+        <div className="flex items-center gap-2 pb-0.5">
+          <Switch
+            checked={filters.visa_or_contract}
+            onCheckedChange={v => setFilters({ ...filters, visa_or_contract: v })}
+            id="visa-contract"
+          />
+          <Label htmlFor="visa-contract" className="text-xs">H1B or Contract</Label>
+        </div>
+
+        <div className="flex items-center gap-2 pb-0.5">
+          <Switch
+            checked={filters.use_resume_recommendations}
+            onCheckedChange={v => setFilters({ ...filters, use_resume_recommendations: v })}
+            id="resume-match"
+          />
+          <Label htmlFor="resume-match" className="text-xs">Resume Match</Label>
+        </div>
+
+        <div className="flex items-center gap-2 pb-0.5">
+          <Switch
+            checked={filters.include_company_careers}
+            onCheckedChange={v => setFilters({ ...filters, include_company_careers: v })}
+            id="company-sites"
+          />
+          <Label htmlFor="company-sites" className="text-xs">Company Sites</Label>
         </div>
       </div>
 
@@ -262,7 +327,7 @@ export function JobSearchPanel({
         <div className="text-center py-12 space-y-3">
           <p className="text-muted-foreground">
             {filters.date_posted === 'today'
-              ? "No jobs posted today. Try expanding the date range."
+              ? "No jobs found in the last 24 hours. Try expanding the date range."
               : "No jobs found. Try adjusting your search."}
           </p>
           {filters.date_posted === 'today' && (

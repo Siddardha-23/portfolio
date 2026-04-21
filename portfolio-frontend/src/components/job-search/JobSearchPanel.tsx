@@ -12,6 +12,15 @@ import { COMPANY_CHIPS } from '@/hooks/useJobSearch';
 import type { Job, SavedJob, JobSearchFilters } from '@/types/jobs';
 import type { BatchMeta } from '@/hooks/useJobSearch';
 
+const SOURCE_LABELS: Record<string, string> = {
+  linkedin: 'LinkedIn',
+  indeed: 'Indeed',
+  google: 'Google',
+  jobright: 'Jobright',
+  company: 'Company',
+  jsearch: 'JSearch',
+};
+
 interface JobSearchPanelProps {
   jobs: Job[];
   savedJobs: SavedJob[];
@@ -203,6 +212,7 @@ export function JobSearchPanel({
                 <SelectItem value="indeed">Indeed</SelectItem>
                 <SelectItem value="google">Google Jobs</SelectItem>
                 <SelectItem value="jobright">Jobright</SelectItem>
+                <SelectItem value="jsearch">JSearch (RapidAPI)</SelectItem>
                 <SelectItem value="company">Company sites</SelectItem>
               </SelectContent>
             </Select>
@@ -293,10 +303,27 @@ export function JobSearchPanel({
         </div>
       </div>
 
+      {/* Per-source counts */}
+      {batchMeta && batchMeta.sources && Object.keys(batchMeta.sources).length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {Object.entries(batchMeta.sources)
+            .sort((a, b) => b[1] - a[1])
+            .map(([src, count]) => (
+              <Badge
+                key={src}
+                variant="outline"
+                className="text-[10px] font-normal bg-gray-50 dark:bg-white/[0.04] border-gray-200 dark:border-white/[0.08]"
+              >
+                {SOURCE_LABELS[src] || src} · {count}
+              </Badge>
+            ))}
+        </div>
+      )}
+
       {/* Batch errors warning */}
       {batchMeta && batchMeta.errors.length > 0 && (
-        <p className="text-xs text-amber-700 dark:text-amber-300">
-          Some queries had issues: {batchMeta.errors.length} failed
+        <p className="text-xs text-amber-700 dark:text-amber-300" title={batchMeta.errors.join('\n')}>
+          Some sources had issues: {batchMeta.errors.length} failed
         </p>
       )}
 

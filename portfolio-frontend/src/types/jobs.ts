@@ -54,7 +54,7 @@ export interface JobSearchFilters {
   h1b_only: boolean;
   visa_or_contract: boolean;
   experience_level: '' | 'entry' | 'internship' | 'associate' | 'mid';
-  source: 'all' | 'linkedin' | 'indeed' | 'google' | 'company' | 'jobright';
+  source: 'all' | 'linkedin' | 'indeed' | 'google' | 'company' | 'jobright' | 'jsearch';
   include_company_careers: boolean;
   use_resume_recommendations: boolean;
 }
@@ -71,6 +71,7 @@ export interface JobSearchResponse {
   page: number;
   errors?: string[];
   fallback_source?: string;
+  sources?: Record<string, number>;
 }
 
 export interface BatchSearchParams {
@@ -93,4 +94,5 @@ export interface BatchSearchResponse {
   queries_executed: number;
   cache_hits: number;
   errors: string[];
+  sources?: Record<string, number>;
 }

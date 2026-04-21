@@ -116,6 +116,15 @@ COMPANY_CAREER_MAX_JOBS_PER_COMPANY = 2
 MAX_RETURNED_JOBS = 80
 JOB_DESCRIPTION_MAX_CHARS = 1600
 
+# Max Apify actor runs per (source, query) batch. Keeps parallel fan-out bounded
+# so we don't spawn hundreds of actor runs for a 6-query × 5-source batch.
+APIFY_MAX_WORKERS = 12
+# Max queries sent to each live Apify actor per batch. Sources with heavy
+# per-run cost (Google, company) cap lower via _max_queries_for_source.
+MAX_QUERIES_PER_APIFY_SOURCE = 3
+# Max JSearch (RapidAPI) queries per batch — RapidAPI plans meter per call.
+MAX_JSEARCH_QUERIES_PER_BATCH = 4
+
 
 def _make_cache_key(params: dict) -> str:
     """Create a deterministic MD5 hash from query parameters."""
@@ -200,46 +209,11 @@ class JobService:
             cached.pop("_id", None)
             return self._prepare_result_for_response(cached["result"])
 
-        if self._get_apify_token():
-            result = self._search_apify_jobs(
-                queries=[query],
-                location=location,
-                date_posted=date_posted,
-                remote_only=remote_only,
-                employment_type=employment_type,
-                h1b_only=h1b_only,
-                visa_or_contract=visa_or_contract,
-                experience_level=experience_level,
-                source=source,
-                include_company_careers=include_company_careers,
-                user_email=user_email if use_resume_recommendations else "",
-            )
-            result["page"] = page
-            if not result.get("jobs") and result.get("errors") and self._get_jsearch_key():
-                fallback = self._search_jsearch_jobs(
-                    query=query,
-                    page=page,
-                    location=location,
-                    date_posted=date_posted,
-                    remote_only=remote_only,
-                    employment_type=employment_type,
-                    h1b_only=h1b_only,
-                    visa_or_contract=visa_or_contract,
-                    experience_level=experience_level,
-                    user_email=user_email if use_resume_recommendations else "",
-                )
-                fallback["errors"] = result.get("errors", [])
-                fallback["fallback_source"] = "jsearch"
-                result = fallback
-            self._write_cache(cache_key, result)
-            return result
-
-        if not self._get_jsearch_key():
+        if not self._get_apify_token() and not self._get_jsearch_key():
             raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
 
-        result = self._search_jsearch_jobs(
-            query=query,
-            page=page,
+        result = self._search_apify_jobs(
+            queries=[query],
             location=location,
             date_posted=date_posted,
             remote_only=remote_only,
@@ -247,76 +221,58 @@ class JobService:
             h1b_only=h1b_only,
             visa_or_contract=visa_or_contract,
             experience_level=experience_level,
+            source=source,
+            include_company_careers=include_company_careers,
             user_email=user_email if use_resume_recommendations else "",
         )
+        result["page"] = page
+        result.setdefault("total_pages", 1)
         self._write_cache(cache_key, result)
-
         return result
 
     @staticmethod
     def _get_jsearch_key() -> str:
         return _get_config_value('JSEARCH_API_KEY', '')
 
-    def _search_jsearch_jobs(
+    def _search_jsearch_raw(
         self,
         query: str,
-        page: int,
         location: str,
         date_posted: str,
         remote_only: bool,
         employment_type: str,
-        h1b_only: bool,
-        visa_or_contract: bool,
-        experience_level: str,
-        user_email: str,
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
+        """Run one JSearch query and return normalized jobs (no scoring/caching).
+
+        Used by the combined multi-source executor so JSearch results flow
+        into the same dedup/match pipeline as Apify results.
+        """
         api_key = self._get_jsearch_key()
         if not api_key:
-            raise RuntimeError("JSEARCH_API_KEY is not configured")
-
+            return []
         headers = {
             "X-RapidAPI-Key": api_key,
             "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
         }
         api_params = {
-            "query": query,
-            "page": str(page),
+            "query": f"{query} in {location}" if location else query,
+            "page": "1",
             "num_pages": "1",
-            "date_posted": date_posted,
+            "date_posted": date_posted if date_posted in ("today", "3days", "week", "month", "all") else "today",
         }
-        if location:
-            api_params["query"] = f"{query} in {location}"
         if remote_only:
             api_params["remote_jobs_only"] = "true"
         if employment_type:
             api_params["employment_types"] = employment_type
-
         resp = requests.get(
             f"{self.JSEARCH_BASE}/search",
             headers=headers,
             params=api_params,
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         data = resp.json()
-
-        jobs = [self._normalize_job(j) for j in data.get("data", [])]
-        if h1b_only:
-            jobs = [j for j in jobs if j.get("h1b_sponsor")]
-        if visa_or_contract:
-            jobs = [j for j in jobs if j.get("h1b_sponsor") or j.get("contract_friendly")]
-        if experience_level in ("entry", "internship", "associate"):
-            jobs = [j for j in jobs if self._is_entry_level(j)]
-        matched = self.match_jobs(jobs, user_email=user_email)
-
-        result = {
-            "jobs": self._prepare_jobs_for_response(matched),
-            "total": len(matched),
-            "total_pages": data.get("parameters", {}).get("num_pages", 1),
-            "page": page,
-        }
-
-        return result
+        return [self._normalize_job(j) for j in data.get("data", [])]
 
     # ------------------------------------------------------------------
     # Batch Search (multiple queries in parallel)
@@ -359,126 +315,24 @@ class JobService:
             result["cache_hits"] = result.get("queries_executed", len(queries))
             return self._prepare_result_for_response(result)
 
-        if self._get_apify_token():
-            result = self._search_apify_jobs(
-                queries=queries[:6],
-                location=location,
-                date_posted=date_posted,
-                remote_only=remote_only,
-                employment_type=employment_type,
-                h1b_only=h1b_only,
-                visa_or_contract=visa_or_contract,
-                experience_level=experience_level,
-                source=source,
-                include_company_careers=include_company_careers,
-                user_email=user_email if use_resume_recommendations else "",
-            )
-            result["queries_executed"] = min(len(queries), 6)
-            result["cache_hits"] = 0
-            if not result.get("jobs") and result.get("errors") and self._get_jsearch_key():
-                seen_ids: set = set()
-                fallback_jobs: List[Dict[str, Any]] = []
-                for query in queries[:4]:
-                    fallback = self._search_jsearch_jobs(
-                        query=query,
-                        page=1,
-                        location=location,
-                        date_posted=date_posted,
-                        remote_only=remote_only,
-                        employment_type=employment_type,
-                        h1b_only=h1b_only,
-                        visa_or_contract=visa_or_contract,
-                        experience_level=experience_level,
-                        user_email=user_email if use_resume_recommendations else "",
-                    )
-                    for job in fallback.get("jobs", []):
-                        jid = job.get("job_id")
-                        if jid and jid not in seen_ids:
-                            seen_ids.add(jid)
-                            fallback_jobs.append(job)
-                result = {
-                    "jobs": self._prepare_jobs_for_response(fallback_jobs),
-                    "total": len(fallback_jobs),
-                    "queries_executed": min(len(queries), 4),
-                    "cache_hits": 0,
-                    "errors": result.get("errors", []),
-                    "fallback_source": "jsearch",
-                }
-            self._write_cache(cache_key, result)
-            return result
+        if not self._get_apify_token() and not self._get_jsearch_key():
+            raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
 
-        seen_ids: set = set()
-        all_jobs: List[Dict] = []
-        errors: List[str] = []
-        cache_hits = 0
-
-        def _run_query(query: str) -> Dict[str, Any]:
-            """Execute a single search query (may hit cache)."""
-            params = {
-                "query": query, "page": 1, "location": location,
-                "date_posted": date_posted, "remote_only": remote_only,
-                "employment_type": employment_type,
-                "user_email": user_email if use_resume_recommendations else "",
-            }
-            cache_key = _make_cache_key(params)
-            cached = self.jobs_cache.find_one({"query_hash": cache_key})
-            if cached:
-                cached.pop("_id", None)
-                return {"jobs": cached["result"].get("jobs", []), "cached": True}
-
-            # Not cached — call JSearch API
-            result = self.search_jobs(
-                query=query, page=1, location=location,
-                date_posted=date_posted, remote_only=remote_only,
-                employment_type=employment_type,
-                h1b_only=h1b_only,
-                visa_or_contract=visa_or_contract,
-                experience_level=experience_level,
-                source=source,
-                include_company_careers=include_company_careers,
-                use_resume_recommendations=use_resume_recommendations,
-                user_email=user_email,
-            )
-            return {"jobs": result.get("jobs", []), "cached": False}
-
-        with ThreadPoolExecutor(max_workers=3) as pool:
-            futures = {pool.submit(_run_query, q): q for q in queries}
-            for future in as_completed(futures):
-                query = futures[future]
-                try:
-                    result = future.result()
-                    if result["cached"]:
-                        cache_hits += 1
-                    for job in result["jobs"]:
-                        jid = job.get("job_id")
-                        if jid and jid not in seen_ids:
-                            seen_ids.add(jid)
-                            all_jobs.append(job)
-                except Exception as e:
-                    logger.warning(f"Batch query '{query}' failed: {e}")
-                    errors.append(f"{query}: {str(e)}")
-
-        # Filter stale results when searching for today
-        if date_posted == "today":
-            all_jobs = self._filter_today_jobs(all_jobs)
-
-        if h1b_only:
-            all_jobs = [j for j in all_jobs if j.get("h1b_sponsor")]
-        if visa_or_contract:
-            all_jobs = [j for j in all_jobs if j.get("h1b_sponsor") or j.get("contract_friendly")]
-        if experience_level in ("entry", "internship", "associate"):
-            all_jobs = [j for j in all_jobs if self._is_entry_level(j)]
-
-        # Re-score the merged set
-        all_jobs = self.match_jobs(all_jobs, user_email=user_email if use_resume_recommendations else "")
-
-        result = {
-            "jobs": self._prepare_jobs_for_response(all_jobs),
-            "total": len(all_jobs),
-            "queries_executed": len(queries),
-            "cache_hits": cache_hits,
-            "errors": errors,
-        }
+        result = self._search_apify_jobs(
+            queries=queries[:6],
+            location=location,
+            date_posted=date_posted,
+            remote_only=remote_only,
+            employment_type=employment_type,
+            h1b_only=h1b_only,
+            visa_or_contract=visa_or_contract,
+            experience_level=experience_level,
+            source=source,
+            include_company_careers=include_company_careers,
+            user_email=user_email if use_resume_recommendations else "",
+        )
+        result["queries_executed"] = min(len(queries), 6)
+        result["cache_hits"] = 0
         self._write_cache(cache_key, result)
         return result
 
@@ -564,21 +418,52 @@ class JobService:
         include_company_careers: bool,
         user_email: str,
     ) -> Dict[str, Any]:
-        supported = {"all", "linkedin", "indeed", "google", "company", "jobright"}
+        """Parallel multi-source job search.
+
+        Runs Apify actors (LinkedIn, Indeed, Google, Jobright, Company careers)
+        and JSearch (RapidAPI) concurrently in one ThreadPoolExecutor, then
+        deduplicates, filters, and re-scores. JSearch is combined — not a
+        fallback — so last-24h results from all providers are merged.
+        """
+        supported = {"all", "linkedin", "indeed", "google", "company", "jobright", "jsearch"}
         source = source if source in supported else "all"
-        selected = ["linkedin", "indeed", "google"] if source == "all" else [source]
-        if source == "all" and self._actor_id("jobright"):
-            selected.append("jobright")
-        if source == "all" and include_company_careers:
-            selected.append("company")
-        if source == "google":
-            selected = ["google"]
+
+        apify_token = self._get_apify_token()
+        jsearch_key = self._get_jsearch_key()
+
+        # Pick which sources to fan out to.
+        selected: List[str] = []
+        if source == "all":
+            if apify_token:
+                selected.extend(["linkedin", "indeed", "google"])
+                if self._actor_id("jobright"):
+                    selected.append("jobright")
+                if include_company_careers:
+                    selected.append("company")
+            if jsearch_key:
+                selected.append("jsearch")
+        elif source == "jsearch":
+            if jsearch_key:
+                selected = ["jsearch"]
+        else:
+            # A specific Apify source was requested.
+            if apify_token:
+                selected = [source]
+
+        if not selected:
+            return {
+                "jobs": [], "total": 0, "page": 1, "total_pages": 1,
+                "queries_executed": len(queries), "cache_hits": 0,
+                "errors": ["No job sources configured"],
+                "sources": {},
+            }
 
         all_jobs: List[Dict[str, Any]] = []
         errors: List[str] = []
         seen_ids: set = set()
+        source_counts: Dict[str, int] = {}
 
-        def _collect(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        def _collect_apify(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
             actor = self._actor_id(src)
             if not actor:
                 raise RuntimeError(f"APIFY_{src.upper()}_ACTOR is not configured")
@@ -629,24 +514,52 @@ class JobService:
                         logger.warning(f"Company career scrape failed for {url}: {e}")
             return [self._normalize_apify_job(item, src) for item in raw_items]
 
+        def _collect_jsearch(q: str) -> List[Dict[str, Any]]:
+            """Run one JSearch query and return normalized jobs (no scoring yet)."""
+            result = self._search_jsearch_raw(
+                query=q,
+                location=location,
+                date_posted=date_posted,
+                remote_only=remote_only,
+                employment_type=employment_type,
+            )
+            return result
+
+        queries = [q for q in (queries or []) if q] or [""]
+
         tasks = []
-        with ThreadPoolExecutor(max_workers=6) as pool:
-            max_queries_per_source = 1 if source == "all" else 3
+        task_meta: Dict[Any, str] = {}
+        with ThreadPoolExecutor(max_workers=APIFY_MAX_WORKERS) as pool:
             for src in selected:
+                max_q = self._max_queries_for_source(src, total_queries=len(queries))
+                src_queries = queries[:max_q] if src != "company" else [queries[0]]
                 if src == "company":
                     url_batches = self._chunks(
                         TOP_COMPANY_CAREER_URLS,
                         COMPANY_CAREER_BATCH_SIZE,
                     )[:COMPANY_CAREER_MAX_BATCHES]
                     for urls in url_batches:
-                        tasks.append(pool.submit(_collect, src, queries[0] if queries else "", urls))
+                        fut = pool.submit(_collect_apify, src, src_queries[0], urls)
+                        tasks.append(fut)
+                        task_meta[fut] = src
                     continue
-                for q in queries[:max_queries_per_source]:
-                    tasks.append(pool.submit(_collect, src, q))
+                if src == "jsearch":
+                    for q in src_queries:
+                        fut = pool.submit(_collect_jsearch, q)
+                        tasks.append(fut)
+                        task_meta[fut] = src
+                    continue
+                for q in src_queries:
+                    fut = pool.submit(_collect_apify, src, q)
+                    tasks.append(fut)
+                    task_meta[fut] = src
 
             for future in as_completed(tasks):
+                src = task_meta.get(future, "?")
                 try:
-                    for job in future.result():
+                    jobs_from_future = future.result()
+                    kept = 0
+                    for job in jobs_from_future:
                         if not job.get("title") or not job.get("company"):
                             continue
                         if not self._job_matches_filters(
@@ -664,9 +577,15 @@ class JobService:
                             continue
                         seen_ids.add(jid)
                         all_jobs.append(job)
+                        kept += 1
+                    source_counts[src] = source_counts.get(src, 0) + kept
+                    logger.info(
+                        "Job source %s returned %d raw, kept %d after filters",
+                        src, len(jobs_from_future), kept,
+                    )
                 except Exception as e:
-                    logger.warning(f"Apify job source failed: {e}")
-                    errors.append(str(e))
+                    logger.warning(f"Job source {src} failed: {e}")
+                    errors.append(f"{src}: {e}")
 
         matched = self.match_jobs(all_jobs, user_email=user_email)
         returned_jobs = self._prepare_jobs_for_response(matched)
@@ -674,10 +593,24 @@ class JobService:
             "jobs": returned_jobs,
             "total": len(matched),
             "page": 1,
+            "total_pages": 1,
             "queries_executed": len(queries),
             "cache_hits": 0,
             "errors": errors,
+            "sources": source_counts,
         }
+
+    @staticmethod
+    def _max_queries_for_source(src: str, total_queries: int) -> int:
+        """How many queries each source is willing to absorb in one batch."""
+        if src == "jsearch":
+            return min(total_queries, MAX_JSEARCH_QUERIES_PER_BATCH)
+        if src == "google":
+            # parseforge/google-jobs-scraper is heavy — keep it small.
+            return min(total_queries, 2)
+        if src == "company":
+            return 1  # company scraper is URL-driven, not query-driven
+        return min(total_queries, MAX_QUERIES_PER_APIFY_SOURCE)
 
     def _actor_id(self, source: str) -> str:
         env_key = f"APIFY_{source.upper()}_ACTOR"
@@ -747,6 +680,15 @@ class JobService:
                 "proxyConfiguration": {"useApifyProxy": False},
             }
         if source == "google":
+            # Google Jobs date-posted filter. Values the scraper accepts:
+            # "today" | "3days" | "week" | "month". Also send datePosted to
+            # cover scraper versions that use a different key name.
+            google_date = {
+                "today": "today",
+                "3days": "3days",
+                "week": "week",
+                "month": "month",
+            }.get(date_posted, "")
             return {
                 "query": query,
                 "location": location,
@@ -755,6 +697,9 @@ class JobService:
                 "maxItems": 50,
                 "includeDetails": True,
                 "includeRaw": False,
+                "dateFilter": google_date,
+                "datePosted": google_date,
+                "fromDays": str(days or 0),
                 "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "US"},
             }
         if source == "jobright":
@@ -983,18 +928,6 @@ class JobService:
         if any(marker in text for marker in senior_markers):
             return False
         return any(kw in text for kw in NEW_GRAD_KEYWORDS)
-
-    @staticmethod
-    def _filter_today_jobs(jobs: List[Dict]) -> List[Dict]:
-        """Keep only jobs whose date_posted starts with today's ISO date prefix."""
-        today_prefix = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        filtered = []
-        for job in jobs:
-            dp = job.get("date_posted", "")
-            # Keep if date matches today OR if date is missing (don't discard)
-            if not dp or dp.startswith(today_prefix):
-                filtered.append(job)
-        return filtered
 
     def _normalize_job(self, raw: dict) -> Dict[str, Any]:
         company = (raw.get("employer_name") or "Unknown").strip()

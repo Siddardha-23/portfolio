@@ -35,6 +35,7 @@ export interface BatchMeta {
   queries_executed: number;
   cache_hits: number;
   errors: string[];
+  sources?: Record<string, number>;
 }
 
 export function useJobSearch() {
@@ -90,10 +91,12 @@ export function useJobSearch() {
     setJobs(results);
     setPage(resp.data?.page || 1);
     setTotalPages(Math.max(1, resp.data?.total_pages || 1));
-    setBatchMeta(resp.data?.errors?.length ? {
+    const hasMeta = (resp.data?.errors?.length ?? 0) > 0 || !!resp.data?.sources;
+    setBatchMeta(hasMeta ? {
       queries_executed: 1,
       cache_hits: 0,
-      errors: resp.data.errors,
+      errors: resp.data?.errors || [],
+      sources: resp.data?.sources,
     } : null);
     setLoading(false);
   }, [filters]);
@@ -142,6 +145,7 @@ export function useJobSearch() {
       queries_executed: data.queries_executed,
       cache_hits: data.cache_hits,
       errors: data.errors || [],
+      sources: data.sources,
     });
     setLoading(false);
   }, [filters]);

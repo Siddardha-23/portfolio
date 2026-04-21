@@ -497,6 +497,37 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = svc.scorer.score(payload["tailored_resume"], payload["jd_analysis"])
             svc.complete_job(job_id, {"ats_scores": result})
 
+        elif job_type == "job_search":
+            from services.job_service import get_job_service
+
+            job_svc = get_job_service()
+            mode = payload.get("mode", "batch")
+            common = {
+                "location": payload.get("location", ""),
+                "date_posted": payload.get("date_posted", "today"),
+                "remote_only": bool(payload.get("remote_only", False)),
+                "employment_type": payload.get("employment_type", ""),
+                "h1b_only": bool(payload.get("h1b_only", False)),
+                "visa_or_contract": bool(payload.get("visa_or_contract", False)),
+                "experience_level": payload.get("experience_level", ""),
+                "source": payload.get("source", "all"),
+                "include_company_careers": bool(payload.get("include_company_careers", True)),
+                "use_resume_recommendations": bool(payload.get("use_resume_recommendations", True)),
+                "user_email": payload.get("user_email", ""),
+            }
+            if mode == "single":
+                result = job_svc.search_jobs(
+                    query=payload.get("query", ""),
+                    page=int(payload.get("page", 1) or 1),
+                    **common,
+                )
+            else:
+                result = job_svc.batch_search_jobs(
+                    queries=payload.get("queries", []),
+                    **common,
+                )
+            svc.complete_job(job_id, result)
+
         else:
             svc.fail_job(job_id, f"Unknown job type: {job_type}")
 

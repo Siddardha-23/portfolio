@@ -34,7 +34,7 @@ locals {
     jobs-resume = {
       description = "Job search and resume tailoring"
       memory      = 512
-      timeout     = 90
+      timeout     = 300
       env_vars = {
         SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
         SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name

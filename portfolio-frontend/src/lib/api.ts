@@ -557,15 +557,33 @@ class ApiService {
     if (params.source) searchParams.set("source", params.source);
     searchParams.set("include_company_careers", params.include_company_careers ? "true" : "false");
     searchParams.set("use_resume_recommendations", params.use_resume_recommendations ? "true" : "false");
-    return this.request<{
+    const submitResp = await this.request<
+      | { job_id: string }
+      | {
+          jobs: import("../types/jobs").Job[];
+          total: number;
+          page: number;
+        }
+    >(`/jobs/search?${searchParams.toString()}`);
+    if (submitResp.error) return { error: submitResp.error };
+    if ("job_id" in (submitResp.data || {})) {
+      return this.pollJob<{
+        jobs: import("../types/jobs").Job[];
+        total: number;
+        page: number;
+      }>((submitResp.data as { job_id: string }).job_id, 300000);
+    }
+    return submitResp as ApiResponse<{
       jobs: import("../types/jobs").Job[];
       total: number;
       page: number;
-    }>(`/jobs/search?${searchParams.toString()}`);
+    }>;
   }
 
   async batchSearchJobs(params: import("../types/jobs").BatchSearchParams) {
-    return this.request<import("../types/jobs").BatchSearchResponse>(
+    const submitResp = await this.request<
+      { job_id: string } | import("../types/jobs").BatchSearchResponse
+    >(
       "/jobs/batch-search",
       {
         method: "POST",
@@ -573,6 +591,14 @@ class ApiService {
       },
       30000,
     );
+    if (submitResp.error) return { error: submitResp.error };
+    if ("job_id" in (submitResp.data || {})) {
+      return this.pollJob<import("../types/jobs").BatchSearchResponse>(
+        (submitResp.data as { job_id: string }).job_id,
+        300000,
+      );
+    }
+    return submitResp as ApiResponse<import("../types/jobs").BatchSearchResponse>;
   }
 
   async analyzeJob(

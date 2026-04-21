@@ -57,25 +57,28 @@ def search():
     use_resume_recommendations = request.args.get("use_resume_recommendations", "true").lower() == "true"
 
     try:
-        from services.job_service import get_job_service
-        svc = get_job_service()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
         user_email = get_jwt_identity()
-        result = svc.search_jobs(
-            query=query,
-            page=page,
-            location=location,
-            date_posted=date_posted,
-            remote_only=remote_only,
-            employment_type=employment_type,
-            h1b_only=h1b_only,
-            visa_or_contract=visa_or_contract,
-            experience_level=experience_level,
-            source=source,
-            include_company_careers=include_company_careers,
-            use_resume_recommendations=use_resume_recommendations,
-            user_email=user_email,
-        )
-        return jsonify(result), 200
+        payload = {
+            "mode": "single",
+            "query": query,
+            "page": page,
+            "location": location,
+            "date_posted": date_posted,
+            "remote_only": remote_only,
+            "employment_type": employment_type,
+            "h1b_only": h1b_only,
+            "visa_or_contract": visa_or_contract,
+            "experience_level": experience_level,
+            "source": source,
+            "include_company_careers": include_company_careers,
+            "use_resume_recommendations": use_resume_recommendations,
+            "user_email": user_email,
+        }
+        job_id = svc.create_job("job_search", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "job_search", payload)
+        return jsonify({"job_id": job_id}), 202
     except RuntimeError as e:
         if "not configured" in str(e).lower():
             return jsonify({"error": "Job search service not available"}), 503
@@ -131,24 +134,27 @@ def batch_search():
     use_resume_recommendations = str(data.get("use_resume_recommendations", True)).lower() == "true"
 
     try:
-        from services.job_service import get_job_service
-        svc = get_job_service()
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
         user_email = get_jwt_identity()
-        result = svc.batch_search_jobs(
-            queries=queries,
-            location=location,
-            date_posted=date_posted,
-            remote_only=remote_only,
-            employment_type=employment_type,
-            h1b_only=h1b_only,
-            visa_or_contract=visa_or_contract,
-            experience_level=experience_level,
-            source=source,
-            include_company_careers=include_company_careers,
-            use_resume_recommendations=use_resume_recommendations,
-            user_email=user_email,
-        )
-        return jsonify(result), 200
+        payload = {
+            "mode": "batch",
+            "queries": queries,
+            "location": location,
+            "date_posted": date_posted,
+            "remote_only": remote_only,
+            "employment_type": employment_type,
+            "h1b_only": h1b_only,
+            "visa_or_contract": visa_or_contract,
+            "experience_level": experience_level,
+            "source": source,
+            "include_company_careers": include_company_careers,
+            "use_resume_recommendations": use_resume_recommendations,
+            "user_email": user_email,
+        }
+        job_id = svc.create_job("job_search", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "job_search", payload)
+        return jsonify({"job_id": job_id}), 202
     except RuntimeError as e:
         if "not configured" in str(e).lower():
             return jsonify({"error": "Job search service not available"}), 503

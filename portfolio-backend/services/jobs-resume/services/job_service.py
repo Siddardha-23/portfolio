@@ -475,7 +475,7 @@ class JobService:
             return [self._normalize_apify_job(item, src) for item in raw_items]
 
         tasks = []
-        with ThreadPoolExecutor(max_workers=3) as pool:
+        with ThreadPoolExecutor(max_workers=4) as pool:
             max_queries_per_source = 2 if source == "all" else 4
             for src in selected:
                 if src == "company":

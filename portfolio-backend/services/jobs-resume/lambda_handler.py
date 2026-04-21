@@ -7,7 +7,7 @@ Industry-standard cold start pattern:
   - Init duration measured once, matches CloudWatch's "Init Duration"
 
 This is the ONLY service that includes the async_job dispatch branch,
-used for Gemini-powered resume processing (JD extraction, tailoring, ATS scoring).
+used for Gemini-powered resume processing and Apify job search aggregation.
 
 Architecture:
     API Gateway (HTTP API) -> Lambda -> apig-wsgi -> Flask App -> MongoDB Atlas
@@ -58,7 +58,7 @@ def handler(event, context):
     All heavy initialization already happened at module level (INIT phase).
     This handler just sets metadata and delegates to the WSGI handler.
 
-    Includes the async_job dispatch branch for Gemini-powered resume processing.
+    Includes the async_job dispatch branch for resume processing and job search.
     """
     try:
         global _cold_start

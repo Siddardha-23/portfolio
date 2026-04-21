@@ -90,6 +90,11 @@ export function useJobSearch() {
     setJobs(results);
     setPage(resp.data?.page || 1);
     setTotalPages(resp.data?.total || 1);
+    setBatchMeta(resp.data?.errors?.length ? {
+      queries_executed: 1,
+      cache_hits: 0,
+      errors: resp.data.errors,
+    } : null);
     setLoading(false);
   }, [filters]);
 

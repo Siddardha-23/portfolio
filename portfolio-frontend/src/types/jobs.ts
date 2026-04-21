@@ -64,6 +64,14 @@ export interface SavedJobFilters {
   updated_at?: string;
 }
 
+export interface JobSearchResponse {
+  jobs: Job[];
+  total: number;
+  page: number;
+  errors?: string[];
+  fallback_source?: string;
+}
+
 export interface BatchSearchParams {
   queries: string[];
   location?: string;

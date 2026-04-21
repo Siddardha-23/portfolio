@@ -73,7 +73,7 @@ variable "apify_api_key" {
 variable "apify_actor_memory_mb" {
   description = "Memory assigned to Apify actor runs used by job search"
   type        = number
-  default     = 2048
+  default     = 1024
 }
 
 variable "job_search_password_hash" {

@@ -111,8 +111,10 @@ TOP_COMPANY_CAREER_URLS = [
 ]
 
 COMPANY_CAREER_BATCH_SIZE = 3
-COMPANY_CAREER_MAX_BATCHES = 6
+COMPANY_CAREER_MAX_BATCHES = 4
 COMPANY_CAREER_MAX_JOBS_PER_COMPANY = 2
+MAX_RETURNED_JOBS = 80
+JOB_DESCRIPTION_MAX_CHARS = 1600
 
 
 def _make_cache_key(params: dict) -> str:
@@ -195,7 +197,7 @@ class JobService:
         cached = self.jobs_cache.find_one({"query_hash": cache_key})
         if cached:
             cached.pop("_id", None)
-            return cached["result"]
+            return self._prepare_result_for_response(cached["result"])
 
         if self._get_apify_token():
             result = self._search_apify_jobs(
@@ -212,13 +214,64 @@ class JobService:
                 user_email=user_email if use_resume_recommendations else "",
             )
             result["page"] = page
+            if not result.get("jobs") and result.get("errors") and self._get_jsearch_key():
+                fallback = self._search_jsearch_jobs(
+                    query=query,
+                    page=page,
+                    location=location,
+                    date_posted=date_posted,
+                    remote_only=remote_only,
+                    employment_type=employment_type,
+                    h1b_only=h1b_only,
+                    visa_or_contract=visa_or_contract,
+                    experience_level=experience_level,
+                    user_email=user_email if use_resume_recommendations else "",
+                )
+                fallback["errors"] = result.get("errors", [])
+                fallback["fallback_source"] = "jsearch"
+                result = fallback
             self._write_cache(cache_key, result)
             return result
 
-        # Fetch from JSearch
-        api_key = _get_config_value('JSEARCH_API_KEY', '')
-        if not api_key:
+        if not self._get_jsearch_key():
             raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
+
+        result = self._search_jsearch_jobs(
+            query=query,
+            page=page,
+            location=location,
+            date_posted=date_posted,
+            remote_only=remote_only,
+            employment_type=employment_type,
+            h1b_only=h1b_only,
+            visa_or_contract=visa_or_contract,
+            experience_level=experience_level,
+            user_email=user_email if use_resume_recommendations else "",
+        )
+        self._write_cache(cache_key, result)
+
+        return result
+
+    @staticmethod
+    def _get_jsearch_key() -> str:
+        return _get_config_value('JSEARCH_API_KEY', '')
+
+    def _search_jsearch_jobs(
+        self,
+        query: str,
+        page: int,
+        location: str,
+        date_posted: str,
+        remote_only: bool,
+        employment_type: str,
+        h1b_only: bool,
+        visa_or_contract: bool,
+        experience_level: str,
+        user_email: str,
+    ) -> Dict[str, Any]:
+        api_key = self._get_jsearch_key()
+        if not api_key:
+            raise RuntimeError("JSEARCH_API_KEY is not configured")
 
         headers = {
             "X-RapidAPI-Key": api_key,
@@ -256,12 +309,10 @@ class JobService:
         matched = self.match_jobs(jobs, user_email=user_email if use_resume_recommendations else "")
 
         result = {
-            "jobs": matched,
+            "jobs": self._prepare_jobs_for_response(matched),
             "total": data.get("parameters", {}).get("num_pages", 1),
             "page": page,
         }
-
-        self._write_cache(cache_key, result)
 
         return result
 
@@ -304,7 +355,7 @@ class JobService:
             cached.pop("_id", None)
             result = cached["result"]
             result["cache_hits"] = result.get("queries_executed", len(queries))
-            return result
+            return self._prepare_result_for_response(result)
 
         if self._get_apify_token():
             result = self._search_apify_jobs(
@@ -391,7 +442,7 @@ class JobService:
         all_jobs = self.match_jobs(all_jobs, user_email=user_email if use_resume_recommendations else "")
 
         result = {
-            "jobs": all_jobs,
+            "jobs": self._prepare_jobs_for_response(all_jobs),
             "total": len(all_jobs),
             "queries_executed": len(queries),
             "cache_hits": cache_hits,
@@ -499,8 +550,8 @@ class JobService:
                 raw_items = self._run_apify_actor(
                     actor,
                     payload,
-                    max_items=40 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
-                    timeout_seconds=120 if src != "company" else 90,
+                    max_items=35 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
+                    timeout_seconds=90 if src != "company" else 60,
                 )
             except Exception:
                 if src != "company" or not company_urls or len(company_urls) == 1:
@@ -523,7 +574,7 @@ class JobService:
                                 actor,
                                 single_payload,
                                 max_items=COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
-                                timeout_seconds=75,
+                                timeout_seconds=45,
                             )
                         )
                     except Exception as e:
@@ -531,8 +582,8 @@ class JobService:
             return [self._normalize_apify_job(item, src) for item in raw_items]
 
         tasks = []
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            max_queries_per_source = 2 if source == "all" else 4
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            max_queries_per_source = 1 if source == "all" else 3
             for src in selected:
                 if src == "company":
                     url_batches = self._chunks(
@@ -570,8 +621,9 @@ class JobService:
                     errors.append(str(e))
 
         matched = self.match_jobs(all_jobs, user_email=user_email)
+        returned_jobs = self._prepare_jobs_for_response(matched)
         return {
-            "jobs": matched,
+            "jobs": returned_jobs,
             "total": len(matched),
             "page": 1,
             "queries_executed": len(queries),
@@ -756,6 +808,31 @@ class JobService:
             "contract_friendly": contract,
             "source": source.title() if source != "company" else "Company Careers",
         }
+
+    @staticmethod
+    def _prepare_jobs_for_response(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        prepared: List[Dict[str, Any]] = []
+        for job in jobs[:MAX_RETURNED_JOBS]:
+            item = dict(job)
+            description = str(item.get("description") or "")
+            if len(description) > JOB_DESCRIPTION_MAX_CHARS:
+                item["description"] = description[:JOB_DESCRIPTION_MAX_CHARS].rstrip() + "..."
+            missing = item.get("missing_skills")
+            if isinstance(missing, list) and len(missing) > 30:
+                item["missing_skills"] = missing[:30]
+            matched = item.get("matched_skills")
+            if isinstance(matched, list) and len(matched) > 20:
+                item["matched_skills"] = matched[:20]
+            prepared.append(item)
+        return prepared
+
+    def _prepare_result_for_response(self, result: Dict[str, Any]) -> Dict[str, Any]:
+        prepared = dict(result)
+        jobs = prepared.get("jobs")
+        if isinstance(jobs, list):
+            prepared["jobs"] = self._prepare_jobs_for_response(jobs)
+            prepared["total"] = prepared.get("total", len(jobs))
+        return prepared
 
     def _job_matches_filters(
         self,

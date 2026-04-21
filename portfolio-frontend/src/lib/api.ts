@@ -559,25 +559,16 @@ class ApiService {
     searchParams.set("use_resume_recommendations", params.use_resume_recommendations ? "true" : "false");
     const submitResp = await this.request<
       | { job_id: string }
-      | {
-          jobs: import("../types/jobs").Job[];
-          total: number;
-          page: number;
-        }
+      | import("../types/jobs").JobSearchResponse
     >(`/jobs/search?${searchParams.toString()}`);
     if (submitResp.error) return { error: submitResp.error };
     if ("job_id" in (submitResp.data || {})) {
-      return this.pollJob<{
-        jobs: import("../types/jobs").Job[];
-        total: number;
-        page: number;
-      }>((submitResp.data as { job_id: string }).job_id, 300000);
+      return this.pollJob<import("../types/jobs").JobSearchResponse>(
+        (submitResp.data as { job_id: string }).job_id,
+        300000,
+      );
     }
-    return submitResp as ApiResponse<{
-      jobs: import("../types/jobs").Job[];
-      total: number;
-      page: number;
-    }>;
+    return submitResp as ApiResponse<import("../types/jobs").JobSearchResponse>;
   }
 
   async batchSearchJobs(params: import("../types/jobs").BatchSearchParams) {

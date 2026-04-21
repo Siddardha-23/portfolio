@@ -124,11 +124,13 @@ APIFY_MAX_WORKERS = 12
 MAX_QUERIES_PER_APIFY_SOURCE = 3
 # Max JSearch (RapidAPI) queries per batch — RapidAPI plans meter per call.
 MAX_JSEARCH_QUERIES_PER_BATCH = 4
+# Bump this when the result schema changes so old cached entries are bypassed.
+JOBS_CACHE_VERSION = "v2-parallel-sources"
 
 
 def _make_cache_key(params: dict) -> str:
     """Create a deterministic MD5 hash from query parameters."""
-    normalized = json.dumps(params, sort_keys=True)
+    normalized = json.dumps({**params, "_v": JOBS_CACHE_VERSION}, sort_keys=True)
     return hashlib.md5(normalized.encode()).hexdigest()
 
 

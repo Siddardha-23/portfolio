@@ -36,14 +36,16 @@ locals {
       memory      = 512
       timeout     = 300
       env_vars = {
-        SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
-        SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name
-        SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
-        SSM_APIFY_API_KEY            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
-        SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
-        SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
-        APIFY_ACTOR_MEMORY_MB        = tostring(var.apify_actor_memory_mb)
-        RESUME_S3_BUCKET             = aws_s3_bucket.resumes.id
+        SSM_MONGODB_URI               = aws_ssm_parameter.mongodb_uri.name
+        SSM_JWT_SECRET                = aws_ssm_parameter.jwt_secret.name
+        SSM_JSEARCH_API_KEY           = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
+        SSM_APIFY_API_KEY             = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
+        SSM_JOB_SEARCH_PASSWORD_HASH  = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
+        SSM_GEMINI_API_KEY            = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        APIFY_ACTOR_MEMORY_MB         = tostring(var.apify_actor_memory_mb)
+        APIFY_COMPANY_ACTOR_MEMORY_MB = tostring(var.apify_company_actor_memory_mb)
+        APIFY_JOBRIGHT_ACTOR          = var.apify_jobright_actor
+        RESUME_S3_BUCKET              = aws_s3_bucket.resumes.id
       }
     }
     chat = {

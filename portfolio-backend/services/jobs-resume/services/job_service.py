@@ -133,6 +133,7 @@ class JobService:
         "indeed": "scrapapi/indeed-job-scraper",
         "google": "parseforge/google-jobs-scraper",
         "company": "piotrv1001/company-career-page-scraper",
+        "jobright": "",
     }
     CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
 
@@ -306,7 +307,7 @@ class JobService:
             jobs = [j for j in jobs if j.get("h1b_sponsor") or j.get("contract_friendly")]
         if experience_level in ("entry", "internship", "associate"):
             jobs = [j for j in jobs if self._is_entry_level(j)]
-        matched = self.match_jobs(jobs, user_email=user_email if use_resume_recommendations else "")
+        matched = self.match_jobs(jobs, user_email=user_email)
 
         result = {
             "jobs": self._prepare_jobs_for_response(matched),
@@ -373,6 +374,35 @@ class JobService:
             )
             result["queries_executed"] = min(len(queries), 6)
             result["cache_hits"] = 0
+            if not result.get("jobs") and result.get("errors") and self._get_jsearch_key():
+                seen_ids: set = set()
+                fallback_jobs: List[Dict[str, Any]] = []
+                for query in queries[:4]:
+                    fallback = self._search_jsearch_jobs(
+                        query=query,
+                        page=1,
+                        location=location,
+                        date_posted=date_posted,
+                        remote_only=remote_only,
+                        employment_type=employment_type,
+                        h1b_only=h1b_only,
+                        visa_or_contract=visa_or_contract,
+                        experience_level=experience_level,
+                        user_email=user_email if use_resume_recommendations else "",
+                    )
+                    for job in fallback.get("jobs", []):
+                        jid = job.get("job_id")
+                        if jid and jid not in seen_ids:
+                            seen_ids.add(jid)
+                            fallback_jobs.append(job)
+                result = {
+                    "jobs": self._prepare_jobs_for_response(fallback_jobs),
+                    "total": len(fallback_jobs),
+                    "queries_executed": min(len(queries), 4),
+                    "cache_hits": 0,
+                    "errors": result.get("errors", []),
+                    "fallback_source": "jsearch",
+                }
             self._write_cache(cache_key, result)
             return result
 
@@ -506,6 +536,16 @@ class JobService:
             return 1024
 
     @staticmethod
+    def _get_apify_memory_mb_for_source(source: str) -> int:
+        if source == "company":
+            raw = _get_config_value("APIFY_COMPANY_ACTOR_MEMORY_MB", "2048")
+            try:
+                return max(1024, min(int(raw), 8192))
+            except (TypeError, ValueError):
+                return 2048
+        return JobService._get_apify_memory_mb()
+
+    @staticmethod
     def _chunks(items: List[str], size: int) -> List[List[str]]:
         return [items[i:i + size] for i in range(0, len(items), size)]
 
@@ -523,8 +563,11 @@ class JobService:
         include_company_careers: bool,
         user_email: str,
     ) -> Dict[str, Any]:
-        source = source if source in {"all", "linkedin", "indeed", "google", "company"} else "all"
+        supported = {"all", "linkedin", "indeed", "google", "company", "jobright"}
+        source = source if source in supported else "all"
         selected = ["linkedin", "indeed", "google"] if source == "all" else [source]
+        if source == "all" and self._actor_id("jobright"):
+            selected.append("jobright")
         if source == "all" and include_company_careers:
             selected.append("company")
         if source == "google":
@@ -536,6 +579,8 @@ class JobService:
 
         def _collect(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
             actor = self._actor_id(src)
+            if not actor:
+                raise RuntimeError(f"APIFY_{src.upper()}_ACTOR is not configured")
             payload = self._build_apify_input(
                 source=src,
                 query=q,
@@ -552,6 +597,7 @@ class JobService:
                     payload,
                     max_items=35 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
                     timeout_seconds=90 if src != "company" else 60,
+                    memory_mb=self._get_apify_memory_mb_for_source(src),
                 )
             except Exception:
                 if src != "company" or not company_urls or len(company_urls) == 1:
@@ -575,6 +621,7 @@ class JobService:
                                 single_payload,
                                 max_items=COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
                                 timeout_seconds=45,
+                                memory_mb=self._get_apify_memory_mb_for_source(src),
                             )
                         )
                     except Exception as e:
@@ -708,6 +755,21 @@ class JobService:
                 "includeDetails": True,
                 "includeRaw": False,
                 "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "US"},
+            }
+        if source == "jobright":
+            return {
+                "query": query,
+                "keywords": query,
+                "location": location,
+                "country": "United States",
+                "countryCode": "us",
+                "datePosted": date_posted,
+                "fromDays": str(days or 0),
+                "remote": remote_only,
+                "employmentType": employment_type,
+                "experienceLevel": experience_level,
+                "maxItems": 35,
+                "proxyConfiguration": {"useApifyProxy": True, "apifyProxyCountry": "US"},
             }
         return {
             "startUrls": [{"url": url} for url in (company_urls or TOP_COMPANY_CAREER_URLS[:COMPANY_CAREER_BATCH_SIZE])],

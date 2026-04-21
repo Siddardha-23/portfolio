@@ -202,6 +202,7 @@ export function JobSearchPanel({
                 <SelectItem value="linkedin">LinkedIn</SelectItem>
                 <SelectItem value="indeed">Indeed</SelectItem>
                 <SelectItem value="google">Google Jobs</SelectItem>
+                <SelectItem value="jobright">Jobright</SelectItem>
                 <SelectItem value="company">Company sites</SelectItem>
               </SelectContent>
             </Select>

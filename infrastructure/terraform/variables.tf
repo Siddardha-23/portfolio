@@ -71,9 +71,21 @@ variable "apify_api_key" {
 }
 
 variable "apify_actor_memory_mb" {
-  description = "Memory assigned to Apify actor runs used by job search"
+  description = "Memory assigned to standard Apify actor runs used by job search"
   type        = number
   default     = 1024
+}
+
+variable "apify_company_actor_memory_mb" {
+  description = "Memory assigned to heavier company-career Apify actor runs"
+  type        = number
+  default     = 2048
+}
+
+variable "apify_jobright_actor" {
+  description = "Optional Apify actor id for Jobright job scraping"
+  type        = string
+  default     = ""
 }
 
 variable "job_search_password_hash" {

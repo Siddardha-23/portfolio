@@ -54,7 +54,7 @@ export interface JobSearchFilters {
   h1b_only: boolean;
   visa_or_contract: boolean;
   experience_level: '' | 'entry' | 'internship' | 'associate' | 'mid';
-  source: 'all' | 'linkedin' | 'indeed' | 'google' | 'company';
+  source: 'all' | 'linkedin' | 'indeed' | 'google' | 'company' | 'jobright';
   include_company_careers: boolean;
   use_resume_recommendations: boolean;
 }

@@ -44,6 +44,11 @@ locals {
         SSM_GEMINI_API_KEY            = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
         APIFY_ACTOR_MEMORY_MB         = tostring(var.apify_actor_memory_mb)
         APIFY_COMPANY_ACTOR_MEMORY_MB = tostring(var.apify_company_actor_memory_mb)
+        APIFY_LINKEDIN_ACTOR          = var.apify_linkedin_actor
+        APIFY_WORKDAY_ACTOR           = var.apify_workday_actor
+        APIFY_INDEED_ACTOR            = var.apify_indeed_actor
+        APIFY_GOOGLE_ACTOR            = var.apify_google_actor
+        APIFY_COMPANY_ACTOR           = var.apify_company_actor
         APIFY_JOBRIGHT_ACTOR          = var.apify_jobright_actor
         RESUME_S3_BUCKET              = aws_s3_bucket.resumes.id
       }

@@ -18,12 +18,16 @@ import type { BatchMeta } from '@/hooks/useJobSearch';
 
 const SOURCE_LABELS: Record<string, string> = {
   linkedin: 'LinkedIn',
+  workday: 'Workday',
   indeed: 'Indeed',
-  google: 'Google',
+  google: 'Google Jobs',
   jobright: 'Jobright',
-  company: 'Company',
-  jsearch: 'JSearch',
+  company: 'Company Sites',
+  jsearch: 'JSearch (RapidAPI)',
 };
+
+const INPUT_ACCENT = 'focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40';
+const SELECT_ACCENT = 'focus:border-purple-500/40 focus:ring-purple-500/40';
 
 interface JobSearchPanelProps {
   jobs: Job[];
@@ -165,7 +169,7 @@ export function JobSearchPanel({
                 placeholder="e.g. software engineer new grad h1b sponsor"
                 value={localQuery}
                 onChange={e => setLocalQuery(e.target.value)}
-                className="h-10 pl-9"
+                className={`h-10 pl-9 ${INPUT_ACCENT}`}
               />
             </div>
             <div className="flex gap-2">
@@ -211,7 +215,7 @@ export function JobSearchPanel({
                   placeholder="United States"
                   value={filters.location}
                   onChange={e => setFilters({ ...filters, location: e.target.value })}
-                  className="h-9"
+                  className={`h-9 ${INPUT_ACCENT}`}
                 />
               </div>
 
@@ -223,7 +227,7 @@ export function JobSearchPanel({
                   value={filters.date_posted}
                   onValueChange={v => setFilters({ ...filters, date_posted: v as JobSearchFilters['date_posted'] })}
                 >
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={`h-9 ${SELECT_ACCENT}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="today">Last 24 hours</SelectItem>
                     <SelectItem value="3days">3 days</SelectItem>
@@ -242,13 +246,15 @@ export function JobSearchPanel({
                   value={filters.source}
                   onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
                 >
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={`h-9 ${SELECT_ACCENT}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All sources</SelectItem>
                     <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    <SelectItem value="workday">Workday</SelectItem>
                     <SelectItem value="indeed">Indeed</SelectItem>
                     <SelectItem value="google">Google Jobs</SelectItem>
                     <SelectItem value="jsearch">JSearch (RapidAPI)</SelectItem>
+                    <SelectItem value="jobright">Jobright</SelectItem>
                     <SelectItem value="company">Company sites</SelectItem>
                   </SelectContent>
                 </Select>
@@ -262,7 +268,7 @@ export function JobSearchPanel({
                   value={filters.experience_level || 'any'}
                   onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
                 >
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={`h-9 ${SELECT_ACCENT}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">Any</SelectItem>
                     <SelectItem value="entry">New grad / entry</SelectItem>
@@ -281,7 +287,7 @@ export function JobSearchPanel({
                   value={filters.employment_type || 'any'}
                   onValueChange={v => setFilters({ ...filters, employment_type: v === 'any' ? '' : v as JobSearchFilters['employment_type'] })}
                 >
-                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectTrigger className={`h-9 ${SELECT_ACCENT}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="any">Any</SelectItem>
                     <SelectItem value="FULLTIME">Full-time</SelectItem>
@@ -319,7 +325,7 @@ export function JobSearchPanel({
                 />
                 <ToggleRow
                   id="company-sites"
-                  label="Company sites"
+                  label="Workday/company sites"
                   checked={filters.include_company_careers}
                   onChange={v => setFilters({ ...filters, include_company_careers: v })}
                 />
@@ -480,7 +486,12 @@ function ToggleRow({
 }: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <div className="flex items-center gap-2">
-      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Switch
+        id={id}
+        checked={checked}
+        onCheckedChange={onChange}
+        className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-purple-600 data-[state=checked]:to-indigo-600"
+      />
       <Label htmlFor={id} className="cursor-pointer text-xs text-foreground/80">{label}</Label>
     </div>
   );

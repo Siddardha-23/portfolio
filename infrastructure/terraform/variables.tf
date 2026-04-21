@@ -79,7 +79,37 @@ variable "apify_actor_memory_mb" {
 variable "apify_company_actor_memory_mb" {
   description = "Memory assigned to heavier company-career Apify actor runs"
   type        = number
-  default     = 2048
+  default     = 1024
+}
+
+variable "apify_linkedin_actor" {
+  description = "Optional Apify actor id for LinkedIn job scraping"
+  type        = string
+  default     = "curious_coder/linkedin-jobs-scraper"
+}
+
+variable "apify_workday_actor" {
+  description = "Optional Apify actor id for Workday job scraping"
+  type        = string
+  default     = "fantastic-jobs/workday-jobs-api"
+}
+
+variable "apify_indeed_actor" {
+  description = "Optional Apify actor id for Indeed job scraping"
+  type        = string
+  default     = ""
+}
+
+variable "apify_google_actor" {
+  description = "Optional Apify actor id for Google Jobs scraping"
+  type        = string
+  default     = ""
+}
+
+variable "apify_company_actor" {
+  description = "Optional Apify actor id for company career page scraping"
+  type        = string
+  default     = ""
 }
 
 variable "apify_jobright_actor" {

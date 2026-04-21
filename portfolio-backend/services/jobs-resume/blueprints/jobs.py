@@ -59,7 +59,7 @@ def _sanitize_job_filters(data):
     filters["experience_level"] = experience_level if experience_level in ("", "entry", "internship", "associate", "mid") else "entry"
 
     source = raw.get("source", DEFAULT_JOB_FILTERS["source"])
-    filters["source"] = source if source in ("all", "linkedin", "indeed", "google", "company", "jobright", "jsearch") else "all"
+    filters["source"] = source if source in ("all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch") else "all"
     return filters
 
 
@@ -99,7 +99,7 @@ def search():
     if experience_level not in ("", "entry", "internship", "associate", "mid"):
         experience_level = ""
     source = request.args.get("source", "all")
-    if source not in ("all", "linkedin", "indeed", "google", "company", "jobright", "jsearch"):
+    if source not in ("all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch"):
         source = "all"
     include_company_careers = request.args.get("include_company_careers", "true").lower() == "true"
     use_resume_recommendations = request.args.get("use_resume_recommendations", "true").lower() == "true"
@@ -176,7 +176,7 @@ def batch_search():
     if experience_level not in ("", "entry", "internship", "associate", "mid"):
         experience_level = ""
     source = data.get("source", "all")
-    if source not in ("all", "linkedin", "indeed", "google", "company", "jobright", "jsearch"):
+    if source not in ("all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch"):
         source = "all"
     include_company_careers = str(data.get("include_company_careers", True)).lower() == "true"
     use_resume_recommendations = str(data.get("use_resume_recommendations", True)).lower() == "true"

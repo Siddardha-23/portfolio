@@ -17,7 +17,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -124,8 +124,12 @@ APIFY_MAX_WORKERS = 12
 MAX_QUERIES_PER_APIFY_SOURCE = 3
 # Max JSearch (RapidAPI) queries per batch — RapidAPI plans meter per call.
 MAX_JSEARCH_QUERIES_PER_BATCH = 4
-# Bump this when the result schema changes so old cached entries are bypassed.
-JOBS_CACHE_VERSION = "v4-truly-free-actors"
+# Reuse identical Apify actor responses across users/filter post-processing.
+# This prevents re-running paid/credit-consuming actors for repeated searches.
+APIFY_ACTOR_CACHE_TTL_SECONDS = 3600
+# Bump this when the result schema/source behavior changes so old cached
+# entries are bypassed.
+JOBS_CACHE_VERSION = "v6-jsearch-linkedin-workday"
 
 # Tokens that should never end up in stored error strings or responses.
 _SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
@@ -165,20 +169,37 @@ def _make_cache_key(params: dict) -> str:
     return hashlib.md5(normalized.encode()).hexdigest()
 
 
+def _make_apify_cache_key(actor_id: str, payload: dict, max_items: int) -> str:
+    """Create a stable cache key for one concrete Apify actor invocation."""
+    normalized = json.dumps(
+        {
+            "_v": JOBS_CACHE_VERSION,
+            "actor_id": actor_id,
+            "payload": payload,
+            "max_items": max_items,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.md5(normalized.encode()).hexdigest()
+
+
 class JobService:
     """Singleton service for job search, matching, analysis, and saved-jobs."""
 
     JSEARCH_BASE = "https://jsearch.p.rapidapi.com"
     APIFY_BASE = "https://api.apify.com/v2/acts"
-    # Defaults are "FREE" on the Apify store — no rental, no pay-per-result.
-    # Only Apify platform compute/proxy counts against the free $5/mo credit.
-    # Override any ID via env: APIFY_LINKEDIN_ACTOR / APIFY_INDEED_ACTOR /
-    # APIFY_GOOGLE_ACTOR / APIFY_COMPANY_ACTOR / APIFY_JOBRIGHT_ACTOR.
+    # Apify actors are optional and must be configured explicitly.
+    # Pricing changes often; use only actor ids you have verified/approved.
+    # Configure via APIFY_LINKEDIN_ACTOR / APIFY_WORKDAY_ACTOR /
+    # APIFY_INDEED_ACTOR / APIFY_GOOGLE_ACTOR / APIFY_COMPANY_ACTOR /
+    # APIFY_JOBRIGHT_ACTOR.
     APIFY_ACTORS = {
-        "linkedin": "worldunboxer/rapid-linkedin-scraper",
-        "indeed": "shahidirfan/indeed-job-scraper",
-        "google": "nuclear_quietude/google-jobs-scraper-api",
-        "company": "piotrv1001/company-career-page-scraper",
+        "linkedin": "curious_coder/linkedin-jobs-scraper",
+        "workday": "fantastic-jobs/workday-jobs-api",
+        "indeed": "",
+        "google": "",
+        "company": "",
         "jobright": "",
     }
     CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
@@ -186,6 +207,7 @@ class JobService:
     def __init__(self):
         self.db = DBConnect().get_db()
         self.jobs_cache = self.db.jobs_cache
+        self.apify_actor_cache = self.db.apify_actor_cache
         self.user_resumes = self.db.user_resumes
         self.saved_jobs = self.db.saved_jobs
         self.job_filter_preferences = self.db.job_filter_preferences
@@ -196,6 +218,12 @@ class JobService:
             self.jobs_cache.create_index("query_hash", unique=True)
             self.jobs_cache.create_index(
                 "cached_at", expireAfterSeconds=self.CACHE_TTL_SECONDS
+            )
+            self.apify_actor_cache.create_index("cache_key", unique=True)
+            self.apify_actor_cache.create_index(
+                "cached_at",
+                expireAfterSeconds=APIFY_ACTOR_CACHE_TTL_SECONDS,
+                name="apify_actor_cache_cached_at_ttl",
             )
             self.saved_jobs.create_index("job_id", unique=True)
             self.job_filter_preferences.create_index("user_email", unique=True)
@@ -307,10 +335,13 @@ class JobService:
             "query": f"{clean_query} in {location}" if location else clean_query,
             "page": "1",
             "num_pages": "1",
+            "country": "us",
+            "language": "en",
             "date_posted": effective_date,
         }
         if remote_only:
             api_params["remote_jobs_only"] = "true"
+            api_params["work_from_home"] = "true"
         if employment_type:
             api_params["employment_types"] = employment_type
 
@@ -410,6 +441,54 @@ class JobService:
         except Exception as e:
             logger.warning(f"Cache write failed: {e}")
 
+    def _read_apify_actor_cache(
+        self,
+        actor_id: str,
+        payload: Dict[str, Any],
+        max_items: int,
+    ) -> Optional[List[Dict[str, Any]]]:
+        cache_key = _make_apify_cache_key(actor_id, payload, max_items)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=APIFY_ACTOR_CACHE_TTL_SECONDS)
+        try:
+            cached = self.apify_actor_cache.find_one(
+                {"cache_key": cache_key, "cached_at": {"$gte": cutoff}},
+                {"_id": 0, "items": 1},
+            )
+            if cached and isinstance(cached.get("items"), list):
+                logger.info(
+                    "Apify actor cache hit for %s (%d items)",
+                    actor_id,
+                    len(cached["items"]),
+                )
+                return cached["items"]
+        except Exception as e:
+            logger.warning("Apify actor cache read failed for %s: %s", actor_id, e)
+        return None
+
+    def _write_apify_actor_cache(
+        self,
+        actor_id: str,
+        payload: Dict[str, Any],
+        max_items: int,
+        items: List[Dict[str, Any]],
+    ) -> None:
+        cache_key = _make_apify_cache_key(actor_id, payload, max_items)
+        try:
+            self.apify_actor_cache.update_one(
+                {"cache_key": cache_key},
+                {
+                    "$set": {
+                        "cache_key": cache_key,
+                        "actor_id": actor_id,
+                        "items": items,
+                        "cached_at": datetime.now(timezone.utc),
+                    }
+                },
+                upsert=True,
+            )
+        except Exception as e:
+            logger.warning("Apify actor cache write failed for %s: %s", actor_id, e)
+
     @staticmethod
     def _get_apify_token() -> str:
         return _get_config_value("APIFY_API_KEY", "") or _get_config_value("APIFY_TOKEN", "")
@@ -422,6 +501,10 @@ class JobService:
         timeout_seconds: int = 120,
         memory_mb: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
+        cached = self._read_apify_actor_cache(actor_id, payload, max_items)
+        if cached is not None:
+            return cached
+
         token = self._get_apify_token()
         actor_path = quote(actor_id.replace("/", "~"), safe="")
         url = f"{self.APIFY_BASE}/{actor_path}/run-sync-get-dataset-items"
@@ -447,7 +530,9 @@ class JobService:
             err = data.get("error", {})
             msg = err.get("message") or err.get("type") or "actor run failed"
             raise RuntimeError(f"Apify actor {actor_id}: {msg}")
-        return data if isinstance(data, list) else []
+        items = data if isinstance(data, list) else []
+        self._write_apify_actor_cache(actor_id, payload, max_items, items)
+        return items
 
     @staticmethod
     def _get_apify_memory_mb() -> int:
@@ -459,12 +544,12 @@ class JobService:
 
     @staticmethod
     def _get_apify_memory_mb_for_source(source: str) -> int:
-        if source == "company":
-            raw = _get_config_value("APIFY_COMPANY_ACTOR_MEMORY_MB", "2048")
+        if source in ("company", "workday"):
+            raw = _get_config_value("APIFY_COMPANY_ACTOR_MEMORY_MB", "1024")
             try:
                 return max(1024, min(int(raw), 8192))
             except (TypeError, ValueError):
-                return 2048
+                return 1024
         return JobService._get_apify_memory_mb()
 
     @staticmethod
@@ -488,34 +573,36 @@ class JobService:
     ) -> Dict[str, Any]:
         """Parallel multi-source job search.
 
-        Runs Apify actors (LinkedIn, Indeed, Google, Jobright, Company careers)
-        and JSearch (RapidAPI) concurrently in one ThreadPoolExecutor, then
-        deduplicates, filters, and re-scores. JSearch is combined — not a
-        fallback — so last-24h results from all providers are merged.
+        Runs JSearch (RapidAPI) and any configured Apify actors concurrently,
+        then deduplicates, filters, and re-scores. Apify actor ids are
+        configured-only so subscription/rental errors from Store defaults do
+        not block normal job results.
 
         If ``partial_cb`` is provided, it is invoked with a snapshot of the
         partial result dict after each source completes, so the caller can
         stream progress to the client.
         """
-        supported = {"all", "linkedin", "indeed", "google", "company", "jobright", "jsearch"}
+        supported = {"all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch"}
         source = source if source in supported else "all"
 
         apify_token = self._get_apify_token()
         jsearch_key = self._get_jsearch_key()
 
-        # Pick which sources to fan out to. An Apify source only joins the
-        # fan-out if its actor ID is configured — otherwise we silently skip
-        # it (e.g. google defaults to empty, so JSearch covers that lane).
+        # Pick which sources to fan out to. JSearch is first so the UI can
+        # render useful results while optional Apify actors are still running.
+        # An Apify source only joins if its actor ID is explicitly configured.
         selected: List[str] = []
         if source == "all":
+            if jsearch_key:
+                selected.append("jsearch")
             if apify_token:
                 for src in ("linkedin", "indeed", "google", "jobright"):
                     if self._actor_id(src):
                         selected.append(src)
+                if include_company_careers and self._actor_id("workday"):
+                    selected.append("workday")
                 if include_company_careers and self._actor_id("company"):
                     selected.append("company")
-            if jsearch_key:
-                selected.append("jsearch")
         elif source == "jsearch":
             if jsearch_key:
                 selected = ["jsearch"]
@@ -523,12 +610,16 @@ class JobService:
             # A specific Apify source was requested.
             if apify_token and self._actor_id(source):
                 selected = [source]
+            elif jsearch_key:
+                # Keep the dashboard useful when a paid/rented Apify actor is
+                # not configured. The source badge will show JSearch.
+                selected = ["jsearch"]
 
         if not selected:
             return {
                 "jobs": [], "total": 0, "page": 1, "total_pages": 1,
                 "queries_executed": len(queries), "cache_hits": 0,
-                "errors": ["No job sources configured"],
+                "errors": ["Set JSEARCH_API_KEY or configure an APIFY_*_ACTOR source"],
                 "sources": {},
             }
 
@@ -723,13 +814,55 @@ class JobService:
         if src == "google":
             # parseforge/google-jobs-scraper is heavy — keep it small.
             return min(total_queries, 2)
-        if src == "company":
+        if src in ("company", "workday"):
             return 1  # company scraper is URL-driven, not query-driven
         return min(total_queries, MAX_QUERIES_PER_APIFY_SOURCE)
 
     def _actor_id(self, source: str) -> str:
         env_key = f"APIFY_{source.upper()}_ACTOR"
-        return _get_config_value(env_key, self.APIFY_ACTORS[source])
+        configured = _get_config_value(env_key, "")
+        return configured or self.APIFY_ACTORS[source]
+
+    @staticmethod
+    def _linkedin_search_url(
+        query: str,
+        location: str,
+        date_posted: str,
+        remote_only: bool,
+        employment_type: str,
+        experience_level: str,
+    ) -> str:
+        clean_query = _simplify_jsearch_query(query)
+        params: Dict[str, str] = {
+            "keywords": clean_query or query,
+            "location": location or "United States",
+        }
+        days = JobService._date_posted_days(date_posted)
+        if days:
+            seconds = days * 24 * 60 * 60
+            params["f_TPR"] = f"r{seconds}"
+        if remote_only:
+            params["f_WT"] = "2"
+        linked_in_types = {
+            "FULLTIME": "F",
+            "PARTTIME": "P",
+            "CONTRACTOR": "C",
+            "INTERN": "I",
+        }
+        if employment_type in linked_in_types:
+            params["f_JT"] = linked_in_types[employment_type]
+        if experience_level in ("entry", "associate"):
+            params["f_E"] = "2"
+        elif experience_level == "internship":
+            params["f_E"] = "1"
+        return "https://www.linkedin.com/jobs/search/?" + urlencode(params)
+
+    @staticmethod
+    def _workday_location(location: str) -> str:
+        normalized = (location or "").strip()
+        if not normalized or normalized.lower() in {"us", "usa", "united states"}:
+            return "United States"
+        return normalized
 
     def _build_apify_input(
         self,
@@ -772,29 +905,44 @@ class JobService:
 
         if source == "linkedin":
             return {
-                # Keyword variants
-                "keyword": query, "keywords": query, "title": query,
-                "query": query, "searchTerms": query, "position": query,
-                # Location
-                "location": location,
-                # Max results variants
-                "maxItems": 50, "maxResults": 50, "rows": 50, "limit": 50,
-                # Date filters
-                "timePosted": time_posted,
-                "datePosted": time_posted,
-                "publishedAt": (
-                    "r86400" if days == 1 else "r604800" if days and days <= 7
-                    else "r2592000" if days else ""
-                ),
-                "fromDays": days_str,
-                # Remote / type
-                "remote": remote_only,
-                "isRemote": remote_only,
-                "workType": "2" if remote_only else "",
-                # Proxy (both names for compat)
-                "proxy": proxy_cfg,
-                "proxyConfiguration": proxy_cfg,
+                "urls": [
+                    self._linkedin_search_url(
+                        query=query,
+                        location=location,
+                        date_posted=date_posted,
+                        remote_only=remote_only,
+                        employment_type=employment_type,
+                        experience_level=experience_level,
+                    )
+                ],
+                "scrapeCompany": False,
+                "count": 50,
+                "splitByLocation": False,
             }
+        if source == "workday":
+            clean_query = _simplify_jsearch_query(query)
+            workday_type = {
+                "FULLTIME": "FULL_TIME",
+                "PARTTIME": "PART_TIME",
+                "INTERN": "INTERN",
+                "CONTRACTOR": "CONTRACTOR",
+            }.get(employment_type, "")
+            payload: Dict[str, Any] = {
+                "limit": 200,
+                "includeAi": True,
+                "includeLinkedIn": False,
+                "titleSearch": [clean_query or query],
+                "locationSearch": [self._workday_location(location)],
+                "descriptionType": "text",
+                "removeAgency": True,
+            }
+            if workday_type:
+                payload["aiEmploymentTypeFilter"] = [workday_type]
+            if remote_only:
+                payload["aiWorkArrangementFilter"] = ["Remote OK", "Remote Solely"]
+            if experience_level in ("entry", "internship", "associate"):
+                payload["aiExperienceLevelFilter"] = ["0-2"]
+            return payload
         if source == "indeed":
             return {
                 "keyword": query, "keywords": query, "query": query,
@@ -850,6 +998,66 @@ class JobService:
             "outputFormat": "jobs",
         }
 
+    @staticmethod
+    def _format_apify_location(raw: Dict[str, Any]) -> str:
+        locations = raw.get("locations_derived")
+        if isinstance(locations, list):
+            formatted: List[str] = []
+            for loc in locations[:3]:
+                if isinstance(loc, dict):
+                    parts = [loc.get("city"), loc.get("admin"), loc.get("country")]
+                    text = ", ".join(str(p) for p in parts if p)
+                else:
+                    text = str(loc or "")
+                if text and text not in formatted:
+                    formatted.append(text)
+            if formatted:
+                return " | ".join(formatted)
+
+        for key in ("locations_alt_raw", "locations_raw", "cities_derived", "regions_derived", "countries_derived"):
+            values = raw.get(key)
+            if isinstance(values, list) and values:
+                formatted = []
+                for value in values[:3]:
+                    if isinstance(value, dict):
+                        text = value.get("address") or value.get("name") or json.dumps(value, sort_keys=True)
+                    else:
+                        text = str(value or "")
+                    if text and text not in formatted:
+                        formatted.append(text)
+                if formatted:
+                    return " | ".join(formatted)
+        return ""
+
+    @staticmethod
+    def _format_apify_salary(raw: Dict[str, Any]) -> str:
+        salary_info = raw.get("salaryInfo")
+        if isinstance(salary_info, list) and salary_info:
+            return " - ".join(str(item) for item in salary_info if item)
+
+        salary_raw = raw.get("salary_raw")
+        if isinstance(salary_raw, dict):
+            text = salary_raw.get("value") or salary_raw.get("text") or salary_raw.get("unitText")
+            if text:
+                return str(text)
+
+        currency = raw.get("ai_salary_currency") or "$"
+        unit = raw.get("ai_salary_unittext") or ""
+        def _money(value: Any) -> Optional[float]:
+            try:
+                return float(str(value).replace(",", ""))
+            except (TypeError, ValueError):
+                return None
+
+        min_salary = _money(raw.get("ai_salary_minvalue"))
+        max_salary = _money(raw.get("ai_salary_maxvalue"))
+        value = _money(raw.get("ai_salary_value"))
+        if min_salary and max_salary:
+            return f"{currency}{min_salary:,.0f} - {currency}{max_salary:,.0f} {unit}".strip()
+        if value:
+            return f"{currency}{value:,.0f} {unit}".strip()
+        return ""
+
     def _normalize_apify_job(self, raw: Dict[str, Any], source: str) -> Dict[str, Any]:
         nested_job = raw.get("job") if isinstance(raw.get("job"), dict) else {}
         nested_company = raw.get("company") if isinstance(raw.get("company"), dict) else {}
@@ -877,10 +1085,14 @@ class JobService:
         )
         description = (
             raw.get("description")
+            or raw.get("description_text")
+            or raw.get("description_html")
             or raw.get("descriptionText")
             or raw.get("jobDescription")
             or nested_job.get("descriptionText")
             or nested_job.get("jobDescription")
+            or raw.get("ai_core_responsibilities")
+            or raw.get("ai_requirements_summary")
             or raw.get("details")
             or ""
         )
@@ -893,6 +1105,7 @@ class JobService:
             or nested_location.get("display")
             or nested_location.get("text")
             or ", ".join([p for p in [nested_location.get("city"), nested_location.get("state"), nested_location.get("country")] if p])
+            or self._format_apify_location(raw)
             or "Not specified"
         )
         salary_obj = nested_job.get("salary") if isinstance(nested_job.get("salary"), dict) else {}
@@ -904,13 +1117,15 @@ class JobService:
             or salary_obj.get("text")
             or salary_insights.get("compensationRange")
             or salary_insights.get("text")
+            or self._format_apify_salary(raw)
             or ""
         )
-        employment_type = raw.get("employmentType") or raw.get("employment_type") or nested_job.get("jobType") or ""
+        employment_type = raw.get("employmentType") or raw.get("employment_type") or raw.get("ai_employment_type") or nested_job.get("jobType") or ""
         if isinstance(employment_type, list):
             employment_type = ", ".join(str(t) for t in employment_type)
         posted = (
             raw.get("postedDate")
+            or raw.get("date_posted")
             or raw.get("datePosted")
             or raw.get("postedAt")
             or raw.get("publishedAt")
@@ -937,15 +1152,24 @@ class JobService:
         )
         logo = (
             raw.get("companyLogo")
+            or raw.get("organization_logo")
             or raw.get("logoUrl")             # bebity
             or raw.get("companyLogoUrl")      # misceres
             or raw.get("logo")
             or nested_branding.get("logoUrl")
             or ""
         )
-        is_remote = bool(raw.get("isRemote") or raw.get("remote") or nested_job.get("isRemote") or "remote" in str(location).lower())
+        is_remote = bool(
+            raw.get("isRemote")
+            or raw.get("remote")
+            or raw.get("remote_derived")
+            or str(raw.get("location_type") or "").upper() == "TELECOMMUTE"
+            or "remote" in str(raw.get("ai_work_arrangement") or "").lower()
+            or nested_job.get("isRemote")
+            or "remote" in str(location).lower()
+        )
         contract = self._is_contract_friendly({"title": title, "description": description, "employment_type": employment_type})
-        h1b = self._check_h1b(str(company), description)
+        h1b = bool(raw.get("ai_visa_sponsorship")) or self._check_h1b(str(company), description)
         job_id = str(raw.get("jobId") or raw.get("job_id") or raw.get("id") or nested_job.get("id") or nested_job.get("jobKey") or "")
         if not job_id:
             job_id = hashlib.md5(f"{source}|{company}|{title}|{apply_link}".encode()).hexdigest()

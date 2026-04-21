@@ -5005,6 +5005,11 @@ type ResumeNavItem = {
   badge?: string;
 };
 
+type ResumeNavSection = {
+  label: string;
+  items: NavTab[];
+};
+
 const NAV_ITEMS: ResumeNavItem[] = [
   {
     key: "tailor",
@@ -5049,6 +5054,13 @@ const NAV_ITEMS: ResumeNavItem[] = [
   },
 ];
 
+const NAV_SECTIONS: ResumeNavSection[] = [
+  { label: "Create", items: ["tailor", "batch"] },
+  { label: "Library", items: ["my-resumes", "tailored", "applications"] },
+  { label: "Career", items: ["interview", "jobs"] },
+  { label: "Account", items: ["profile"] },
+];
+
 function ResumeSectionNav({
   activeNav,
   collapsed = false,
@@ -5060,61 +5072,137 @@ function ResumeSectionNav({
 }) {
   return (
     <nav
-      className={`flex flex-col ${collapsed ? "items-center gap-1.5 px-2" : "gap-1 px-3"}`}
+      className={`flex flex-col ${collapsed ? "items-center px-2" : "px-3"}`}
       aria-label="Resume tailor sections"
     >
-      {NAV_ITEMS.map((item) => {
-        const active = activeNav === item.key;
+      {NAV_SECTIONS.map((section, sectionIndex) => {
+        const sectionItems = section.items
+          .map((key) => NAV_ITEMS.find((item) => item.key === key))
+          .filter((item): item is ResumeNavItem => Boolean(item));
+
         return (
-          <button
-            key={item.key}
-            onClick={() => onSelect(item.key)}
-            aria-current={active ? "page" : undefined}
-            aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
-            title={collapsed ? `${item.label}${item.badge ? ` - ${item.badge}` : ""}` : undefined}
-            className={`group relative flex h-11 w-full items-center rounded-xl text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
-              collapsed ? "justify-center px-0" : "gap-3 px-3"
-            } ${
-              active
-                ? "bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-transparent text-gray-950 dark:text-white ring-1 ring-indigo-500/20"
-                : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 hover:text-gray-950 dark:hover:bg-white/[0.05] dark:hover:text-white"
-            }`}
+          <div
+            key={section.label}
+            className={`w-full ${sectionIndex === 0 ? "" : "mt-4 pt-4 border-t border-gray-200/80 dark:border-white/[0.07]"}`}
           >
-            {active && (
-              <span
-                className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-gradient-to-b from-indigo-400 to-purple-400"
-                aria-hidden="true"
-              />
-            )}
-            <span
-              className={`relative shrink-0 transition-colors ${
-                active
-                  ? "text-indigo-600 dark:text-indigo-300"
-                  : "text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-300"
-              }`}
-            >
-              {item.icon}
-            </span>
             {!collapsed && (
-              <>
-                <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
-                {item.badge && (
-                  <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
-                    {item.badge}
-                  </span>
-                )}
-              </>
+              <p className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
+                {section.label}
+              </p>
             )}
-            {collapsed && item.badge && (
-              <span
-                className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-500/40"
-                aria-hidden="true"
-              />
-            )}
-          </button>
+            <div className={collapsed ? "space-y-1.5" : "space-y-1"}>
+              {sectionItems.map((item) => {
+                const active = activeNav === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    onClick={() => onSelect(item.key)}
+                    aria-current={active ? "page" : undefined}
+                    aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
+                    title={collapsed ? `${item.label}${item.badge ? ` - ${item.badge}` : ""}` : undefined}
+                    className={`group relative flex h-10 w-full items-center rounded-lg text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
+                      collapsed ? "justify-center px-0" : "gap-3 px-2.5"
+                    } ${
+                      active
+                        ? "bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-transparent text-gray-950 shadow-sm ring-1 ring-indigo-500/20 dark:text-white"
+                        : "text-gray-500 dark:text-gray-400 hover:bg-gray-100/80 hover:text-gray-950 dark:hover:bg-white/[0.05] dark:hover:text-white"
+                    }`}
+                  >
+                    {active && (
+                      <span
+                        className="absolute inset-y-2 left-0 w-0.5 rounded-r bg-gradient-to-b from-indigo-400 to-purple-400"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <span
+                      className={`relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors ${
+                        active
+                          ? "bg-white/75 text-indigo-600 shadow-sm dark:bg-white/10 dark:text-indigo-300"
+                          : "text-gray-400 dark:text-gray-500 group-hover:text-indigo-500 dark:group-hover:text-indigo-300"
+                      }`}
+                    >
+                      {item.icon}
+                    </span>
+                    {!collapsed && (
+                      <>
+                        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+                        {item.badge && (
+                          <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                            {item.badge}
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {collapsed && item.badge && (
+                      <span
+                        className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-500/40"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         );
       })}
     </nav>
+  );
+}
+
+function UserInitial({ value, className = "" }: { value?: string | null; className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 text-xs font-bold text-white shadow-sm shadow-indigo-500/25 ${className}`}
+    >
+      {(value || "U").charAt(0).toUpperCase()}
+    </span>
+  );
+}
+
+function SidebarAccount({
+  collapsed,
+  user,
+  onOpenProfile,
+}: {
+  collapsed: boolean;
+  user: { name?: string | null; email?: string | null } | null;
+  onOpenProfile: () => void;
+}) {
+  const displayName = user?.name || user?.email?.split("@")[0] || "Profile";
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        title="Profile"
+        aria-label="Open profile"
+        className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-lg transition-all hover:bg-gray-100 dark:hover:bg-white/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+      >
+        <UserInitial value={displayName} className="h-8 w-8" />
+      </button>
+    );
+  }
+
+  return (
+    <div className="border-t border-gray-200/80 p-3 dark:border-white/[0.07]">
+      <button
+        type="button"
+        onClick={onOpenProfile}
+        className="flex w-full items-center gap-3 rounded-lg border border-gray-200/80 bg-gray-50/80 p-2.5 text-left transition-all hover:border-indigo-500/25 hover:bg-indigo-50/50 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+      >
+        <UserInitial value={displayName} className="h-9 w-9 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-semibold text-gray-950 dark:text-white">
+            {displayName}
+          </span>
+          <span className="block truncate text-xs text-gray-500 dark:text-gray-400">
+            {user?.email || "Profile settings"}
+          </span>
+        </span>
+      </button>
+    </div>
   );
 }
 
@@ -5153,7 +5241,7 @@ export default function ResumeParser() {
       description="Upload your resume, tailor it to any job description, and get ATS compatibility scores powered by AI."
     >
       <div
-        className="min-h-screen bg-white dark:bg-gray-950 antialiased pb-24"
+        className="min-h-screen bg-white dark:bg-gray-950 antialiased pb-24 lg:pb-0"
         style={{
           fontFamily:
             "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
@@ -5162,7 +5250,7 @@ export default function ResumeParser() {
         {/* Top app bar keeps identity and account actions; sections live in the sidebar. */}
         <header className="sticky top-0 z-50 border-b border-gray-200 dark:border-white/10 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
-          <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="w-full px-4 sm:px-6 lg:px-5">
             <div className="h-14 flex items-center gap-3">
               <button
                 type="button"
@@ -5299,26 +5387,35 @@ export default function ResumeParser() {
           )}
         </AnimatePresence>
 
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-start gap-5 py-6">
+        <div className="lg:flex lg:items-start">
+          <div className="flex items-start lg:contents">
             <aside
-              className={`hidden lg:flex sticky top-[72px] h-[calc(100vh-88px)] shrink-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white/90 shadow-xl shadow-black/[0.04] backdrop-blur-xl transition-[width] duration-300 dark:border-white/10 dark:bg-gray-950/80 dark:shadow-black/25 ${
-                sidebarCollapsed ? "w-[76px]" : "w-72"
+              className={`relative hidden lg:flex sticky top-14 h-[calc(100vh-3.5rem)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white/95 backdrop-blur-xl transition-[width] duration-300 dark:border-white/10 dark:bg-gray-950/95 ${
+                sidebarCollapsed ? "w-20" : "w-[18rem]"
               }`}
             >
               <div
-                className={`flex h-14 shrink-0 items-center border-b border-gray-200 dark:border-white/10 ${
-                  sidebarCollapsed ? "justify-center px-2" : "justify-between px-3"
+                className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-indigo-500 via-purple-500 to-transparent opacity-80"
+                aria-hidden="true"
+              />
+              <div
+                className={`flex h-16 shrink-0 items-center border-b border-gray-200 dark:border-white/10 ${
+                  sidebarCollapsed ? "justify-center px-2" : "justify-between gap-3 px-4"
                 }`}
               >
                 {!sidebarCollapsed && (
-                  <div className="min-w-0 px-1">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-gray-400 dark:text-gray-500">
-                      Workspace
-                    </p>
-                    <p className="truncate text-sm font-bold text-gray-950 dark:text-white">
-                      Resume Tools
-                    </p>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg shadow-purple-500/20">
+                      <SparklesIcon className="h-4 w-4 text-white" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-gray-950 dark:text-white">
+                        Resume Tailor
+                      </p>
+                      <p className="truncate text-xs font-medium text-gray-500 dark:text-gray-400">
+                        Workspace
+                      </p>
+                    </div>
                   </div>
                 )}
                 <button
@@ -5343,9 +5440,15 @@ export default function ResumeParser() {
                   onSelect={selectNav}
                 />
               </div>
+              <SidebarAccount
+                collapsed={sidebarCollapsed}
+                user={user}
+                onOpenProfile={() => selectNav("profile")}
+              />
             </aside>
 
-            <main className="min-w-0 flex-1">
+            <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+              <div className="mx-auto max-w-[1500px]">
               <div className={activeNav === "tailor" ? "" : "hidden"}>
                 <TailorTab />
               </div>
@@ -5394,6 +5497,7 @@ export default function ResumeParser() {
                 </Suspense>
               )}
               {activeNav === "profile" && <ProfileTab />}
+              </div>
             </main>
           </div>
         </div>

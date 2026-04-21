@@ -127,9 +127,10 @@ MAX_JSEARCH_QUERIES_PER_BATCH = 4
 # Reuse identical Apify actor responses across users/filter post-processing.
 # This prevents re-running paid/credit-consuming actors for repeated searches.
 APIFY_ACTOR_CACHE_TTL_SECONDS = 3600
+APIFY_ACTOR_CACHE_VERSION = "v6-jsearch-linkedin-workday"
 # Bump this when the result schema/source behavior changes so old cached
 # entries are bypassed.
-JOBS_CACHE_VERSION = "v6-jsearch-linkedin-workday"
+JOBS_CACHE_VERSION = "v7-apify-filter-fallback"
 
 # Tokens that should never end up in stored error strings or responses.
 _SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
@@ -173,7 +174,7 @@ def _make_apify_cache_key(actor_id: str, payload: dict, max_items: int) -> str:
     """Create a stable cache key for one concrete Apify actor invocation."""
     normalized = json.dumps(
         {
-            "_v": JOBS_CACHE_VERSION,
+            "_v": APIFY_ACTOR_CACHE_VERSION,
             "actor_id": actor_id,
             "payload": payload,
             "max_items": max_items,
@@ -624,9 +625,12 @@ class JobService:
             }
 
         all_jobs: List[Dict[str, Any]] = []
+        fallback_jobs: List[Dict[str, Any]] = []
         errors: List[str] = []
         seen_ids: set = set()
+        fallback_seen_ids: set = set()
         source_counts: Dict[str, int] = {}
+        fallback_source_counts: Dict[str, int] = {}
 
         def _collect_apify(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
             actor = self._actor_id(src)
@@ -726,9 +730,23 @@ class JobService:
                 try:
                     jobs_from_future = future.result()
                     kept = 0
+                    fallback_kept = 0
                     for job in jobs_from_future:
                         if not job.get("title") or not job.get("company"):
                             continue
+                        jid = job.get("job_id") or _make_cache_key(job)
+                        if self._job_matches_filters(
+                            job=job,
+                            query_terms=queries,
+                            location=location,
+                            date_posted=date_posted,
+                            h1b_only=h1b_only,
+                            visa_or_contract=False,
+                            experience_level="",
+                        ) and jid not in fallback_seen_ids:
+                            fallback_seen_ids.add(jid)
+                            fallback_jobs.append(job)
+                            fallback_kept += 1
                         if not self._job_matches_filters(
                             job=job,
                             query_terms=queries,
@@ -739,16 +757,16 @@ class JobService:
                             experience_level=experience_level,
                         ):
                             continue
-                        jid = job.get("job_id") or _make_cache_key(job)
                         if jid in seen_ids:
                             continue
                         seen_ids.add(jid)
                         all_jobs.append(job)
                         kept += 1
                     source_counts[src] = source_counts.get(src, 0) + kept
+                    fallback_source_counts[src] = fallback_source_counts.get(src, 0) + fallback_kept
                     logger.info(
-                        "Job source %s returned %d raw, kept %d after filters",
-                        src, len(jobs_from_future), kept,
+                        "Job source %s returned %d raw, kept %d strict / %d closest after filters",
+                        src, len(jobs_from_future), kept, fallback_kept,
                     )
                 except Exception as e:
                     raw_msg = str(e)
@@ -794,6 +812,13 @@ class JobService:
                         )
 
         matched = self.match_jobs(all_jobs, user_email=user_email)
+        if not matched and fallback_jobs and not h1b_only:
+            logger.info(
+                "Strict job filters produced no rows; showing %d closest matches",
+                len(fallback_jobs),
+            )
+            matched = self.match_jobs(fallback_jobs, user_email=user_email)
+            source_counts = fallback_source_counts
         returned_jobs = self._prepare_jobs_for_response(matched)
         return {
             "jobs": returned_jobs,

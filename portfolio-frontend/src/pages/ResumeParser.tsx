@@ -5009,11 +5009,6 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
     icon: <ClipboardIcon className="w-4 h-4" />,
   },
   {
-    key: "jobs",
-    label: "Job Opportunities",
-    icon: <MagnifyingGlassIcon className="w-4 h-4" />,
-  },
-  {
     key: "my-resumes",
     label: "My Resumes",
     icon: <FileIcon className="w-4 h-4" />,
@@ -5032,6 +5027,11 @@ const NAV_ITEMS: { key: NavTab; label: string; icon: React.ReactNode }[] = [
     key: "interview",
     label: "Interview Prep",
     icon: <SparklesIcon className="w-4 h-4" />,
+  },
+  {
+    key: "jobs",
+    label: "Job Opportunities",
+    icon: <MagnifyingGlassIcon className="w-4 h-4" />,
   },
   {
     key: "profile",

@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import {
+  Search, Sparkles, MapPin, CalendarDays, SlidersHorizontal,
+  Briefcase, Filter, RotateCcw, Save, Globe, AlertCircle,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -51,6 +55,7 @@ export function JobSearchPanel({
   quickApply, getJobStatus, batchMeta, hasSearched, filtersLoaded, savingFilters, saveFilters,
 }: JobSearchPanelProps) {
   const [localQuery, setLocalQuery] = useState(filters.query);
+  const [showFilters, setShowFilters] = useState(true);
 
   useEffect(() => {
     setLocalQuery(filters.query);
@@ -94,247 +99,286 @@ export function JobSearchPanel({
     searchJobs(filters, newPage);
   };
 
+  const totalFromSources = batchMeta?.sources
+    ? Object.values(batchMeta.sources).reduce((a, b) => a + b, 0)
+    : 0;
+
   return (
     <div className="space-y-5">
-      {/* Fresh jobs header */}
+      {/* Results header */}
       {hasSearched && !loading && (
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              {filters.date_posted === 'today' ? 'Fresh Job Opportunities' : `Job Opportunities (${filters.date_posted})`}
-            </h2>
-            {jobs.length > 0 && (
-              <Badge variant="outline" className="text-xs bg-white dark:bg-gray-900 border-gray-200 dark:border-white/[0.1]">{jobs.length}</Badge>
-            )}
-            {batchMeta && batchMeta.cache_hits > 0 && (
-              <span
-                className="text-[10px] text-muted-foreground cursor-help"
-                title={`${batchMeta.cache_hits}/${batchMeta.queries_executed} queries served from cache`}
-              >
-                ({batchMeta.cache_hits} cached)
-              </span>
-            )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold leading-tight">
+                {filters.date_posted === 'today' ? 'Fresh — last 24 hours' : `Last ${filters.date_posted === 'all' ? 'any time' : filters.date_posted}`}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {jobs.length > 0 ? `${jobs.length} ranked matches` : 'No matches yet'}
+                {batchMeta && batchMeta.cache_hits > 0 && (
+                  <span className="ml-1 text-primary/70">· {batchMeta.cache_hits} cached</span>
+                )}
+              </p>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={loading}>
-            Refresh
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={loading}
+            className="gap-1.5 border-primary/25 text-primary hover:bg-primary/10 hover:text-primary"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            Refresh all sources
           </Button>
         </div>
       )}
 
-      <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-4 space-y-4 shadow-sm">
-        {/* Company chips */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
-          {COMPANY_CHIPS.map(company => (
-            <Button
-              key={company}
-              variant="outline"
-              size="sm"
-              className="h-7 text-xs whitespace-nowrap flex-shrink-0 rounded-full border-gray-200 bg-gray-50 text-gray-700 hover:bg-white hover:text-gray-900 dark:border-white/[0.08] dark:bg-white/[0.04] dark:text-gray-300 dark:hover:bg-white/[0.08] dark:hover:text-white"
-              onClick={() => handleCompanyChip(company)}
-              disabled={loading}
-            >
-              {company}
-            </Button>
-          ))}
-        </div>
-
-        {/* Search bar */}
-        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
-          <Input
-            placeholder="e.g. software engineer new grad h1b sponsor"
-            value={localQuery}
-            onChange={e => setLocalQuery(e.target.value)}
-            className="flex-1"
-          />
-          <div className="flex gap-2">
-            <Button
-              type="submit"
-              className="bg-gray-900 text-white hover:bg-gray-800 dark:bg-gray-100 dark:text-gray-950 dark:hover:bg-white"
-              disabled={loading || !localQuery.trim() || !filtersLoaded}
-            >
-              {loading ? 'Searching...' : 'Search'}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="border-gray-200 dark:border-white/[0.1]"
-              disabled={loading || savingFilters || !filtersLoaded}
-              onClick={handleSaveFilters}
-            >
-              {savingFilters ? 'Saving...' : 'Save Filters'}
-            </Button>
-          </div>
-        </form>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="space-y-1">
-            <Label className="text-xs">Location</Label>
-            <Input
-              placeholder="e.g. United States"
-              value={filters.location}
-              onChange={e => setFilters({ ...filters, location: e.target.value })}
-              className="w-40 h-9"
-            />
+      {/* Search panel */}
+      <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card/80 p-5 shadow-sm backdrop-blur-sm">
+        <div className="pointer-events-none absolute -top-24 -right-24 h-48 w-48 rounded-full bg-primary/10 blur-3xl" aria-hidden />
+        <div className="relative space-y-4">
+          {/* Company chips */}
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+            {COMPANY_CHIPS.map(company => (
+              <button
+                key={company}
+                type="button"
+                onClick={() => handleCompanyChip(company)}
+                disabled={loading}
+                className="flex h-7 flex-shrink-0 items-center rounded-full border border-border/60 bg-background/80 px-3 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-primary/10 hover:text-primary disabled:opacity-50 whitespace-nowrap"
+              >
+                {company}
+              </button>
+            ))}
           </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Date Posted</Label>
-            <Select
-              value={filters.date_posted}
-              onValueChange={v => setFilters({ ...filters, date_posted: v as JobSearchFilters['date_posted'] })}
-            >
-              <SelectTrigger className="w-32 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All time</SelectItem>
-                <SelectItem value="today">Last 24 hours</SelectItem>
-                <SelectItem value="3days">3 days</SelectItem>
-                <SelectItem value="week">Week</SelectItem>
-                <SelectItem value="month">Month</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Search bar */}
+          <form onSubmit={handleSearch} className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="e.g. software engineer new grad h1b sponsor"
+                value={localQuery}
+                onChange={e => setLocalQuery(e.target.value)}
+                className="h-10 pl-9"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                className="h-10 gap-1.5 bg-primary px-5 text-primary-foreground hover:bg-primary/90"
+                disabled={loading || !localQuery.trim() || !filtersLoaded}
+              >
+                <Search className="h-3.5 w-3.5" />
+                {loading ? 'Searching…' : 'Search'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
+                onClick={() => setShowFilters(!showFilters)}
+                title={showFilters ? 'Hide filters' : 'Show filters'}
+              >
+                <SlidersHorizontal className="h-4 w-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="h-10 gap-1.5"
+                disabled={loading || savingFilters || !filtersLoaded}
+                onClick={handleSaveFilters}
+              >
+                <Save className="h-3.5 w-3.5" />
+                {savingFilters ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </form>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Source</Label>
-            <Select
-              value={filters.source}
-              onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
-            >
-              <SelectTrigger className="w-36 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All sources</SelectItem>
-                <SelectItem value="linkedin">LinkedIn</SelectItem>
-                <SelectItem value="indeed">Indeed</SelectItem>
-                <SelectItem value="google">Google Jobs</SelectItem>
-                <SelectItem value="jobright">Jobright</SelectItem>
-                <SelectItem value="jsearch">JSearch (RapidAPI)</SelectItem>
-                <SelectItem value="company">Company sites</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Filters */}
+          {showFilters && (
+            <div className="grid gap-3 border-t border-border/60 pt-4 md:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <MapPin className="h-3 w-3" /> Location
+                </Label>
+                <Input
+                  placeholder="United States"
+                  value={filters.location}
+                  onChange={e => setFilters({ ...filters, location: e.target.value })}
+                  className="h-9"
+                />
+              </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Experience</Label>
-            <Select
-              value={filters.experience_level || 'any'}
-              onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
-            >
-              <SelectTrigger className="w-36 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">Any</SelectItem>
-                <SelectItem value="entry">New grad / entry</SelectItem>
-                <SelectItem value="internship">Internship</SelectItem>
-                <SelectItem value="associate">Associate</SelectItem>
-                <SelectItem value="mid">Mid-level</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <CalendarDays className="h-3 w-3" /> Date Posted
+                </Label>
+                <Select
+                  value={filters.date_posted}
+                  onValueChange={v => setFilters({ ...filters, date_posted: v as JobSearchFilters['date_posted'] })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="today">Last 24 hours</SelectItem>
+                    <SelectItem value="3days">3 days</SelectItem>
+                    <SelectItem value="week">Week</SelectItem>
+                    <SelectItem value="month">Month</SelectItem>
+                    <SelectItem value="all">All time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="space-y-1">
-            <Label className="text-xs">Type</Label>
-            <Select
-              value={filters.employment_type || 'any'}
-              onValueChange={v => setFilters({ ...filters, employment_type: v === 'any' ? '' : v as JobSearchFilters['employment_type'] })}
-            >
-              <SelectTrigger className="w-32 h-9">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">Any</SelectItem>
-                <SelectItem value="FULLTIME">Full-time</SelectItem>
-                <SelectItem value="PARTTIME">Part-time</SelectItem>
-                <SelectItem value="INTERN">Intern</SelectItem>
-                <SelectItem value="CONTRACTOR">Contract</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Globe className="h-3 w-3" /> Source
+                </Label>
+                <Select
+                  value={filters.source}
+                  onValueChange={v => setFilters({ ...filters, source: v as JobSearchFilters['source'] })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All sources</SelectItem>
+                    <SelectItem value="linkedin">LinkedIn</SelectItem>
+                    <SelectItem value="indeed">Indeed</SelectItem>
+                    <SelectItem value="google">Google Jobs</SelectItem>
+                    <SelectItem value="jsearch">JSearch (RapidAPI)</SelectItem>
+                    <SelectItem value="company">Company sites</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="flex items-center gap-2 pb-0.5">
-            <Switch
-              checked={filters.remote_only}
-              onCheckedChange={v => setFilters({ ...filters, remote_only: v })}
-              id="remote"
-            />
-            <Label htmlFor="remote" className="text-xs">Remote</Label>
-          </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Briefcase className="h-3 w-3" /> Experience
+                </Label>
+                <Select
+                  value={filters.experience_level || 'any'}
+                  onValueChange={v => setFilters({ ...filters, experience_level: v === 'any' ? '' : v as JobSearchFilters['experience_level'] })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any</SelectItem>
+                    <SelectItem value="entry">New grad / entry</SelectItem>
+                    <SelectItem value="internship">Internship</SelectItem>
+                    <SelectItem value="associate">Associate</SelectItem>
+                    <SelectItem value="mid">Mid-level</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="flex items-center gap-2 pb-0.5">
-            <Switch
-              checked={filters.h1b_only}
-              onCheckedChange={v => setFilters({ ...filters, h1b_only: v })}
-              id="h1b"
-            />
-            <Label htmlFor="h1b" className="text-xs">H1B Sponsors</Label>
-          </div>
+              <div className="space-y-1.5">
+                <Label className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  <Filter className="h-3 w-3" /> Type
+                </Label>
+                <Select
+                  value={filters.employment_type || 'any'}
+                  onValueChange={v => setFilters({ ...filters, employment_type: v === 'any' ? '' : v as JobSearchFilters['employment_type'] })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any</SelectItem>
+                    <SelectItem value="FULLTIME">Full-time</SelectItem>
+                    <SelectItem value="PARTTIME">Part-time</SelectItem>
+                    <SelectItem value="INTERN">Intern</SelectItem>
+                    <SelectItem value="CONTRACTOR">Contract</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-          <div className="flex items-center gap-2 pb-0.5">
-            <Switch
-              checked={filters.visa_or_contract}
-              onCheckedChange={v => setFilters({ ...filters, visa_or_contract: v })}
-              id="visa-contract"
-            />
-            <Label htmlFor="visa-contract" className="text-xs">H1B or Contract</Label>
-          </div>
-
-          <div className="flex items-center gap-2 pb-0.5">
-            <Switch
-              checked={filters.use_resume_recommendations}
-              onCheckedChange={v => setFilters({ ...filters, use_resume_recommendations: v })}
-              id="resume-match"
-            />
-            <Label htmlFor="resume-match" className="text-xs">Resume Match</Label>
-          </div>
-
-          <div className="flex items-center gap-2 pb-0.5">
-            <Switch
-              checked={filters.include_company_careers}
-              onCheckedChange={v => setFilters({ ...filters, include_company_careers: v })}
-              id="company-sites"
-            />
-            <Label htmlFor="company-sites" className="text-xs">Company Sites</Label>
-          </div>
+              <div className="lg:col-span-3 flex flex-wrap items-center gap-x-5 gap-y-2 pt-2">
+                <ToggleRow
+                  id="remote"
+                  label="Remote only"
+                  checked={filters.remote_only}
+                  onChange={v => setFilters({ ...filters, remote_only: v })}
+                />
+                <ToggleRow
+                  id="h1b"
+                  label="H1B sponsors"
+                  checked={filters.h1b_only}
+                  onChange={v => setFilters({ ...filters, h1b_only: v })}
+                />
+                <ToggleRow
+                  id="visa-contract"
+                  label="H1B or contract"
+                  checked={filters.visa_or_contract}
+                  onChange={v => setFilters({ ...filters, visa_or_contract: v })}
+                />
+                <ToggleRow
+                  id="resume-match"
+                  label="Resume match"
+                  checked={filters.use_resume_recommendations}
+                  onChange={v => setFilters({ ...filters, use_resume_recommendations: v })}
+                />
+                <ToggleRow
+                  id="company-sites"
+                  label="Company sites"
+                  checked={filters.include_company_careers}
+                  onChange={v => setFilters({ ...filters, include_company_careers: v })}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Per-source counts */}
+      {/* Per-source breakdown */}
       {batchMeta && batchMeta.sources && Object.keys(batchMeta.sources).length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Sources</span>
           {Object.entries(batchMeta.sources)
             .sort((a, b) => b[1] - a[1])
             .map(([src, count]) => (
               <Badge
                 key={src}
                 variant="outline"
-                className="text-[10px] font-normal bg-gray-50 dark:bg-white/[0.04] border-gray-200 dark:border-white/[0.08]"
+                className={`gap-1 text-[10px] font-normal ${count > 0 ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border text-muted-foreground'}`}
               >
-                {SOURCE_LABELS[src] || src} · {count}
+                <span className="font-medium">{SOURCE_LABELS[src] || src}</span>
+                <span className="opacity-70">·</span>
+                <span>{count}</span>
               </Badge>
             ))}
+          {totalFromSources > jobs.length && (
+            <span className="text-[10px] text-muted-foreground">
+              ({totalFromSources - jobs.length} duplicates merged)
+            </span>
+          )}
         </div>
       )}
 
       {/* Batch errors warning */}
       {batchMeta && batchMeta.errors.length > 0 && (
-        <p className="text-xs text-amber-700 dark:text-amber-300" title={batchMeta.errors.join('\n')}>
-          Some sources had issues: {batchMeta.errors.length} failed
-        </p>
+        <div
+          className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-200"
+          title={batchMeta.errors.join('\n')}
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium">{batchMeta.errors.length} source{batchMeta.errors.length === 1 ? '' : 's'} had issues</p>
+            <p className="text-[11px] opacity-80">Results from other sources are still shown. Hover to see details.</p>
+          </div>
+        </div>
       )}
 
       {/* Error */}
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
 
       {/* Loading skeletons */}
       {loading && (
         <div className="grid gap-4 md:grid-cols-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 rounded-lg" />
+            <Skeleton key={i} className="h-56 rounded-2xl" />
           ))}
         </div>
       )}
@@ -342,7 +386,6 @@ export function JobSearchPanel({
       {/* Results */}
       {!loading && jobs.length > 0 && (
         <>
-          <p className="text-sm text-muted-foreground">{jobs.length} results</p>
           <div className="grid gap-4 md:grid-cols-2">
             {jobs.map(job => (
               <JobCard
@@ -357,9 +400,8 @@ export function JobSearchPanel({
             ))}
           </div>
 
-          {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex justify-center gap-2 pt-4">
+            <div className="flex justify-center gap-2 pt-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -368,7 +410,7 @@ export function JobSearchPanel({
               >
                 Previous
               </Button>
-              <span className="flex items-center text-sm text-muted-foreground px-2">
+              <span className="flex items-center px-3 text-sm text-muted-foreground">
                 Page {page} of {totalPages}
               </span>
               <Button
@@ -386,34 +428,48 @@ export function JobSearchPanel({
 
       {/* Empty state */}
       {!loading && jobs.length === 0 && hasSearched && (
-        <div className="text-center py-12 space-y-3">
-          <p className="text-muted-foreground">
+        <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-14 text-center space-y-3">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Search className="h-5 w-5" />
+          </div>
+          <p className="text-sm text-muted-foreground">
             {batchMeta && batchMeta.errors.length > 0
-              ? "No displayable jobs after the selected filters. Some sources also returned errors."
+              ? 'No listings made it past your filters. Some sources also errored.'
               : filters.date_posted === 'today'
-              ? "No jobs found in the last 24 hours. Try expanding the date range."
-              : "No jobs found. Try adjusting your search."}
+              ? 'Nothing posted in the last 24 hours for this query.'
+              : 'No jobs match this query. Try loosening the filters.'}
           </p>
           {filters.date_posted === 'today' && (
             <div className="flex justify-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => handleTryExpanded('3days')}>
-                Try 3 days
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => handleTryExpanded('week')}>
-                Try Week
-              </Button>
+              <Button variant="outline" size="sm" onClick={() => handleTryExpanded('3days')}>Try 3 days</Button>
+              <Button variant="outline" size="sm" onClick={() => handleTryExpanded('week')}>Try week</Button>
             </div>
           )}
         </div>
       )}
 
       {!loading && jobs.length === 0 && !hasSearched && (
-        <div className="rounded-xl border border-dashed border-gray-300 dark:border-white/[0.12] bg-gray-50/80 dark:bg-gray-900/30 text-center py-12 px-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            No search has been run yet.
+        <div className="rounded-2xl border border-dashed border-border/60 bg-muted/20 py-14 text-center space-y-2">
+          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <p className="text-sm font-medium">Ready when you are</p>
+          <p className="text-xs text-muted-foreground">
+            Run a search or click <span className="text-primary">Refresh all sources</span> after searching once to pull fresh listings.
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+function ToggleRow({
+  id, label, checked, onChange,
+}: { id: string; label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Label htmlFor={id} className="cursor-pointer text-xs text-foreground/80">{label}</Label>
     </div>
   );
 }

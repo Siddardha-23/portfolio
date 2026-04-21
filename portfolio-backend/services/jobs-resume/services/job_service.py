@@ -127,6 +127,37 @@ MAX_JSEARCH_QUERIES_PER_BATCH = 4
 # Bump this when the result schema changes so old cached entries are bypassed.
 JOBS_CACHE_VERSION = "v2-parallel-sources"
 
+# Tokens that should never end up in stored error strings or responses.
+_SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
+_SECRET_PATTERN = re.compile(
+    r"(" + "|".join(_SECRET_QUERY_PARAMS) + r")=([^&\s]+)",
+    re.IGNORECASE,
+)
+
+
+def _redact_secrets(text: str) -> str:
+    """Strip token=… / api_key=… values from any string before logging/storing."""
+    if not text:
+        return text
+    return _SECRET_PATTERN.sub(r"\1=***", str(text))
+
+
+# Tokens commonly paired with resume-search queries that aren't useful as
+# free-text keywords for JSearch / Google Jobs (they hurt relevance there).
+_JSEARCH_STOPWORDS = {
+    "h1b", "h-1b", "sponsor", "sponsorship", "visa",
+    "new", "grad", "graduate", "entry", "level",
+    "contract", "c2c", "corp-to-corp", "w2",
+}
+
+
+def _simplify_jsearch_query(query: str) -> str:
+    """Drop filter-style tokens that confuse JSearch's keyword scoring."""
+    parts = [p for p in re.split(r"\s+", query.lower()) if p]
+    kept = [p for p in parts if p not in _JSEARCH_STOPWORDS]
+    simplified = " ".join(kept).strip()
+    return simplified or query.strip()
+
 
 def _make_cache_key(params: dict) -> str:
     """Create a deterministic MD5 hash from query parameters."""
@@ -246,35 +277,52 @@ class JobService:
     ) -> List[Dict[str, Any]]:
         """Run one JSearch query and return normalized jobs (no scoring/caching).
 
-        Used by the combined multi-source executor so JSearch results flow
-        into the same dedup/match pipeline as Apify results.
+        JSearch's relevance drops sharply on filter-style tokens (e.g. "h1b
+        sponsor", "new grad"). We strip those before the request and apply
+        the intent as post-filters in the main pipeline. We also widen
+        date_posted from "today" → "3days" because JSearch's daily index
+        lags ~1 day for many sources.
         """
         api_key = self._get_jsearch_key()
         if not api_key:
+            logger.info("JSearch skipped: JSEARCH_API_KEY not configured")
             return []
+
+        clean_query = _simplify_jsearch_query(query)
+        effective_date = {
+            "today": "3days",
+        }.get(date_posted, date_posted if date_posted in ("3days", "week", "month", "all") else "week")
+
         headers = {
             "X-RapidAPI-Key": api_key,
             "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
         }
         api_params = {
-            "query": f"{query} in {location}" if location else query,
+            "query": f"{clean_query} in {location}" if location else clean_query,
             "page": "1",
             "num_pages": "1",
-            "date_posted": date_posted if date_posted in ("today", "3days", "week", "month", "all") else "today",
+            "date_posted": effective_date,
         }
         if remote_only:
             api_params["remote_jobs_only"] = "true"
         if employment_type:
             api_params["employment_types"] = employment_type
+
         resp = requests.get(
             f"{self.JSEARCH_BASE}/search",
             headers=headers,
             params=api_params,
-            timeout=15,
+            timeout=20,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            raise RuntimeError(f"JSearch returned {resp.status_code} {resp.reason}")
         data = resp.json()
-        return [self._normalize_job(j) for j in data.get("data", [])]
+        items = data.get("data") or []
+        logger.info(
+            "JSearch query=%r date=%s returned %d items",
+            clean_query, effective_date, len(items),
+        )
+        return [self._normalize_job(j) for j in items]
 
     # ------------------------------------------------------------------
     # Batch Search (multiple queries in parallel)
@@ -379,9 +427,18 @@ class JobService:
             "maxItems": str(max_items),
             "memory": str(memory_mb),
         }
-        resp = requests.post(url, params=params, json=payload, timeout=timeout_seconds + 20)
-        resp.raise_for_status()
+        resp = requests.post(url, params=params, json=payload, timeout=timeout_seconds + 30)
+        if not resp.ok:
+            # Build an error that doesn't echo the token in the URL.
+            raise RuntimeError(
+                f"Apify actor {actor_id} returned {resp.status_code} {resp.reason}"
+            )
         data = resp.json()
+        if isinstance(data, dict) and data.get("error"):
+            # Apify returns {"error": {...}} on timeouts/abort inside run-sync.
+            err = data.get("error", {})
+            msg = err.get("message") or err.get("type") or "actor run failed"
+            raise RuntimeError(f"Apify actor {actor_id}: {msg}")
         return data if isinstance(data, list) else []
 
     @staticmethod
@@ -484,7 +541,7 @@ class JobService:
                     actor,
                     payload,
                     max_items=35 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
-                    timeout_seconds=90 if src != "company" else 60,
+                    timeout_seconds=150 if src != "company" else 90,
                     memory_mb=self._get_apify_memory_mb_for_source(src),
                 )
             except Exception:
@@ -586,8 +643,22 @@ class JobService:
                         src, len(jobs_from_future), kept,
                     )
                 except Exception as e:
-                    logger.warning(f"Job source {src} failed: {e}")
-                    errors.append(f"{src}: {e}")
+                    raw_msg = str(e)
+                    redacted = _redact_secrets(raw_msg)
+                    # Classify into a short, user-friendly reason.
+                    lower = raw_msg.lower()
+                    if "timed out" in lower or "timeout" in lower:
+                        reason = "timed out"
+                    elif "403" in lower or "forbidden" in lower:
+                        reason = "access denied (actor may require rental)"
+                    elif "401" in lower or "unauthorized" in lower:
+                        reason = "invalid credentials"
+                    elif "429" in lower:
+                        reason = "rate limited"
+                    else:
+                        reason = redacted
+                    logger.warning("Job source %s failed: %s", src, redacted)
+                    errors.append(f"{src}: {reason}")
 
         matched = self.match_jobs(all_jobs, user_email=user_email)
         returned_jobs = self._prepare_jobs_for_response(matched)

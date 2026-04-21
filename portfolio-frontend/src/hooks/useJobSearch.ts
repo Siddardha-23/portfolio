@@ -89,7 +89,7 @@ export function useJobSearch() {
 
     setJobs(results);
     setPage(resp.data?.page || 1);
-    setTotalPages(resp.data?.total || 1);
+    setTotalPages(Math.max(1, resp.data?.total_pages || 1));
     setBatchMeta(resp.data?.errors?.length ? {
       queries_executed: 1,
       cache_hits: 0,

@@ -361,7 +361,9 @@ export function JobSearchPanel({
       {!loading && jobs.length === 0 && hasSearched && (
         <div className="text-center py-12 space-y-3">
           <p className="text-muted-foreground">
-            {filters.date_posted === 'today'
+            {batchMeta && batchMeta.errors.length > 0
+              ? "No displayable jobs after the selected filters. Some sources also returned errors."
+              : filters.date_posted === 'today'
               ? "No jobs found in the last 24 hours. Try expanding the date range."
               : "No jobs found. Try adjusting your search."}
           </p>

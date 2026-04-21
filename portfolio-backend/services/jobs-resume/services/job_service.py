@@ -311,7 +311,8 @@ class JobService:
 
         result = {
             "jobs": self._prepare_jobs_for_response(matched),
-            "total": data.get("parameters", {}).get("num_pages", 1),
+            "total": len(matched),
+            "total_pages": data.get("parameters", {}).get("num_pages", 1),
             "page": page,
         }
 
@@ -893,7 +894,8 @@ class JobService:
         jobs = prepared.get("jobs")
         if isinstance(jobs, list):
             prepared["jobs"] = self._prepare_jobs_for_response(jobs)
-            prepared["total"] = prepared.get("total", len(jobs))
+            prepared["total"] = len(prepared["jobs"])
+            prepared["total_pages"] = prepared.get("total_pages", 1)
         return prepared
 
     def _job_matches_filters(

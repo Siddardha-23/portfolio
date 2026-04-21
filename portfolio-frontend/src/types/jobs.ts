@@ -67,6 +67,7 @@ export interface SavedJobFilters {
 export interface JobSearchResponse {
   jobs: Job[];
   total: number;
+  total_pages?: number;
   page: number;
   errors?: string[];
   fallback_source?: string;

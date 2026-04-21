@@ -528,6 +528,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 "source": payload.get("source", "all"),
                 "include_company_careers": bool(payload.get("include_company_careers", True)),
                 "use_resume_recommendations": bool(payload.get("use_resume_recommendations", True)),
+                "force_refresh": bool(payload.get("force_refresh", False)),
                 "user_email": payload.get("user_email", ""),
             }
 

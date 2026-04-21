@@ -544,6 +544,7 @@ class ApiService {
       source?: string;
       include_company_careers?: boolean;
       use_resume_recommendations?: boolean;
+      force_refresh?: boolean;
     },
     onPartial?: (partial: import("../types/jobs").JobSearchResponse) => void,
   ) {
@@ -560,6 +561,7 @@ class ApiService {
     if (params.source) searchParams.set("source", params.source);
     searchParams.set("include_company_careers", params.include_company_careers ? "true" : "false");
     searchParams.set("use_resume_recommendations", params.use_resume_recommendations ? "true" : "false");
+    if (params.force_refresh) searchParams.set("force_refresh", "true");
     const submitResp = await this.request<
       | { job_id: string }
       | import("../types/jobs").JobSearchResponse

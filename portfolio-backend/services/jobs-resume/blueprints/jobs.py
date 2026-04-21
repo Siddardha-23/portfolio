@@ -103,6 +103,7 @@ def search():
         source = "all"
     include_company_careers = request.args.get("include_company_careers", "true").lower() == "true"
     use_resume_recommendations = request.args.get("use_resume_recommendations", "true").lower() == "true"
+    force_refresh = request.args.get("force_refresh", "false").lower() == "true"
 
     try:
         from services.resume_service import get_resume_service, ResumeService
@@ -122,6 +123,7 @@ def search():
             "source": source,
             "include_company_careers": include_company_careers,
             "use_resume_recommendations": use_resume_recommendations,
+            "force_refresh": force_refresh,
             "user_email": user_email,
         }
         job_id = svc.create_job("job_search", payload, user_email=user_email)
@@ -180,6 +182,7 @@ def batch_search():
         source = "all"
     include_company_careers = str(data.get("include_company_careers", True)).lower() == "true"
     use_resume_recommendations = str(data.get("use_resume_recommendations", True)).lower() == "true"
+    force_refresh = str(data.get("force_refresh", False)).lower() == "true"
 
     try:
         from services.resume_service import get_resume_service, ResumeService
@@ -198,6 +201,7 @@ def batch_search():
             "source": source,
             "include_company_careers": include_company_careers,
             "use_resume_recommendations": use_resume_recommendations,
+            "force_refresh": force_refresh,
             "user_email": user_email,
         }
         job_id = svc.create_job("job_search", payload, user_email=user_email)

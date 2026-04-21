@@ -130,7 +130,7 @@ APIFY_ACTOR_CACHE_TTL_SECONDS = 3600
 APIFY_ACTOR_CACHE_VERSION = "v6-jsearch-linkedin-workday"
 # Bump this when the result schema/source behavior changes so old cached
 # entries are bypassed.
-JOBS_CACHE_VERSION = "v7-apify-filter-fallback"
+JOBS_CACHE_VERSION = "v8-live-refresh"
 
 # Tokens that should never end up in stored error strings or responses.
 _SECRET_QUERY_PARAMS = ("token", "apify_token", "api_key", "X-RapidAPI-Key")
@@ -249,6 +249,7 @@ class JobService:
         source: str = "all",
         include_company_careers: bool = True,
         use_resume_recommendations: bool = True,
+        force_refresh: bool = False,
         user_email: str = "",
         partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
@@ -270,11 +271,15 @@ class JobService:
         }
         cache_key = _make_cache_key(params)
 
-        # Check cache
-        cached = self.jobs_cache.find_one({"query_hash": cache_key})
-        if cached:
-            cached.pop("_id", None)
-            return self._prepare_result_for_response(cached["result"])
+        # Check cache unless the user explicitly requests a live refresh.
+        if not force_refresh:
+            cached = self.jobs_cache.find_one({"query_hash": cache_key})
+            if cached:
+                cached.pop("_id", None)
+                result = dict(cached["result"])
+                result["cache_hits"] = max(1, result.get("cache_hits", 0) or 0)
+                result["cache_bypassed"] = False
+                return self._prepare_result_for_response(result)
 
         if not self._get_apify_token() and not self._get_jsearch_key():
             raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
@@ -291,10 +296,12 @@ class JobService:
             source=source,
             include_company_careers=include_company_careers,
             user_email=user_email if use_resume_recommendations else "",
+            force_refresh=force_refresh,
             partial_cb=partial_cb,
         )
         result["page"] = page
         result.setdefault("total_pages", 1)
+        result["cache_bypassed"] = bool(force_refresh)
         self._write_cache(cache_key, result)
         return result
 
@@ -379,6 +386,7 @@ class JobService:
         source: str = "all",
         include_company_careers: bool = True,
         use_resume_recommendations: bool = True,
+        force_refresh: bool = False,
         user_email: str = "",
         partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
@@ -397,12 +405,14 @@ class JobService:
             "user_email": user_email if use_resume_recommendations else "",
         }
         cache_key = _make_cache_key(params)
-        cached = self.jobs_cache.find_one({"query_hash": cache_key})
-        if cached:
-            cached.pop("_id", None)
-            result = cached["result"]
-            result["cache_hits"] = result.get("queries_executed", len(queries))
-            return self._prepare_result_for_response(result)
+        if not force_refresh:
+            cached = self.jobs_cache.find_one({"query_hash": cache_key})
+            if cached:
+                cached.pop("_id", None)
+                result = dict(cached["result"])
+                result["cache_hits"] = result.get("queries_executed", len(queries))
+                result["cache_bypassed"] = False
+                return self._prepare_result_for_response(result)
 
         if not self._get_apify_token() and not self._get_jsearch_key():
             raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
@@ -419,10 +429,12 @@ class JobService:
             source=source,
             include_company_careers=include_company_careers,
             user_email=user_email if use_resume_recommendations else "",
+            force_refresh=force_refresh,
             partial_cb=partial_cb,
         )
         result["queries_executed"] = min(len(queries), 6)
         result["cache_hits"] = 0
+        result["cache_bypassed"] = bool(force_refresh)
         self._write_cache(cache_key, result)
         return result
 
@@ -501,10 +513,12 @@ class JobService:
         max_items: int = 50,
         timeout_seconds: int = 120,
         memory_mb: Optional[int] = None,
+        bypass_cache: bool = False,
     ) -> List[Dict[str, Any]]:
-        cached = self._read_apify_actor_cache(actor_id, payload, max_items)
-        if cached is not None:
-            return cached
+        if not bypass_cache:
+            cached = self._read_apify_actor_cache(actor_id, payload, max_items)
+            if cached is not None:
+                return cached
 
         token = self._get_apify_token()
         actor_path = quote(actor_id.replace("/", "~"), safe="")
@@ -570,6 +584,7 @@ class JobService:
         source: str,
         include_company_careers: bool,
         user_email: str,
+        force_refresh: bool = False,
         partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Parallel multi-source job search.
@@ -653,6 +668,7 @@ class JobService:
                     max_items=35 if src != "company" else max(10, len(company_urls or []) * COMPANY_CAREER_MAX_JOBS_PER_COMPANY),
                     timeout_seconds=180 if src != "company" else 120,
                     memory_mb=self._get_apify_memory_mb_for_source(src),
+                    bypass_cache=force_refresh,
                 )
             except Exception:
                 if src != "company" or not company_urls or len(company_urls) == 1:
@@ -677,6 +693,7 @@ class JobService:
                                 max_items=COMPANY_CAREER_MAX_JOBS_PER_COMPANY,
                                 timeout_seconds=60,
                                 memory_mb=self._get_apify_memory_mb_for_source(src),
+                                bypass_cache=force_refresh,
                             )
                         )
                     except Exception as e:
@@ -800,6 +817,7 @@ class JobService:
                             "total_pages": 1,
                             "queries_executed": len(queries),
                             "cache_hits": 0,
+                            "cache_bypassed": bool(force_refresh),
                             "errors": list(errors),
                             "sources": dict(source_counts),
                             "pending": sorted(pending_sources),

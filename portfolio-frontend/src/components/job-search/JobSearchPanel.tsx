@@ -13,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { JobCard } from './JobCard';
 import { COMPANY_CHIPS } from '@/hooks/useJobSearch';
-import type { Job, SavedJob, JobSearchFilters } from '@/types/jobs';
+import type { Job, SavedJob, JobSearchFilters, JobSearchOptions } from '@/types/jobs';
 import type { BatchMeta } from '@/hooks/useJobSearch';
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -39,8 +39,8 @@ interface JobSearchPanelProps {
   setPage: (p: number) => void;
   loading: boolean;
   error: string | null;
-  searchJobs: (filters?: JobSearchFilters, page?: number) => Promise<void>;
-  batchSearch: (queries?: string[], overrides?: Partial<JobSearchFilters>) => Promise<void>;
+  searchJobs: (filters?: JobSearchFilters, page?: number, options?: JobSearchOptions) => Promise<void>;
+  batchSearch: (queries?: string[], overrides?: Partial<JobSearchFilters>, options?: JobSearchOptions) => Promise<void>;
   saveJob: (job: Job) => Promise<any>;
   unsaveJob: (jobId: string) => Promise<any>;
   isJobSaved: (jobId: string) => boolean;
@@ -79,7 +79,9 @@ export function JobSearchPanel({
   };
 
   const handleRefresh = () => {
-    batchSearch();
+    const newFilters = { ...filters, query: localQuery };
+    setFilters(newFilters);
+    searchJobs(newFilters, 1, { forceRefresh: true });
   };
 
   const handleSaveFilters = async () => {
@@ -123,7 +125,10 @@ export function JobSearchPanel({
               <p className="text-xs text-muted-foreground">
                 {jobs.length > 0 ? `${jobs.length} ranked matches` : 'No matches yet'}
                 {batchMeta && batchMeta.cache_hits > 0 && (
-                  <span className="ml-1 text-purple-500/80 dark:text-purple-400/80">· {batchMeta.cache_hits} cached</span>
+                  <span className="ml-1 text-purple-500/80 dark:text-purple-400/80">· cached</span>
+                )}
+                {batchMeta?.cache_bypassed && (
+                  <span className="ml-1 text-emerald-600 dark:text-emerald-400">· live refresh</span>
                 )}
               </p>
             </div>
@@ -134,9 +139,10 @@ export function JobSearchPanel({
             onClick={handleRefresh}
             disabled={loading}
             className="gap-1.5 border-purple-500/30 text-purple-600 hover:bg-purple-500/10 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
+            title="Skip cached job results and rerun live sources including Apify actors"
           >
             <RotateCcw className="h-3.5 w-3.5" />
-            Refresh all sources
+            Live refresh
           </Button>
         </div>
       )}
@@ -473,7 +479,7 @@ export function JobSearchPanel({
           </div>
           <p className="text-sm font-medium">Ready when you are</p>
           <p className="text-xs text-muted-foreground">
-            Run a search or click <span className="text-purple-600 dark:text-purple-300 font-medium">Refresh all sources</span> after searching once to pull fresh listings.
+            Run a search, then use <span className="text-purple-600 dark:text-purple-300 font-medium">Live refresh</span> when you need to rerun Apify instead of using cache.
           </p>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import { apiService } from '@/lib/api';
-import type { Job, SavedJob, JobSearchFilters, BatchSearchResponse } from '@/types/jobs';
+import type { Job, SavedJob, JobSearchFilters, JobSearchOptions, BatchSearchResponse } from '@/types/jobs';
 
 const DEFAULT_QUERIES = [
   'software engineer new grad entry level h1b sponsor',
@@ -38,6 +38,7 @@ export interface BatchMeta {
   sources?: Record<string, number>;
   pending?: string[];
   streaming?: boolean;
+  cache_bypassed?: boolean;
 }
 
 export function useJobSearch() {
@@ -54,7 +55,11 @@ export function useJobSearch() {
   const [savingFilters, setSavingFilters] = useState(false);
 
   // --- Single-query search (manual) ---
-  const searchJobs = useCallback(async (searchFilters?: JobSearchFilters, searchPage?: number) => {
+  const searchJobs = useCallback(async (
+    searchFilters?: JobSearchFilters,
+    searchPage?: number,
+    options?: JobSearchOptions,
+  ) => {
     const f = searchFilters || filters;
     if (!f.query.trim()) return;
 
@@ -78,6 +83,7 @@ export function useJobSearch() {
         source: f.source,
         include_company_careers: f.include_company_careers,
         use_resume_recommendations: f.use_resume_recommendations,
+        force_refresh: options?.forceRefresh,
       },
       (partial) => {
         let streamed = partial.jobs || [];
@@ -86,11 +92,12 @@ export function useJobSearch() {
         setLoading(false);
         setBatchMeta({
           queries_executed: 1,
-          cache_hits: 0,
+          cache_hits: partial.cache_hits ?? 0,
           errors: partial.errors || [],
           sources: partial.sources,
           pending: (partial as any).pending,
           streaming: true,
+          cache_bypassed: partial.cache_bypassed,
         });
       },
     );
@@ -109,12 +116,13 @@ export function useJobSearch() {
     setJobs(results);
     setPage(resp.data?.page || 1);
     setTotalPages(Math.max(1, resp.data?.total_pages || 1));
-    const hasMeta = (resp.data?.errors?.length ?? 0) > 0 || !!resp.data?.sources;
+    const hasMeta = (resp.data?.errors?.length ?? 0) > 0 || !!resp.data?.sources || (resp.data?.cache_hits ?? 0) > 0 || !!resp.data?.cache_bypassed;
     setBatchMeta(hasMeta ? {
       queries_executed: 1,
-      cache_hits: 0,
+      cache_hits: resp.data?.cache_hits ?? 0,
       errors: resp.data?.errors || [],
       sources: resp.data?.sources,
+      cache_bypassed: resp.data?.cache_bypassed,
     } : null);
     setLoading(false);
   }, [filters]);
@@ -123,6 +131,7 @@ export function useJobSearch() {
   const batchSearch = useCallback(async (
     queries: string[] = DEFAULT_QUERIES,
     overrides?: Partial<JobSearchFilters>,
+    options?: JobSearchOptions,
   ) => {
     setLoading(true);
     setError(null);
@@ -143,6 +152,7 @@ export function useJobSearch() {
         source: f.source,
         include_company_careers: f.include_company_careers,
         use_resume_recommendations: f.use_resume_recommendations,
+        force_refresh: options?.forceRefresh,
       },
       (partial) => {
         let streamed = partial.jobs || [];
@@ -156,6 +166,7 @@ export function useJobSearch() {
           sources: partial.sources,
           pending: (partial as any).pending,
           streaming: true,
+          cache_bypassed: partial.cache_bypassed,
         });
       },
     );
@@ -180,6 +191,7 @@ export function useJobSearch() {
       cache_hits: data.cache_hits,
       errors: data.errors || [],
       sources: data.sources,
+      cache_bypassed: data.cache_bypassed,
     });
     setLoading(false);
   }, [filters]);

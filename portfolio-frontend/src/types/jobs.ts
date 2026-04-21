@@ -59,6 +59,10 @@ export interface JobSearchFilters {
   use_resume_recommendations: boolean;
 }
 
+export interface JobSearchOptions {
+  forceRefresh?: boolean;
+}
+
 export interface SavedJobFilters {
   filters: JobSearchFilters | null;
   updated_at?: string;
@@ -72,6 +76,8 @@ export interface JobSearchResponse {
   errors?: string[];
   fallback_source?: string;
   sources?: Record<string, number>;
+  cache_hits?: number;
+  cache_bypassed?: boolean;
 }
 
 export interface BatchSearchParams {
@@ -86,6 +92,7 @@ export interface BatchSearchParams {
   source?: string;
   include_company_careers?: boolean;
   use_resume_recommendations?: boolean;
+  force_refresh?: boolean;
 }
 
 export interface BatchSearchResponse {
@@ -95,4 +102,5 @@ export interface BatchSearchResponse {
   cache_hits: number;
   errors: string[];
   sources?: Record<string, number>;
+  cache_bypassed?: boolean;
 }

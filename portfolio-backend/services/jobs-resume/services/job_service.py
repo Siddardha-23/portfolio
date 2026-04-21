@@ -608,20 +608,35 @@ class JobService:
         # render useful results while optional Apify actors are still running.
         # An Apify source only joins if its actor ID is explicitly configured.
         selected: List[str] = []
+        skipped_sources: Dict[str, str] = {}
         if source == "all":
             if jsearch_key:
                 selected.append("jsearch")
+            else:
+                skipped_sources["jsearch"] = "JSEARCH_API_KEY not configured"
             if apify_token:
                 for src in ("linkedin", "indeed", "google", "jobright"):
                     if self._actor_id(src):
                         selected.append(src)
                 if include_company_careers and self._actor_id("workday"):
                     selected.append("workday")
+                elif include_company_careers:
+                    skipped_sources["workday"] = "APIFY_WORKDAY_ACTOR not configured"
                 if include_company_careers and self._actor_id("company"):
                     selected.append("company")
+                elif include_company_careers:
+                    skipped_sources["company"] = "APIFY_COMPANY_ACTOR not configured"
+                else:
+                    skipped_sources["workday"] = "Workday/company sites disabled"
+                    skipped_sources["company"] = "Workday/company sites disabled"
+            else:
+                for src in ("linkedin", "workday", "company"):
+                    skipped_sources[src] = "APIFY_API_KEY/APIFY_TOKEN not configured"
         elif source == "jsearch":
             if jsearch_key:
                 selected = ["jsearch"]
+            else:
+                skipped_sources["jsearch"] = "JSEARCH_API_KEY not configured"
         else:
             # A specific Apify source was requested.
             if apify_token and self._actor_id(source):
@@ -630,6 +645,17 @@ class JobService:
                 # Keep the dashboard useful when a paid/rented Apify actor is
                 # not configured. The source badge will show JSearch.
                 selected = ["jsearch"]
+                skipped_sources[source] = (
+                    "APIFY_API_KEY/APIFY_TOKEN not configured"
+                    if not apify_token
+                    else f"APIFY_{source.upper()}_ACTOR not configured"
+                )
+            else:
+                skipped_sources[source] = (
+                    "APIFY_API_KEY/APIFY_TOKEN not configured"
+                    if not apify_token
+                    else f"APIFY_{source.upper()}_ACTOR not configured"
+                )
 
         if not selected:
             return {
@@ -637,6 +663,8 @@ class JobService:
                 "queries_executed": len(queries), "cache_hits": 0,
                 "errors": ["Set JSEARCH_API_KEY or configure an APIFY_*_ACTOR source"],
                 "sources": {},
+                "selected_sources": [],
+                "skipped_sources": skipped_sources,
             }
 
         all_jobs: List[Dict[str, Any]] = []
@@ -645,7 +673,9 @@ class JobService:
         seen_ids: set = set()
         fallback_seen_ids: set = set()
         source_counts: Dict[str, int] = {}
+        raw_source_counts: Dict[str, int] = {}
         fallback_source_counts: Dict[str, int] = {}
+        filtered_reasons: Dict[str, int] = {}
 
         def _collect_apify(src: str, q: str, company_urls: Optional[List[str]] = None) -> List[Dict[str, Any]]:
             actor = self._actor_id(src)
@@ -746,10 +776,12 @@ class JobService:
                 src = task_meta.get(future, "?")
                 try:
                     jobs_from_future = future.result()
+                    raw_source_counts[src] = raw_source_counts.get(src, 0) + len(jobs_from_future)
                     kept = 0
                     fallback_kept = 0
                     for job in jobs_from_future:
                         if not job.get("title") or not job.get("company"):
+                            filtered_reasons["invalid"] = filtered_reasons.get("invalid", 0) + 1
                             continue
                         jid = job.get("job_id") or _make_cache_key(job)
                         if self._job_matches_filters(
@@ -764,7 +796,7 @@ class JobService:
                             fallback_seen_ids.add(jid)
                             fallback_jobs.append(job)
                             fallback_kept += 1
-                        if not self._job_matches_filters(
+                        rejection_reason = self._job_filter_rejection_reason(
                             job=job,
                             query_terms=queries,
                             location=location,
@@ -772,9 +804,12 @@ class JobService:
                             h1b_only=h1b_only,
                             visa_or_contract=visa_or_contract,
                             experience_level=experience_level,
-                        ):
+                        )
+                        if rejection_reason:
+                            filtered_reasons[rejection_reason] = filtered_reasons.get(rejection_reason, 0) + 1
                             continue
                         if jid in seen_ids:
+                            filtered_reasons["duplicate"] = filtered_reasons.get("duplicate", 0) + 1
                             continue
                         seen_ids.add(jid)
                         all_jobs.append(job)
@@ -820,6 +855,10 @@ class JobService:
                             "cache_bypassed": bool(force_refresh),
                             "errors": list(errors),
                             "sources": dict(source_counts),
+                            "raw_sources": dict(raw_source_counts),
+                            "filtered_reasons": dict(filtered_reasons),
+                            "selected_sources": list(selected),
+                            "skipped_sources": dict(skipped_sources),
                             "pending": sorted(pending_sources),
                             "streaming": True,
                         })
@@ -847,6 +886,10 @@ class JobService:
             "cache_hits": 0,
             "errors": errors,
             "sources": source_counts,
+            "raw_sources": raw_source_counts,
+            "filtered_reasons": filtered_reasons,
+            "selected_sources": selected,
+            "skipped_sources": skipped_sources,
         }
 
     @staticmethod
@@ -1271,18 +1314,38 @@ class JobService:
         visa_or_contract: bool,
         experience_level: str,
     ) -> bool:
+        return self._job_filter_rejection_reason(
+            job=job,
+            query_terms=query_terms,
+            location=location,
+            date_posted=date_posted,
+            h1b_only=h1b_only,
+            visa_or_contract=visa_or_contract,
+            experience_level=experience_level,
+        ) is None
+
+    def _job_filter_rejection_reason(
+        self,
+        job: Dict[str, Any],
+        query_terms: List[str],
+        location: str,
+        date_posted: str,
+        h1b_only: bool,
+        visa_or_contract: bool,
+        experience_level: str,
+    ) -> Optional[str]:
         if date_posted != "all" and not self._is_recent_job(job, date_posted):
-            return False
+            return "date"
         if h1b_only and not job.get("h1b_sponsor"):
-            return False
+            return "h1b"
         if visa_or_contract and not (job.get("h1b_sponsor") or job.get("contract_friendly")):
-            return False
+            return "visa_or_contract"
         if experience_level in ("entry", "internship", "associate") and not self._is_entry_level(job):
-            return False
+            return "experience"
         if location and location.lower() not in {"united states", "usa", "us"}:
             loc = (job.get("location") or "").lower()
             if location.lower() not in loc and "remote" not in loc:
-                return False
+                return "location"
         if job.get("source") == "Company Careers" and query_terms:
             haystack = f"{job.get('title', '')} {job.get('description', '')}".lower()
             keywords = set()
@@ -1291,8 +1354,8 @@ class JobService:
             ignored = {"entry", "level", "new", "grad", "h1b", "sponsor", "contract", "engineer"}
             keywords -= ignored
             if keywords and not any(k in haystack for k in keywords):
-                return False
-        return True
+                return "query"
+        return None
 
     @staticmethod
     def _date_posted_days(date_posted: str) -> Optional[int]:

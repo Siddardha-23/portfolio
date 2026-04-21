@@ -36,6 +36,10 @@ export interface BatchMeta {
   cache_hits: number;
   errors: string[];
   sources?: Record<string, number>;
+  raw_sources?: Record<string, number>;
+  filtered_reasons?: Record<string, number>;
+  selected_sources?: string[];
+  skipped_sources?: Record<string, string>;
   pending?: string[];
   streaming?: boolean;
   cache_bypassed?: boolean;
@@ -95,6 +99,10 @@ export function useJobSearch() {
           cache_hits: partial.cache_hits ?? 0,
           errors: partial.errors || [],
           sources: partial.sources,
+          raw_sources: partial.raw_sources,
+          filtered_reasons: partial.filtered_reasons,
+          selected_sources: partial.selected_sources,
+          skipped_sources: partial.skipped_sources,
           pending: (partial as any).pending,
           streaming: true,
           cache_bypassed: partial.cache_bypassed,
@@ -116,12 +124,22 @@ export function useJobSearch() {
     setJobs(results);
     setPage(resp.data?.page || 1);
     setTotalPages(Math.max(1, resp.data?.total_pages || 1));
-    const hasMeta = (resp.data?.errors?.length ?? 0) > 0 || !!resp.data?.sources || (resp.data?.cache_hits ?? 0) > 0 || !!resp.data?.cache_bypassed;
+    const hasMeta = (resp.data?.errors?.length ?? 0) > 0
+      || !!resp.data?.sources
+      || !!resp.data?.raw_sources
+      || !!resp.data?.selected_sources?.length
+      || !!resp.data?.skipped_sources
+      || (resp.data?.cache_hits ?? 0) > 0
+      || !!resp.data?.cache_bypassed;
     setBatchMeta(hasMeta ? {
       queries_executed: 1,
       cache_hits: resp.data?.cache_hits ?? 0,
       errors: resp.data?.errors || [],
       sources: resp.data?.sources,
+      raw_sources: resp.data?.raw_sources,
+      filtered_reasons: resp.data?.filtered_reasons,
+      selected_sources: resp.data?.selected_sources,
+      skipped_sources: resp.data?.skipped_sources,
       cache_bypassed: resp.data?.cache_bypassed,
     } : null);
     setLoading(false);
@@ -164,6 +182,10 @@ export function useJobSearch() {
           cache_hits: partial.cache_hits ?? 0,
           errors: partial.errors || [],
           sources: partial.sources,
+          raw_sources: partial.raw_sources,
+          filtered_reasons: partial.filtered_reasons,
+          selected_sources: partial.selected_sources,
+          skipped_sources: partial.skipped_sources,
           pending: (partial as any).pending,
           streaming: true,
           cache_bypassed: partial.cache_bypassed,
@@ -191,6 +213,10 @@ export function useJobSearch() {
       cache_hits: data.cache_hits,
       errors: data.errors || [],
       sources: data.sources,
+      raw_sources: data.raw_sources,
+      filtered_reasons: data.filtered_reasons,
+      selected_sources: data.selected_sources,
+      skipped_sources: data.skipped_sources,
       cache_bypassed: data.cache_bypassed,
     });
     setLoading(false);

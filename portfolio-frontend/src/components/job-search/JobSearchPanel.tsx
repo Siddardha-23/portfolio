@@ -26,6 +26,17 @@ const SOURCE_LABELS: Record<string, string> = {
   jsearch: 'JSearch (RapidAPI)',
 };
 
+const FILTER_REASON_LABELS: Record<string, string> = {
+  date: 'date range',
+  h1b: 'H1B sponsor',
+  visa_or_contract: 'H1B or contract',
+  experience: 'experience level',
+  location: 'location',
+  query: 'company/query match',
+  duplicate: 'duplicates',
+  invalid: 'missing job data',
+};
+
 const INPUT_ACCENT = 'focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40';
 const SELECT_ACCENT = 'focus:border-purple-500/40 focus:ring-purple-500/40';
 
@@ -108,6 +119,25 @@ export function JobSearchPanel({
   const totalFromSources = batchMeta?.sources
     ? Object.values(batchMeta.sources).reduce((a, b) => a + b, 0)
     : 0;
+  const rawFromSources = batchMeta?.raw_sources
+    ? Object.values(batchMeta.raw_sources).reduce((a, b) => a + b, 0)
+    : 0;
+  const hiddenByFilters = Math.max(0, rawFromSources - totalFromSources);
+  const topFilterReason = batchMeta?.filtered_reasons
+    ? Object.entries(batchMeta.filtered_reasons)
+        .filter(([reason]) => reason !== 'duplicate' && reason !== 'invalid')
+        .sort((a, b) => b[1] - a[1])[0]
+    : undefined;
+  const sourceNames = batchMeta
+    ? Array.from(new Set([
+        ...(batchMeta.selected_sources || []),
+        ...Object.keys(batchMeta.sources || {}),
+        ...Object.keys(batchMeta.raw_sources || {}),
+      ]))
+    : [];
+  const skippedSourceNames = batchMeta?.skipped_sources
+    ? Object.keys(batchMeta.skipped_sources)
+    : [];
 
   return (
     <div className="space-y-5">
@@ -342,22 +372,39 @@ export function JobSearchPanel({
       </div>
 
       {/* Per-source breakdown */}
-      {batchMeta && (batchMeta.sources || batchMeta.pending?.length) && (
+      {batchMeta && (sourceNames.length > 0 || skippedSourceNames.length > 0 || batchMeta.pending?.length) && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">Sources</span>
-          {batchMeta.sources && Object.entries(batchMeta.sources)
+          {sourceNames
+            .map(src => [src, batchMeta.sources?.[src] || 0] as [string, number])
             .sort((a, b) => b[1] - a[1])
             .map(([src, count]) => (
               <Badge
                 key={src}
                 variant="outline"
-                className={`gap-1 text-[10px] font-normal ${count > 0 ? 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300' : 'border-border text-muted-foreground'}`}
+                className={`gap-1 text-[10px] font-normal ${count > 0 ? 'border-purple-500/30 bg-purple-500/10 text-purple-600 dark:text-purple-300' : (batchMeta.raw_sources?.[src] || 0) > 0 ? 'border-indigo-500/30 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300' : 'border-border text-muted-foreground'}`}
               >
                 <span className="font-medium">{SOURCE_LABELS[src] || src}</span>
                 <span className="opacity-70">·</span>
-                <span>{count}</span>
+                <span>
+                  {count}
+                  {batchMeta.raw_sources?.[src] && batchMeta.raw_sources[src] > count
+                    ? ` / ${batchMeta.raw_sources[src]} raw`
+                    : ''}
+                </span>
               </Badge>
             ))}
+          {skippedSourceNames.map(src => (
+            <Badge
+              key={`skipped-${src}`}
+              variant="outline"
+              title={batchMeta.skipped_sources?.[src]}
+              className="gap-1 border-dashed border-border text-[10px] font-normal text-muted-foreground"
+            >
+              <span className="font-medium">{SOURCE_LABELS[src] || src}</span>
+              <span className="opacity-70">/ skipped</span>
+            </Badge>
+          ))}
           {batchMeta.pending?.map(src => (
             <Badge
               key={`pending-${src}`}
@@ -374,6 +421,16 @@ export function JobSearchPanel({
               ({totalFromSources - jobs.length} duplicates merged)
             </span>
           )}
+        </div>
+      )}
+
+      {hiddenByFilters > 0 && (
+        <div className="rounded-lg border border-indigo-500/25 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-200">
+          Showing {jobs.length} of {rawFromSources} raw source result{rawFromSources === 1 ? '' : 's'} after filters.
+          {topFilterReason && (
+            <span> Most were hidden by {FILTER_REASON_LABELS[topFilterReason[0]] || topFilterReason[0]}.</span>
+          )}
+          <span className="opacity-80"> Try Experience = Any, widen Date Posted, or turn off H1B or contract to see more.</span>
         </div>
       )}
 

@@ -76,6 +76,10 @@ export interface JobSearchResponse {
   errors?: string[];
   fallback_source?: string;
   sources?: Record<string, number>;
+  raw_sources?: Record<string, number>;
+  filtered_reasons?: Record<string, number>;
+  selected_sources?: string[];
+  skipped_sources?: Record<string, string>;
   cache_hits?: number;
   cache_bypassed?: boolean;
 }
@@ -102,5 +106,9 @@ export interface BatchSearchResponse {
   cache_hits: number;
   errors: string[];
   sources?: Record<string, number>;
+  raw_sources?: Record<string, number>;
+  filtered_reasons?: Record<string, number>;
+  selected_sources?: string[];
+  skipped_sources?: Record<string, string>;
   cache_bypassed?: boolean;
 }

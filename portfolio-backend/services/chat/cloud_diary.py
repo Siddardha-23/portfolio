@@ -203,7 +203,9 @@ def _collection():
 def _persist(entry: Dict) -> bool:
     try:
         coll = _collection()
-        date_key = entry.get("date") or time.strftime("%Y-%m-%d")
+        # Always stamp with today's UTC date — Gemini sometimes hallucinates dates
+        # in its JSON output. Treat its `date` field as advisory only.
+        date_key = time.strftime("%Y-%m-%d", time.gmtime())
         entry["date"] = date_key
         entry["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         coll.update_one({"date": date_key}, {"$set": entry}, upsert=True)

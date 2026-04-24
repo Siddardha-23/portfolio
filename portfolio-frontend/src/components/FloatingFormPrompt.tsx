@@ -113,17 +113,18 @@ export default function FloatingFormPrompt() {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.8, y: 20 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-                        className="fixed bottom-6 right-6 z-50"
+                        className="fixed bottom-6 left-6 z-50"
                     >
                         <div className="relative group">
                             {/* Glow effect */}
                             <div className="absolute -inset-1 bg-gradient-to-r from-primary to-accent rounded-full blur opacity-40 group-hover:opacity-70 transition-opacity" />
 
-                            {/* Dismiss button */}
+                            {/* Dismiss button — top-left now that the button lives in the
+                                bottom-left corner (keeps it away from the tooltip). */}
                             <button
                                 onClick={handleDismiss}
                                 aria-label="Dismiss"
-                                className="absolute -top-2 -right-2 z-10 w-6 h-6 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                                className="absolute -top-2 -left-2 z-10 w-6 h-6 rounded-full bg-background border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
                             >
                                 <X className="h-3 w-3" />
                             </button>
@@ -142,16 +143,17 @@ export default function FloatingFormPrompt() {
                                 <span className="text-sm font-medium">Introduce Yourself</span>
                             </Button>
 
-                            {/* Tooltip bubble */}
+                            {/* Tooltip bubble — anchored on the right of the button now that
+                                the button itself sits in the bottom-LEFT corner. */}
                             <motion.div
-                                initial={{ opacity: 0, x: 10 }}
+                                initial={{ opacity: 0, x: -10 }}
                                 animate={{ opacity: 1, x: 0 }}
                                 transition={{ delay: 1 }}
-                                className="absolute right-full mr-3 top-1/2 -translate-y-1/2 whitespace-nowrap"
+                                className="absolute left-full ml-3 top-1/2 -translate-y-1/2 whitespace-nowrap"
                             >
                                 <div className="bg-card border border-border rounded-lg px-3 py-2 shadow-lg text-sm text-foreground">
                                     Tell me about yourself
-                                    <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1 w-2 h-2 bg-card border-r border-b border-border rotate-[-45deg]" />
+                                    <div className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-1 w-2 h-2 bg-card border-l border-t border-border rotate-[-45deg]" />
                                 </div>
                             </motion.div>
                         </div>

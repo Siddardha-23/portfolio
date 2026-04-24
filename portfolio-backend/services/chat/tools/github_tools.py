@@ -52,8 +52,32 @@ def _put_cache(key: str, value: Dict) -> None:
     _CACHE[key] = (time.time() + _TTL, value)
 
 
+def _fetch_commits(repo: str, since_iso: str, per_page: int = 10) -> List[Dict]:
+    """Fetch a repo's recent commits authored by GITHUB_USER. The user-events
+    feed strips commit details, so we re-fetch per repo to get real messages."""
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{repo}/commits",
+            headers=_gh_headers(),
+            params={"since": since_iso, "author": GITHUB_USER, "per_page": per_page},
+            timeout=4,
+        )
+        resp.raise_for_status()
+        return resp.json() or []
+    except Exception as exc:
+        logger.warning("GitHub commits fetch failed for %s: %s", repo, exc)
+        return []
+
+
 def whats_new(days: int = 14, limit: int = 8) -> Dict:
     """Recent public commits across Harshith's GitHub repos.
+
+    Strategy: use the user events feed to discover which repos the user
+    touched in-window, then fetch real commit messages from
+    /repos/{repo}/commits for each unique repo (the events feed itself
+    has empty `commits` arrays for unauthenticated user-event reads).
+
+    Results cached for 5 minutes (see _cached / _put_cache).
 
     Args:
         days: lookback window in days (1-60).
@@ -83,7 +107,12 @@ def whats_new(days: int = 14, limit: int = 8) -> Dict:
         }
 
     cutoff = time.time() - days * 86400
+    since_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(cutoff))
+
+    # Pass 1: collect non-push events directly + remember active repos for push pass
     items: List[Dict] = []
+    push_repos_seen: List[str] = []  # ordered, dedup'd
+    push_repos_set: set = set()
     for event in events:
         try:
             ts = time.mktime(time.strptime(event["created_at"], "%Y-%m-%dT%H:%M:%SZ"))
@@ -95,35 +124,44 @@ def whats_new(days: int = 14, limit: int = 8) -> Dict:
         ev_type = event.get("type", "")
         payload = event.get("payload") or {}
 
-        message = ""
         if ev_type == "PushEvent":
-            commits = payload.get("commits") or []
-            if commits:
-                message = commits[-1].get("message", "").split("\n")[0][:140]
-        elif ev_type == "PullRequestEvent":
+            if repo and repo not in push_repos_set:
+                push_repos_set.add(repo)
+                push_repos_seen.append(repo)
+            continue
+
+        if ev_type == "PullRequestEvent":
             pr = payload.get("pull_request") or {}
-            action = payload.get("action", "")
-            message = f"PR {action}: {pr.get('title', '')[:120]}"
+            message = f"PR {payload.get('action', '')}: {pr.get('title', '')[:120]}"
         elif ev_type == "CreateEvent":
-            ref_type = payload.get("ref_type", "")
-            ref = payload.get("ref") or ""
-            message = f"created {ref_type} {ref}".strip()
+            message = f"created {payload.get('ref_type', '')} {payload.get('ref') or ''}".strip()
         elif ev_type == "ReleaseEvent":
             release = payload.get("release") or {}
             message = f"released {release.get('tag_name', '')}"
         else:
-            message = ev_type.replace("Event", "").lower()
+            continue
 
         if not message:
             continue
-        items.append({
-            "repo": repo,
-            "type": ev_type,
-            "message": message,
-            "at": event["created_at"],
-        })
-        if len(items) >= limit:
-            break
+        items.append({"repo": repo, "type": ev_type, "message": message, "at": event["created_at"]})
+
+    # Pass 2: fetch real commit messages per active repo (one call per repo)
+    for repo in push_repos_seen:
+        for c in _fetch_commits(repo, since_iso, per_page=min(limit, 10)):
+            commit = c.get("commit") or {}
+            msg = ((commit.get("message") or "").split("\n")[0])[:140]
+            if not msg or msg.lower().startswith("merge "):
+                continue
+            items.append({
+                "repo": repo,
+                "type": "PushEvent",
+                "message": msg,
+                "at": (commit.get("author") or {}).get("date") or c.get("commit", {}).get("committer", {}).get("date") or "",
+            })
+
+    # Sort by recency (descending) and truncate
+    items.sort(key=lambda x: x.get("at") or "", reverse=True)
+    items = items[:limit]
 
     payload = {
         "ok": True,

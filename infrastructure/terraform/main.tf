@@ -27,7 +27,7 @@ terraform {
 # Primary provider - us-east-1 required for CloudFront ACM certificates
 provider "aws" {
   region = var.aws_region
-  
+
   # Use named profile for local development
   # Comment this out if using environment variables or IAM role
   profile = "portfolio"

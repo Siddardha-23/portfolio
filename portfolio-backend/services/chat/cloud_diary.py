@@ -93,17 +93,46 @@ def _fetch_events(window_hours: int) -> List[Dict]:
     return fresh
 
 
-def _group_by_repo(events: List[Dict]) -> Dict[str, List[str]]:
+def _fetch_repo_commits(repo: str, since_iso: str, limit: int = 12) -> List[str]:
+    """Fetch recent commit messages for a repo. Used because the user events
+    feed returns PushEvents *without* commit details."""
+    try:
+        resp = requests.get(
+            f"https://api.github.com/repos/{repo}/commits",
+            headers=_gh_headers(),
+            params={"since": since_iso, "author": GITHUB_USER, "per_page": limit},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        commits = resp.json() or []
+    except Exception as exc:
+        logger.warning("Cloud Diary commits fetch failed for %s: %s", repo, exc)
+        return []
+    messages = []
+    for c in commits:
+        msg = (((c.get("commit") or {}).get("message")) or "").split("\n")[0][:160]
+        if msg and not msg.lower().startswith("merge "):
+            messages.append(msg)
+    return messages
+
+
+def _group_by_repo(events: List[Dict], window_hours: int) -> Dict[str, List[str]]:
     grouped: Dict[str, List[str]] = defaultdict(list)
+    push_repos: set = set()
+    since_iso = time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ",
+        time.gmtime(time.time() - window_hours * 3600),
+    )
+
     for ev in events:
         repo = (ev.get("repo") or {}).get("name", "unknown")
         ev_type = ev.get("type", "")
         payload = ev.get("payload") or {}
+
         if ev_type == "PushEvent":
-            for c in (payload.get("commits") or []):
-                msg = (c.get("message") or "").split("\n")[0][:160]
-                if msg and not msg.lower().startswith("merge "):
-                    grouped[repo].append(f"commit: {msg}")
+            # The user events feed strips commit details; we'll fetch them
+            # per-repo below to keep API calls minimal (one per unique repo).
+            push_repos.add(repo)
         elif ev_type == "PullRequestEvent":
             pr = payload.get("pull_request") or {}
             grouped[repo].append(
@@ -113,7 +142,15 @@ def _group_by_repo(events: List[Dict]) -> Dict[str, List[str]]:
             release = payload.get("release") or {}
             grouped[repo].append(f"release {release.get('tag_name', '')}")
         elif ev_type == "CreateEvent":
-            grouped[repo].append(f"created {payload.get('ref_type', '')} {payload.get('ref') or ''}".strip())
+            grouped[repo].append(
+                f"created {payload.get('ref_type', '')} {payload.get('ref') or ''}".strip()
+            )
+
+    # Resolve push commit messages with one /repos/.../commits call per repo
+    for repo in push_repos:
+        for msg in _fetch_repo_commits(repo, since_iso):
+            grouped[repo].append(f"commit: {msg}")
+
     return grouped
 
 
@@ -191,7 +228,7 @@ def _persist(entry: Dict) -> bool:
 def generate_diary_entry(window_hours: int = 48) -> Optional[Dict]:
     """Generate + persist a single diary entry covering the last `window_hours`."""
     events = _fetch_events(window_hours)
-    grouped = _group_by_repo(events)
+    grouped = _group_by_repo(events, window_hours)
     if not grouped:
         logger.info("Cloud Diary: no qualifying events in last %dh", window_hours)
         return None

@@ -68,11 +68,12 @@ export default function NowBuildingTicker() {
 
   return (
     <motion.section
+      id="now-building"
       initial={{ opacity: 0, y: 8 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{ duration: 0.45, ease: "easeOut" }}
-      className="container mx-auto px-4 -mt-6 md:-mt-8"
+      className="container mx-auto px-4 -mt-6 md:-mt-8 scroll-mt-24"
     >
       <div className="mx-auto max-w-4xl">
         <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-background/70 backdrop-blur-xl shadow-lg shadow-black/5">

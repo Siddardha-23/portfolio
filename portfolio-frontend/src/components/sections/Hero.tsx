@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Flame, BarChart3 } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Flame, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -543,10 +543,11 @@ export default function Hero() {
                 <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 group-hover:translate-x-0.5 transition-all" />
               </motion.button>
 
-              <motion.a
-                href="https://grafana.manneharshithsiddardha.com"
-                target="_blank"
-                rel="noopener noreferrer"
+              <motion.button
+                onClick={() => {
+                  const el = document.getElementById('now-building');
+                  el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.9, duration: 0.5 }}
@@ -556,7 +557,7 @@ export default function Hero() {
               >
                 <div className="relative flex-shrink-0">
                   <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30">
-                    <BarChart3 className="h-4 w-4 text-emerald-400" />
+                    <Activity className="h-4 w-4 text-emerald-400" />
                   </div>
                   <span className="absolute -top-1.5 -right-1.5 flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -564,11 +565,11 @@ export default function Hero() {
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">Grafana Dashboard</div>
-                  <div className="text-xs text-muted-foreground">Live infrastructure metrics</div>
+                  <div className="text-sm font-semibold text-foreground">Cloud Diary</div>
+                  <div className="text-xs text-muted-foreground">What I'm shipping right now</div>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-emerald-400 group-hover:translate-x-0.5 transition-all" />
-              </motion.a>
+              </motion.button>
             </div>
 
             <RecruiterPanel />
@@ -603,10 +604,11 @@ export default function Hero() {
               <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 transition-all" />
             </motion.button>
 
-            <motion.a
-              href="https://grafana.manneharshithsiddardha.com"
-              target="_blank"
-              rel="noopener noreferrer"
+            <motion.button
+              onClick={() => {
+                const el = document.getElementById('now-building');
+                el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.9, duration: 0.5 }}
@@ -616,7 +618,7 @@ export default function Hero() {
             >
               <div className="relative flex-shrink-0">
                 <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30">
-                  <BarChart3 className="h-4 w-4 text-emerald-400" />
+                  <Activity className="h-4 w-4 text-emerald-400" />
                 </div>
                 <span className="absolute -top-1.5 -right-1.5 flex h-2.5 w-2.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -624,11 +626,11 @@ export default function Hero() {
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-foreground">Grafana Dashboard</div>
-                <div className="text-xs text-muted-foreground">Live infrastructure metrics</div>
+                <div className="text-sm font-semibold text-foreground">Cloud Diary</div>
+                <div className="text-xs text-muted-foreground">What I'm shipping right now</div>
               </div>
               <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-emerald-400 transition-all" />
-            </motion.a>
+            </motion.button>
           </div>
 
           <RecruiterPanel />

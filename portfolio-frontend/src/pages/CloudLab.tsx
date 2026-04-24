@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft, Play
+import {
+  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft, Play, LineChart
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
@@ -133,6 +133,16 @@ export default function CloudLab() {
                 glow: 'orange-500',
                 iconColor: 'text-orange-500',
                 onClick: () => setShowSandbox(true),
+              },
+              {
+                icon: LineChart,
+                label: 'Grafana Metrics',
+                desc: 'Live infra dashboard ↗',
+                badge: 'Live',
+                gradient: 'from-emerald-500 to-teal-500',
+                glow: 'emerald-500',
+                iconColor: 'text-emerald-500',
+                onClick: () => window.open('https://grafana.manneharshithsiddardha.com', '_blank', 'noopener,noreferrer'),
               },
             ] as const).map((item, i) => (
               <motion.button

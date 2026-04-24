@@ -16,11 +16,8 @@ resource "aws_cloudwatch_event_rule" "cloud_diary_daily" {
   schedule_expression = "cron(0 3 * * ? *)" # 03:00 UTC daily
   state               = "ENABLED"
 
-  tags = {
-    Name    = "${var.project_name}-cloud-diary-daily"
-    Service = "chat"
-    Purpose = "agentic-ai-cron"
-  }
+  # Tags omitted: portfolio-deployer IAM user lacks events:TagResource.
+  # Re-add once that permission is granted to the deployer policy.
 }
 
 resource "aws_cloudwatch_event_target" "cloud_diary_chat_lambda" {

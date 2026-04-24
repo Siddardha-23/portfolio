@@ -378,6 +378,12 @@ jobs:
           [ -d "${SERVICE_DIR}/blueprints" ] && cp -r "${SERVICE_DIR}/blueprints" "${PACKAGE_DIR}/"
           [ -d "${SERVICE_DIR}/services" ] && cp -r "${SERVICE_DIR}/services" "${PACKAGE_DIR}/"
           [ -d "${SERVICE_DIR}/schemas" ] && cp -r "${SERVICE_DIR}/schemas" "${PACKAGE_DIR}/"
+          [ -d "${SERVICE_DIR}/agents" ] && cp -r "${SERVICE_DIR}/agents" "${PACKAGE_DIR}/"
+          [ -d "${SERVICE_DIR}/tools" ] && cp -r "${SERVICE_DIR}/tools" "${PACKAGE_DIR}/"
+          # Top-level service modules (e.g. chat's cloud_diary.py, knowledge_base.py)
+          for mod in cloud_diary.py knowledge_base.py; do
+            [ -f "${SERVICE_DIR}/${mod}" ] && cp "${SERVICE_DIR}/${mod}" "${PACKAGE_DIR}/"
+          done
 
           # Create deployment zip
           cd "${PACKAGE_DIR}"

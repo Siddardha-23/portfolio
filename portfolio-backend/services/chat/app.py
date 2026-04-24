@@ -74,9 +74,13 @@ def create_app():
             response.headers['Cache-Control'] = 'no-store'
         return response
 
-    # Register chat blueprint
+    # Register legacy single-shot chat blueprint (kept for backwards compat)
     from blueprints.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
+
+    # Register multi-agent orchestrator blueprint (SSE streaming + cloud diary)
+    from blueprints.agent import agent_bp
+    app.register_blueprint(agent_bp, url_prefix='/api/chat')
 
     # Health check endpoint
     @app.route('/api/health')
@@ -85,10 +89,10 @@ def create_app():
         return {
             'status': 'healthy',
             'service': 'chat-service',
-            'version': '1.0.0'
+            'version': '1.1.0'
         }, 200
 
-    logger.info("Chat microservice initialized with chat blueprint registered")
+    logger.info("Chat microservice initialized: legacy chat + multi-agent orchestrator")
     return app
 
 

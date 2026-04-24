@@ -513,6 +513,40 @@ class ApiService {
   }
 
   // ============================================
+  // Cloud Diary (powers Now Building ticker + agent's Builder specialist)
+  // ============================================
+
+  async getCloudDiary(limit = 5) {
+    return this.request<{
+      ok: boolean;
+      data: {
+        entries: Array<{
+          date: string;
+          headline: string;
+          highlights: string[];
+          tech: string[];
+          shipping_score?: number;
+          created_at?: string;
+        }>;
+        count: number;
+      };
+    }>(`/chat/diary?limit=${limit}`, { method: "GET" });
+  }
+
+  async getLatestDiary() {
+    return this.request<{
+      ok: boolean;
+      data: {
+        date: string;
+        headline: string;
+        highlights: string[];
+        tech: string[];
+        shipping_score?: number;
+      } | null;
+    }>("/chat/diary/latest", { method: "GET" });
+  }
+
+  // ============================================
   // Health check
   // ============================================
 

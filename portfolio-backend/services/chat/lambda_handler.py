@@ -87,6 +87,25 @@ def handler(event, context):
         builtins._container_birth = _container_birth
         _cold_start = False
 
+        # ── Scheduled Cloud Diary invocation (EventBridge or direct invoke) ──
+        # EventBridge events have a "source" key; direct invocations may set
+        # {"task": "cloud_diary"} as the payload. Both routes are supported so
+        # the same Lambda can be triggered manually or on a schedule.
+        is_scheduled = False
+        if isinstance(event, dict):
+            if event.get('task') == 'cloud_diary':
+                is_scheduled = True
+            elif event.get('source') == 'aws.events':
+                is_scheduled = True
+            elif (event.get('detail') or {}).get('task') == 'cloud_diary':
+                is_scheduled = True
+
+        if is_scheduled:
+            logger.info("Scheduled invocation: running Cloud Diary generation")
+            from cloud_diary import lambda_handler as diary_handler
+            payload = event if isinstance(event, dict) else {}
+            return diary_handler(payload, context)
+
         # ── Normal API Gateway request ──
         if os.getenv('ENVIRONMENT') != 'prod':
             logger.info(

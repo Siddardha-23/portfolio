@@ -54,12 +54,15 @@ locals {
       }
     }
     chat = {
-      description = "AI chatbot"
-      memory      = 256
+      description = "Multi-agent AI concierge + Cloud Diary cron"
+      memory      = 320
       timeout     = 60
       env_vars = {
         SSM_MONGODB_URI    = aws_ssm_parameter.mongodb_uri.name
         SSM_GEMINI_API_KEY = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        # GITHUB_PAT lifts the GitHub API rate limit and unlocks private-repo metadata
+        # for the Cloud Diary + Builder specialist's `whats_new` tool.
+        SSM_GITHUB_PAT = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""
       }
     }
     infra = {

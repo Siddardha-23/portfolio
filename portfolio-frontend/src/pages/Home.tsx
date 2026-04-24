@@ -8,7 +8,8 @@ import Projects from '@/components/sections/Projects';
 import Contact from '@/components/sections/Contact';
 import Footer from '@/components/Footer';
 import FloatingFormPrompt from '@/components/FloatingFormPrompt';
-import Chatbot from '@/components/Chatbot';
+import BuilderAgent from '@/components/agent/BuilderAgent';
+import NowBuildingTicker from '@/components/NowBuildingTicker';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
 import { lazy, Suspense, useEffect } from 'react';
@@ -46,6 +47,9 @@ export default function Home() {
         {/* Hero section now includes the recruiter panel (role search + visitor showcase) */}
         <Hero />
 
+        {/* Live "Now Building" ticker — auto-updates from GitHub via the Cloud Diary */}
+        <NowBuildingTicker />
+
         <About />
         <Skills />
         <Education />
@@ -56,7 +60,7 @@ export default function Home() {
 
       <Footer />
       <FloatingFormPrompt />
-      <Chatbot />
+      <BuilderAgent />
       <Suspense fallback={null}>
         <VisitorGlobe />
       </Suspense>

@@ -5,7 +5,7 @@ import AuthGate from "@/components/AuthGate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVisitorTracking } from "@/hooks/useVisitorTracking";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { Bot, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { toast } from "sonner";
 import ResumeDashboard, {
@@ -27,6 +27,7 @@ const InterviewPrepTab = lazy(() => import("@/components/resume/InterviewPrepTab
 const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab"));
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
+const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -266,7 +267,16 @@ function ChevronIcon({
   );
 }
 
-type NavTab = "tailor" | "batch" | "jobs" | "my-resumes" | "tailored" | "applications" | "interview" | "profile";
+type NavTab =
+  | "tailor"
+  | "batch"
+  | "jobs"
+  | "my-resumes"
+  | "tailored"
+  | "applications"
+  | "interview"
+  | "copilot"
+  | "profile";
 
 const ROLE_OPTIONS = [
   "Software Engineer",
@@ -5042,6 +5052,11 @@ const NAV_ITEMS: ResumeNavItem[] = [
     icon: <SparklesIcon className="w-4 h-4" />,
   },
   {
+    key: "copilot",
+    label: "Career Copilot",
+    icon: <Bot className="w-4 h-4" />,
+  },
+  {
     key: "jobs",
     label: "Job Opportunities",
     icon: <MagnifyingGlassIcon className="w-4 h-4" />,
@@ -5057,7 +5072,7 @@ const NAV_ITEMS: ResumeNavItem[] = [
 const NAV_SECTIONS: ResumeNavSection[] = [
   { label: "Create", items: ["tailor", "batch"] },
   { label: "Library", items: ["my-resumes", "tailored", "applications"] },
-  { label: "Career", items: ["interview", "jobs"] },
+  { label: "Career", items: ["interview", "copilot", "jobs"] },
   { label: "Account", items: ["profile"] },
 ];
 
@@ -5227,6 +5242,10 @@ export default function ResumeParser() {
     setMobileNavOpen(false);
     setUserMenuOpen(false);
   }, []);
+
+  useEffect(() => {
+    void apiService.recordCareerCopilotTab(activeNav).catch(() => {});
+  }, [activeNav]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -5494,6 +5513,17 @@ export default function ResumeParser() {
                   }
                 >
                   <InterviewPrepTab />
+                </Suspense>
+              )}
+              {activeNav === "copilot" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading Career Copilot…</span>
+                    </div>
+                  }
+                >
+                  <CareerCopilotTab />
                 </Suspense>
               )}
               {activeNav === "profile" && <ProfileTab />}

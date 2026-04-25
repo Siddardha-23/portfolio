@@ -1356,6 +1356,115 @@ class ApiService {
     return this.request(`/resume/tailoring-records/${recordId}/chat`);
   }
 
+  // --- Career Copilot (multi-agent RAG + playground) /api/resume/career-copilot ---
+
+  async getCareerCopilotState(): Promise<
+    ApiResponse<{
+      has_resume: boolean;
+      messages: Array<{
+        role: string;
+        content: string;
+        at?: string;
+        id?: string;
+        meta?: unknown;
+      }>;
+      suggested_prompts: string[];
+      next_best_actions: Array<{ title: string; reason: string }>;
+      playground: Record<string, unknown>;
+      tracks: Array<{
+        id: string;
+        title: string;
+        description: string;
+        steps: Array<{ title: string; type: string; body: string }>;
+      }>;
+      last_tab?: string;
+      visits?: Record<string, number>;
+      topics?: Record<string, number>;
+    }>
+  > {
+    return this.request("/resume/career-copilot/state", {}, 20000);
+  }
+
+  async sendCareerCopilotMessage(
+    message: string,
+    jdPaste?: string,
+  ): Promise<
+    ApiResponse<{
+      ok: boolean;
+      reply: string;
+      pipeline: Array<{ agent: string; label: string; summary: string }>;
+      citations: Array<{ id: string; snippet: string }>;
+      rag_grounding: string;
+      suggested_prompts: string[];
+      next_best_actions: Array<{ title: string; reason: string }>;
+      compliance: string;
+      messages: Array<{
+        role: string;
+        content: string;
+        at?: string;
+        id?: string;
+        meta?: unknown;
+      }>;
+    }>
+  > {
+    return this.request(
+      "/resume/career-copilot/chat",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          message,
+          jd_paste: jdPaste?.trim() || "",
+        }),
+      },
+      120000,
+    );
+  }
+
+  async resetCareerCopilotChat(): Promise<ApiResponse<{ ok: boolean; cleared?: boolean }>> {
+    return this.request(
+      "/resume/career-copilot/chat",
+      { method: "POST", body: JSON.stringify({ reset: true }) },
+      30000,
+    );
+  }
+
+  async recordCareerCopilotTab(tab: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      "/resume/career-copilot/behavior",
+      { method: "POST", body: JSON.stringify({ tab }) },
+      15000,
+    );
+  }
+
+  async startPlaygroundTrack(body: {
+    track_id?: string;
+    custom_topic?: string;
+  }): Promise<ApiResponse<{ ok: boolean; error?: string; playground?: Record<string, unknown> }>> {
+    return this.request(
+      "/resume/career-copilot/playground/start",
+      { method: "POST", body: JSON.stringify(body) },
+      120000,
+    );
+  }
+
+  async advancePlaygroundStep(): Promise<
+    ApiResponse<{ ok: boolean; error?: string; playground?: Record<string, unknown> }>
+  > {
+    return this.request(
+      "/resume/career-copilot/playground/advance",
+      { method: "POST", body: "{}" },
+      30000,
+    );
+  }
+
+  async resetPlaygroundTrack(): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      "/resume/career-copilot/playground/reset",
+      { method: "POST", body: "{}" },
+      15000,
+    );
+  }
+
   async evaluateMockAnswer(
     recordId: string,
     body: { question: string; user_answer: string; category?: string },

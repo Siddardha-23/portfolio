@@ -1873,3 +1873,137 @@ def delete_file(s3_key):
     storage.delete_resume(s3_key)
     db.user_resumes.delete_one({"user_email": user_email, "s3_key": s3_key})
     return jsonify({"message": "Resume deleted"}), 200
+
+
+# ------------------------------------------------------------------
+# Career Copilot — multi-agent RAG + learning playground
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/chat", methods=["POST"])
+@jwt_required()
+def career_copilot_chat():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"career_copilot:{client_ip}", max_requests=30, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again shortly."}), 429
+
+    data = request.get_json(force=True) or {}
+    if data.get("reset"):
+        from services.career_copilot_service import run_career_copilot
+        out = run_career_copilot(user_email, "", reset=True)
+        return jsonify(out), 200
+
+    message = InputSanitizer.sanitize_string(data.get("message") or "", max_length=8000)
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+    jd_paste = InputSanitizer.sanitize_string(data.get("jd_paste") or "", max_length=20000)
+
+    try:
+        from services.career_copilot_service import run_career_copilot
+        out = run_career_copilot(user_email, message, jd_paste=jd_paste, reset=False)
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("career_copilot chat: %s", e)
+        return jsonify({"error": f"Copilot failed: {str(e)[:200]}"}), 500
+
+
+@resume_bp.route("/career-copilot/messages", methods=["GET"])
+@jwt_required()
+def career_copilot_messages_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import get_messages_for_api
+        return jsonify({"messages": get_messages_for_api(user_email)}), 200
+    except Exception as e:
+        logger.exception("career_copilot messages: %s", e)
+        return jsonify({"error": "Failed to load history"}), 500
+
+
+@resume_bp.route("/career-copilot/state", methods=["GET"])
+@jwt_required()
+def career_copilot_state_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import get_dashboard_bundle, get_messages_for_api
+        bundle = get_dashboard_bundle(user_email)
+        bundle["messages"] = get_messages_for_api(user_email)
+        return jsonify(bundle), 200
+    except Exception as e:
+        logger.exception("career_copilot state: %s", e)
+        return jsonify({"error": "Failed to load state"}), 500
+
+
+@resume_bp.route("/career-copilot/behavior", methods=["POST"])
+@jwt_required()
+def career_copilot_behavior():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    tab = InputSanitizer.sanitize_string(data.get("tab") or "", max_length=32)
+    if not tab:
+        return jsonify({"error": "tab is required"}), 400
+    try:
+        from services.career_copilot_service import record_tab_event
+        record_tab_event(user_email, tab)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("career_copilot behavior: %s", e)
+        return jsonify({"error": "Failed"}), 500
+
+
+@resume_bp.route("/career-copilot/playground/start", methods=["POST"])
+@jwt_required()
+def career_copilot_playground_start():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cp_playground:{client_ip}", max_requests=20, window_seconds=3600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    track_id = (data.get("track_id") or "").strip() or None
+    custom_topic = InputSanitizer.sanitize_string(data.get("custom_topic") or "", max_length=500)
+    if not track_id and not (custom_topic or "").strip():
+        return jsonify({"ok": False, "error": "track_id or custom_topic required"}), 400
+    try:
+        from services.career_copilot_service import start_playground_track
+        out = start_playground_track(
+            user_email,
+            track_id=track_id,
+            custom_topic=custom_topic or None,
+        )
+        if not out.get("ok"):
+            return jsonify(out), 400
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("playground start: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/playground/advance", methods=["POST"])
+@jwt_required()
+def career_copilot_playground_advance():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import complete_playground_step
+        out = complete_playground_step(user_email)
+        if not out.get("ok"):
+            return jsonify(out), 400
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("playground advance: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/playground/reset", methods=["POST"])
+@jwt_required()
+def career_copilot_playground_reset():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import reset_playground
+        reset_playground(user_email)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("playground reset: %s", e)
+        return jsonify({"error": "Failed"}), 500

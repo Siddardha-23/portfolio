@@ -2176,6 +2176,383 @@ def career_copilot_memory_delete(key):
 
 
 # ------------------------------------------------------------------
+# Career Copilot — Job Intelligence
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/intelligence/stale", methods=["GET"])
+@jwt_required()
+def career_copilot_intelligence_stale():
+    user_email = get_jwt_identity()
+    try:
+        stale_days = min(max(int(request.args.get("days", 5)), 1), 30)
+    except (TypeError, ValueError):
+        stale_days = 5
+    try:
+        from services.job_intelligence_service import get_stale_applications
+        return jsonify(get_stale_applications(user_email, stale_days=stale_days)), 200
+    except Exception as e:
+        logger.exception("intelligence stale: %s", e)
+        return jsonify({"error": "Failed to load stale applications"}), 500
+
+
+@resume_bp.route("/career-copilot/intelligence/followup", methods=["POST"])
+@jwt_required()
+def career_copilot_intelligence_followup():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    record_id = InputSanitizer.sanitize_string(data.get("record_id") or "", max_length=64)
+    channel = InputSanitizer.sanitize_string(data.get("channel") or "email", max_length=16)
+    if not record_id:
+        return jsonify({"error": "record_id is required"}), 400
+    try:
+        from services.job_intelligence_service import generate_followup_message
+        out = generate_followup_message(user_email, record_id, channel)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("intelligence followup: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/intelligence/funnel", methods=["GET"])
+@jwt_required()
+def career_copilot_intelligence_funnel():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import get_funnel_analytics
+        return jsonify(get_funnel_analytics(user_email)), 200
+    except Exception as e:
+        logger.exception("intelligence funnel: %s", e)
+        return jsonify({"error": "Failed to load funnel analytics"}), 500
+
+
+@resume_bp.route("/career-copilot/intelligence/rejection-insights", methods=["GET"])
+@jwt_required()
+def career_copilot_intelligence_rejection_insights():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import analyze_rejection_patterns
+        return jsonify(analyze_rejection_patterns(user_email)), 200
+    except Exception as e:
+        logger.exception("intelligence rejection insights: %s", e)
+        return jsonify({"error": "Failed to analyze rejection patterns"}), 500
+
+
+@resume_bp.route("/career-copilot/intelligence/reframe", methods=["POST"])
+@jwt_required()
+def career_copilot_intelligence_reframe():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    record_id = InputSanitizer.sanitize_string(data.get("record_id") or "", max_length=64)
+    if not record_id:
+        return jsonify({"error": "record_id is required"}), 400
+    try:
+        from services.job_intelligence_service import reframe_rejection
+        out = reframe_rejection(user_email, record_id)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("intelligence reframe: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/intelligence/weekly-digest", methods=["GET"])
+@jwt_required()
+def career_copilot_intelligence_weekly_digest():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import get_weekly_digest
+        return jsonify(get_weekly_digest(user_email)), 200
+    except Exception as e:
+        logger.exception("intelligence weekly digest: %s", e)
+        return jsonify({"error": "Failed to load weekly digest"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Momentum
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/momentum", methods=["GET"])
+@jwt_required()
+def career_copilot_momentum_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import get_momentum_data
+        return jsonify(get_momentum_data(user_email)), 200
+    except Exception as e:
+        logger.exception("momentum get: %s", e)
+        return jsonify({"error": "Failed to load momentum data"}), 500
+
+
+@resume_bp.route("/career-copilot/momentum/activity", methods=["POST"])
+@jwt_required()
+def career_copilot_momentum_activity():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    activity_type = InputSanitizer.sanitize_string(data.get("activity_type") or "", max_length=64)
+    metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+    if not activity_type:
+        return jsonify({"error": "activity_type is required"}), 400
+    try:
+        from services.job_intelligence_service import record_activity
+        return jsonify(record_activity(user_email, activity_type, metadata)), 200
+    except Exception as e:
+        logger.exception("momentum activity: %s", e)
+        return jsonify({"error": "Failed to record activity"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Networking CRM
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/network/contacts", methods=["GET"])
+@jwt_required()
+def career_copilot_network_contacts_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import list_contacts
+        return jsonify(list_contacts(user_email)), 200
+    except Exception as e:
+        logger.exception("network contacts get: %s", e)
+        return jsonify({"error": "Failed to load contacts"}), 500
+
+
+@resume_bp.route("/career-copilot/network/contacts", methods=["POST"])
+@jwt_required()
+def career_copilot_network_contacts_add():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    payload = {
+        "name": InputSanitizer.sanitize_string(data.get("name") or "", max_length=120),
+        "company": InputSanitizer.sanitize_string(data.get("company") or "", max_length=120),
+        "role": InputSanitizer.sanitize_string(data.get("role") or "", max_length=120),
+        "platform": InputSanitizer.sanitize_string(data.get("platform") or "linkedin", max_length=32),
+        "relationship_strength": InputSanitizer.sanitize_string(data.get("relationship_strength") or "cold", max_length=16),
+        "notes": InputSanitizer.sanitize_string(data.get("notes") or "", max_length=1000),
+        "last_contacted": InputSanitizer.sanitize_string(data.get("last_contacted") or "", max_length=40),
+        "referral_status": InputSanitizer.sanitize_string(data.get("referral_status") or "none", max_length=32),
+    }
+    if not payload["name"]:
+        return jsonify({"error": "name is required"}), 400
+    try:
+        from services.job_intelligence_service import add_contact
+        return jsonify(add_contact(user_email, payload)), 200
+    except Exception as e:
+        logger.exception("network contacts add: %s", e)
+        return jsonify({"error": "Failed to add contact"}), 500
+
+
+@resume_bp.route("/career-copilot/network/contacts/<contact_id>", methods=["PUT"])
+@jwt_required()
+def career_copilot_network_contacts_update(contact_id):
+    user_email = get_jwt_identity()
+    contact_id = InputSanitizer.sanitize_string(contact_id or "", max_length=64)
+    if not contact_id:
+        return jsonify({"error": "contact_id is required"}), 400
+    data = request.get_json(force=True) or {}
+    patch = {
+        "name": InputSanitizer.sanitize_string(data.get("name") or "", max_length=120),
+        "company": InputSanitizer.sanitize_string(data.get("company") or "", max_length=120),
+        "role": InputSanitizer.sanitize_string(data.get("role") or "", max_length=120),
+        "platform": InputSanitizer.sanitize_string(data.get("platform") or "", max_length=32),
+        "relationship_strength": InputSanitizer.sanitize_string(data.get("relationship_strength") or "", max_length=16),
+        "notes": InputSanitizer.sanitize_string(data.get("notes") or "", max_length=1000),
+        "last_contacted": InputSanitizer.sanitize_string(data.get("last_contacted") or "", max_length=40),
+        "referral_status": InputSanitizer.sanitize_string(data.get("referral_status") or "", max_length=32),
+    }
+    patch = {k: v for k, v in patch.items() if v != ""}
+    try:
+        from services.job_intelligence_service import update_contact
+        out = update_contact(user_email, contact_id, patch)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("network contacts update: %s", e)
+        return jsonify({"error": "Failed to update contact"}), 500
+
+
+@resume_bp.route("/career-copilot/network/contacts/<contact_id>", methods=["DELETE"])
+@jwt_required()
+def career_copilot_network_contacts_delete(contact_id):
+    user_email = get_jwt_identity()
+    contact_id = InputSanitizer.sanitize_string(contact_id or "", max_length=64)
+    if not contact_id:
+        return jsonify({"error": "contact_id is required"}), 400
+    try:
+        from services.job_intelligence_service import delete_contact
+        out = delete_contact(user_email, contact_id)
+        return jsonify(out), 200 if out.get("ok") else 404
+    except Exception as e:
+        logger.exception("network contacts delete: %s", e)
+        return jsonify({"error": "Failed to delete contact"}), 500
+
+
+@resume_bp.route("/career-copilot/network/generate-intro", methods=["POST"])
+@jwt_required()
+def career_copilot_network_generate_intro():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    contact_id = InputSanitizer.sanitize_string(data.get("contact_id") or "", max_length=64)
+    if not contact_id:
+        return jsonify({"error": "contact_id is required"}), 400
+    try:
+        from services.job_intelligence_service import generate_intro_message
+        out = generate_intro_message(user_email, contact_id)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("network generate intro: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/network/insights", methods=["GET"])
+@jwt_required()
+def career_copilot_network_insights():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import get_networking_insights
+        return jsonify(get_networking_insights(user_email)), 200
+    except Exception as e:
+        logger.exception("network insights: %s", e)
+        return jsonify({"error": "Failed to load networking insights"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Offer workspace
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/offers", methods=["GET"])
+@jwt_required()
+def career_copilot_offers_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import list_offers
+        return jsonify(list_offers(user_email)), 200
+    except Exception as e:
+        logger.exception("offers get: %s", e)
+        return jsonify({"error": "Failed to load offers"}), 500
+
+
+@resume_bp.route("/career-copilot/offers", methods=["POST"])
+@jwt_required()
+def career_copilot_offers_add():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    payload = {
+        "company": InputSanitizer.sanitize_string(data.get("company") or "", max_length=120),
+        "role": InputSanitizer.sanitize_string(data.get("role") or "", max_length=120),
+        "base": data.get("base") or 0,
+        "equity": data.get("equity") or 0,
+        "bonus": data.get("bonus") or 0,
+        "benefits": InputSanitizer.sanitize_string(data.get("benefits") or "", max_length=1500),
+        "location": InputSanitizer.sanitize_string(data.get("location") or "", max_length=120),
+        "remote": bool(data.get("remote")),
+        "start_date": InputSanitizer.sanitize_string(data.get("start_date") or "", max_length=40),
+        "deadline": InputSanitizer.sanitize_string(data.get("deadline") or "", max_length=40),
+        "notes": InputSanitizer.sanitize_string(data.get("notes") or "", max_length=1500),
+        "status": InputSanitizer.sanitize_string(data.get("status") or "active", max_length=24),
+    }
+    if not payload["company"] or not payload["role"]:
+        return jsonify({"error": "company and role are required"}), 400
+    try:
+        from services.job_intelligence_service import add_offer
+        return jsonify(add_offer(user_email, payload)), 200
+    except Exception as e:
+        logger.exception("offers add: %s", e)
+        return jsonify({"error": "Failed to add offer"}), 500
+
+
+@resume_bp.route("/career-copilot/offers/<offer_id>", methods=["PUT"])
+@jwt_required()
+def career_copilot_offers_update(offer_id):
+    user_email = get_jwt_identity()
+    offer_id = InputSanitizer.sanitize_string(offer_id or "", max_length=64)
+    if not offer_id:
+        return jsonify({"error": "offer_id is required"}), 400
+    data = request.get_json(force=True) or {}
+    patch = {
+        "company": InputSanitizer.sanitize_string(data.get("company") or "", max_length=120),
+        "role": InputSanitizer.sanitize_string(data.get("role") or "", max_length=120),
+        "base": data.get("base"),
+        "equity": data.get("equity"),
+        "bonus": data.get("bonus"),
+        "benefits": InputSanitizer.sanitize_string(data.get("benefits") or "", max_length=1500),
+        "location": InputSanitizer.sanitize_string(data.get("location") or "", max_length=120),
+        "remote": data.get("remote"),
+        "start_date": InputSanitizer.sanitize_string(data.get("start_date") or "", max_length=40),
+        "deadline": InputSanitizer.sanitize_string(data.get("deadline") or "", max_length=40),
+        "notes": InputSanitizer.sanitize_string(data.get("notes") or "", max_length=1500),
+        "status": InputSanitizer.sanitize_string(data.get("status") or "", max_length=24),
+    }
+    patch = {k: v for k, v in patch.items() if v is not None and v != ""}
+    try:
+        from services.job_intelligence_service import update_offer
+        out = update_offer(user_email, offer_id, patch)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("offers update: %s", e)
+        return jsonify({"error": "Failed to update offer"}), 500
+
+
+@resume_bp.route("/career-copilot/offers/<offer_id>", methods=["DELETE"])
+@jwt_required()
+def career_copilot_offers_delete(offer_id):
+    user_email = get_jwt_identity()
+    offer_id = InputSanitizer.sanitize_string(offer_id or "", max_length=64)
+    if not offer_id:
+        return jsonify({"error": "offer_id is required"}), 400
+    try:
+        from services.job_intelligence_service import delete_offer
+        out = delete_offer(user_email, offer_id)
+        return jsonify(out), 200 if out.get("ok") else 404
+    except Exception as e:
+        logger.exception("offers delete: %s", e)
+        return jsonify({"error": "Failed to delete offer"}), 500
+
+
+@resume_bp.route("/career-copilot/offers/compare", methods=["GET"])
+@jwt_required()
+def career_copilot_offers_compare():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import compare_offers
+        return jsonify(compare_offers(user_email)), 200
+    except Exception as e:
+        logger.exception("offers compare: %s", e)
+        return jsonify({"error": "Failed to compare offers"}), 500
+
+
+@resume_bp.route("/career-copilot/offers/negotiate", methods=["POST"])
+@jwt_required()
+def career_copilot_offers_negotiate():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    offer_id = InputSanitizer.sanitize_string(data.get("offer_id") or "", max_length=64)
+    ask = InputSanitizer.sanitize_string(data.get("ask") or "", max_length=500)
+    if not offer_id or not ask:
+        return jsonify({"error": "offer_id and ask are required"}), 400
+    try:
+        from services.job_intelligence_service import generate_negotiation_script
+        out = generate_negotiation_script(user_email, offer_id, ask)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("offers negotiate: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+# ------------------------------------------------------------------
 # Career Copilot — Session Timeline
 # ------------------------------------------------------------------
 

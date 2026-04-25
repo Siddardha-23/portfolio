@@ -301,7 +301,7 @@ function TimelineList({ events }: { events: TimelineEvent[] }) {
             <Ic className="h-3.5 w-3.5 shrink-0 text-gray-400 mt-0.5" />
             <div className="min-w-0">
               <p className="text-gray-700 dark:text-gray-300">{e.description}</p>
-              <p className="text-[10px] text-gray-400">{new Date(e.timestamp).toLocaleString()}</p>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500">{new Date(e.timestamp).toLocaleString()}</p>
             </div>
           </div>
         );
@@ -312,7 +312,41 @@ function TimelineList({ events }: { events: TimelineEvent[] }) {
 
 // ─── Main component ─────────────────────────────────────────────────────────
 
-type SubTab = "chat" | "outreach" | "playground" | "dashboard";
+type SubTab = "chat" | "outreach" | "playground" | "dashboard" | "network" | "offers";
+
+type MomentumData = {
+  streak: number;
+  momentum_score: number;
+  trend: "up" | "down";
+  this_week: number;
+  last_week: number;
+  milestones: Array<{ id: string; label: string; earned: boolean }>;
+  heatmap: Array<{ date: string; count: number }>;
+};
+
+type NetworkContact = {
+  contact_id: string;
+  name: string;
+  company?: string;
+  role?: string;
+  platform?: string;
+  relationship_strength?: string;
+  notes?: string;
+  referral_status?: string;
+};
+
+type OfferItem = {
+  offer_id: string;
+  company: string;
+  role: string;
+  base: number;
+  bonus: number;
+  equity: number;
+  location?: string;
+  remote?: boolean;
+  status?: string;
+  notes?: string;
+};
 
 export default function CareerCopilotTab() {
   // Core state
@@ -353,6 +387,46 @@ export default function CareerCopilotTab() {
   const [memoryNotes, setMemoryNotes] = useState<Record<string, string>>({});
   const [newMemKey, setNewMemKey] = useState("");
   const [newMemVal, setNewMemVal] = useState("");
+  const [momentum, setMomentum] = useState<MomentumData | null>(null);
+  const [weeklyDigest, setWeeklyDigest] = useState<{
+    headline: string;
+    summary: string;
+    wins: string[];
+    focus_for_next_week: string[];
+  } | null>(null);
+
+  const [networkContacts, setNetworkContacts] = useState<NetworkContact[]>([]);
+  const [networkInsights, setNetworkInsights] = useState<{ headline: string; analysis: string; actions: string[] } | null>(null);
+  const [newContact, setNewContact] = useState({
+    name: "",
+    company: "",
+    role: "",
+    platform: "linkedin",
+    relationship_strength: "cold",
+    notes: "",
+  });
+  const [networkBusy, setNetworkBusy] = useState(false);
+  const [introByContact, setIntroByContact] = useState<Record<string, string>>({});
+
+  const [offers, setOffers] = useState<OfferItem[]>([]);
+  const [offerCompare, setOfferCompare] = useState<{
+    headline: string;
+    recommendation: string;
+    pros_cons: Array<{ company: string; pros: string[]; cons: string[] }>;
+    total_comp_table: Array<{ company: string; total_comp: number }>;
+  } | null>(null);
+  const [newOffer, setNewOffer] = useState({
+    company: "",
+    role: "",
+    base: "",
+    bonus: "",
+    equity: "",
+    location: "",
+    remote: false,
+    notes: "",
+  });
+  const [offerBusy, setOfferBusy] = useState(false);
+  const [negotiationByOffer, setNegotiationByOffer] = useState<Record<string, string>>({});
 
   // Navigation
   const [subTab, setSubTab] = useState<SubTab>("chat");
@@ -395,13 +469,42 @@ export default function CareerCopilotTab() {
     if (r.data?.notes) setMemoryNotes(r.data.notes);
   }, []);
 
+  const loadMomentum = useCallback(async () => {
+    const [m, d] = await Promise.all([
+      apiService.getMomentumData(),
+      apiService.getWeeklyDigest(),
+    ]);
+    if (m.data?.ok) setMomentum(m.data);
+    if (d.data?.digest) setWeeklyDigest(d.data.digest);
+  }, []);
+
+  const loadNetworkData = useCallback(async () => {
+    const [contactsResp, insightsResp] = await Promise.all([
+      apiService.getNetworkContacts(),
+      apiService.getNetworkingInsights(),
+    ]);
+    if (contactsResp.data?.contacts) setNetworkContacts(contactsResp.data.contacts as NetworkContact[]);
+    if (insightsResp.data?.insights) setNetworkInsights(insightsResp.data.insights);
+  }, []);
+
+  const loadOffersData = useCallback(async () => {
+    const [offersResp, compareResp] = await Promise.all([
+      apiService.getOffers(),
+      apiService.compareOffers(),
+    ]);
+    if (offersResp.data?.offers) setOffers(offersResp.data.offers as OfferItem[]);
+    if (compareResp.data?.comparison) setOfferCompare(compareResp.data.comparison);
+  }, []);
+
   useEffect(() => { void loadState(); }, [loadState]);
   useEffect(() => { scrollToBottom(); }, [messages]);
 
   useEffect(() => {
     if (subTab === "outreach") void loadCampaigns();
-    if (subTab === "dashboard") { void loadTimeline(); void loadMemory(); }
-  }, [subTab, loadCampaigns, loadTimeline, loadMemory]);
+    if (subTab === "dashboard") { void loadTimeline(); void loadMemory(); void loadMomentum(); }
+    if (subTab === "network") void loadNetworkData();
+    if (subTab === "offers") void loadOffersData();
+  }, [subTab, loadCampaigns, loadTimeline, loadMemory, loadMomentum, loadNetworkData, loadOffersData]);
 
   // ─── Chat ───────────────────────────────────────────────────────────────
 
@@ -512,6 +615,101 @@ export default function CareerCopilotTab() {
     void loadMemory();
   };
 
+  const addContact = async () => {
+    if (!newContact.name.trim()) {
+      toast.error("Contact name is required");
+      return;
+    }
+    setNetworkBusy(true);
+    const r = await apiService.addNetworkContact(newContact);
+    setNetworkBusy(false);
+    if (r.error) {
+      toast.error(r.error);
+      return;
+    }
+    setNewContact({
+      name: "",
+      company: "",
+      role: "",
+      platform: "linkedin",
+      relationship_strength: "cold",
+      notes: "",
+    });
+    void loadNetworkData();
+  };
+
+  const removeContact = async (contactId: string) => {
+    const r = await apiService.deleteNetworkContact(contactId);
+    if (r.error) {
+      toast.error(r.error);
+      return;
+    }
+    void loadNetworkData();
+  };
+
+  const makeIntro = async (contactId: string) => {
+    const r = await apiService.generateNetworkIntro(contactId);
+    if (r.error || !r.data?.intro?.message) {
+      toast.error(r.error || "Could not generate intro");
+      return;
+    }
+    setIntroByContact((prev) => ({ ...prev, [contactId]: r.data!.intro.message }));
+  };
+
+  const addOffer = async () => {
+    if (!newOffer.company.trim() || !newOffer.role.trim()) {
+      toast.error("Company and role are required");
+      return;
+    }
+    setOfferBusy(true);
+    const r = await apiService.addOffer({
+      company: newOffer.company,
+      role: newOffer.role,
+      base: Number(newOffer.base || 0),
+      bonus: Number(newOffer.bonus || 0),
+      equity: Number(newOffer.equity || 0),
+      location: newOffer.location,
+      remote: newOffer.remote,
+      notes: newOffer.notes,
+      status: "active",
+    });
+    setOfferBusy(false);
+    if (r.error) {
+      toast.error(r.error);
+      return;
+    }
+    setNewOffer({
+      company: "",
+      role: "",
+      base: "",
+      bonus: "",
+      equity: "",
+      location: "",
+      remote: false,
+      notes: "",
+    });
+    void loadOffersData();
+  };
+
+  const removeOffer = async (offerId: string) => {
+    const r = await apiService.deleteOffer(offerId);
+    if (r.error) {
+      toast.error(r.error);
+      return;
+    }
+    void loadOffersData();
+  };
+
+  const generateNegotiation = async (offerId: string) => {
+    const ask = "Request a higher base compensation while staying collaborative.";
+    const r = await apiService.generateNegotiationScript(offerId, ask);
+    if (r.error || !r.data?.script?.email_body) {
+      toast.error(r.error || "Failed to generate script");
+      return;
+    }
+    setNegotiationByOffer((prev) => ({ ...prev, [offerId]: r.data!.script.email_body }));
+  };
+
   // ─── Focus distribution chart (simple bar) ─────────────────────────────
 
   const focusItems = useMemo(() => {
@@ -527,8 +725,13 @@ export default function CareerCopilotTab() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white/60 dark:bg-gray-900/40">
-        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+      <div className="min-h-[50vh] rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white/60 p-4 dark:bg-gray-900/40">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="h-20 animate-pulse rounded-xl bg-gray-200/70 dark:bg-white/10" />
+          <div className="h-20 animate-pulse rounded-xl bg-gray-200/70 dark:bg-white/10" />
+          <div className="h-20 animate-pulse rounded-xl bg-gray-200/70 dark:bg-white/10" />
+        </div>
+        <div className="mt-4 h-64 animate-pulse rounded-xl bg-gray-200/70 dark:bg-white/10" />
       </div>
     );
   }
@@ -540,6 +743,8 @@ export default function CareerCopilotTab() {
     { id: "outreach", label: "Outreach", icon: Mail },
     { id: "playground", label: "Playground", icon: GraduationCap },
     { id: "dashboard", label: "Dashboard", icon: BarChart3 },
+    { id: "network", label: "Network", icon: Linkedin },
+    { id: "offers", label: "Offers", icon: Award },
   ];
 
   return (
@@ -584,7 +789,7 @@ export default function CareerCopilotTab() {
             key={t.id}
             type="button"
             onClick={() => setSubTab(t.id)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition ${
+            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
               subTab === t.id
                 ? "bg-indigo-500/15 text-indigo-800 dark:text-indigo-200 ring-1 ring-indigo-500/20 shadow-sm"
                 : "text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
@@ -608,7 +813,7 @@ export default function CareerCopilotTab() {
                   <Bot className="h-4 w-4 text-indigo-500" /> Agentic chat
                 </span>
                 <button type="button" onClick={() => void onReset()}
-                  className="text-xs text-red-600/80 dark:text-red-400 font-medium"
+                  className="text-xs text-red-600/80 dark:text-red-400 font-medium rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
                 >
                   <Trash2 className="inline h-3 w-3 mr-1" />Clear
                 </button>
@@ -747,7 +952,7 @@ export default function CareerCopilotTab() {
                     <button type="button" disabled={outreachBusy} onClick={() => void createCampaign()}
                       className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50"
                     >{outreachBusy ? "Creating…" : "Create & auto-generate sequence"}</button>
-                    <button type="button" onClick={() => setShowNewCampaign(false)} className="text-xs text-gray-500">Cancel</button>
+                    <button type="button" onClick={() => setShowNewCampaign(false)} className="text-xs text-gray-500 dark:text-gray-400">Cancel</button>
                   </div>
                 </div>
               )}
@@ -857,13 +1062,18 @@ export default function CareerCopilotTab() {
                       className="text-left rounded-xl border border-gray-200/80 p-3 text-xs transition hover:border-indigo-500/30 hover:shadow-sm dark:border-white/10"
                     >
                       <span className="block font-bold text-gray-900 dark:text-white text-[13px] leading-snug">{t.title}</span>
-                      <span className="text-[11px] text-gray-500 line-clamp-2 mt-0.5">{t.description}</span>
+                      <span className="text-[11px] text-gray-500 dark:text-gray-400 line-clamp-2 mt-0.5">{t.description}</span>
                       <span className="mt-1.5 inline-block text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
                         {t.steps.length} steps
                       </span>
                     </button>
                   ))}
                 </div>
+                {tracks.length === 0 && (
+                  <div className="rounded-lg border border-dashed border-gray-300 p-3 text-xs text-gray-500 dark:border-white/10 dark:text-gray-400">
+                    No tracks yet. Generate a custom track to get started.
+                  </div>
+                )}
 
                 {playground?.steps && playground.steps.length > 0 && (
                   <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/[0.05] p-4 space-y-3">
@@ -973,7 +1183,7 @@ export default function CareerCopilotTab() {
                   <Clock className="h-4 w-4 text-indigo-500" /> Activity timeline
                 </h3>
                 {timeline.length > 0 ? <TimelineList events={timeline} /> : (
-                  <p className="text-xs text-gray-500">No activity yet. Start chatting, creating campaigns, or learning.</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">No activity yet. Start chatting, creating campaigns, or learning.</p>
                 )}
               </div>
 
@@ -994,6 +1204,40 @@ export default function CareerCopilotTab() {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {momentum && (
+                <div className="rounded-2xl border border-gray-200/90 bg-white/90 p-5 dark:border-white/[0.08] dark:bg-gray-900/50">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-3">
+                    <Flame className="h-4 w-4 text-orange-500" /> Momentum engine
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Current streak</p>
+                      <p className="text-xl font-bold text-orange-700 dark:text-orange-300">{momentum.streak} days</p>
+                    </div>
+                    <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 p-3">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Momentum score</p>
+                      <p className="text-xl font-bold text-indigo-700 dark:text-indigo-300">{momentum.momentum_score}/100</p>
+                    </div>
+                    <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">Week-over-week</p>
+                      <p className="text-xl font-bold text-emerald-700 dark:text-emerald-300">{momentum.this_week} vs {momentum.last_week}</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-10 gap-1">
+                    {momentum.heatmap.slice(-30).map((h) => (
+                      <div key={h.date} title={`${h.date}: ${h.count} actions`} className={`h-3 rounded ${h.count >= 3 ? "bg-indigo-500" : h.count >= 1 ? "bg-indigo-300 dark:bg-indigo-600" : "bg-gray-200 dark:bg-white/10"}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {weeklyDigest && (
+                <div className="rounded-2xl border border-violet-500/20 bg-violet-500/[0.05] p-5">
+                  <h3 className="text-sm font-bold text-violet-800 dark:text-violet-200">{weeklyDigest.headline}</h3>
+                  <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{weeklyDigest.summary}</p>
                 </div>
               )}
 
@@ -1020,6 +1264,11 @@ export default function CareerCopilotTab() {
                     </div>
                   ))}
                 </div>
+                {Object.keys(memoryNotes).length === 0 && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Nothing pinned yet. Add preferences so the copilot remembers your constraints.
+                  </p>
+                )}
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                   <input value={newMemKey} onChange={(e) => setNewMemKey(e.target.value)} placeholder="Key (e.g. constraint)"
                     className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white/90 px-3 py-1.5 text-xs dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
@@ -1029,6 +1278,85 @@ export default function CareerCopilotTab() {
                     className="shrink-0 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white"
                   ><Plus className="inline h-3 w-3 mr-0.5" /> Pin</button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {subTab === "network" && (
+            <div className="rounded-2xl border border-gray-200/90 bg-white/90 p-5 dark:border-white/[0.08] dark:bg-gray-900/50 space-y-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <input value={newContact.name} onChange={(e) => setNewContact((p) => ({ ...p, name: e.target.value }))} placeholder="Name"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+                <input value={newContact.company} onChange={(e) => setNewContact((p) => ({ ...p, company: e.target.value }))} placeholder="Company"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+                <input value={newContact.role} onChange={(e) => setNewContact((p) => ({ ...p, role: e.target.value }))} placeholder="Role"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+              </div>
+              <textarea value={newContact.notes} onChange={(e) => setNewContact((p) => ({ ...p, notes: e.target.value }))} rows={2} placeholder="Notes"
+                className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+              <button type="button" onClick={() => void addContact()} disabled={networkBusy}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                Add contact
+              </button>
+              {networkInsights && <p className="text-xs text-gray-600 dark:text-gray-300">{networkInsights.analysis}</p>}
+              <div className="space-y-2">
+                {networkContacts.map((c) => (
+                  <div key={c.contact_id} className="rounded-lg border border-gray-200/80 p-3 dark:border-white/10">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{c.name} {c.company ? `· ${c.company}` : ""}</p>
+                      <button type="button" onClick={() => void removeContact(c.contact_id)} className="text-xs text-red-500">Delete</button>
+                    </div>
+                    {c.role && <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{c.role}</p>}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={() => void makeIntro(c.contact_id)} className="rounded bg-indigo-500/10 px-2 py-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">Generate intro</button>
+                      {introByContact[c.contact_id] && (
+                        <button type="button" onClick={() => navigator.clipboard?.writeText(introByContact[c.contact_id])} className="rounded bg-gray-200 px-2 py-1 text-[11px] dark:bg-white/10">Copy</button>
+                      )}
+                    </div>
+                    {introByContact[c.contact_id] && <p className="mt-2 whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-300">{introByContact[c.contact_id]}</p>}
+                  </div>
+                ))}
+                {networkContacts.length === 0 && <p className="text-xs text-gray-500 dark:text-gray-400">No contacts yet. Add people to build your referral pipeline.</p>}
+              </div>
+            </div>
+          )}
+
+          {subTab === "offers" && (
+            <div className="rounded-2xl border border-gray-200/90 bg-white/90 p-5 dark:border-white/[0.08] dark:bg-gray-900/50 space-y-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <input value={newOffer.company} onChange={(e) => setNewOffer((p) => ({ ...p, company: e.target.value }))} placeholder="Company"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+                <input value={newOffer.role} onChange={(e) => setNewOffer((p) => ({ ...p, role: e.target.value }))} placeholder="Role"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+                <input value={newOffer.base} onChange={(e) => setNewOffer((p) => ({ ...p, base: e.target.value }))} placeholder="Base salary"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-gray-950/50 dark:text-white" />
+              </div>
+              <button type="button" onClick={() => void addOffer()} disabled={offerBusy}
+                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">
+                Add offer
+              </button>
+              {offerCompare && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-3">
+                  <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">{offerCompare.headline}</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 mt-1">{offerCompare.recommendation}</p>
+                </div>
+              )}
+              <div className="grid gap-3 md:grid-cols-2">
+                {offers.map((o) => (
+                  <div key={o.offer_id} className="rounded-lg border border-gray-200/80 p-3 dark:border-white/10">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-semibold text-gray-900 dark:text-white">{o.role} @ {o.company}</p>
+                      <button type="button" onClick={() => void removeOffer(o.offer_id)} className="text-xs text-red-500">Delete</button>
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Base ${o.base || 0} · Bonus ${o.bonus || 0} · Equity ${o.equity || 0}</p>
+                    <button type="button" onClick={() => void generateNegotiation(o.offer_id)}
+                      className="mt-2 rounded bg-indigo-500/10 px-2 py-1 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                      Generate negotiation script
+                    </button>
+                    {negotiationByOffer[o.offer_id] && <p className="mt-2 whitespace-pre-wrap text-xs text-gray-600 dark:text-gray-300">{negotiationByOffer[o.offer_id]}</p>}
+                  </div>
+                ))}
+                {offers.length === 0 && <p className="text-xs text-gray-500 dark:text-gray-400">No offers yet. Add offers to compare total compensation and negotiation plans.</p>}
               </div>
             </div>
           )}
@@ -1045,18 +1373,25 @@ export default function CareerCopilotTab() {
             </p>
             <ul className="mt-3 space-y-2">
               {nba.map((a, i) => (
-                <li key={i} className="rounded-lg border border-gray-200/80 bg-white/60 px-3 py-2 text-xs dark:border-white/10 dark:bg-white/[0.03] cursor-pointer hover:border-indigo-500/25 transition"
-                  onClick={() => { setSubTab("chat"); void send(a.title); }}
-                >
-                  <p className="font-semibold text-gray-900 dark:text-white">{a.title}</p>
-                  <p className="text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">{a.reason}</p>
+                <li key={i}>
+                  <button
+                    type="button"
+                    className="w-full rounded-lg border border-gray-200/80 bg-white/60 px-3 py-2 text-left text-xs dark:border-white/10 dark:bg-white/[0.03] hover:border-indigo-500/25 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+                    onClick={() => { setSubTab("chat"); void send(a.title); }}
+                  >
+                    <p className="font-semibold text-gray-900 dark:text-white">{a.title}</p>
+                    <p className="text-gray-500 dark:text-gray-400 mt-0.5 leading-snug">{a.reason}</p>
+                  </button>
                 </li>
               ))}
             </ul>
+            {nba.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">No suggestions yet. Chat once to get personalized next actions.</p>
+            )}
           </div>
 
           {/* Context card */}
-          <div className="rounded-2xl border border-gray-200/90 p-4 text-xs dark:border-white/[0.08]">
+          <div className="rounded-2xl border border-gray-200/90 bg-white/70 p-4 text-xs dark:border-white/[0.08] dark:bg-white/[0.03]">
             <p className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
               <Layers className="h-3.5 w-3.5 text-indigo-500" /> System overview
             </p>

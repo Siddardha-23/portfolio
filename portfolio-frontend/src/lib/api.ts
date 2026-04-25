@@ -1597,6 +1597,237 @@ class ApiService {
     );
   }
 
+  // --- Job Intelligence ---
+
+  async getStaleApplications(days = 5): Promise<ApiResponse<{
+    ok: boolean;
+    count: number;
+    stale_applications: Array<{
+      record_id: string;
+      job_title: string;
+      company: string;
+      status: string;
+      days_stale: number;
+      applied_at?: string;
+      next_action_date?: string;
+    }>;
+  }>> {
+    return this.request(`/resume/career-copilot/intelligence/stale?days=${days}`);
+  }
+
+  async generateIntelligenceFollowup(body: {
+    record_id: string;
+    channel?: "email" | "linkedin";
+  }): Promise<ApiResponse<{
+    ok: boolean;
+    channel: string;
+    followup: { subject: string; message: string; tone: string; next_step: string };
+  }>> {
+    return this.request(
+      "/resume/career-copilot/intelligence/followup",
+      { method: "POST", body: JSON.stringify(body) },
+      45000,
+    );
+  }
+
+  async getFunnelAnalytics(): Promise<ApiResponse<{
+    ok: boolean;
+    counts: Record<string, number>;
+    conversions: Record<string, number>;
+    insight: { headline: string; insight: string; action_items: string[] };
+  }>> {
+    return this.request("/resume/career-copilot/intelligence/funnel");
+  }
+
+  async getRejectionInsights(): Promise<ApiResponse<{
+    ok: boolean;
+    total: number;
+    patterns: Array<{ theme: string; evidence: string }>;
+    suggestions: string[];
+  }>> {
+    return this.request("/resume/career-copilot/intelligence/rejection-insights", {}, 45000);
+  }
+
+  async reframeRejection(record_id: string): Promise<ApiResponse<{
+    ok: boolean;
+    reframe: {
+      acknowledgement: string;
+      what_went_right: string;
+      next_actions: string[];
+      silver_lining: string;
+    };
+  }>> {
+    return this.request(
+      "/resume/career-copilot/intelligence/reframe",
+      { method: "POST", body: JSON.stringify({ record_id }) },
+      45000,
+    );
+  }
+
+  async getWeeklyDigest(): Promise<ApiResponse<{
+    ok: boolean;
+    stats: { events_this_week: number; events_last_week: number };
+    digest: {
+      headline: string;
+      summary: string;
+      wins: string[];
+      focus_for_next_week: string[];
+    };
+  }>> {
+    return this.request("/resume/career-copilot/intelligence/weekly-digest", {}, 45000);
+  }
+
+  // --- Momentum ---
+
+  async getMomentumData(): Promise<ApiResponse<{
+    ok: boolean;
+    streak: number;
+    momentum_score: number;
+    trend: "up" | "down";
+    this_week: number;
+    last_week: number;
+    milestones: Array<{ id: string; label: string; earned: boolean }>;
+    heatmap: Array<{ date: string; count: number }>;
+  }>> {
+    return this.request("/resume/career-copilot/momentum");
+  }
+
+  async recordMomentumActivity(
+    activity_type: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      "/resume/career-copilot/momentum/activity",
+      { method: "POST", body: JSON.stringify({ activity_type, metadata: metadata || {} }) },
+      15000,
+    );
+  }
+
+  // --- Networking CRM ---
+
+  async getNetworkContacts(): Promise<ApiResponse<{ ok: boolean; contacts: any[] }>> {
+    return this.request("/resume/career-copilot/network/contacts");
+  }
+
+  async addNetworkContact(body: {
+    name: string;
+    company?: string;
+    role?: string;
+    platform?: string;
+    relationship_strength?: string;
+    notes?: string;
+    last_contacted?: string;
+    referral_status?: string;
+  }): Promise<ApiResponse<{ ok: boolean; contact: any }>> {
+    return this.request(
+      "/resume/career-copilot/network/contacts",
+      { method: "POST", body: JSON.stringify(body) },
+      20000,
+    );
+  }
+
+  async updateNetworkContact(
+    contactId: string,
+    body: Record<string, unknown>,
+  ): Promise<ApiResponse<{ ok: boolean; contact: any }>> {
+    return this.request(
+      `/resume/career-copilot/network/contacts/${encodeURIComponent(contactId)}`,
+      { method: "PUT", body: JSON.stringify(body) },
+      20000,
+    );
+  }
+
+  async deleteNetworkContact(contactId: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      `/resume/career-copilot/network/contacts/${encodeURIComponent(contactId)}`,
+      { method: "DELETE" },
+      15000,
+    );
+  }
+
+  async generateNetworkIntro(contact_id: string): Promise<ApiResponse<{
+    ok: boolean;
+    intro: { message: string; subject: string; tone: string };
+  }>> {
+    return this.request(
+      "/resume/career-copilot/network/generate-intro",
+      { method: "POST", body: JSON.stringify({ contact_id }) },
+      45000,
+    );
+  }
+
+  async getNetworkingInsights(): Promise<ApiResponse<{
+    ok: boolean;
+    insights: { headline: string; analysis: string; actions: string[] };
+  }>> {
+    return this.request("/resume/career-copilot/network/insights", {}, 45000);
+  }
+
+  // --- Offer Workspace ---
+
+  async getOffers(): Promise<ApiResponse<{ ok: boolean; offers: any[] }>> {
+    return this.request("/resume/career-copilot/offers");
+  }
+
+  async addOffer(body: Record<string, unknown>): Promise<ApiResponse<{ ok: boolean; offer: any }>> {
+    return this.request(
+      "/resume/career-copilot/offers",
+      { method: "POST", body: JSON.stringify(body) },
+      20000,
+    );
+  }
+
+  async updateOffer(
+    offerId: string,
+    body: Record<string, unknown>,
+  ): Promise<ApiResponse<{ ok: boolean; offer: any }>> {
+    return this.request(
+      `/resume/career-copilot/offers/${encodeURIComponent(offerId)}`,
+      { method: "PUT", body: JSON.stringify(body) },
+      20000,
+    );
+  }
+
+  async deleteOffer(offerId: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      `/resume/career-copilot/offers/${encodeURIComponent(offerId)}`,
+      { method: "DELETE" },
+      15000,
+    );
+  }
+
+  async compareOffers(): Promise<ApiResponse<{
+    ok: boolean;
+    offers: any[];
+    comparison: {
+      headline: string;
+      recommendation: string;
+      pros_cons: Array<{ company: string; pros: string[]; cons: string[] }>;
+      total_comp_table: Array<{ company: string; total_comp: number }>;
+    };
+  }>> {
+    return this.request("/resume/career-copilot/offers/compare", {}, 60000);
+  }
+
+  async generateNegotiationScript(
+    offer_id: string,
+    ask: string,
+  ): Promise<ApiResponse<{
+    ok: boolean;
+    script: {
+      email_subject: string;
+      email_body: string;
+      talking_points: string[];
+      fallback_if_denied: string;
+    };
+  }>> {
+    return this.request(
+      "/resume/career-copilot/offers/negotiate",
+      { method: "POST", body: JSON.stringify({ offer_id, ask }) },
+      60000,
+    );
+  }
+
   async evaluateMockAnswer(
     recordId: string,
     body: { question: string; user_answer: string; category?: string },

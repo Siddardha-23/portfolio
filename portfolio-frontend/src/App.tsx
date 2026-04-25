@@ -21,6 +21,17 @@ const AdminPortal = lazy(() => import('./pages/AdminPortal'));
 
 const queryClient = new QueryClient();
 
+function RouteLoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center" aria-live="polite">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        <span>Loading workspace...</span>
+      </div>
+    </div>
+  );
+}
+
 // Inner component that can use hooks
 function AppContent() {
   const [showGame, setShowGame] = useState(false);
@@ -47,10 +58,10 @@ function AppContent() {
           <Route path="/" element={<Welcome />} />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/home" element={<Home />} />
-          <Route path="/cloud-lab" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><CloudLab /></Suspense>} />
+          <Route path="/cloud-lab" element={<Suspense fallback={<RouteLoadingFallback />}><CloudLab /></Suspense>} />
           <Route path="/project/:slug" element={<ProjectArchitecture />} />
-          <Route path="/resume-parser" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><ResumeParser /></Suspense>} />
-          <Route path="/admin" element={<Suspense fallback={<div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Loading...</p></div>}><AdminPortal /></Suspense>} />
+          <Route path="/resume-parser" element={<Suspense fallback={<RouteLoadingFallback />}><ResumeParser /></Suspense>} />
+          <Route path="/admin" element={<Suspense fallback={<RouteLoadingFallback />}><AdminPortal /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

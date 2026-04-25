@@ -88,11 +88,29 @@ export default function ApplicationsTab() {
   const [editing, setEditing] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [funnel, setFunnel] = useState<{ counts: Record<string, number>; conversions: Record<string, number>; insight?: { headline: string; insight: string; action_items: string[] } } | null>(null);
+  const [staleApps, setStaleApps] = useState<Array<{ record_id: string; job_title: string; company: string; days_stale: number }>>([]);
+  const [followups, setFollowups] = useState<Record<string, { subject: string; message: string }>>({});
+  const [reframe, setReframe] = useState<{ acknowledgement: string; what_went_right: string; next_actions: string[]; silver_lining: string } | null>(null);
 
   const fetch = useCallback(async () => {
     setLoading(true);
-    const resp = await apiService.listTailoringRecords();
+    const [resp, funnelResp, staleResp] = await Promise.all([
+      apiService.listTailoringRecords(),
+      apiService.getFunnelAnalytics(),
+      apiService.getStaleApplications(5),
+    ]);
     if (resp.data) setRecords((resp.data.records || []) as TailoringRecord[]);
+    if (funnelResp.data?.ok) {
+      setFunnel({
+        counts: funnelResp.data.counts || {},
+        conversions: funnelResp.data.conversions || {},
+        insight: funnelResp.data.insight,
+      });
+    }
+    if (staleResp.data?.stale_applications) {
+      setStaleApps(staleResp.data.stale_applications as Array<{ record_id: string; job_title: string; company: string; days_stale: number }>);
+    }
     setLoading(false);
   }, []);
   useEffect(() => { fetch(); }, [fetch]);
@@ -107,6 +125,10 @@ export default function ApplicationsTab() {
     setSavingId(null);
     if (resp.error) { toast.error("Failed to update status"); return; }
     updateRecord(id, r => ({ ...r, application: { ...(r.application || {}), ...resp.data!.application } }));
+    if (status === "rejected") {
+      const refr = await apiService.reframeRejection(id);
+      if (refr.data?.reframe) setReframe(refr.data.reframe);
+    }
   }, [updateRecord]);
 
   const handlePatch = useCallback(async (id: string, patch: Parameters<typeof apiService.updateApplication>[1]) => {
@@ -252,6 +274,21 @@ export default function ApplicationsTab() {
         />
       </div>
 
+      {funnel && (
+        <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04] p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-2">Funnel intelligence</p>
+          <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6 text-xs">
+            {["draft", "applied", "interviewing", "offer", "rejected", "ghosted"].map((k) => (
+              <div key={k} className="rounded-lg border border-indigo-500/15 bg-white/70 px-2 py-1.5 dark:bg-gray-900/50">
+                <p className="text-gray-500 dark:text-gray-400 capitalize">{k}</p>
+                <p className="font-semibold text-gray-900 dark:text-white">{funnel.counts[k] ?? 0}</p>
+              </div>
+            ))}
+          </div>
+          {funnel.insight && <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">{funnel.insight.insight}</p>}
+        </div>
+      )}
+
       {/* Upcoming banner */}
       {metrics.upcoming.length > 0 && (
         <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent p-3.5">
@@ -276,6 +313,52 @@ export default function ApplicationsTab() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {staleApps.length > 0 && (
+        <div className="rounded-2xl border border-rose-500/25 bg-rose-500/[0.04] p-3">
+          <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 mb-2">
+            Needs follow-up · {staleApps.length}
+          </p>
+          <div className="space-y-2">
+            {staleApps.slice(0, 4).map((s) => (
+              <div key={s.record_id} className="rounded-lg border border-rose-500/15 bg-white/70 p-2 dark:bg-gray-900/50">
+                <div className="flex flex-wrap items-center gap-2 justify-between">
+                  <p className="text-xs font-semibold text-gray-900 dark:text-white">{s.job_title} {s.company ? `· ${s.company}` : ""}</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const r = await apiService.generateIntelligenceFollowup({ record_id: s.record_id, channel: "email" });
+                      if (r.data?.followup) {
+                        setFollowups((prev) => ({ ...prev, [s.record_id]: { subject: r.data!.followup.subject, message: r.data!.followup.message } }));
+                      }
+                    }}
+                    className="rounded bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300"
+                  >
+                    Draft follow-up
+                  </button>
+                </div>
+                {followups[s.record_id] && (
+                  <div className="mt-2 rounded border border-gray-200/80 p-2 text-xs dark:border-white/10">
+                    <p className="font-semibold text-gray-800 dark:text-gray-200">{followups[s.record_id].subject}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{followups[s.record_id].message}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {reframe && (
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-4">
+          <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">{reframe.acknowledgement}</p>
+          <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">{reframe.what_went_right}</p>
+          <ul className="mt-2 list-disc ml-5 text-xs text-gray-600 dark:text-gray-300">
+            {reframe.next_actions?.map((a, idx) => <li key={idx}>{a}</li>)}
+          </ul>
+          <p className="mt-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">{reframe.silver_lining}</p>
         </div>
       )}
 

@@ -5294,6 +5294,7 @@ function TailorTab() {
             {/* RIGHT — escape hatch, ghost actions, primary dropdown */}
             <div className="flex items-center gap-1.5 shrink-0">
               <button
+                type="button"
                 onClick={handleStartNew}
                 title="Start a new tailor with a different job"
                 className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-300 hover:bg-purple-500/10 transition-all"
@@ -5303,6 +5304,7 @@ function TailorTab() {
               </button>
 
               <button
+                type="button"
                 onClick={() => setEditing(true)}
                 title="Edit the tailored resume"
                 className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-300 hover:bg-purple-500/10 transition-all"
@@ -5328,6 +5330,7 @@ function TailorTab() {
               {/* Primary CTA — Download Resume with format dropdown */}
               <div className="relative">
                 <button
+                  type="button"
                   onClick={() => setDownloadMenuOpen((v) => !v)}
                   disabled={downloading !== null}
                   aria-haspopup="menu"
@@ -5363,7 +5366,9 @@ function TailorTab() {
                 {downloadMenuOpen && (
                   <>
                     {/* Click-outside catcher */}
-                    <div
+                    <button
+                      type="button"
+                      aria-label="Close download menu"
                       className="fixed inset-0 z-10"
                       onClick={() => setDownloadMenuOpen(false)}
                     />
@@ -5376,6 +5381,7 @@ function TailorTab() {
                       className="absolute bottom-full right-0 mb-2 w-64 rounded-xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10 shadow-2xl shadow-black/20 p-1.5 z-20 overflow-hidden"
                     >
                       <button
+                        type="button"
                         role="menuitem"
                         onClick={() => {
                           setDownloadMenuOpen(false);
@@ -5397,6 +5403,7 @@ function TailorTab() {
                         </div>
                       </button>
                       <button
+                        type="button"
                         role="menuitem"
                         onClick={() => {
                           setDownloadMenuOpen(false);
@@ -5432,10 +5439,9 @@ function TailorTab() {
           <div className="max-w-7xl mx-auto px-0 sm:px-0 lg:px-0">
             <Suspense
               fallback={
-                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                    Loading editor...
-                  </span>
+                <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8">
+                  <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
+                  <div className="mt-3 h-40 animate-pulse rounded bg-gray-200 dark:bg-white/10" />
                 </div>
               }
             >
@@ -5564,6 +5570,7 @@ function ResumeSectionNav({
                 return (
                   <button
                     key={item.key}
+                    type="button"
                     onClick={() => onSelect(item.key)}
                     aria-current={active ? "page" : undefined}
                     aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
@@ -5761,22 +5768,28 @@ export default function ResumeParser() {
               <div className="flex items-center gap-1 shrink-0">
                 <ThemeToggle />
                 <button
+                  type="button"
                   onClick={() => (window.location.href = "/home")}
                   aria-label="Home"
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all"
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-full text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
                 >
                   <HomeIcon className="w-4 h-4" />
                 </button>
                 <div className="relative">
                   <button
+                    type="button"
                     onClick={() => setUserMenuOpen((v) => !v)}
+                    aria-haspopup="menu"
+                    aria-expanded={userMenuOpen}
                     className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 text-white text-xs font-bold ring-2 ring-purple-500/40 hover:ring-purple-500/60 hover:scale-105 transition-all"
                   >
                     {(user?.name || user?.email || "U").charAt(0).toUpperCase()}
                   </button>
                   {userMenuOpen && (
                     <>
-                      <div
+                      <button
+                        type="button"
+                        aria-label="Close user menu"
                         className="fixed inset-0 z-10"
                         onClick={() => setUserMenuOpen(false)}
                       />
@@ -5790,6 +5803,7 @@ export default function ResumeParser() {
                           </p>
                         </div>
                         <button
+                          type="button"
                           onClick={() => {
                             selectNav("profile");
                             setUserMenuOpen(false);
@@ -5921,9 +5935,7 @@ export default function ResumeParser() {
 
             <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
               <div className="mx-auto max-w-[1500px]">
-              <div className={activeNav === "tailor" ? "" : "hidden"}>
-                <TailorTab />
-              </div>
+              {activeNav === "tailor" && <TailorTab />}
               {activeNav === "batch" && (
                 <Suspense
                   fallback={
@@ -5937,7 +5949,7 @@ export default function ResumeParser() {
                 <Suspense
                   fallback={
                     <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading job opportunities...</span>
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
                     </div>
                   }
                 >
@@ -5950,7 +5962,7 @@ export default function ResumeParser() {
                 <Suspense
                   fallback={
                     <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading applications…</span>
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
                     </div>
                   }
                 >
@@ -5961,7 +5973,7 @@ export default function ResumeParser() {
                 <Suspense
                   fallback={
                     <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading prep…</span>
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
                     </div>
                   }
                 >
@@ -5972,7 +5984,7 @@ export default function ResumeParser() {
                 <Suspense
                   fallback={
                     <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">Loading Career Copilot…</span>
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
                     </div>
                   }
                 >

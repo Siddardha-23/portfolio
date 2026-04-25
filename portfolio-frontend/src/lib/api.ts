@@ -1465,6 +1465,138 @@ class ApiService {
     );
   }
 
+  // --- Outreach Campaign methods ---
+
+  async getOutreachCampaigns(): Promise<ApiResponse<{
+    campaigns: Array<{
+      campaign_id: string;
+      target_company: string;
+      target_role: string;
+      channel: string;
+      contacts: Array<{ name: string; title: string; notes: string }>;
+      sequence: Array<{
+        step: number;
+        action: string;
+        template: string;
+        status: string;
+        sent_at: string | null;
+        notes: string;
+      }>;
+      status: string;
+      created_at: string;
+    }>;
+  }>> {
+    return this.request("/resume/career-copilot/outreach/campaigns");
+  }
+
+  async createOutreachCampaign(body: {
+    target_company: string;
+    target_role: string;
+    contacts?: Array<{ name: string; title: string; notes: string }>;
+    channel: string;
+  }): Promise<ApiResponse<{ ok: boolean; campaign: any }>> {
+    return this.request(
+      "/resume/career-copilot/outreach/create",
+      { method: "POST", body: JSON.stringify(body) },
+      30000,
+    );
+  }
+
+  async generateOutreachSequence(body: {
+    company: string;
+    role: string;
+    channel: string;
+  }): Promise<ApiResponse<{
+    ok: boolean;
+    sequence: Array<{ step: number; action: string; template: string }>;
+  }>> {
+    return this.request(
+      "/resume/career-copilot/outreach/generate-sequence",
+      { method: "POST", body: JSON.stringify(body) },
+      120000,
+    );
+  }
+
+  async updateOutreachStep(
+    campaignId: string,
+    body: { step_index: number; status: string; notes?: string },
+  ): Promise<ApiResponse<{ ok: boolean; campaign: any }>> {
+    return this.request(
+      `/resume/career-copilot/outreach/${campaignId}/step`,
+      { method: "PATCH", body: JSON.stringify(body) },
+      15000,
+    );
+  }
+
+  // --- Memory methods ---
+
+  async getMemoryNotes(): Promise<ApiResponse<{ notes: Record<string, string> }>> {
+    return this.request("/resume/career-copilot/memory");
+  }
+
+  async saveMemoryNote(key: string, value: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      "/resume/career-copilot/memory",
+      { method: "POST", body: JSON.stringify({ key, value }) },
+      15000,
+    );
+  }
+
+  async deleteMemoryNote(key: string): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      `/resume/career-copilot/memory/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+      15000,
+    );
+  }
+
+  // --- Timeline ---
+
+  async getCopilotTimeline(limit?: number): Promise<ApiResponse<{
+    events: Array<{ type: string; description: string; timestamp: string }>;
+  }>> {
+    const q = limit ? `?limit=${limit}` : "";
+    return this.request(`/resume/career-copilot/timeline${q}`);
+  }
+
+  // --- Playground quiz/assessment ---
+
+  async generatePlaygroundQuiz(body: {
+    topic: string;
+    difficulty: "easy" | "medium" | "hard";
+    count: number;
+  }): Promise<ApiResponse<{
+    ok: boolean;
+    questions: Array<{
+      question: string;
+      options: string[];
+      correct_index: number;
+      explanation: string;
+    }>;
+  }>> {
+    return this.request(
+      "/resume/career-copilot/playground/quiz",
+      { method: "POST", body: JSON.stringify(body) },
+      120000,
+    );
+  }
+
+  async evaluatePlaygroundAnswer(body: {
+    question: string;
+    user_answer: string;
+  }): Promise<ApiResponse<{
+    ok: boolean;
+    score: number;
+    feedback: string;
+    model_answer: string;
+  }>> {
+    return this.request(
+      "/resume/career-copilot/playground/evaluate",
+      { method: "POST", body: JSON.stringify(body) },
+      60000,
+    );
+  }
+
   async evaluateMockAnswer(
     recordId: string,
     body: { question: string; user_answer: string; category?: string },

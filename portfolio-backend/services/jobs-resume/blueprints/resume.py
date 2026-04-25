@@ -2007,3 +2007,252 @@ def career_copilot_playground_reset():
     except Exception as e:
         logger.exception("playground reset: %s", e)
         return jsonify({"error": "Failed"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Outreach Campaigns
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/outreach/create", methods=["POST"])
+@jwt_required()
+def career_copilot_outreach_create():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cp_outreach_create:{client_ip}", max_requests=10, window_seconds=3600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    target_company = InputSanitizer.sanitize_string(data.get("target_company") or "", max_length=200)
+    target_role = InputSanitizer.sanitize_string(data.get("target_role") or "", max_length=200)
+    channel = InputSanitizer.sanitize_string(data.get("channel") or "", max_length=20)
+    contacts = data.get("contacts") or []
+
+    if not target_company or not target_role:
+        return jsonify({"error": "target_company and target_role are required"}), 400
+    if channel not in ("email", "linkedin", "twitter"):
+        channel = "email"
+
+    sanitized_contacts = []
+    if isinstance(contacts, list):
+        for c in contacts[:20]:
+            if not isinstance(c, dict):
+                continue
+            sanitized_contacts.append({
+                "name": InputSanitizer.sanitize_string(c.get("name") or "", max_length=100),
+                "title": InputSanitizer.sanitize_string(c.get("title") or "", max_length=100),
+                "notes": InputSanitizer.sanitize_string(c.get("notes") or "", max_length=500),
+            })
+
+    try:
+        from services.career_copilot_service import create_outreach_campaign
+        result = create_outreach_campaign(user_email, target_company, target_role, sanitized_contacts, channel)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("outreach create: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/outreach/campaigns", methods=["GET"])
+@jwt_required()
+def career_copilot_outreach_campaigns():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import get_outreach_campaigns
+        campaigns = get_outreach_campaigns(user_email)
+        return jsonify({"campaigns": campaigns}), 200
+    except Exception as e:
+        logger.exception("outreach campaigns: %s", e)
+        return jsonify({"error": "Failed to load campaigns"}), 500
+
+
+@resume_bp.route("/career-copilot/outreach/generate-sequence", methods=["POST"])
+@jwt_required()
+def career_copilot_outreach_generate_sequence():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cp_outreach_seq:{client_ip}", max_requests=20, window_seconds=3600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    company = InputSanitizer.sanitize_string(data.get("company") or "", max_length=200)
+    role = InputSanitizer.sanitize_string(data.get("role") or "", max_length=200)
+    channel = InputSanitizer.sanitize_string(data.get("channel") or "", max_length=20)
+
+    if not company or not role:
+        return jsonify({"error": "company and role are required"}), 400
+    if channel not in ("email", "linkedin", "twitter"):
+        return jsonify({"error": "channel must be email, linkedin, or twitter"}), 400
+
+    try:
+        from services.career_copilot_service import generate_outreach_sequence
+        result = generate_outreach_sequence(company, role, channel, user_email)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("outreach generate-sequence: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/outreach/<campaign_id>/step", methods=["PATCH"])
+@jwt_required()
+def career_copilot_outreach_update_step(campaign_id):
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    step_index = data.get("step_index")
+    status = InputSanitizer.sanitize_string(data.get("status") or "", max_length=32)
+    notes = InputSanitizer.sanitize_string(data.get("notes") or "", max_length=500)
+
+    if step_index is None or not isinstance(step_index, int):
+        return jsonify({"error": "step_index (int) is required"}), 400
+    if not status:
+        return jsonify({"error": "status is required"}), 400
+
+    try:
+        from services.career_copilot_service import update_campaign_step
+        result = update_campaign_step(user_email, campaign_id, step_index, status, notes)
+        if not result:
+            return jsonify({"error": "Campaign not found"}), 404
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("outreach update step: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Memory Notes
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/memory", methods=["POST"])
+@jwt_required()
+def career_copilot_memory_save():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    key = InputSanitizer.sanitize_string(data.get("key") or "", max_length=64)
+    value = InputSanitizer.sanitize_string(data.get("value") or "", max_length=500)
+
+    if not key or not value:
+        return jsonify({"error": "key and value are required"}), 400
+
+    try:
+        from services.career_copilot_service import save_memory_note
+        save_memory_note(user_email, key, value)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("memory save: %s", e)
+        return jsonify({"error": "Failed to save note"}), 500
+
+
+@resume_bp.route("/career-copilot/memory", methods=["GET"])
+@jwt_required()
+def career_copilot_memory_get():
+    user_email = get_jwt_identity()
+    try:
+        from services.career_copilot_service import get_memory_notes
+        notes = get_memory_notes(user_email)
+        return jsonify({"notes": notes}), 200
+    except Exception as e:
+        logger.exception("memory get: %s", e)
+        return jsonify({"error": "Failed to load notes"}), 500
+
+
+@resume_bp.route("/career-copilot/memory/<key>", methods=["DELETE"])
+@jwt_required()
+def career_copilot_memory_delete(key):
+    user_email = get_jwt_identity()
+    key = InputSanitizer.sanitize_string(key or "", max_length=64)
+    if not key:
+        return jsonify({"error": "key is required"}), 400
+
+    try:
+        from services.career_copilot_service import delete_memory_note
+        delete_memory_note(user_email, key)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("memory delete: %s", e)
+        return jsonify({"error": "Failed to delete note"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Session Timeline
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/timeline", methods=["GET"])
+@jwt_required()
+def career_copilot_timeline():
+    user_email = get_jwt_identity()
+    try:
+        limit = min(int(request.args.get("limit", 20)), 100)
+    except (ValueError, TypeError):
+        limit = 20
+
+    try:
+        from services.career_copilot_service import get_session_timeline
+        events = get_session_timeline(user_email, limit)
+        return jsonify({"events": events}), 200
+    except Exception as e:
+        logger.exception("timeline: %s", e)
+        return jsonify({"error": "Failed to load timeline"}), 500
+
+
+# ------------------------------------------------------------------
+# Career Copilot — Playground Quiz / Assessment
+# ------------------------------------------------------------------
+
+
+@resume_bp.route("/career-copilot/playground/quiz", methods=["POST"])
+@jwt_required()
+def career_copilot_playground_quiz():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cp_quiz:{client_ip}", max_requests=20, window_seconds=3600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    topic = InputSanitizer.sanitize_string(data.get("topic") or "", max_length=300)
+    difficulty = InputSanitizer.sanitize_string(data.get("difficulty") or "", max_length=10)
+    count = data.get("count", 3)
+
+    if not topic:
+        return jsonify({"error": "topic is required"}), 400
+    if difficulty not in ("easy", "medium", "hard"):
+        return jsonify({"error": "difficulty must be easy, medium, or hard"}), 400
+    if not isinstance(count, int) or count < 3 or count > 5:
+        return jsonify({"error": "count must be an integer between 3 and 5"}), 400
+
+    try:
+        from services.career_copilot_service import generate_quiz
+        result = generate_quiz(user_email, topic, difficulty, count)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("playground quiz: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500
+
+
+@resume_bp.route("/career-copilot/playground/evaluate", methods=["POST"])
+@jwt_required()
+def career_copilot_playground_evaluate():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"cp_evaluate:{client_ip}", max_requests=30, window_seconds=3600):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(force=True) or {}
+    question = InputSanitizer.sanitize_string(data.get("question") or "", max_length=2000)
+    user_answer = InputSanitizer.sanitize_string(data.get("user_answer") or "", max_length=5000)
+
+    if not question or not user_answer:
+        return jsonify({"error": "question and user_answer are required"}), 400
+
+    try:
+        from services.career_copilot_service import submit_playground_answer
+        result = submit_playground_answer(user_email, question, user_answer)
+        return jsonify(result), 200
+    except Exception as e:
+        logger.exception("playground evaluate: %s", e)
+        return jsonify({"error": str(e)[:200]}), 500

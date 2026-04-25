@@ -5603,7 +5603,7 @@ function ResumeSectionNav({
                     aria-current={active ? "page" : undefined}
                     aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
                     title={collapsed ? `${item.label}${item.badge ? ` - ${item.badge}` : ""}` : undefined}
-                    className={`group relative flex h-10 w-full items-center rounded-lg text-sm font-semibold transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
+                    className={`group relative flex h-10 w-full items-center rounded-lg text-sm font-semibold transition-all duration-200 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
                       collapsed ? "justify-center px-0" : "gap-3 px-2.5"
                     } ${
                       active
@@ -5721,6 +5721,7 @@ export default function ResumeParser() {
   const [activeNav, setActiveNav] = useState<NavTab>("tailor");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("resumeParserSidebarCollapsed") === "true";
@@ -5748,6 +5749,8 @@ export default function ResumeParser() {
       String(sidebarCollapsed),
     );
   }, [sidebarCollapsed]);
+
+  const sidebarEffectiveCollapsed = sidebarCollapsed && !sidebarHoverExpanded;
 
   return (
     <AuthGate
@@ -5914,8 +5917,14 @@ export default function ResumeParser() {
         <div className="lg:flex lg:items-start">
           <div className="flex items-start lg:contents">
             <aside
+              onMouseEnter={() => {
+                if (sidebarCollapsed) setSidebarHoverExpanded(true);
+              }}
+              onMouseLeave={() => {
+                if (sidebarCollapsed) setSidebarHoverExpanded(false);
+              }}
               className={`relative hidden lg:flex sticky top-14 h-[calc(100vh-3.5rem)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white/95 backdrop-blur-xl transition-[width] duration-300 dark:border-white/10 dark:bg-gray-950/95 ${
-                sidebarCollapsed ? "w-20" : "w-[19rem]"
+                sidebarEffectiveCollapsed ? "w-20" : "w-[19rem]"
               }`}
             >
               <div
@@ -5924,10 +5933,10 @@ export default function ResumeParser() {
               />
               <div
                 className={`flex h-16 shrink-0 items-center border-b border-gray-200 dark:border-white/10 ${
-                  sidebarCollapsed ? "justify-center px-2" : "justify-between gap-3 px-4"
+                  sidebarEffectiveCollapsed ? "justify-center px-2" : "justify-between gap-3 px-4"
                 }`}
               >
-                {!sidebarCollapsed && (
+                {!sidebarEffectiveCollapsed && (
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-indigo-600 shadow-lg shadow-purple-500/20">
                       <SparklesIcon className="h-4 w-4 text-white" />
@@ -5945,27 +5954,43 @@ export default function ResumeParser() {
                 <button
                   type="button"
                   onClick={() => setSidebarCollapsed((value) => !value)}
-                  aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-                  aria-expanded={!sidebarCollapsed}
-                  title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-label={sidebarEffectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+                  aria-expanded={!sidebarEffectiveCollapsed}
+                  title={sidebarEffectiveCollapsed ? "Expand sidebar" : "Collapse sidebar"}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-950 dark:text-gray-400 dark:hover:bg-white/5 dark:hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
                 >
-                  {sidebarCollapsed ? (
+                  {sidebarEffectiveCollapsed ? (
                     <PanelLeftOpen className="h-4 w-4" />
                   ) : (
                     <PanelLeftClose className="h-4 w-4" />
                   )}
                 </button>
               </div>
+              {!sidebarEffectiveCollapsed && (
+                <button
+                  type="button"
+                  aria-label="Minimize sidebar"
+                  title="Hover or click to minimize"
+                  onMouseEnter={() => {
+                    setSidebarCollapsed(true);
+                    setSidebarHoverExpanded(false);
+                  }}
+                  onClick={() => {
+                    setSidebarCollapsed(true);
+                    setSidebarHoverExpanded(false);
+                  }}
+                  className="absolute right-0 top-16 bottom-0 w-1.5 bg-transparent hover:bg-indigo-500/20 transition-colors"
+                />
+              )}
               <div className="flex-1 overflow-y-auto py-3">
                 <ResumeSectionNav
                   activeNav={activeNav}
-                  collapsed={sidebarCollapsed}
+                  collapsed={sidebarEffectiveCollapsed}
                   onSelect={selectNav}
                 />
               </div>
               <SidebarAccount
-                collapsed={sidebarCollapsed}
+                collapsed={sidebarEffectiveCollapsed}
                 user={user}
                 onOpenProfile={() => selectNav("profile")}
               />

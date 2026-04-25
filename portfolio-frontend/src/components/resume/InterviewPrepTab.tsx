@@ -246,16 +246,34 @@ export default function InterviewPrepTab() {
 
   return (
     <div className="space-y-4">
-      <div>
+      <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-white/[0.08] dark:bg-gray-900/40">
         <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Interview Prep</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-relaxed">
           A collaborative practice system — question banks, timed mock answers with AI grading, an always-on coach who knows your resume and JD.
         </p>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Selected role</p>
+            <p className="truncate text-sm font-semibold text-purple-700 dark:text-purple-300">{selected?.jd_analysis?.job_title || "None"}</p>
+          </div>
+          <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Questions</p>
+            <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">{norm ? norm.behavioral.length + norm.technical.length + norm.company.length : 0}</p>
+          </div>
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Reviewed</p>
+            <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{reviewed.size}/{totalItems}</p>
+          </div>
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Coverage</p>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{progress}%</p>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] gap-4">
         {/* Record picker */}
-        <aside className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/50 dark:bg-gray-900/30 p-2 space-y-1 max-h-[80vh] overflow-y-auto">
+        <aside className="rounded-xl border border-gray-200 dark:border-gray-800/60 bg-white/70 dark:bg-gray-900/40 p-2 space-y-1 max-h-[80vh] overflow-y-auto md:sticky md:top-20">
           <div className="relative mb-1">
             <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
@@ -274,7 +292,7 @@ export default function InterviewPrepTab() {
               <button
                 key={r.record_id}
                 onClick={() => setSelectedId(r.record_id)}
-                className={`w-full text-left px-3 py-2.5 rounded-md transition-colors ${isSel ? "bg-purple-500/15 border border-purple-500/30" : "hover:bg-gray-100/60 dark:hover:bg-gray-800/40 border border-transparent"}`}
+                className={`w-full text-left px-3 py-2.5 rounded-md transition-colors ${isSel ? "bg-purple-500/15 border border-purple-500/30 shadow-sm shadow-purple-500/10" : "hover:bg-gray-100/60 dark:hover:bg-gray-800/40 border border-transparent"}`}
               >
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">{r.jd_analysis?.job_title || "Untitled"}</p>
                 <p className="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">
@@ -299,7 +317,7 @@ export default function InterviewPrepTab() {
           ) : (
             <>
               {/* Title / generate card */}
-              <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gradient-to-br from-purple-500/5 via-white/50 to-transparent dark:from-purple-500/10 dark:via-gray-900/40 dark:to-transparent p-5">
+              <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-gradient-to-br from-purple-500/5 via-white/70 to-transparent dark:from-purple-500/10 dark:via-gray-900/50 dark:to-transparent p-5">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-purple-500 dark:text-purple-400">Prep for</p>
@@ -368,7 +386,7 @@ export default function InterviewPrepTab() {
               {content && norm && (
                 <>
                   {/* Top-level tabs */}
-                  <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800/60 pb-0.5">
+                  <div className="flex items-center gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800/60 pb-0.5 sticky top-0 z-10 bg-white/90 dark:bg-gray-900/80 backdrop-blur-sm">
                     {TOP_TABS.map(t => {
                       const isActive = topTab === t.key;
                       return (
@@ -377,7 +395,7 @@ export default function InterviewPrepTab() {
                           onClick={() => setTopTab(t.key)}
                           className={`shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-sm font-medium transition-all border-b-2 ${
                             isActive
-                              ? "border-purple-500 text-gray-900 dark:text-gray-100 bg-purple-500/5"
+                              ? "border-purple-500 text-gray-900 dark:text-gray-100 bg-purple-500/10"
                               : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
                           }`}
                         >

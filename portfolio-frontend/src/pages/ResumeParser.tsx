@@ -2736,13 +2736,31 @@ function ProfileTab() {
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="rounded-2xl border border-gray-200/80 bg-white/70 p-4 dark:border-white/[0.07] dark:bg-gray-900/40">
         <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100">
           Profile & Career Strategy
         </h2>
         <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
           Industry-level profile configuration for better tailoring, outreach, and copilot guidance.
         </p>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-lg border border-indigo-500/20 bg-indigo-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Completion</p>
+            <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300">{completion}%</p>
+          </div>
+          <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Readiness</p>
+            <p className={`text-sm font-semibold ${scoreTone}`}>{recruiterReadyScore}/100</p>
+          </div>
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Open gaps</p>
+            <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">{topGaps.length}</p>
+          </div>
+          <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Memory sync</p>
+            <p className="text-sm font-semibold text-violet-700 dark:text-violet-300">{memoryLoading ? "..." : "Ready"}</p>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-500/10 via-purple-500/5 to-transparent p-4">
@@ -2763,7 +2781,7 @@ function ProfileTab() {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6">
+      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/80 dark:bg-gray-900/50 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Recruiter-ready Score</p>
@@ -2809,7 +2827,7 @@ function ProfileTab() {
         )}
       </div>
 
-      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6 space-y-5">
+      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/80 dark:bg-gray-900/50 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6 space-y-5">
         <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
           Identity
         </p>
@@ -3107,7 +3125,7 @@ function ProfileTab() {
       </div>
 
       {/* Danger zone */}
-      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6">
+      <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/80 dark:bg-gray-900/50 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-6">
         <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-3">
           Account
         </p>
@@ -5472,6 +5490,7 @@ type ResumeNavItem = {
   label: string;
   icon: React.ReactNode;
   badge?: string;
+  hint?: string;
 };
 
 type ResumeNavSection = {
@@ -5484,47 +5503,56 @@ const NAV_ITEMS: ResumeNavItem[] = [
     key: "tailor",
     label: "Tailor",
     icon: <SparklesIcon className="w-4 h-4" />,
+    hint: "Single JD optimization",
   },
   {
     key: "batch",
     label: "Batch Tailor",
     icon: <ClipboardIcon className="w-4 h-4" />,
+    hint: "Multi-JD pipeline",
   },
   {
     key: "my-resumes",
     label: "My Resumes",
     icon: <FileIcon className="w-4 h-4" />,
+    hint: "Manage base resumes",
   },
   {
     key: "tailored",
     label: "Tailored Resumes",
     icon: <DocumentArrowDownIcon className="w-4 h-4" />,
+    hint: "Versioned outputs",
   },
   {
     key: "applications",
     label: "Applications",
     icon: <ClipboardIcon className="w-4 h-4" />,
+    hint: "Track hiring pipeline",
   },
   {
     key: "interview",
     label: "Interview Prep",
     icon: <SparklesIcon className="w-4 h-4" />,
+    hint: "Practice + AI coach",
   },
   {
     key: "copilot",
     label: "Career Copilot",
     icon: <Bot className="w-4 h-4" />,
+    hint: "Agentic RAG copilot",
   },
   {
     key: "jobs",
     label: "Job Opportunities",
     icon: <MagnifyingGlassIcon className="w-4 h-4" />,
     badge: "Beta",
+    hint: "Discover and save roles",
   },
   {
     key: "profile",
     label: "Profile",
     icon: <UserCircleIcon className="w-4 h-4" />,
+    hint: "Identity + strategy",
   },
 ];
 
@@ -5600,7 +5628,14 @@ function ResumeSectionNav({
                     </span>
                     {!collapsed && (
                       <>
-                        <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+                        <span className="min-w-0 flex-1 text-left">
+                          <span className="block truncate">{item.label}</span>
+                          {item.hint && (
+                            <span className="mt-0.5 block truncate text-[10px] font-medium text-gray-400 dark:text-gray-500">
+                              {item.hint}
+                            </span>
+                          )}
+                        </span>
                         {item.badge && (
                           <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
                             {item.badge}
@@ -5727,7 +5762,7 @@ export default function ResumeParser() {
         }}
       >
         {/* Top app bar keeps identity and account actions; sections live in the sidebar. */}
-        <header className="sticky top-0 z-50 border-b border-gray-200 dark:border-white/10 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl">
+        <header className="sticky top-0 z-50 border-b border-gray-200 dark:border-white/10 bg-white/95 dark:bg-gray-950/95 backdrop-blur-xl shadow-sm shadow-black/[0.03] dark:shadow-black/20">
           <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent" />
           <div className="w-full px-4 sm:px-6 lg:px-5">
             <div className="h-14 flex items-center gap-3">
@@ -5762,6 +5797,9 @@ export default function ResumeParser() {
                     </span>
                   )}
                 </div>
+                <p className="mt-1 hidden truncate text-[11px] font-medium text-gray-500 dark:text-gray-400 lg:block">
+                  {activeNavItem.hint || "AI-guided resume and career workspace"}
+                </p>
               </div>
 
               {/* Right actions */}
@@ -5877,7 +5915,7 @@ export default function ResumeParser() {
           <div className="flex items-start lg:contents">
             <aside
               className={`relative hidden lg:flex sticky top-14 h-[calc(100vh-3.5rem)] shrink-0 flex-col overflow-hidden border-r border-gray-200 bg-white/95 backdrop-blur-xl transition-[width] duration-300 dark:border-white/10 dark:bg-gray-950/95 ${
-                sidebarCollapsed ? "w-20" : "w-[18rem]"
+                sidebarCollapsed ? "w-20" : "w-[19rem]"
               }`}
             >
               <div

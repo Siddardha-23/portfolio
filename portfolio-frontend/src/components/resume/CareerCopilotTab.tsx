@@ -760,9 +760,14 @@ export default function CareerCopilotTab() {
               Career Copilot
             </h2>
             <p className="max-w-2xl text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
-              True multi-agent orchestration with tool-calling: resume RAG, outreach sequencing, project scaffolds,
-              PPT/PDF generation, interview drills, and adaptive learning playground. Everything grounded in your resume.
+              Ask naturally and get grounded responses from your resume context. Use this workspace for outreach, interview drills,
+              application strategy, networking, and offer decisions — all in one guided flow.
             </p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <span className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-semibold text-indigo-700 dark:text-indigo-300">Resume-grounded answers</span>
+              <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-700 dark:text-violet-300">Multi-agent tools</span>
+              <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">Actionable next steps</span>
+            </div>
             {!hasResume && (
               <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
                 No parsed resume — upload in <strong>My Resumes</strong> for grounded answers.
@@ -819,6 +824,23 @@ export default function CareerCopilotTab() {
                 </button>
               </div>
               <div className="max-h-[min(56vh,620px)] overflow-y-auto p-4 sm:p-5 space-y-4">
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {[
+                    { title: "Tailor for a role", prompt: "Tailor my resume strategy for a backend engineer role at Stripe." },
+                    { title: "Practice interview", prompt: "Run a quick mock behavioral interview for senior backend roles." },
+                    { title: "Create outreach", prompt: "Draft a 3-step outreach sequence for a recruiter at Google." },
+                  ].map((quick) => (
+                    <button
+                      key={quick.title}
+                      type="button"
+                      onClick={() => void send(quick.prompt)}
+                      className="rounded-lg border border-gray-200/80 bg-white/80 px-3 py-2 text-left text-xs transition hover:border-indigo-500/30 hover:bg-indigo-500/[0.03] dark:border-white/10 dark:bg-white/[0.03]"
+                    >
+                      <p className="font-semibold text-gray-900 dark:text-white">{quick.title}</p>
+                      <p className="mt-0.5 text-gray-500 dark:text-gray-400">One-click starter</p>
+                    </button>
+                  ))}
+                </div>
                 {messages.length === 0 && (
                   <div className="rounded-xl border border-dashed border-indigo-500/25 bg-indigo-500/[0.04] p-5 text-sm text-gray-600 dark:text-gray-400">
                     <div className="mb-2 flex items-center gap-2 font-semibold text-indigo-700 dark:text-indigo-300">

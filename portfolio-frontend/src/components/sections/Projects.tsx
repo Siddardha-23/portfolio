@@ -560,7 +560,7 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
             )}
 
             {/* Project status badge */}
-            <div className="absolute top-2 right-3 z-10">
+            <div className="absolute top-3 right-3 z-10 pointer-events-none">
               <Badge className={`backdrop-blur-sm border-0 px-2.5 py-0.5 shadow-lg text-xs ${project.status === 'Live'
                 ? 'bg-emerald-500/90 text-white'
                 : 'bg-amber-500/90 text-white'

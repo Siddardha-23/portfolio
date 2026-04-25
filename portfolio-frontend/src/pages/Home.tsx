@@ -37,6 +37,9 @@ export default function Home() {
       }, 150);
       return () => clearTimeout(timer);
     }
+
+    // Ensure fresh landing on Home starts at the top.
+    window.scrollTo({ top: 0, behavior: 'auto' });
   }, [location.hash]);
 
   return (

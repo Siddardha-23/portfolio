@@ -97,6 +97,7 @@ function RecruiterPanel() {
   } | null>(null);
   const [currentOrgIndex, setCurrentOrgIndex] = useState(0);
   const [isCarouselPaused, setIsCarouselPaused] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   const filteredRoles = ROLES.filter(role =>
     role.toLowerCase().includes(searchQuery.toLowerCase())
@@ -111,6 +112,8 @@ function RecruiterPanel() {
         }
       } catch {
         // Silently handle fetch failure
+      } finally {
+        setIsLoadingStats(false);
       }
     };
     fetchStats();
@@ -213,6 +216,13 @@ function RecruiterPanel() {
           </div>
 
           {/* Stats Grid */}
+          {isLoadingStats && (
+            <div className="grid grid-cols-3 gap-3 mb-6 animate-pulse" aria-hidden>
+              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
+              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
+              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
+            </div>
+          )}
           {stats && (
             <div className="grid grid-cols-3 gap-3 mb-6">
               <div className="text-center p-3 rounded-xl bg-secondary/40 border border-border">
@@ -337,7 +347,7 @@ export default function Hero() {
   ];
 
   return (
-    <section className="relative min-h-screen flex items-center overflow-hidden py-20 md:py-24">
+    <section id="hero" className="relative min-h-screen flex items-center overflow-hidden py-20 md:py-24">
       {/* Background */}
       <div className="absolute inset-0">
         <div className="absolute inset-0 bg-gradient-to-br from-background via-secondary/20 to-background" />
@@ -381,7 +391,7 @@ export default function Hero() {
                 transition={{ delay: 0.2, duration: 0.5 }}
                 className="mb-4 md:mb-6"
               >
-                <Badge className="px-3 py-1.5 text-xs md:text-sm bg-primary/10 text-primary border-primary/30">
+                <Badge className="px-3 py-1.5 text-xs md:text-sm bg-primary/10 text-primary border-primary/30 cursor-default pointer-events-none">
                   <Sparkles className="h-3 w-3 md:h-4 md:w-4 mr-1.5" />
                   {isReturningVisitor ? `Welcome back, ${visitorName}!` : `Hello, ${visitorName}!`}
                 </Badge>

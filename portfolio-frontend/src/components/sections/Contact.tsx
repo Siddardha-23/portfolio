@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Mail, Phone, Send, Github, Linkedin,
-  CheckCircle2, ArrowRight, ExternalLink, MapPin,
+  CheckCircle2, ArrowRight, MapPin,
   MessageSquare, Clock, Sparkles, Heart
 } from 'lucide-react';
 import { PERSONAL_INFO } from '@/lib/constants';
@@ -37,7 +37,7 @@ function QuickConnectButton({ icon: Icon, label, href, color, isExternal }: {
       href={href}
       target={isExternal ? "_blank" : undefined}
       rel={isExternal ? "noopener noreferrer" : undefined}
-      whileHover={{ scale: 1.05, y: -3 }}
+      whileHover={{ scale: 1.02, y: -1 }}
       whileTap={{ scale: 0.98 }}
       className="group flex flex-col items-center p-3 md:p-4 rounded-xl md:rounded-2xl bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl"
     >
@@ -48,9 +48,8 @@ function QuickConnectButton({ icon: Icon, label, href, color, isExternal }: {
         <Icon className="h-5 w-5 md:h-6 md:w-6" style={{ color }} />
       </div>
       <span className="text-xs md:text-sm font-medium text-foreground">{label}</span>
-      <span className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1 flex items-center">
+      <span className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">
         {isExternal ? 'Open' : 'Contact'}
-        <ExternalLink className="h-2.5 w-2.5 md:h-3 md:w-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
       </span>
     </motion.a>
   );
@@ -84,7 +83,7 @@ function AnimatedInput({
       />
       <Label
         htmlFor={id}
-        className={`absolute left-3 transition-all duration-200 pointer-events-none ${isFocused || hasValue
+        className={`absolute left-3 transition-all duration-300 ease-out pointer-events-none ${isFocused || hasValue
           ? 'top-2 text-xs text-primary'
           : 'top-1/2 -translate-y-1/2 text-muted-foreground'
           }`}

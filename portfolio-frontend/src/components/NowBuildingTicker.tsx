@@ -59,7 +59,7 @@ export default function NowBuildingTicker() {
   // Render nothing if there's no entry yet (don't show an empty band)
   if (loading) {
     return (
-      <div className="container mx-auto px-4 -mt-6 md:-mt-8">
+      <div className="container mx-auto px-4 mt-2 md:mt-3">
         <div className="mx-auto max-w-4xl h-12 rounded-2xl border border-border/30 bg-foreground/[0.02] animate-pulse" />
       </div>
     );
@@ -73,7 +73,7 @@ export default function NowBuildingTicker() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
       transition={{ duration: 0.45, ease: "easeOut" }}
-      className="container mx-auto px-4 -mt-6 md:-mt-8 scroll-mt-24"
+      className="container mx-auto px-4 mt-2 md:mt-3 scroll-mt-24"
     >
       <div className="mx-auto max-w-4xl">
         <div className="group relative overflow-hidden rounded-2xl border border-border/50 bg-background/70 backdrop-blur-xl shadow-lg shadow-black/5">

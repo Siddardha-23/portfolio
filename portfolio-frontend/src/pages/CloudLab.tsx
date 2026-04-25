@@ -18,6 +18,21 @@ const RecruiterMatch = lazy(() => import('@/components/RecruiterMatch'));
 const InfraHealthDashboard = lazy(() => import('@/components/InfraHealthDashboard'));
 const SandboxDeployer = lazy(() => import('@/components/SandboxDeployer'));
 
+function ModalLoadingFallback() {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div className="w-[min(560px,92vw)] rounded-2xl border border-border/60 bg-background/95 p-6 shadow-2xl">
+        <div className="space-y-3 animate-pulse">
+          <div className="h-5 w-40 rounded bg-secondary/60" />
+          <div className="h-4 w-64 rounded bg-secondary/40" />
+          <div className="h-40 rounded-xl bg-secondary/40" />
+          <div className="h-10 rounded-lg bg-secondary/40" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CloudLab() {
   useVisitorTracking('cloud-lab');
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -28,6 +43,16 @@ export default function CloudLab() {
   const [showMatch, setShowMatch] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
   const [showSandbox, setShowSandbox] = useState(false);
+
+  const hoverShadowClass: Record<string, string> = {
+    primary: 'hover:shadow-primary/10',
+    'violet-500': 'hover:shadow-violet-500/10',
+    'emerald-500': 'hover:shadow-emerald-500/10',
+    'rose-500': 'hover:shadow-rose-500/10',
+    'green-500': 'hover:shadow-green-500/10',
+    'blue-500': 'hover:shadow-blue-500/10',
+    'orange-500': 'hover:shadow-orange-500/10',
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -151,7 +176,7 @@ export default function CloudLab() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ delay: 0.1 + i * 0.05, duration: 0.4 }}
                 onClick={item.onClick}
-                className={`relative group bg-secondary/20 backdrop-blur-md rounded-xl p-4 md:p-6 border border-border/50 hover:border-border overflow-hidden text-left transition-all duration-300 hover:shadow-lg hover:shadow-${item.glow}/5`}
+                className={`relative group bg-secondary/20 backdrop-blur-md rounded-xl p-4 md:p-6 border border-border/50 hover:border-border overflow-hidden text-left transition-all duration-200 hover:shadow-md ${hoverShadowClass[item.glow] ?? ''}`}
               >
                 <div className={`absolute inset-0 bg-gradient-to-br ${item.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`} />
                 <div className="relative z-10">
@@ -189,7 +214,7 @@ export default function CloudLab() {
       <Footer />
 
       {/* Modals */}
-      <Suspense fallback={null}>
+      <Suspense fallback={<ModalLoadingFallback />}>
         {showTimeline && <GitTimeline isOpen={showTimeline} onClose={() => setShowTimeline(false)} />}
         {showAnalytics && <SectionAnalytics isOpen={showAnalytics} onClose={() => setShowAnalytics(false)} />}
         {showLatency && <EdgeLatencyTester isOpen={showLatency} onClose={() => setShowLatency(false)} />}

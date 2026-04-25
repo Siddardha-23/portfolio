@@ -60,6 +60,16 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
     }
   }, [isOpen]);
 
+  // Prevent background scrolling while modal is open.
+  useEffect(() => {
+    if (!isOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isOpen]);
+
   // Handle auto-scroll in terminal
   useEffect(() => {
     if (terminalRef.current) {
@@ -283,7 +293,7 @@ export default function SandboxDeployer({ isOpen, onClose }: SandboxDeployerProp
                           type="button"
                           disabled={isDeploying}
                           onClick={() => setColor(c.id)}
-                          className={`w-8 h-8 rounded-full ${c.hex} transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-${c.id.replace('text-', '')} ${color === c.id ? 'ring-2 ring-offset-2 ring-offset-background ring-foreground scale-110' : ''}`}
+                          className={`w-8 h-8 rounded-full ${c.hex} transition-transform hover:scale-110 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-background focus:ring-foreground ${color === c.id ? 'ring-2 ring-offset-2 ring-offset-background ring-foreground scale-110' : ''}`}
                           title={c.label}
                         />
                       ))}

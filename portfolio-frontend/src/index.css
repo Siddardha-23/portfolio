@@ -94,6 +94,13 @@
       box-shadow 0.25s ease-in-out;
   }
 
+  /* During theme toggles, disable all transitions to avoid staggered repaint/lag. */
+  html.theme-transitioning *,
+  html.theme-transitioning *::before,
+  html.theme-transitioning *::after {
+    transition: none !important;
+  }
+
   /* Disable transitions for animated elements */
   .no-transition,
   [class*="animate-"] {
@@ -154,7 +161,7 @@
 
   /* Premium button style */
   .btn-premium {
-    @apply bg-gradient-to-r from-primary to-accent text-white font-medium shadow-lg hover:shadow-xl hover:shadow-primary/25 transition-all duration-300 hover:-translate-y-0.5;
+    @apply bg-gradient-to-r from-primary to-accent text-white font-medium shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 hover:-translate-y-0;
   }
 }
 

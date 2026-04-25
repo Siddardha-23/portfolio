@@ -86,7 +86,13 @@ export default function Navbar() {
         const el = document.getElementById(hash);
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 200);
+      return;
     }
+
+    // Route-level navigation should always land at top.
+    setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'auto' });
+    }, 120);
   };
 
   const navVariants = {
@@ -164,8 +170,11 @@ export default function Navbar() {
           <div className="hidden lg:flex items-center gap-1">
             <nav role="navigation" aria-label="Main navigation" className="flex items-center bg-secondary/30 backdrop-blur-sm rounded-full p-1 mr-4 border border-border/50">
               {navItems.map((item, index) => {
-                const isActive = activeSection === item.href.split('#')[1] ||
-                  (item.href === '/home' && !activeSection && location.pathname === '/home');
+                const itemSection = item.href.split('#')[1];
+                const isActive = item.href === '/cloud-lab'
+                  ? location.pathname === '/cloud-lab'
+                  : activeSection === itemSection ||
+                    (item.href === '/home' && !activeSection && location.pathname === '/home');
 
                 return (
                   <motion.div
@@ -179,7 +188,7 @@ export default function Navbar() {
                       variant="ghost"
                       size="sm"
                       className={cn(
-                        "relative text-sm font-medium rounded-full px-4 py-2 transition-all duration-300",
+                        "relative text-sm font-medium rounded-full px-3.5 py-1.5 transition-all duration-200",
                         isActive
                           ? "text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground"
@@ -278,7 +287,10 @@ export default function Navbar() {
             >
               <ul className="space-y-2">
                 {navItems.map((item) => {
-                  const isActive = activeSection === item.href.split('#')[1];
+                  const itemSection = item.href.split('#')[1];
+                  const isActive = item.href === '/cloud-lab'
+                    ? location.pathname === '/cloud-lab'
+                    : activeSection === itemSection;
                   return (
                     <motion.li key={item.label} variants={mobileItemVariants}>
                       <Button

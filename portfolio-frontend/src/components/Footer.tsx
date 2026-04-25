@@ -104,17 +104,17 @@ export default function Footer() {
           <p className="text-sm text-muted-foreground">
             Made with ❤️ and lots of ☕
           </p>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <p className="gradient-text font-medium">
               © {currentYear} Harshith Siddardha Manne. All rights reserved.
             </p>
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
-              className="p-1.5 rounded-lg text-muted-foreground/30 hover:text-primary hover:bg-primary/10 transition-all duration-300 hover:scale-110"
+              className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-all duration-200"
               title="🎮"
               aria-label="Easter egg"
             >
-              <Gamepad2 className="h-4 w-4" />
+              <Gamepad2 className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

@@ -188,7 +188,9 @@ export function AgentMessage({ turn }: Props) {
           {turn.status === "done" && turn.latencyMs != null && (
             <div className="mt-2 flex items-center gap-2 text-[10px] text-muted-foreground/60 uppercase tracking-wider">
               <Sparkles className="h-2.5 w-2.5" />
-              <span>{turn.toolCalls.length} tool calls · {turn.latencyMs}ms</span>
+              <span>
+                {turn.toolCalls.length} tool call{turn.toolCalls.length === 1 ? "" : "s"} · {turn.latencyMs}ms
+              </span>
             </div>
           )}
         </div>

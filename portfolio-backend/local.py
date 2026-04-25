@@ -109,6 +109,9 @@ def create_app():
     from blueprints.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
 
+    from blueprints.agent import agent_bp
+    app.register_blueprint(agent_bp, url_prefix='/api/agent')
+
     from blueprints.infra import infra_bp
     app.register_blueprint(infra_bp, url_prefix='/api/infra')
 

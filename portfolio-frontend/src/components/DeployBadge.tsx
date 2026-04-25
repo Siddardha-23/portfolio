@@ -178,6 +178,7 @@ export default function DeployBadge() {
     if (error || !manifest) return null;
 
     const runUrl = `https://github.com/${manifest.repository}/actions/runs/${manifest.run_id}`;
+    const actionsUrl = `https://github.com/${manifest.repository}/actions`;
     const commitUrl = `https://github.com/${manifest.repository}/commit/${manifest.commit_sha}`;
 
     return (
@@ -311,7 +312,7 @@ export default function DeployBadge() {
                                             icon={Hash}
                                             label="Run"
                                             value={`#${manifest.run_number}`}
-                                            href={runUrl}
+                                            href={manifest.run_id ? runUrl : actionsUrl}
                                         />
                                         <InfoRow
                                             icon={Github}
@@ -370,7 +371,7 @@ export default function DeployBadge() {
                                 {/* Footer link */}
                                 <div className="pt-3 border-t border-border/30 mt-3">
                                     <a
-                                        href={runUrl}
+                                        href={manifest.run_id ? runUrl : actionsUrl}
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         className="
@@ -381,7 +382,6 @@ export default function DeployBadge() {
                                     >
                                         <Github className="h-3.5 w-3.5" />
                                         View full pipeline run
-                                        <ExternalLink className="h-3 w-3 opacity-0 group-hover/link:opacity-100 transition-opacity" />
                                     </a>
                                 </div>
                             </div>

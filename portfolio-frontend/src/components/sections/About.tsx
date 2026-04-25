@@ -1,6 +1,6 @@
 import { motion, useInView } from 'framer-motion';
 import { useRef, useState, useEffect } from 'react';
-import { Cloud, Code, Database, Server, Download, ArrowRight, Zap, Users, Clock, Target } from 'lucide-react';
+import { Cloud, Code, Database, Server, Download, Zap, Users, Clock, Target } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PERSONAL_INFO } from '@/lib/constants';
@@ -59,7 +59,7 @@ function FeatureCard({ icon: Icon, title, description, index, color }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.5, delay: index * 0.1 }}
-      whileHover={{ y: -8, scale: 1.02 }}
+      whileHover={{ y: -2 }}
       className="group relative"
     >
       {/* Glow effect on hover */}
@@ -68,27 +68,21 @@ function FeatureCard({ icon: Icon, title, description, index, color }: {
         style={{ background: `${color}30` }}
       />
 
-      <div className="relative bg-card p-6 rounded-2xl border border-border/50 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-2xl h-full">
+      <div className="relative bg-card p-6 rounded-2xl border border-border/50 transition-all duration-300 shadow-lg h-full">
         {/* Icon with gradient background */}
         <div
-          className="w-14 h-14 rounded-xl mb-4 flex items-center justify-center transition-transform duration-300 group-hover:rotate-6"
+          className="w-14 h-14 rounded-xl mb-4 flex items-center justify-center transition-transform duration-300"
           style={{ background: `linear-gradient(135deg, ${color}20, ${color}40)` }}
         >
           <Icon className="h-7 w-7" style={{ color }} />
         </div>
 
-        <h4 className="text-lg font-bold mb-2 text-foreground group-hover:text-primary transition-colors">
+        <h4 className="text-lg font-bold mb-2 text-foreground">
           {title}
         </h4>
         <p className="text-muted-foreground text-sm leading-relaxed">
           {description}
         </p>
-
-        {/* Learn more arrow that appears on hover */}
-        <div className="mt-4 flex items-center text-primary opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <span className="text-sm font-medium mr-1">Learn More</span>
-          <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition-transform" />
-        </div>
       </div>
     </motion.div>
   );
@@ -146,7 +140,7 @@ export default function About() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <Badge variant="outline" className="mb-3 md:mb-4 border-primary/40 text-primary px-3 md:px-4 py-1 text-xs md:text-sm">
+            <Badge variant="outline" className="mb-3 md:mb-4 border-primary/40 text-primary px-3 md:px-4 py-1 text-xs md:text-sm cursor-default pointer-events-none">
               <Users className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5 md:mr-2" />
               About Me
             </Badge>
@@ -233,10 +227,10 @@ export default function About() {
                     whileInView={{ opacity: 1, x: 0 }}
                     viewport={{ once: true }}
                     transition={{ delay: 0.3 + i * 0.1, duration: 0.4 }}
-                    className="flex items-center gap-3 group"
+                    className="flex items-center gap-3"
                   >
-                    <div className="w-2 h-2 rounded-full bg-primary group-hover:scale-150 transition-transform" />
-                    <span className="text-foreground/90 group-hover:text-primary transition-colors">
+                    <div className="w-2 h-2 rounded-full bg-primary" />
+                    <span className="text-foreground/90">
                       {item}
                     </span>
                   </motion.div>

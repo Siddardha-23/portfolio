@@ -51,8 +51,13 @@ export function ThemeProvider({
   const value = {
     theme,
     setTheme: (theme: Theme) => {
+      // Prevent staggered component-by-component visual lag during theme switch.
+      document.documentElement.classList.add('theme-transitioning')
       localStorage.setItem("theme", theme)
       setTheme(theme)
+      window.setTimeout(() => {
+        document.documentElement.classList.remove('theme-transitioning')
+      }, 180)
     },
   }
 

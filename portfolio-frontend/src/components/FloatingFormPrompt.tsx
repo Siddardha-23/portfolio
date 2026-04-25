@@ -53,6 +53,15 @@ export default function FloatingFormPrompt() {
         }
     }, []);
 
+    useEffect(() => {
+        if (!isFormOpen) return;
+        const previousOverflow = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [isFormOpen]);
+
     const handleDismiss = () => {
         setIsDismissed(true);
         setIsVisible(false);

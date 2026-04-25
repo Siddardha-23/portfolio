@@ -47,6 +47,7 @@ const SLIDE_IMAGES: string[] = [
 ];
 
 const PRESENTATION_FILE = '/Team 5_Pitch 3_11202025.pptx';
+const PRESENTATION_FILE_ENCODED = encodeURI(PRESENTATION_FILE);
 
 // ============ COMPONENTS ============
 
@@ -101,7 +102,7 @@ function PresentationViewer() {
 
     // PowerPoint Online full-page viewer URL (opens in new tab with animations)
     const pptxUrl = typeof window !== 'undefined'
-        ? `${window.location.origin}${PRESENTATION_FILE}`.replace(/ /g, '%20')
+        ? `${window.location.origin}${PRESENTATION_FILE_ENCODED}`
         : '';
     const viewerUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(pptxUrl)}`;
 
@@ -176,10 +177,17 @@ function PresentationViewer() {
         }, 250);
     };
 
-    const toggleFullscreen = () => {
+    const toggleFullscreen = async () => {
         if (!containerRef.current) return;
-        if (!document.fullscreenElement) containerRef.current.requestFullscreen().catch(() => {});
-        else document.exitFullscreen().catch(() => {});
+        try {
+            if (!document.fullscreenElement) {
+                await containerRef.current.requestFullscreen();
+            } else {
+                await document.exitFullscreen();
+            }
+        } catch {
+            // Ignore fullscreen failures in browsers/environments that block it.
+        }
     };
 
     const progress = ((current + 1) / total) * 100;
@@ -385,7 +393,7 @@ export default function AerosecCaseStudy() {
                             Full presentation including problem framing, customer discovery insights, solution architecture, business model, and go-to-market strategy.
                         </p>
                         <Button className="btn-premium" asChild>
-                            <a href={PRESENTATION_FILE} download>
+                            <a href={PRESENTATION_FILE_ENCODED} download>
                                 <Download className="h-4 w-4 mr-2" />
                                 Download Presentation
                             </a>

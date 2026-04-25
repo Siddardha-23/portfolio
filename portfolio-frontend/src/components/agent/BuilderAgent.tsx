@@ -81,6 +81,7 @@ export default function BuilderAgent() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [hasUnseen, setHasUnseen] = useState(false);
+  const [hasBlockingDialog, setHasBlockingDialog] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +97,26 @@ export default function BuilderAgent() {
       setHasUnseen(false);
     }
   }, [open]);
+
+  // Hide "Ask the team" trigger while another modal/dialog is open.
+  useEffect(() => {
+    const evaluate = () => {
+      const anyOpenDialog = !!document.querySelector('[role="dialog"]');
+      const bodyLocked = document.body.style.overflow === "hidden";
+      setHasBlockingDialog(anyOpenDialog || bodyLocked);
+    };
+
+    evaluate();
+    const observer = new MutationObserver(evaluate);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["style", "class", "aria-hidden"],
+    });
+
+    return () => observer.disconnect();
+  }, []);
 
   const handleSubmit = (raw: string) => {
     const value = raw.trim();
@@ -115,7 +136,9 @@ export default function BuilderAgent() {
 
   return (
     <>
-      <FloatingTrigger open={open} onOpen={() => setOpen(true)} hasUnseen={hasUnseen} />
+      {!hasBlockingDialog && (
+        <FloatingTrigger open={open} onOpen={() => setOpen(true)} hasUnseen={hasUnseen} />
+      )}
 
       <AnimatePresence>
         {open && (

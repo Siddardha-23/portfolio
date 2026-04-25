@@ -1,6 +1,6 @@
 import { motion, useInView } from 'framer-motion';
 import { useRef, useState, useEffect } from 'react';
-import { Cloud, Code, Database, Server, Download, Zap, Users, Clock, Target } from 'lucide-react';
+import { Cloud, Code, Database, Server, Download, Zap, Users, Clock, Target, ArrowRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { PERSONAL_INFO } from '@/lib/constants';

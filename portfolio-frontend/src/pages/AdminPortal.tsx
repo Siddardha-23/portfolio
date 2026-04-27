@@ -371,6 +371,139 @@ function ActivityRow({ a }: { a: Activity }) {
   );
 }
 
+// ─── Recently Active Users ────────────────────────────────────────────────
+// Plain-English snapshot of who used the app most recently. Each row reads
+// like a sentence ("Asha — opened the app 3 minutes ago — uploaded a resume")
+// so a non-technical viewer can scan it without decoding tags or jargon.
+
+function presenceFor(iso?: string | null): { dot: string; ring: string; label: string } {
+  if (!iso) return { dot: 'bg-gray-600', ring: 'ring-gray-700/50', label: 'Never seen' };
+  const mins = (Date.now() - new Date(iso).getTime()) / 60000;
+  if (mins < 5)        return { dot: 'bg-emerald-400 animate-pulse', ring: 'ring-emerald-400/40', label: 'Online now' };
+  if (mins < 60)       return { dot: 'bg-emerald-400',                ring: 'ring-emerald-400/30', label: 'Active' };
+  if (mins < 60 * 24)  return { dot: 'bg-amber-400',                  ring: 'ring-amber-400/30',   label: 'Today' };
+  if (mins < 60 * 24 * 7) return { dot: 'bg-sky-400',                 ring: 'ring-sky-400/30',     label: 'This week' };
+  return { dot: 'bg-gray-500', ring: 'ring-gray-700/50', label: 'A while ago' };
+}
+
+const ACTIVITY_LABEL: Record<string, string> = {
+  registration: 'created their account',
+  login:        'opened the app',
+  upload:       'uploaded a resume',
+  tailoring:    'tailored their resume',
+};
+
+function RecentlyActiveUsers({
+  users, activities, onSelect,
+}: {
+  users: AdminUser[];
+  activities: Activity[];
+  onSelect?: (email: string) => void;
+}) {
+  // Build the "most recently active" view from two signals: explicit activity
+  // events (high-fidelity, per-action) and last_login (covers users with no
+  // recent activity events but who still opened the app). The merged list is
+  // de-duplicated by email keeping the most recent timestamp per user.
+  const rows = useMemo(() => {
+    const byEmail = new Map<string, {
+      email: string; name?: string | null; lastSeen: string; lastAction?: string;
+    }>();
+
+    for (const a of activities) {
+      const existing = byEmail.get(a.email);
+      if (!existing || new Date(a.timestamp) > new Date(existing.lastSeen)) {
+        byEmail.set(a.email, {
+          email: a.email,
+          name: a.name,
+          lastSeen: a.timestamp,
+          lastAction: ACTIVITY_LABEL[a.type] || 'used the app',
+        });
+      }
+    }
+    for (const u of users) {
+      if (!u.last_login) continue;
+      const existing = byEmail.get(u.email);
+      if (!existing || new Date(u.last_login) > new Date(existing.lastSeen)) {
+        byEmail.set(u.email, {
+          email: u.email,
+          name: u.name,
+          lastSeen: u.last_login,
+          lastAction: existing?.lastAction || 'opened the app',
+        });
+      } else if (existing && !existing.name && u.name) {
+        existing.name = u.name;
+      }
+    }
+
+    return Array.from(byEmail.values())
+      .sort((a, b) => new Date(b.lastSeen).getTime() - new Date(a.lastSeen).getTime())
+      .slice(0, 8);
+  }, [users, activities]);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyHero
+        icon={<Icon.Users c="w-5 h-5" />}
+        title="No one has used the app yet"
+        subtitle="Once visitors register and start using features, you'll see them here in real time."
+      />
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-white/[0.04]">
+      {rows.map((r, i) => {
+        const presence = presenceFor(r.lastSeen);
+        const display = r.name || r.email.split('@')[0];
+        const Comp = onSelect ? 'button' : 'div';
+        return (
+          <li key={r.email + i}>
+            <Comp
+              {...(onSelect ? { onClick: () => onSelect(r.email), type: 'button' as const } : {})}
+              className={`w-full text-left flex items-center gap-3 px-4 sm:px-5 py-3 transition-colors ${
+                onSelect ? 'hover:bg-white/[0.03] focus-visible:bg-white/[0.04] focus-visible:outline-none cursor-pointer' : ''
+              }`}
+            >
+              <div className="relative shrink-0">
+                <Avatar seed={r.name || r.email} />
+                <span
+                  className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-[#0a0a0f] ${presence.dot}`}
+                  title={presence.label}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold text-white truncate max-w-[12rem] sm:max-w-none">
+                    {display}
+                  </p>
+                  <span className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold rounded-full px-1.5 py-0.5 ring-1 ${presence.ring} text-gray-300`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${presence.dot}`} />
+                    {presence.label}
+                  </span>
+                </div>
+                <p className="text-[12px] text-gray-400 mt-0.5 truncate">
+                  <span className="text-gray-500">Last seen </span>
+                  <span className="text-gray-200">{fmtRel(r.lastSeen)}</span>
+                  {r.lastAction && (
+                    <>
+                      <span className="text-gray-600"> · </span>
+                      <span>{r.lastAction}</span>
+                    </>
+                  )}
+                </p>
+                <p className="text-[10px] text-gray-600 font-mono mt-0.5 truncate">{r.email}</p>
+              </div>
+              {onSelect && (
+                <Icon.Chevron c="w-4 h-4 text-gray-600 shrink-0" />
+              )}
+            </Comp>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function EmptyHero({ icon, title, subtitle, action }: { icon: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
     <div className="rounded-2xl border border-dashed border-white/[0.08] bg-gradient-to-b from-white/[0.02] to-transparent py-16 px-6 text-center">
@@ -460,8 +593,9 @@ function Sidebar({
         </div>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+      {/* Nav — overscroll-contain prevents the sidebar's wheel events from
+          bubbling out and yanking the page; smooth scroll for keyboard nav. */}
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto overscroll-contain scroll-smooth">
         {NAV_ITEMS.map(item => {
           const active = tab === item.key;
           const count = counts[item.key];
@@ -470,6 +604,7 @@ function Sidebar({
             <button
               key={item.key}
               onClick={() => setTab(item.key)}
+              aria-current={active ? 'page' : undefined}
               className={`w-full group relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
                 active
                   ? 'text-white bg-gradient-to-r from-indigo-500/15 via-violet-500/10 to-transparent'
@@ -531,35 +666,49 @@ function MobileTopNav({ tab, setTab, onSignOut, onBackToApp }: {
   tab: Tab; setTab: (t: Tab) => void; onSignOut: () => void; onBackToApp: () => void;
 }) {
   return (
-    <div className="lg:hidden sticky top-0 z-40 bg-[#0d0d14]/95 backdrop-blur-xl border-b border-white/[0.06]">
+    <div className="lg:hidden sticky top-0 z-40 bg-[#0d0d14]/95 backdrop-blur-xl border-b border-white/[0.08] shadow-[0_4px_16px_-8px_rgba(0,0,0,0.5)]">
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
             <Icon.Sparkle c="w-4 h-4 text-white" />
           </div>
-          <span className="text-sm font-bold text-white">Admin</span>
+          <span className="text-sm font-bold text-white">Admin Suite</span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={onBackToApp} className="p-1.5 text-gray-500 hover:text-white"><Icon.Back c="w-4 h-4" /></button>
-          <button onClick={onSignOut} className="p-1.5 text-gray-500 hover:text-red-400"><Icon.Logout c="w-4 h-4" /></button>
+          <button onClick={onBackToApp} title="Back to app" aria-label="Back to app"
+            className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-white/[0.05] transition">
+            <Icon.Back c="w-4 h-4" />
+          </button>
+          <button onClick={onSignOut} title="Sign out" aria-label="Sign out"
+            className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition">
+            <Icon.Logout c="w-4 h-4" />
+          </button>
         </div>
       </div>
-      <div className="overflow-x-auto px-3 pb-2 flex gap-1">
-        {NAV_ITEMS.map(item => {
-          const active = tab === item.key;
-          const Icn = item.icon;
-          return (
-            <button
-              key={item.key}
-              onClick={() => setTab(item.key)}
-              className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                active ? 'bg-indigo-500/15 text-indigo-300' : 'text-gray-500 hover:text-gray-200'
-              }`}
-            >
-              <Icn c="w-3.5 h-3.5" /> {item.label}
-            </button>
-          );
-        })}
+      {/* Tab strip — horizontally scrollable on small screens, with edge fade
+          so users see there's more to swipe. */}
+      <div className="relative">
+        <div className="overflow-x-auto px-3 pb-2 flex gap-1 scrollbar-hide">
+          {NAV_ITEMS.map(item => {
+            const active = tab === item.key;
+            const Icn = item.icon;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setTab(item.key)}
+                aria-current={active ? 'page' : undefined}
+                className={`shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                  active
+                    ? 'bg-indigo-500/15 text-indigo-300 ring-1 ring-indigo-500/30'
+                    : 'text-gray-500 hover:text-gray-200 hover:bg-white/[0.04]'
+                }`}
+              >
+                <Icn c="w-3.5 h-3.5" /> {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="pointer-events-none absolute right-0 top-0 h-full w-6 bg-gradient-to-l from-[#0d0d14] to-transparent" />
       </div>
     </div>
   );
@@ -570,23 +719,41 @@ function MobileTopNav({ tab, setTab, onSignOut, onBackToApp }: {
 function Topbar({ title, subtitle, onRefresh, refreshing, right }: {
   title: string; subtitle?: string; onRefresh?: () => void; refreshing?: boolean; right?: React.ReactNode;
 }) {
+  // Track page scroll so we can add a real shadow when content slides under
+  // the bar — without it the sticky header reads as part of the page and
+  // recruiters lose their bearing while scrolling long tables.
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   return (
-    <div className="sticky top-0 z-30 bg-[#0a0a0f]/90 backdrop-blur-xl border-b border-white/[0.06]">
-      <div className="px-6 py-4 flex items-center justify-between gap-4">
+    // Mobile: not sticky — the MobileTopNav already pins to top and a second
+    // sticky bar would stack on top of it. Desktop: sticky as before.
+    <div
+      className={`relative lg:sticky lg:top-0 z-20 lg:z-30 bg-[#0a0a0f]/90 backdrop-blur-xl border-b transition-[border-color,box-shadow] duration-200
+        ${scrolled ? 'border-white/[0.10] shadow-[0_8px_24px_-12px_rgba(0,0,0,0.6)]' : 'border-white/[0.06]'}`}
+    >
+      <div className="px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="text-base font-semibold text-white leading-tight">{title}</h1>
-          {subtitle && <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{subtitle}</p>}
+          <h1 className="text-base sm:text-lg font-semibold text-white leading-tight truncate">{title}</h1>
+          {subtitle && <p className="text-[11px] sm:text-xs text-gray-500 mt-0.5 leading-tight truncate">{subtitle}</p>}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {right}
           {onRefresh && (
             <button
               onClick={onRefresh}
               disabled={refreshing}
-              className="h-9 w-9 rounded-xl border border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.05] text-gray-400 hover:text-white flex items-center justify-center transition disabled:opacity-50"
-              title="Refresh"
+              className="h-9 px-3 inline-flex items-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] text-gray-300 hover:text-white transition disabled:opacity-50 text-xs font-medium"
+              title="Refresh data"
+              aria-label="Refresh"
             >
               <Icon.Refresh c={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <span className="hidden sm:inline">{refreshing ? 'Refreshing…' : 'Refresh'}</span>
             </button>
           )}
         </div>
@@ -677,12 +844,16 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!isSuperAdmin) return;
-    if (tab === 'users') fetchUsers();
+    // Overview now shows a "Recently active users" panel — pull the user
+    // list eagerly the first time so the panel populates instantly when the
+    // admin lands on the page.
+    if (tab === 'overview' && users.length === 0) fetchUsers();
+    else if (tab === 'users') fetchUsers();
     else if (tab === 'resumes') fetchResumes();
     else if (tab === 'tailoring') fetchTailoring();
     else if (tab === 'applications') fetchApplications();
     else if (tab === 'prep') fetchPrepPacks();
-  }, [tab, isSuperAdmin, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
+  }, [tab, isSuperAdmin, users.length, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
 
   const handleRefresh = async () => {
     setError(''); setRefreshing(true);
@@ -735,7 +906,7 @@ export default function AdminPortal() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white flex">
+    <div className="min-h-screen bg-[#0a0a0f] text-white flex isolate">
       <Sidebar
         tab={tab} setTab={setTab} counts={counts}
         user={user}
@@ -779,7 +950,12 @@ export default function AdminPortal() {
               {selectedUser ? (
                 <UserDetailDrawer detail={selectedUser} onBack={() => setSelectedUser(null)} />
               ) : tab === 'overview' ? (
-                <OverviewPanel stats={stats} activities={activities} />
+                <OverviewPanel
+                  stats={stats}
+                  activities={activities}
+                  users={users}
+                  onSelectUser={(email) => { setTab('users'); fetchUserDetail(email); }}
+                />
               ) : tab === 'users' ? (
                 <UsersPanel users={users} loading={loading} search={userSearch} setSearch={setUserSearch} onSelect={fetchUserDetail} />
               ) : tab === 'resumes' ? (
@@ -801,7 +977,12 @@ export default function AdminPortal() {
 
 // ─── Overview Panel ───────────────────────────────────────────────────────
 
-function OverviewPanel({ stats, activities }: { stats: AdminStats | null; activities: Activity[] }) {
+function OverviewPanel({ stats, activities, users, onSelectUser }: {
+  stats: AdminStats | null;
+  activities: Activity[];
+  users: AdminUser[];
+  onSelectUser?: (email: string) => void;
+}) {
   if (!stats) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -880,7 +1061,9 @@ function OverviewPanel({ stats, activities }: { stats: AdminStats | null; activi
         </div>
       </div>
 
-      {/* Pipeline + Activity two-column */}
+      {/* Pipeline + Recently-active two-column. The right column has two
+          tabs (people-first vs event-first) — the people view is the default
+          because it's easier for a non-technical viewer to scan. */}
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-6">
         <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent p-6">
           <SectionHeading
@@ -898,22 +1081,89 @@ function OverviewPanel({ stats, activities }: { stats: AdminStats | null; activi
           )}
         </div>
 
-        <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-white">Recent activity</h3>
-              <p className="text-[11px] text-gray-500 mt-0.5">Last 30 days</p>
-            </div>
-            <span className="text-[11px] text-gray-600 tabular-nums">{activities.length} events</span>
-          </div>
-          <div className="max-h-[420px] overflow-y-auto divide-y divide-white/[0.04]">
-            {activities.length === 0 ? (
-              <div className="py-14"><EmptyHero icon={<Icon.Sparkle c="w-5 h-5" />} title="No recent activity" /></div>
-            ) : (
-              activities.map((a, i) => <ActivityRow key={i} a={a} />)
-            )}
-          </div>
+        <RecentActivityCard
+          activities={activities}
+          users={users}
+          onSelectUser={onSelectUser}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Right-column card on Overview. Two views: "People" (Recently active users
+// — the friendly default) and "Events" (the detailed activity log).
+function RecentActivityCard({
+  activities, users, onSelectUser,
+}: {
+  activities: Activity[];
+  users: AdminUser[];
+  onSelectUser?: (email: string) => void;
+}) {
+  const [view, setView] = useState<'people' | 'events'>('people');
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent overflow-hidden flex flex-col">
+      <div className="px-4 sm:px-5 py-4 border-b border-white/[0.06] flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-white">
+            {view === 'people' ? 'Who used the app most recently' : 'Recent activity'}
+          </h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {view === 'people' ? 'People sorted by their last visit' : 'Last 30 days · every event'}
+          </p>
         </div>
+        {/* Segmented toggle — clearly labelled so the viewer knows what
+            switches between the two perspectives. */}
+        <div className="shrink-0 inline-flex items-center rounded-lg border border-white/[0.08] bg-white/[0.02] p-0.5 text-[11px]">
+          <button
+            type="button"
+            onClick={() => setView('people')}
+            className={`px-2.5 py-1 rounded-md transition ${
+              view === 'people' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            People
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('events')}
+            className={`px-2.5 py-1 rounded-md transition ${
+              view === 'events' ? 'bg-white/[0.08] text-white' : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            Events
+          </button>
+        </div>
+      </div>
+
+      <div className="max-h-[480px] overflow-y-auto overscroll-contain">
+        {view === 'people' ? (
+          <RecentlyActiveUsers users={users} activities={activities} onSelect={onSelectUser} />
+        ) : activities.length === 0 ? (
+          <div className="py-14">
+            <EmptyHero icon={<Icon.Sparkle c="w-5 h-5" />} title="No recent activity" />
+          </div>
+        ) : (
+          <div className="divide-y divide-white/[0.04]">
+            {activities.map((a, i) => <ActivityRow key={i} a={a} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Footer hint — gives the naive viewer a clear next action */}
+      <div className="border-t border-white/[0.06] px-4 sm:px-5 py-2.5 text-[11px] text-gray-500 flex items-center justify-between">
+        <span>
+          {view === 'people'
+            ? 'Click a person to see everything they have done'
+            : `${activities.length} event${activities.length === 1 ? '' : 's'}`}
+        </span>
+        {view === 'people' && (
+          <span className="hidden sm:inline-flex items-center gap-1.5">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> Online
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 ml-2" /> Today
+            <span className="h-1.5 w-1.5 rounded-full bg-sky-400 ml-2" /> This week
+          </span>
+        )}
       </div>
     </div>
   );
@@ -1147,7 +1397,7 @@ function TailoringPanel({ records, loading }: { records: any[]; loading: boolean
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-contain">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/[0.06] bg-white/[0.02]">
@@ -1318,7 +1568,7 @@ function ApplicationsPanel({
                   </div>
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-white/[0.04] text-gray-500 tabular-nums">{items.length}</span>
                 </div>
-                <div className="p-2 space-y-2 min-h-[100px] max-h-[70vh] overflow-y-auto">
+                <div className="p-2 space-y-2 min-h-[100px] max-h-[60vh] overflow-y-auto overscroll-contain">
                   {items.length === 0 ? (
                     <p className="text-[10px] text-gray-600 italic text-center py-4">empty</p>
                   ) : items.map(a => <AppCard key={a.record_id} a={a} />)}
@@ -1329,7 +1579,7 @@ function ApplicationsPanel({
         </div>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overscroll-contain">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/[0.06] bg-white/[0.02]">
@@ -1484,7 +1734,7 @@ function PrepPanel({ prepPacks, loading }: { prepPacks: AdminPrepPack[]; loading
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto overscroll-contain">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/[0.06] bg-white/[0.02]">

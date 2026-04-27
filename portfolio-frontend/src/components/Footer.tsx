@@ -100,23 +100,22 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="border-t border-border mt-8 pt-6 flex flex-col items-center gap-2">
+        <div className="border-t border-border mt-8 pt-6 flex flex-col items-center gap-3">
           <p className="text-sm text-muted-foreground">
             Made with ❤️ and lots of ☕
           </p>
-          <div className="flex items-center gap-2">
-            <p className="gradient-text font-medium">
-              © {currentYear} Harshith Siddardha Manne. All rights reserved.
-            </p>
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
-              className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition-all duration-200"
-              title="🎮"
-              aria-label="Easter egg"
-            >
-              <Gamepad2 className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <p className="gradient-text font-medium text-center">
+            © {currentYear} Harshith Siddardha Manne. All rights reserved.
+          </p>
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('open-deploy-runner'))}
+            className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] text-muted-foreground/60 hover:text-primary border border-border/40 hover:border-primary/40 hover:bg-primary/[0.04] transition-colors"
+            title="Hidden mini-game (try the Konami code too)"
+            aria-label="Open easter-egg mini game"
+          >
+            <Gamepad2 className="h-3.5 w-3.5" aria-hidden />
+            <span>Easter egg</span>
+          </button>
         </div>
       </div>
     </footer>

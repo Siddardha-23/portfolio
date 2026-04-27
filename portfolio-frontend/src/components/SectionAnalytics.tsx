@@ -329,21 +329,21 @@ export default function SectionAnalytics({ isOpen, onClose }: {
                         onClick={onClose}
                     />
 
-                    {/* Modal */}
+                    {/* Modal — fixed header, scrollable content (no nested overflow) */}
                     <motion.div
                         initial={{ opacity: 0, scale: 0.95, y: 20 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 20 }}
                         transition={{ duration: 0.4, type: 'spring', damping: 25, stiffness: 300 }}
-                        className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] flex items-start justify-center overflow-y-auto"
+                        className="fixed inset-4 md:inset-8 lg:inset-12 z-[61] flex items-start justify-center overflow-hidden"
                     >
-                        <div className="relative w-full max-w-5xl my-4">
+                        <div className="relative w-full max-w-5xl h-full flex flex-col">
                             {/* Glow */}
-                            <div className="absolute -inset-1 bg-gradient-to-br from-primary/20 via-accent/10 to-primary/20 rounded-3xl blur-xl opacity-60" />
+                            <div className="absolute -inset-1 bg-gradient-to-br from-primary/20 via-accent/10 to-primary/20 rounded-3xl blur-xl opacity-60 pointer-events-none" />
 
-                            <div className="relative bg-background/95 backdrop-blur-2xl rounded-3xl border border-border/50 shadow-2xl overflow-hidden">
-                                {/* Header */}
-                                <div className="sticky top-0 z-10 bg-background/90 backdrop-blur-xl border-b border-border/50">
+                            <div className="relative flex flex-col h-full max-h-full bg-background/95 backdrop-blur-2xl rounded-3xl border border-border/50 shadow-2xl overflow-hidden">
+                                {/* Fixed header */}
+                                <div className="flex-shrink-0 bg-background/90 backdrop-blur-xl border-b border-border/50">
                                     <div className="flex items-center justify-between p-5 md:p-6">
                                         <div className="flex items-center gap-3">
                                             <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg">
@@ -373,8 +373,8 @@ export default function SectionAnalytics({ isOpen, onClose }: {
                                     </div>
                                 </div>
 
-                                {/* Content */}
-                                <div className="p-5 md:p-6 space-y-6">
+                                {/* Scrollable content */}
+                                <div className="flex-1 overflow-y-auto p-5 md:p-6 space-y-6">
                                     {loading && <AnalyticsSkeleton />}
 
                                     {error && (

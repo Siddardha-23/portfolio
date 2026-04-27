@@ -713,10 +713,13 @@ export default function Projects() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <Badge variant="outline" className="mb-3 md:mb-4 border-primary/40 text-primary px-3 md:px-4 py-1 text-xs md:text-sm">
+            <span
+              className="inline-flex items-center mb-3 md:mb-4 rounded-full border border-primary/30 bg-primary/[0.04] text-primary px-3 md:px-4 py-1 text-xs md:text-sm font-semibold tracking-wide uppercase"
+              aria-hidden="true"
+            >
               <Rocket className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5 md:mr-2" />
               Featured Work
-            </Badge>
+            </span>
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 text-foreground">
               Projects
             </h2>

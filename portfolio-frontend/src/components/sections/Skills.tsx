@@ -143,7 +143,8 @@ function SkillLevelBar({ skill, delay }: { skill: string; delay: number }) {
   );
 }
 
-// Individual skill card with hover effects
+// Skill display card — informational, not clickable. Subtle hover (border tint
+// only) so it reads as a tile, not a button.
 function SkillCard({ skill, index, categoryIndex }: { skill: string; index: number; categoryIndex: number }) {
   const color = skillColors[skill.split(' ')[0]] || '#6366f1';
   const Icon = skillIcons[skill.split(' ')[0]] || <Zap className="h-5 w-5" />;
@@ -151,22 +152,18 @@ function SkillCard({ skill, index, categoryIndex }: { skill: string; index: numb
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.9 }}
-      whileInView={{ opacity: 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: 16 }}
+      whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay, duration: 0.4, type: "spring", stiffness: 100 }}
-      whileHover={{ scale: 1.05, y: -5 }}
-      className="group relative"
+      transition={{ delay, duration: 0.35 }}
+      className="relative"
     >
-      <div
-        className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl"
-        style={{ background: `${color}40` }}
-      />
-      <div className="relative p-4 rounded-xl bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl">
+      <div className="relative p-4 rounded-xl bg-card border border-border/50 shadow-sm hover:border-primary/20 transition-colors duration-200">
         <div className="flex items-center gap-3 mb-3">
           <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center transition-transform group-hover:scale-110"
-            style={{ background: `${color}20` }}
+            className="w-10 h-10 rounded-lg flex items-center justify-center"
+            style={{ background: `${color}1a` }}
+            aria-hidden
           >
             <div style={{ color }}>{Icon}</div>
           </div>

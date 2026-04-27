@@ -215,13 +215,39 @@ function RecruiterPanel() {
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          {/* Stats Grid */}
+          {/* Stats Grid — skeleton placeholders that match final layout
+              so there's no jump when real data lands */}
           {isLoadingStats && (
-            <div className="grid grid-cols-3 gap-3 mb-6 animate-pulse" aria-hidden>
-              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
-              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
-              <div className="h-[62px] rounded-xl bg-secondary/40 border border-border" />
-            </div>
+            <>
+              <div className="grid grid-cols-3 gap-3 mb-6 animate-pulse" aria-hidden>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-[62px] rounded-xl bg-secondary/40 border border-border/60 flex flex-col items-center justify-center gap-1.5">
+                    <div className="h-4 w-8 rounded bg-secondary" />
+                    <div className="h-2 w-12 rounded bg-secondary/70" />
+                  </div>
+                ))}
+              </div>
+              <div className="mb-4 animate-pulse" aria-hidden>
+                <div className="h-11 rounded-xl bg-secondary/40 border border-border/60" />
+              </div>
+              <div className="flex-1 flex flex-col justify-end animate-pulse" aria-hidden>
+                <div className="p-4 rounded-xl bg-secondary/30 border border-border/40">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-full bg-secondary" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3 w-2/3 rounded bg-secondary" />
+                      <div className="h-2 w-1/2 rounded bg-secondary/70" />
+                    </div>
+                  </div>
+                  <div className="flex justify-center gap-1.5 mt-3">
+                    {[0, 1, 2, 3, 4].map(i => (
+                      <div key={i} className="h-1.5 w-1.5 rounded-full bg-secondary" />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <span className="sr-only">Loading visitor stats…</span>
+            </>
           )}
           {stats && (
             <div className="grid grid-cols-3 gap-3 mb-6">
@@ -391,10 +417,14 @@ export default function Hero() {
                 transition={{ delay: 0.2, duration: 0.5 }}
                 className="mb-4 md:mb-6"
               >
-                <Badge className="px-3 py-1.5 text-xs md:text-sm bg-primary/10 text-primary border-primary/30 cursor-default pointer-events-none">
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className="inline-flex items-center px-3 py-1.5 text-xs md:text-sm rounded-full bg-primary/10 text-primary border border-primary/25"
+                >
                   <Sparkles className="h-3 w-3 md:h-4 md:w-4 mr-1.5" />
                   {isReturningVisitor ? `Welcome back, ${visitorName}!` : `Hello, ${visitorName}!`}
-                </Badge>
+                </span>
               </motion.div>
             )}
 

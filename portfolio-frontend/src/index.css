@@ -85,20 +85,38 @@
     scroll-padding-top: 64px;
   }
 
-  /* Smooth theme transitions */
-  * {
+  /* Targeted, lightweight color transitions on common surfaces only.
+     Applying to `*` causes a global repaint storm during theme toggle and
+     makes every hover/focus feel sluggish. */
+  body,
+  header,
+  nav,
+  main,
+  section,
+  aside,
+  footer,
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  [role="dialog"],
+  [data-themed-surface],
+  .glass-card {
     transition:
-      background-color 0.25s ease-in-out,
-      border-color 0.25s ease-in-out,
-      color 0.15s ease-in-out,
-      box-shadow 0.25s ease-in-out;
+      background-color 0.18s ease-out,
+      border-color 0.18s ease-out,
+      color 0.12s ease-out;
   }
 
-  /* During theme toggles, disable all transitions to avoid staggered repaint/lag. */
+  /* During theme toggles, disable transitions everywhere so the whole tree
+     repaints in one pass instead of staggering. */
+  html.theme-transitioning,
   html.theme-transitioning *,
   html.theme-transitioning *::before,
   html.theme-transitioning *::after {
     transition: none !important;
+    animation: none !important;
   }
 
   /* Disable transitions for animated elements */
@@ -159,9 +177,19 @@
     @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-1;
   }
 
-  /* Premium button style */
+  /* Premium button style — subtle, clean, no aggressive lift */
   .btn-premium {
-    @apply bg-gradient-to-r from-primary to-accent text-white font-medium shadow-md hover:shadow-lg hover:shadow-primary/20 transition-all duration-200 hover:-translate-y-0;
+    @apply relative bg-gradient-to-r from-primary to-accent text-white font-medium shadow-sm hover:shadow-md hover:shadow-primary/15 transition-shadow duration-200;
+  }
+
+  /* Surface that's clearly NOT a button — neutralizes default hover bg/scale.
+     Use on Badge/Card-like elements that look stylized but are decorative. */
+  .static-surface {
+    pointer-events: none;
+    cursor: default;
+  }
+  .static-surface:hover {
+    background-color: inherit;
   }
 }
 

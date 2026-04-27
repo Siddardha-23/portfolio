@@ -10,7 +10,8 @@ import {
     BarChart3, Cpu, Activity, Users, AlertTriangle,
     CheckCircle2, ChevronLeft, ChevronRight, Download,
     Target, TrendingUp, Lightbulb, Layers, FileText,
-    Network, Rocket, Eye, Zap
+    Network, Rocket, Eye, Zap, Play, Pause, Maximize2, Minimize2,
+    ExternalLink, Presentation
 } from 'lucide-react';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
@@ -192,32 +193,50 @@ function PresentationViewer() {
 
     const progress = ((current + 1) / total) * 100;
 
+    // PowerPoint Online needs a publicly reachable URL — it cannot fetch
+    // localhost or private IPs. Detect that and offer a download fallback so
+    // users on dev/preview don't get a blank Office viewer.
+    const isPublicHost = typeof window !== 'undefined'
+        && !/^(localhost|127\.|0\.0\.0\.0|::1|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(window.location.hostname);
+
     return (
         <div className="mb-6 space-y-3">
-            {/* Present with Animations button */}
+            {/* Present with Animations action card */}
             <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
             >
-                <Card className="p-4 border-0 shadow-lg bg-gradient-to-r from-blue-500/5 via-card to-purple-500/5">
+                <Card className="p-4 border-0 shadow-sm bg-gradient-to-r from-primary/[0.04] via-card to-accent/[0.04]">
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
-                            <div className="p-2 rounded-lg bg-blue-500/10">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5 text-blue-500"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <div className="p-2 rounded-lg bg-primary/10 text-primary">
+                                <Presentation className="h-5 w-5" />
                             </div>
                             <div>
-                                <p className="text-sm font-semibold text-foreground">View with Animations & Transitions</p>
-                                <p className="text-[11px] text-muted-foreground">Opens in PowerPoint Online with all original effects</p>
+                                <p className="text-sm font-semibold text-foreground">View with animations & transitions</p>
+                                <p className="text-[11px] text-muted-foreground">
+                                    {isPublicHost
+                                        ? 'Opens in PowerPoint Online with all original effects'
+                                        : 'Office Online needs a public URL — download to view animations locally'}
+                                </p>
                             </div>
                         </div>
-                        <Button className="btn-premium shrink-0" asChild>
-                            <a href={viewerUrl} target="_blank" rel="noopener noreferrer">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                Present in PowerPoint Online
-                                <ArrowRight className="h-4 w-4 ml-2" />
-                            </a>
-                        </Button>
+                        {isPublicHost ? (
+                            <Button className="btn-premium shrink-0" asChild>
+                                <a href={viewerUrl} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-4 w-4 mr-2" />
+                                    Present in PowerPoint Online
+                                </a>
+                            </Button>
+                        ) : (
+                            <Button className="btn-premium shrink-0" asChild>
+                                <a href={PRESENTATION_FILE_ENCODED} download>
+                                    <Download className="h-4 w-4 mr-2" />
+                                    Download .pptx
+                                </a>
+                            </Button>
+                        )}
                     </div>
                 </Card>
             </motion.div>
@@ -266,33 +285,65 @@ function PresentationViewer() {
                     <div className="h-full bg-gradient-to-r from-primary to-blue-500 transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />
                 </div>
 
-                {/* Controls bar */}
-                <div className={`${isFullscreen ? 'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent pt-10 pb-4 px-4' : 'p-3 bg-secondary/10 border-t border-border/30'} transition-opacity duration-200 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                {/* Controls bar — always interactive (we only fade visibility,
+                    pointer-events stay on so nobody chases a "dead" button). */}
+                <div className={`${isFullscreen ? 'absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 to-transparent pt-10 pb-4 px-4' : 'p-3 bg-secondary/10 border-t border-border/30'} transition-opacity duration-200 ${showControls ? 'opacity-100' : isFullscreen ? 'opacity-0 hover:opacity-100 focus-within:opacity-100' : 'opacity-100'}`}>
                     <div className="flex items-center justify-between gap-2">
                         <div className="flex items-center gap-1.5">
-                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => setIsPlaying(p => !p)}
-                                className={isFullscreen ? "text-white hover:bg-white/20" : ""} title={isPlaying ? "Pause (P)" : "Auto-play (P)"}>
-                                {isPlaying ? (
-                                    <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</>
-                                ) : (
-                                    <><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1"><polygon points="5 3 19 12 5 21 5 3"/></svg>Play</>
-                                )}
+                            <Button
+                                type="button"
+                                variant={isFullscreen ? 'secondary' : 'outline'}
+                                size="sm"
+                                onClick={() => setIsPlaying(p => !p)}
+                                className={isFullscreen ? 'bg-white/15 text-white hover:bg-white/25 border-0' : ''}
+                                title={isPlaying ? 'Pause auto-advance (P)' : 'Auto-advance every 4s (P)'}
+                                aria-pressed={isPlaying}
+                            >
+                                {isPlaying ? <Pause className="h-4 w-4 mr-1" /> : <Play className="h-4 w-4 mr-1" />}
+                                {isPlaying ? 'Pause' : 'Auto-play'}
                             </Button>
-                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => { goToSlide('prev'); setIsPlaying(false); }} disabled={current === 0}
-                                className={isFullscreen ? "text-white hover:bg-white/20" : ""}><ChevronLeft className="h-4 w-4" /></Button>
-                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={() => { goToSlide('next'); setIsPlaying(false); }} disabled={current === total - 1}
-                                className={isFullscreen ? "text-white hover:bg-white/20" : ""}><ChevronRight className="h-4 w-4" /></Button>
+                            <Button
+                                type="button"
+                                variant={isFullscreen ? 'secondary' : 'outline'}
+                                size="sm"
+                                onClick={() => { goToSlide('prev'); setIsPlaying(false); }}
+                                disabled={current === 0}
+                                className={isFullscreen ? 'bg-white/15 text-white hover:bg-white/25 border-0' : ''}
+                                title="Previous slide (←)"
+                                aria-label="Previous slide"
+                            >
+                                <ChevronLeft className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                type="button"
+                                variant={isFullscreen ? 'secondary' : 'outline'}
+                                size="sm"
+                                onClick={() => { goToSlide('next'); setIsPlaying(false); }}
+                                disabled={current === total - 1}
+                                className={isFullscreen ? 'bg-white/15 text-white hover:bg-white/25 border-0' : ''}
+                                title="Next slide (→)"
+                                aria-label="Next slide"
+                            >
+                                <ChevronRight className="h-4 w-4" />
+                            </Button>
                         </div>
                         <div className="flex items-center gap-2">
-                            <span className={`text-xs font-medium tabular-nums ${isFullscreen ? 'text-white/70' : 'text-muted-foreground'}`}>
+                            <span className={`text-xs font-medium tabular-nums ${isFullscreen ? 'text-white/80' : 'text-muted-foreground'}`}>
                                 Slide {current + 1} of {total}
                             </span>
-                            <Button variant={isFullscreen ? "ghost" : "outline"} size="sm" onClick={toggleFullscreen}
-                                className={isFullscreen ? "text-white hover:bg-white/20" : ""} title={isFullscreen ? "Exit (Esc)" : "Fullscreen (F)"}>
+                            <Button
+                                type="button"
+                                variant={isFullscreen ? 'secondary' : 'outline'}
+                                size="sm"
+                                onClick={toggleFullscreen}
+                                className={isFullscreen ? 'bg-white/15 text-white hover:bg-white/25 border-0' : ''}
+                                title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}
+                                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                            >
                                 {isFullscreen ? (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                                    <><Minimize2 className="h-4 w-4 mr-1" />Exit fullscreen</>
                                 ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+                                    <><Maximize2 className="h-4 w-4 mr-1" />Fullscreen</>
                                 )}
                             </Button>
                         </div>

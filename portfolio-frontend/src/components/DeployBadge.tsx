@@ -177,8 +177,14 @@ export default function DeployBadge() {
     // Don't render anything if fetch failed (dev mode or network error)
     if (error || !manifest) return null;
 
+    // Heuristic: GitHub Actions run IDs are typically 12+ digits. The
+    // sample manifest ships an 11-digit placeholder ("12345678901") that
+    // 404s on github.com, so we treat anything that doesn't look like a
+    // real run ID as missing and fall back to the repo's actions list.
+    const looksLikeRealRunId = !!manifest.run_id && /^\d{12,}$/.test(manifest.run_id);
     const runUrl = `https://github.com/${manifest.repository}/actions/runs/${manifest.run_id}`;
     const actionsUrl = `https://github.com/${manifest.repository}/actions`;
+    const safeRunUrl = looksLikeRealRunId ? runUrl : actionsUrl;
     const commitUrl = `https://github.com/${manifest.repository}/commit/${manifest.commit_sha}`;
 
     return (
@@ -312,7 +318,7 @@ export default function DeployBadge() {
                                             icon={Hash}
                                             label="Run"
                                             value={`#${manifest.run_number}`}
-                                            href={manifest.run_id ? runUrl : actionsUrl}
+                                            href={safeRunUrl}
                                         />
                                         <InfoRow
                                             icon={Github}

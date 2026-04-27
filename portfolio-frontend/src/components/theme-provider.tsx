@@ -50,14 +50,29 @@ export function ThemeProvider({
 
   const value = {
     theme,
-    setTheme: (theme: Theme) => {
+    setTheme: (next: Theme) => {
       // Prevent staggered component-by-component visual lag during theme switch.
-      document.documentElement.classList.add('theme-transitioning')
-      localStorage.setItem("theme", theme)
-      setTheme(theme)
-      window.setTimeout(() => {
-        document.documentElement.classList.remove('theme-transitioning')
-      }, 180)
+      const root = document.documentElement
+      root.classList.add('theme-transitioning')
+      // Resolve next theme synchronously and apply class change in one pass
+      // BEFORE React re-renders, so the whole page flips in a single frame.
+      const resolved =
+        next === 'system'
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light'
+          : next
+      root.classList.remove('light', 'dark')
+      root.classList.add(resolved)
+      localStorage.setItem('theme', next)
+      setTheme(next)
+      // Force a single reflow then drop the lock on the next frame so
+      // subsequent hover/focus transitions feel snappy again.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          root.classList.remove('theme-transitioning')
+        })
+      })
     },
   }
 

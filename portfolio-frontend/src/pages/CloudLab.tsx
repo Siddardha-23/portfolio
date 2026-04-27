@@ -1,13 +1,14 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
-  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft, Play, LineChart
+  GitBranch, Globe, Shield, DollarSign, Target, HeartPulse, BarChart3, Cloud, Server, ChevronLeft, Rocket, LineChart
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import DeployBadge from '@/components/DeployBadge';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
+import { useBodyScrollLock } from '@/hooks/useBodyScrollLock';
 
 const SectionAnalytics = lazy(() => import('@/components/SectionAnalytics'));
 const GitTimeline = lazy(() => import('@/components/GitTimeline'));
@@ -43,6 +44,15 @@ export default function CloudLab() {
   const [showMatch, setShowMatch] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
   const [showSandbox, setShowSandbox] = useState(false);
+
+  // Always land at the top when navigating into the Lab.
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }); }, []);
+
+  // Lock background scroll when ANY lab modal is open — fixes the "modal
+  // shows a stray down-arrow because page is still scrollable" bug.
+  const anyModalOpen = showAnalytics || showTimeline || showLatency || showSecurity
+    || showCosts || showMatch || showHealth || showSandbox;
+  useBodyScrollLock(anyModalOpen);
 
   const hoverShadowClass: Record<string, string> = {
     primary: 'hover:shadow-primary/10',
@@ -150,7 +160,7 @@ export default function CloudLab() {
                 onClick: () => setShowHealth(true),
               },
               {
-                icon: Play,
+                icon: Rocket,
                 label: 'Deploy Pipeline',
                 desc: 'Interactive CI/CD',
                 badge: 'Live',

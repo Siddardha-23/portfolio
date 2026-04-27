@@ -33,8 +33,8 @@ function AnimatedStat({ value, label, suffix = '', icon: Icon }: { value: number
   }, [isInView, value]);
 
   return (
-    <div ref={ref} className="text-center group">
-      <div className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-2 md:mb-3 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+    <div ref={ref} className="text-center">
+      <div className="w-12 h-12 md:w-16 md:h-16 mx-auto mb-2 md:mb-3 rounded-xl md:rounded-2xl bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center" aria-hidden>
         <Icon className="h-5 w-5 md:h-7 md:w-7 text-primary" />
       </div>
       <div className="text-2xl md:text-3xl font-bold text-foreground mb-1">
@@ -45,7 +45,7 @@ function AnimatedStat({ value, label, suffix = '', icon: Icon }: { value: number
   );
 }
 
-// Interactive feature card with hover effects
+// Decorative info card — non-interactive, no hover lift/glow.
 function FeatureCard({ icon: Icon, title, description, index, color }: {
   icon: React.ElementType;
   title: string;
@@ -55,24 +55,18 @@ function FeatureCard({ icon: Icon, title, description, index, color }: {
 }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 30 }}
+      initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ duration: 0.5, delay: index * 0.1 }}
-      whileHover={{ y: -2 }}
-      className="group relative"
+      transition={{ duration: 0.45, delay: index * 0.08 }}
+      className="relative"
     >
-      {/* Glow effect on hover */}
-      <div
-        className="absolute -inset-1 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl"
-        style={{ background: `${color}30` }}
-      />
-
-      <div className="relative bg-card p-6 rounded-2xl border border-border/50 transition-all duration-300 shadow-lg h-full">
-        {/* Icon with gradient background */}
+      <div className="relative bg-card p-6 rounded-2xl border border-border/50 shadow-sm h-full">
+        {/* Icon with gradient background — static, no scale/transform */}
         <div
-          className="w-14 h-14 rounded-xl mb-4 flex items-center justify-center transition-transform duration-300"
+          className="w-14 h-14 rounded-xl mb-4 flex items-center justify-center"
           style={{ background: `linear-gradient(135deg, ${color}20, ${color}40)` }}
+          aria-hidden
         >
           <Icon className="h-7 w-7" style={{ color }} />
         </div>
@@ -124,7 +118,7 @@ export default function About() {
   ];
 
   return (
-    <section id="about" className="pb-20 md:pb-24 bg-background relative overflow-hidden">
+    <section id="about" className="pt-12 md:pt-20 pb-20 md:pb-24 bg-background relative overflow-hidden">
       {/* Background decorations */}
       <div className="absolute inset-0 z-0">
         <div className="absolute top-0 left-0 w-40 md:w-80 h-40 md:h-80 bg-primary/5 rounded-full blur-3xl" />
@@ -140,10 +134,13 @@ export default function About() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <Badge variant="outline" className="mb-3 md:mb-4 border-primary/40 text-primary px-3 md:px-4 py-1 text-xs md:text-sm cursor-default pointer-events-none">
+            <span
+              className="inline-flex items-center mb-3 md:mb-4 rounded-full border border-primary/30 bg-primary/[0.04] text-primary px-3 md:px-4 py-1 text-xs md:text-sm font-semibold tracking-wide uppercase"
+              aria-hidden="true"
+            >
               <Users className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5 md:mr-2" />
               About Me
-            </Badge>
+            </span>
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 text-foreground">
               Cloud & DevOps Professional
             </h2>

@@ -124,10 +124,10 @@ export default function Navbar() {
     <>
       <header
         className={cn(
-          'fixed top-0 left-0 right-0 z-50 transition-all duration-500',
+          'fixed top-0 left-0 right-0 z-50 transition-all duration-300',
           isScrolled
-            ? 'bg-background/80 backdrop-blur-xl border-b border-border/50 shadow-lg py-2'
-            : 'bg-transparent py-4'
+            ? 'bg-background/85 backdrop-blur-xl border-b border-border/50 shadow-sm py-2.5'
+            : 'bg-background/40 backdrop-blur-md py-3.5'
         )}
       >
         {/* Scroll progress bar */}
@@ -167,8 +167,8 @@ export default function Navbar() {
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden lg:flex items-center gap-1">
-            <nav role="navigation" aria-label="Main navigation" className="flex items-center bg-secondary/30 backdrop-blur-sm rounded-full p-1 mr-4 border border-border/50">
+          <div className="hidden lg:flex items-center gap-2">
+            <nav role="navigation" aria-label="Main navigation" className="flex items-center bg-secondary/40 backdrop-blur-sm rounded-full p-1 mr-3 border border-border/40">
               {navItems.map((item, index) => {
                 const itemSection = item.href.split('#')[1];
                 const isActive = item.href === '/cloud-lab'
@@ -183,43 +183,45 @@ export default function Navbar() {
                     initial="hidden"
                     animate="visible"
                     variants={navVariants}
+                    className="relative"
                   >
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                    <a
+                      href={item.href}
+                      onClick={(e) => handleNavClick(e, item.href)}
+                      aria-current={isActive ? 'page' : undefined}
                       className={cn(
-                        "relative text-sm font-medium rounded-full px-3.5 py-1.5 transition-all duration-200",
+                        "relative inline-flex items-center text-sm font-medium rounded-full px-4 py-1.5 transition-colors duration-150 select-none",
                         isActive
                           ? "text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-foreground/[0.04]"
                       )}
-                      onClick={(e) => handleNavClick(e, item.href)}
-                      asChild
                     >
-                      <a href={item.href}>
-                        {/* Active indicator background */}
-                        {isActive && (
-                          <motion.div
-                            layoutId="activeNavBg"
-                            className="absolute inset-0 bg-gradient-to-r from-primary to-accent rounded-full"
-                            transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                          />
-                        )}
-                        <span className="relative z-10">{item.shortLabel}</span>
-                      </a>
-                    </Button>
+                      {/* Active pill — animated between tabs */}
+                      {isActive && (
+                        <motion.span
+                          layoutId="activeNavBg"
+                          className="absolute inset-0 bg-gradient-to-r from-primary to-accent rounded-full shadow-[0_2px_10px_-3px_hsl(var(--primary)/0.55)]"
+                          transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                        />
+                      )}
+                      <span className="relative z-10">{item.shortLabel}</span>
+                      {/* Subtle bottom dot for active state — second visual cue */}
+                      {isActive && (
+                        <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-primary/80 z-10" aria-hidden />
+                      )}
+                    </a>
                   </motion.div>
                 );
               })}
             </nav>
 
             {/* Action buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <UnderTheHoodToggle />
               <ThemeToggle />
               <Button
                 size="sm"
-                className="btn-premium rounded-full px-4 hidden xl:flex"
+                className="btn-premium rounded-full px-4 ml-1 hidden xl:flex"
                 onClick={(e) => handleNavClick(e, '/home#contact')}
                 asChild
               >

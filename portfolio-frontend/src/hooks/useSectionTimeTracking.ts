@@ -90,7 +90,12 @@ export function useSectionTimeTracking() {
             (entries) => {
                 entries.forEach(entry => {
                     const id = entry.target.id;
-                    if (!sectionTimes.current[id]) return;
+                    if (!sectionTimes.current[id]) {
+                        // Defensive: init was racy — ensure the bucket exists
+                        // before we touch it (hero used to land at 0 visits
+                        // because of this race).
+                        sectionTimes.current[id] = { totalMs: 0, enterTime: null, visits: 0 };
+                    }
 
                     if (entry.isIntersecting) {
                         // Section entered viewport
@@ -109,7 +114,7 @@ export function useSectionTimeTracking() {
                 });
             },
             {
-                threshold: 0.3, // Section is "visible" when 30% is in view
+                threshold: [0, 0.1, 0.3], // catch landing-on-page hero too
                 rootMargin: '0px'
             }
         );
@@ -119,6 +124,28 @@ export function useSectionTimeTracking() {
             const element = document.getElementById(id);
             if (element) {
                 observer.observe(element);
+            }
+        });
+
+        // Belt + suspenders: count a visit for whichever section is currently
+        // on screen at mount time. Some browsers fire the IO initial callback
+        // late or skip it for already-intersecting elements during hydration,
+        // which left hero stuck at 0 visits.
+        requestAnimationFrame(() => {
+            const vh = window.innerHeight;
+            for (const id of SECTION_IDS) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                const r = el.getBoundingClientRect();
+                const visible = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+                if (visible > vh * 0.3) {
+                    const bucket = sectionTimes.current[id] ||
+                        (sectionTimes.current[id] = { totalMs: 0, enterTime: null, visits: 0 });
+                    if (!bucket.enterTime) {
+                        bucket.enterTime = Date.now();
+                        bucket.visits += 1;
+                    }
+                }
             }
         });
 

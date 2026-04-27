@@ -24,7 +24,9 @@ type FormErrors = {
   message?: string;
 };
 
-// Quick connect button component
+// Quick connect button — neat default layout, gentle hover (no overshoot).
+// The verb chip ("Open"/"Contact") sits in the same column as the label so it
+// doesn't read as misaligned at first glance.
 function QuickConnectButton({ icon: Icon, label, href, color, isExternal }: {
   icon: React.ElementType;
   label: string;
@@ -32,24 +34,26 @@ function QuickConnectButton({ icon: Icon, label, href, color, isExternal }: {
   color: string;
   isExternal?: boolean;
 }) {
+  const verb = isExternal ? 'Open' : 'Contact';
   return (
     <motion.a
       href={href}
-      target={isExternal ? "_blank" : undefined}
-      rel={isExternal ? "noopener noreferrer" : undefined}
-      whileHover={{ scale: 1.02, y: -1 }}
+      target={isExternal ? '_blank' : undefined}
+      rel={isExternal ? 'noopener noreferrer' : undefined}
       whileTap={{ scale: 0.98 }}
-      className="group flex flex-col items-center p-3 md:p-4 rounded-xl md:rounded-2xl bg-card border border-border/50 hover:border-primary/30 transition-all duration-300 shadow-lg hover:shadow-xl"
+      className="group relative flex flex-col items-center justify-center text-center p-4 md:p-5 rounded-2xl bg-card border border-border/60 hover:border-primary/40 hover:bg-card/90 transition-colors duration-200 shadow-sm hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
     >
       <div
-        className="w-10 h-10 md:w-14 md:h-14 rounded-lg md:rounded-xl flex items-center justify-center mb-2 md:mb-3 transition-transform duration-300 group-hover:scale-110"
-        style={{ background: `${color}20` }}
+        className="w-11 h-11 md:w-14 md:h-14 rounded-xl flex items-center justify-center mb-2 md:mb-3"
+        style={{ background: `${color}1f` }}
+        aria-hidden
       >
         <Icon className="h-5 w-5 md:h-6 md:w-6" style={{ color }} />
       </div>
-      <span className="text-xs md:text-sm font-medium text-foreground">{label}</span>
-      <span className="text-[10px] md:text-xs text-muted-foreground mt-0.5 md:mt-1">
-        {isExternal ? 'Open' : 'Contact'}
+      <span className="text-xs md:text-sm font-semibold text-foreground leading-tight">{label}</span>
+      <span className="mt-1 inline-flex items-center gap-1 text-[10px] md:text-[11px] uppercase tracking-wider font-medium text-muted-foreground/80 group-hover:text-primary transition-colors">
+        {verb}
+        <ArrowRight className="h-3 w-3 opacity-0 group-hover:opacity-100 -translate-x-1 group-hover:translate-x-0 transition-all" />
       </span>
     </motion.a>
   );
@@ -79,11 +83,11 @@ function AnimatedInput({
         type={type}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        className={`pt-5 pb-2 h-14 bg-secondary/30 border-border/50 focus:border-primary transition-all ${error ? 'border-red-500' : ''}`}
+        className={`pt-5 pb-2 h-14 bg-secondary/30 border-border/50 focus:border-primary transition-[border-color,box-shadow,background-color] duration-300 ease-out ${error ? 'border-red-500' : ''}`}
       />
       <Label
         htmlFor={id}
-        className={`absolute left-3 transition-all duration-300 ease-out pointer-events-none ${isFocused || hasValue
+        className={`absolute left-3 transition-all duration-300 ease-out pointer-events-none will-change-transform ${isFocused || hasValue
           ? 'top-2 text-xs text-primary'
           : 'top-1/2 -translate-y-1/2 text-muted-foreground'
           }`}
@@ -235,10 +239,13 @@ export default function Contact() {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <Badge variant="outline" className="mb-3 md:mb-4 border-primary/40 text-primary px-3 md:px-4 py-1 text-xs md:text-sm">
+            <span
+              className="inline-flex items-center mb-3 md:mb-4 rounded-full border border-primary/30 bg-primary/[0.04] text-primary px-3 md:px-4 py-1 text-xs md:text-sm font-semibold tracking-wide uppercase"
+              aria-hidden="true"
+            >
               <MessageSquare className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5 md:mr-2" />
               Let's Connect
-            </Badge>
+            </span>
             <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 gradient-text">
               Get In Touch
             </h2>

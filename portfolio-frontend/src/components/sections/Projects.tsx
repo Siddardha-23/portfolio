@@ -149,34 +149,47 @@ const PORTFOLIO_ARCH: ArchData = {
   ],
 };
 
-// ---- SLATE: Ephemeral environments on AWS ----
-const SLATE_ARCH: ArchData = {
+// ---- Ephemeral Preview Environments (per-PR serverless) ----
+const EPHEMERAL_ARCH: ArchData = {
   regions: [
-    { label: 'AWS Cloud', x: 262, y: 8, w: 470, h: 265, color: '#FF9900', dashed: true, icon: <Cloud className="h-3 w-3" /> },
-    { label: 'VPC (per branch)', x: 396, y: 32, w: 325, h: 232, color: '#10B981', dashed: true },
+    { label: 'Trigger',         x: 12,  y: 20, w: 128, h: 240, color: '#F59E0B', dashed: false, icon: <GitBranch className="h-3 w-3" /> },
+    { label: 'CI/CD',           x: 152, y: 20, w: 128, h: 240, color: '#8B5CF6', dashed: false },
+    { label: 'Edge (Shared)',   x: 292, y: 20, w: 148, h: 240, color: '#06B6D4', dashed: false, icon: <Globe className="h-3 w-3" /> },
+    { label: 'Per-PR Compute',  x: 452, y: 20, w: 148, h: 240, color: '#3B82F6', dashed: true,  icon: <Cloud className="h-3 w-3" /> },
+    { label: 'Shared Data + CP',x: 612, y: 20, w: 140, h: 240, color: '#10B981', dashed: false },
   ],
   nodes: [
-    // External / CI
-    { id: 'gh', label: 'GitHub', sublabel: 'PR / Push', icon: <Github className="h-4 w-4" />, color: '#24292F', x: 55, y: 140 },
-    { id: 'actions', label: 'GH Actions', sublabel: 'CI Pipeline', icon: <GitBranch className="h-4 w-4" />, color: '#2088FF', x: 168, y: 140 },
-    // AWS - IaC
-    { id: 'tf', label: 'Terraform', sublabel: 'IaC Engine', icon: <Layers className="h-4 w-4" />, color: '#7B42BC', x: 310, y: 140 },
-    // Inside VPC
-    { id: 'alb', label: 'ALB', sublabel: 'Load Balancer', icon: <Network className="h-4 w-4" />, color: '#8B5CF6', x: 440, y: 80 },
-    { id: 'ecs', label: 'ECS Fargate', sublabel: 'Containers', icon: <Cloud className="h-4 w-4" />, color: '#FF9900', x: 565, y: 80 },
-    { id: 'rds', label: 'RDS', sublabel: 'Database', icon: <Database className="h-4 w-4" />, color: '#3B82F6', x: 440, y: 200 },
-    { id: 's3', label: 'S3', sublabel: 'Artifacts', icon: <HardDrive className="h-4 w-4" />, color: '#3ECF8E', x: 565, y: 200 },
-    { id: 'cw', label: 'CloudWatch', sublabel: 'Monitoring', icon: <BarChart3 className="h-4 w-4" />, color: '#E7157B', x: 680, y: 140 },
+    // Trigger
+    { id: 'gh',      label: 'GitHub',     sublabel: 'PR open/close', icon: <Github className="h-4 w-4" />,    color: '#24292F', x: 76,  y: 140 },
+    // CI/CD
+    { id: 'actions', label: 'Actions',    sublabel: 'preview-up/down',icon: <Rocket className="h-4 w-4" />,    color: '#2088FF', x: 216, y: 90 },
+    { id: 'tf',      label: 'Terraform',  sublabel: 'workspaces',    icon: <Layers className="h-4 w-4" />,    color: '#7B42BC', x: 216, y: 200 },
+    // Edge (shared)
+    { id: 'cf',      label: 'CloudFront', sublabel: 'CF Function',   icon: <Network className="h-4 w-4" />,   color: '#8B5CF6', x: 366, y: 100 },
+    { id: 'r53',     label: 'Route 53',   sublabel: '*.preview alias',icon: <Globe className="h-4 w-4" />,    color: '#8B5CF6', x: 366, y: 210 },
+    // Per-PR compute
+    { id: 'apigw',   label: 'API Gateway',sublabel: 'per-PR',        icon: <Server className="h-4 w-4" />,    color: '#E7157B', x: 526, y: 100 },
+    { id: 'lambda',  label: 'Lambdas',    sublabel: '5 services',    icon: <Cpu className="h-4 w-4" />,       color: '#FF9900', x: 526, y: 210 },
+    // Shared data + control plane
+    { id: 's3',      label: 'S3 Prefix',  sublabel: '{slug}/*',      icon: <HardDrive className="h-4 w-4" />, color: '#3ECF8E', x: 686, y: 75 },
+    { id: 'mongo',   label: 'Mongo',      sublabel: 'portfolio_pr_*',icon: <Database className="h-4 w-4" />,  color: '#00684A', x: 686, y: 155 },
+    { id: 'ddb',     label: 'DynamoDB',   sublabel: 'tracking',      icon: <Activity className="h-4 w-4" />,  color: '#3B82F6', x: 686, y: 235 },
   ],
   edges: [
-    { from: 'gh', to: 'actions', label: 'Webhook' },
-    { from: 'actions', to: 'tf', label: 'Trigger' },
-    { from: 'tf', to: 'alb', label: 'Provision' },
-    { from: 'tf', to: 'rds', label: 'Setup' },
-    { from: 'alb', to: 'ecs', label: 'Route' },
-    { from: 'ecs', to: 'rds', dashed: true },
-    { from: 'ecs', to: 's3', dashed: true },
-    { from: 'ecs', to: 'cw', label: 'Metrics' },
+    // Provisioning flow (dashed)
+    { from: 'gh',      to: 'actions', label: 'PR' },
+    { from: 'actions', to: 'tf',      label: 'apply' },
+    { from: 'tf',      to: 'apigw',   dashed: true, label: 'create' },
+    { from: 'tf',      to: 'lambda',  dashed: true, label: 'deploy' },
+    { from: 'tf',      to: 'r53',     dashed: true, label: 'alias' },
+    { from: 'actions', to: 's3',      dashed: true, label: 'sync' },
+    { from: 'actions', to: 'ddb',     dashed: true },
+    // Request flow (solid)
+    { from: 'r53',     to: 'cf',      dashed: true },
+    { from: 'cf',      to: 's3',      label: 'static' },
+    { from: 'cf',      to: 'apigw',   label: 'X-Slug' },
+    { from: 'apigw',   to: 'lambda',  label: 'invoke' },
+    { from: 'lambda',  to: 'mongo',   label: 'per-PR' },
   ],
 };
 
@@ -267,7 +280,7 @@ const CROSS_ACCOUNT_ARCH: ArchData = {
 
 const ARCH_MAP: Record<string, ArchData> = {
   'cloud-portfolio': PORTFOLIO_ARCH,
-  'slate-environments': SLATE_ARCH,
+  'ephemeral-environments': EPHEMERAL_ARCH,
   'aerosec': AEROSEC_ARCH,
   'aws-microservices-cicd': MICROSERVICES_ARCH,
   'cross-account-cicd': CROSS_ACCOUNT_ARCH,

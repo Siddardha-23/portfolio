@@ -8,6 +8,7 @@ import { useState, useEffect, lazy, Suspense } from 'react';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 
 const AerosecCaseStudy = lazy(() => import('./AerosecCaseStudy'));
+const EphemeralEnvironmentsCaseStudy = lazy(() => import('./EphemeralEnvironmentsCaseStudy'));
 import AWSRefArchDiagram from '@/components/AWSRefArchDiagram';
 import type { RefArchDiagramData } from '@/components/AWSRefArchDiagram';
 import {
@@ -55,32 +56,50 @@ const portfolioDiagram: RefArchDiagramData = {
     ],
 };
 
-const slateDiagram: RefArchDiagramData = {
-    title: 'SLATE - Multi-Environment Architecture',
-    viewBox: [1160, 530],
+const ephemeralDiagram: RefArchDiagramData = {
+    title: 'Ephemeral Preview Environments — Per-PR Serverless Architecture',
+    viewBox: [1200, 600],
     regions: [
-        { id: 'aws', label: 'AWS Cloud', x: 170, y: 40, width: 970, height: 450, color: '#FF9900' },
-        { id: 'vpc', label: 'VPC - Application Tier', x: 580, y: 85, width: 420, height: 330, color: '#10B981' },
+        { id: 'gh',     label: 'GitHub',          x: 30,   y: 60,  width: 180, height: 460, color: '#24292F' },
+        { id: 'ci',     label: 'CI/CD',           x: 230,  y: 60,  width: 200, height: 460, color: '#7B42BC' },
+        { id: 'edge',   label: 'AWS Edge — Shared CloudFront',     x: 450,  y: 60,  width: 230, height: 460, color: '#06B6D4' },
+        { id: 'compute',label: 'AWS — Per-PR Compute (workspace)', x: 700,  y: 60,  width: 230, height: 460, color: '#3B82F6' },
+        { id: 'data',   label: 'AWS — Shared Data + Control Plane',x: 950,  y: 60,  width: 220, height: 460, color: '#10B981' },
     ],
     nodes: [
-        { id: 'gh', label: 'GitHub', sublabel: 'Source', icon: <Github className="h-5 w-5" />, x: 75, y: 260, accentColor: '#24292F' },
-        { id: 'actions', label: 'GH Actions', sublabel: 'CI/CD', icon: <SiGithubactions className="h-5 w-5" />, x: 290, y: 180, accentColor: '#2088FF' },
-        { id: 'tf', label: 'Terraform', sublabel: 'IaC', icon: <SiTerraform className="h-5 w-5" />, x: 290, y: 340, accentColor: '#7B42BC' },
-        { id: 'alb', label: 'ALB', sublabel: 'Load Balancer', icon: <Network className="h-5 w-5" />, x: 700, y: 155, accentColor: '#FF9900' },
-        { id: 'ecs', label: 'ECS Fargate', sublabel: 'Containers', icon: <SiDocker className="h-5 w-5" />, x: 700, y: 310, accentColor: '#2496ED' },
-        { id: 'rds', label: 'RDS', sublabel: 'Database', icon: <Database className="h-5 w-5" />, x: 900, y: 310, accentColor: '#3B82F6' },
-        { id: 'cw', label: 'CloudWatch', sublabel: 'Monitoring', icon: <BarChart3 className="h-5 w-5" />, x: 1040, y: 155, accentColor: '#EF4444' },
+        { id: 'pr',      label: 'Pull Request',   sublabel: 'opened/synced/closed',     icon: <Github className="h-5 w-5" />,    x: 120,  y: 290, accentColor: '#24292F' },
+        { id: 'up',      label: 'preview-up.yml', sublabel: 'opened|synced',            icon: <SiGithubactions className="h-5 w-5" />, x: 330, y: 165, accentColor: '#2088FF' },
+        { id: 'down',    label: 'preview-down.yml', sublabel: 'closed|dispatch',        icon: <SiGithubactions className="h-5 w-5" />, x: 330, y: 295, accentColor: '#EF4444' },
+        { id: 'tf',      label: 'Terraform',      sublabel: 'workspace per slug',       icon: <SiTerraform className="h-5 w-5" />, x: 330, y: 425, accentColor: '#7B42BC' },
+        { id: 'r53',     label: 'Route 53',       sublabel: '*.preview alias',          icon: <Globe className="h-5 w-5" />,     x: 565, y: 165, accentColor: '#8B5CF6' },
+        { id: 'cf',      label: 'CloudFront',     sublabel: 'shared distribution',      icon: <Wifi className="h-5 w-5" />,      x: 565, y: 295, accentColor: '#06B6D4' },
+        { id: 'cfn',     label: 'CF Function',    sublabel: 'host → /{slug}/* rewrite', icon: <Code className="h-5 w-5" />,      x: 565, y: 425, accentColor: '#F59E0B' },
+        { id: 'apigw',   label: 'API Gateway',    sublabel: 'per-PR HTTP API',          icon: <Server className="h-5 w-5" />,    x: 815, y: 200, accentColor: '#E7157B' },
+        { id: 'lambda',  label: 'Lambdas',        sublabel: '5 ARM64 services',         icon: <Cpu className="h-5 w-5" />,       x: 815, y: 380, accentColor: '#FF9900' },
+        { id: 's3',      label: 'S3 Prefix',      sublabel: '/{slug}/*',                icon: <HardDrive className="h-5 w-5" />, x: 1060, y: 165, accentColor: '#3ECF8E' },
+        { id: 'mongo',   label: 'Mongo Atlas',    sublabel: 'portfolio_pr_{slug}',      icon: <SiMongodb className="h-5 w-5" />, x: 1060, y: 295, accentColor: '#00684A' },
+        { id: 'ddb',     label: 'DynamoDB',       sublabel: 'tracking + reaper',        icon: <Activity className="h-5 w-5" />,  x: 1060, y: 425, accentColor: '#3B82F6' },
     ],
     edges: [
-        { from: 'gh', to: 'actions', label: 'Push' },
-        { from: 'actions', to: 'tf', label: 'Trigger' },
-        { from: 'tf', to: 'alb', label: 'Create' },
-        { from: 'tf', to: 'ecs', label: 'Deploy' },
-        { from: 'tf', to: 'rds', label: 'Setup', dashed: true },
-        { from: 'alb', to: 'ecs', label: 'Route' },
-        { from: 'ecs', to: 'rds', label: 'Query' },
-        { from: 'ecs', to: 'cw', label: 'Logs', fromSide: 'right', toSide: 'bottom' },
-        { from: 'alb', to: 'cw', label: 'Metrics' },
+        // Provisioning (dashed)
+        { from: 'pr',      to: 'up',     label: 'opened',   fromSide: 'right', toSide: 'left' },
+        { from: 'pr',      to: 'down',   label: 'closed',   dashed: true,      fromSide: 'right', toSide: 'left' },
+        { from: 'up',      to: 'tf',     label: 'apply',                    fromSide: 'bottom', toSide: 'top' },
+        { from: 'down',    to: 'tf',     label: 'destroy', dashed: true,    fromSide: 'bottom', toSide: 'top' },
+        { from: 'tf',      to: 'r53',    label: 'alias',   dashed: true },
+        { from: 'tf',      to: 'apigw',  label: 'create',  dashed: true },
+        { from: 'tf',      to: 'lambda', label: 'deploy',  dashed: true },
+        { from: 'up',      to: 's3',     label: 'sync',    dashed: true },
+        { from: 'up',      to: 'ddb',                       dashed: true },
+        // Request flow (solid)
+        { from: 'r53',     to: 'cf',     label: 'alias',   dashed: true,    fromSide: 'bottom', toSide: 'top' },
+        { from: 'cf',      to: 'cfn',    label: 'viewer-req',               fromSide: 'bottom', toSide: 'top' },
+        { from: 'cfn',     to: 's3',     label: 'static',                   fromSide: 'right', toSide: 'left' },
+        { from: 'cfn',     to: 'apigw',  label: 'X-Slug',                   fromSide: 'right', toSide: 'left' },
+        { from: 'apigw',   to: 'lambda', label: 'invoke',                   fromSide: 'bottom', toSide: 'top' },
+        { from: 'lambda',  to: 'mongo',  label: 'per-PR DB',                fromSide: 'right', toSide: 'left' },
+        // Reaper loop
+        { from: 'ddb',     to: 'down',   label: 'reaper',  dashed: true },
     ],
 };
 
@@ -154,7 +173,7 @@ const crossAccountDiagram: RefArchDiagramData = {
 
 const diagramDataMap: Record<string, RefArchDiagramData> = {
     'cloud-portfolio': portfolioDiagram,
-    'slate-environments': slateDiagram,
+    'ephemeral-environments': ephemeralDiagram,
     'aws-microservices-cicd': microservicesDiagram,
     'cross-account-cicd': crossAccountDiagram,
 };
@@ -265,6 +284,18 @@ export default function ProjectArchitecture() {
                 </div>
             }>
                 <AerosecCaseStudy />
+            </Suspense>
+        );
+    }
+
+    if (slug === 'ephemeral-environments') {
+        return (
+            <Suspense fallback={
+                <div className="min-h-screen bg-background flex items-center justify-center">
+                    <div className="animate-pulse text-muted-foreground">Loading…</div>
+                </div>
+            }>
+                <EphemeralEnvironmentsCaseStudy />
             </Suspense>
         );
     }

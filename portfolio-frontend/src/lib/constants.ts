@@ -612,110 +612,158 @@ export const PROJECTS = [
     }
   },
   {
-    title: "Ephemeral Test Environments (SLATE)",
-    slug: "slate-environments",
-    period: "January 2025 - Present",
-    status: "In Progress",
+    title: "Ephemeral Preview Environments",
+    slug: "ephemeral-environments",
+    period: "April 2026",
+    status: "Live",
     description: [
-      "Building a system that automatically creates ephemeral test environments for every new feature branch or pull request, mirroring production infrastructure.",
-      "CI/CD pipeline (GitHub Actions) triggers Infrastructure-as-Code (Terraform) to provision isolated environments with containerized Python/Flask app, database, and required services.",
-      "Teams can test features in short-lived, production-like environments, then automatically tear them down when the PR is merged or closed.",
-      "Implements a web dashboard/API for requesting, monitoring, and managing ephemeral environments in real-time.",
-      "Showcases GitOps principles by tying infrastructure provisioning to Git events, eliminating shared staging bottlenecks."
+      "A serverless GitOps platform that gives every PR its own production-grade preview at {slug}.preview.manneharshithsiddardha.com — Lambdas, API Gateway, S3 prefix, Mongo database, all auto-provisioned and auto-destroyed.",
+      "A single shared CloudFront distribution fronts every preview; a CloudFront Function rewrites the host to an S3 prefix and tags /api/* with X-Preview-Slug — so spinning up a new env never waits 15+ minutes for a CloudFront create.",
+      "Terraform workspaces give per-PR state isolation; the shared Lambda layer ARN is pinned at PR-open time so a prod redeploy mid-PR can't rebase the preview onto a new layer.",
+      "A daily reaper Lambda treats AWS resource tags as the source of truth, reconciles against open-PR state via the GitHub API, and dispatches preview-down.yml for any env that's closed, idle for 7 days, or orphaned.",
+      "An admin dashboard inside the Portfolio's Admin Suite lists every active preview, surfaces orphaned-aws / orphaned-ddb rows, and exposes a JWT-gated teardown button that goes through the same workflow as the close-PR path."
     ],
-    technologies: ["AWS", "Terraform", "Docker", "Flask", "CI/CD", "ECS", "GitHub Actions"],
-    github: "https://github.com/Siddardha-23",
+    technologies: [
+      "AWS Lambda",
+      "API Gateway v2",
+      "CloudFront",
+      "CloudFront Functions",
+      "S3",
+      "Route53",
+      "ACM",
+      "DynamoDB",
+      "EventBridge",
+      "IAM",
+      "SSM",
+      "Terraform",
+      "GitHub Actions",
+      "MongoDB Atlas",
+      "Python",
+      "React"
+    ],
+    github: "https://github.com/manneharshithsiddardha/portfolio",
     architecture: {
       stack: {
-        frontend: ["React", "TypeScript", "Dashboard UI"],
-        backend: ["Python 3.12", "Flask", "REST API", "Webhook handlers"],
-        infrastructure: ["AWS ECS/EKS", "RDS", "S3", "VPC", "ALB", "IAM", "CodePipeline", "CodeBuild"],
-        cicd: ["GitHub Actions", "AWS CodePipeline", "CodeBuild", "Terraform", "Docker"],
-        monitoring: ["CloudWatch", "Container Insights", "Custom Dashboard"]
+        trigger:    ["GitHub PR webhook", "preview-up.yml", "preview-down.yml", "workflow_dispatch"],
+        ci:         ["GitHub Actions", "Terraform 1.6", "Terraform workspaces", "scripts/slugify.sh"],
+        edge:       ["Shared CloudFront", "CloudFront Function (host->prefix rewrite)", "Wildcard ACM cert *.preview.{domain}", "Route53 alias per slug"],
+        compute:    ["5 ARM64 Lambdas per PR", "HTTP API Gateway per PR", "Pinned Lambda layer ARN", "X-Ray tracing"],
+        data:       ["Shared MongoDB Atlas cluster", "Per-env DB portfolio_pr_{slug}", "Shared S3 bucket with /{slug}/ prefix", "Read-only SSM secrets from prod"],
+        controlPlane: ["DynamoDB tracking table", "ResourceGroupsTaggingAPI as truth", "Admin Suite Environments tab", "Reaper Lambda (EventBridge daily)"]
       },
       diagram: {
-        title: "SLATE Ephemeral Environment Architecture",
+        title: "Per-PR Ephemeral Environment Architecture",
         layers: [
           {
-            name: "Git & CI/CD Trigger Layer",
+            name: "Trigger Layer (GitHub)",
             color: "#F59E0B",
             components: [
-              "GitHub repository with PR/branch webhooks",
-              "GitHub Actions workflow triggers on PR events",
-              "AWS CodePipeline orchestrates multi-stage deployment",
-              "AWS CodeBuild compiles, tests, and builds Docker images",
-              "Event-driven triggers for create/update/destroy lifecycle"
+              "pull_request: opened/synchronize/reopened -> preview-up.yml",
+              "pull_request: closed -> preview-down.yml",
+              "workflow_dispatch from dashboard for manual teardown",
+              "scripts/slugify.sh enforces pr- prefix, length cap with sha8 suffix, reserved-label rejection"
             ]
           },
           {
-            name: "Infrastructure Provisioning Layer",
+            name: "CI/CD Layer (GitHub Actions)",
             color: "#8B5CF6",
             components: [
-              "Terraform modules for per-environment infrastructure",
-              "Isolated VPC or Kubernetes namespace per feature branch",
-              "Application Load Balancer with unique URL per environment",
-              "ECS Fargate tasks for containerized application deployment",
-              "RDS instance or containerized database per environment",
-              "IAM roles with least-privilege per-environment access"
+              "Pin shared Lambda layer ARN at PR-open time so prod redeploys can't rebase the preview",
+              "terraform workspace select-or-new {slug} on a per-PR root that consumes prod outputs via terraform_remote_state",
+              "Apply ephemeral module: 5 Lambdas + API GW + Route53 alias, all tagged EphemeralBranch={slug}",
+              "Build frontend with VITE_API_URL=https://{slug}.preview.{domain}/api, sync to s3://portfolio-preview-shared/{slug}/, invalidate /{slug}/*",
+              "Upsert DynamoDB row, post sticky PR comment with the preview URL"
             ]
           },
           {
-            name: "Application & Services Layer",
+            name: "Edge Layer (Shared CloudFront)",
+            color: "#06B6D4",
+            components: [
+              "One wildcard ACM cert covers *.preview.{domain} for all PRs",
+              "One CloudFront distribution serves every preview - no 15-minute create per PR",
+              "Viewer-request CloudFront Function rewrites {slug}.preview.{domain}/path -> S3 origin /{slug}/path",
+              "/api/* requests get an X-Preview-Slug header so the API origin can route to the right per-PR API Gateway",
+              "SPA fallback: 403/404 -> /{slug}/index.html"
+            ]
+          },
+          {
+            name: "Per-PR Compute Layer (AWS)",
             color: "#3B82F6",
             components: [
-              "Dockerized Python/Flask application per branch",
-              "Isolated database with seeded test data",
-              "S3 buckets for environment-specific assets",
-              "Environment-specific secrets via AWS Secrets Manager",
-              "Unique subdomain URL routed via ALB rules"
+              "Five Lambdas per PR (visitor, auth, jobs-resume, chat, infra) named portfolio-preview-{slug}-{service}",
+              "ARM64 / 128MB tier - preview traffic doesn't need prod-tier headroom",
+              "HTTP API Gateway v2 mirrors the prod 20-route table",
+              "Reuses the prod Lambda IAM role via terraform_remote_state - no per-PR IAM churn",
+              "Layer ARN is pinned per workspace, recorded in DynamoDB"
             ]
           },
           {
-            name: "Management & Dashboard Layer",
+            name: "Shared Data Layer",
             color: "#10B981",
             components: [
-              "Flask-based web dashboard for environment monitoring",
-              "REST API for manual environment start/stop/extend",
-              "Real-time status of all active environments",
-              "Terraform output integration (URLs, credentials, logs)",
-              "Automatic cleanup on PR merge or close event"
+              "Per-env Mongo database portfolio_pr_{slug} on the shared MongoDB Atlas cluster",
+              "Schema-level isolation - no preview can touch prod data",
+              "Single S3 bucket portfolio-preview-shared with /{slug}/ prefix per env (14-day lifecycle as safety net)",
+              "Prod SSM SecureStrings referenced read-only - no per-PR secret duplication"
+            ]
+          },
+          {
+            name: "Control Plane",
+            color: "#A855F7",
+            components: [
+              "DynamoDB portfolio-ephemeral-envs is the operational index for the dashboard",
+              "ResourceGroupsTaggingAPI (Purpose=ephemeral-previews) is the source of truth for the reaper",
+              "EventBridge daily -> portfolio-preview-reaper Lambda",
+              "Reaper checks open-PR state via GitHub, last_seen_at idleness, and orphan tags; dispatches preview-down.yml for everything stale",
+              "Admin Suite Environments tab: card grid, status badges, age, idle, Open + JWT-gated Teardown"
+            ]
+          },
+          {
+            name: "Teardown Path",
+            color: "#EF4444",
+            components: [
+              "1. Mark DDB row destroying",
+              "2. Delete API Gateway FIRST (drains inbound traffic in seconds)",
+              "3. Sleep 30s for in-flight requests to fail-fast",
+              "4. Drop the per-env Mongo DB (refuses any name not prefixed portfolio_pr_)",
+              "5. terraform destroy in the workspace",
+              "6. Empty the S3 prefix; delete the workspace; delete the DDB row"
             ]
           }
         ]
       },
       security: [
-        "Each environment gets its own isolated VPC or Kubernetes namespace",
-        "Network segregation prevents cross-environment communication",
-        "IAM role per environment with least-privilege access policies",
-        "Ephemeral credentials via AWS Secrets Manager (auto-rotated)",
-        "Security groups restrict access to authorized team members only",
-        "All IaC changes are code-reviewed before provisioning",
-        "CloudTrail logging for audit trail of all resource operations",
-        "Automatic resource destruction prevents orphaned infrastructure"
+        "Wildcard ACM cert dedicated to *.preview.{domain} - prevents cert sprawl per PR",
+        "CI runner IAM policy is name-prefix scoped (portfolio-preview-*) AND tag-scoped (Purpose=ephemeral-previews) so it can only touch preview resources",
+        "Terraform workspaces partition state per slug; one corrupted workspace cannot affect prod state",
+        "Mongo teardown script refuses any DB name not prefixed portfolio_pr_ - hard guardrail against dropping prod by mistake",
+        "Reserved slug list rejects pr-prod, pr-main, pr-www, pr-api, pr-admin so a misnamed branch can't shadow a real subdomain",
+        "Dashboard teardown enforces super-admin JWT before issuing the GitHub workflow_dispatch; PAT is server-side only, stored in SSM",
+        "All preview Lambdas reuse prod SSM secrets read-only - no per-PR secret duplication, no extra rotation surface"
       ],
       scalability: [
-        "Supports dozens of concurrent ephemeral environments",
-        "ECS Fargate auto-scales application containers per environment",
-        "Modular Terraform enables adding services without refactoring",
-        "Event-driven architecture scales with PR volume",
-        "ALB routing rules dynamically manage environment endpoints",
-        "Namespace isolation in Kubernetes enables dense packing"
+        "Single shared CloudFront removes the per-PR CF create (15-20 min) from the critical path - new envs live in ~2 minutes",
+        "Spinning up a new env touches: 5 Lambdas + 1 API GW + 1 Route53 alias + 1 S3 prefix - no CloudFront, no cert provisioning",
+        "Comfortable on Atlas M10 up to ~10-15 concurrent envs with default Lambda concurrency",
+        "Layer-ARN pinning lets prod redeploy without rebasing live preview envs",
+        "DynamoDB on-demand billing absorbs PR-volume spikes without capacity planning",
+        "Reaper enforces 7-day idle teardown so cost grows with active developers, not historical PRs"
       ],
       costEfficiency: [
-        "Environments exist only for the lifetime of a PR (hours to days)",
-        "Automatic teardown on merge/close eliminates forgotten resources",
-        "No always-on staging servers reduces cloud spend by 60-80%",
-        "Spot instances for non-critical test workloads",
-        "Resource tagging enables per-feature cost attribution",
-        "Terraform state management prevents resource drift and waste"
+        "Envs are torn down on PR close or after 7 idle days - no always-on staging spend",
+        "ARM64 / 128MB Lambdas at idle effectively free; only invocations cost anything",
+        "Single shared CloudFront = effectively zero marginal CDN cost per env",
+        "Single shared S3 bucket with prefix-per-env keeps IAM and lifecycle policies simple",
+        "DynamoDB pay-per-request - no per-env capacity allocation",
+        "EphemeralBranch tag on every resource enables per-PR cost attribution in Cost Explorer",
+        "S3 14-day prefix lifecycle is a safety net so a failed teardown can't bleed forever"
       ],
       innovations: [
-        "Mirrors practices used at elite tech companies (e.g., Uber's SLATE)",
-        "Eliminates 'works on my machine' issues with production-like environments",
-        "Reduces staging bottlenecks that slow release velocity",
-        "Enables parallel feature testing without environment conflicts",
-        "Git-driven infrastructure: merge triggers both code and infra deployment",
-        "Demonstrates platform engineering and environment-as-a-service concepts"
+        "Single CloudFront serving every preview via a viewer-request CloudFront Function that rewrites {slug}.preview.{domain} to an S3 prefix - sidesteps the 15-minute CF create per PR",
+        "Layer-ARN pinning: capture the prod shared layer version at PR-open time so a prod deploy mid-PR can't rebase the preview onto a new layer",
+        "Tag-as-truth reaper: ResourceGroupsTaggingAPI is authoritative for what exists in AWS; DynamoDB is just the operational index. Failed teardowns surface as orphaned-aws rows in the dashboard",
+        "Dashboard teardown reuses preview-down.yml via workflow_dispatch - one well-tested destroy path covers every trigger (PR close, dashboard click, idle reaper)",
+        "Slug rules enforce DNS/Lambda-name limits with a sha8 suffix on overflow so Dependabot-style refs don't collide"
       ]
     }
   }

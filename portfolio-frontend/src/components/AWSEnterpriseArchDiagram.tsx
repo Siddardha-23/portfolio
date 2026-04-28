@@ -181,16 +181,28 @@ function ServiceTile({
     const tileX = node.x - NW / 2;
     const tileY = node.y - NH / 2;
 
+    // Icon container is a 44px square centered horizontally, sitting just below
+    // the top stripe. We render the lucide / react-icons SVG inside a <g> with
+    // a translate so its native <svg> nests cleanly into the parent SVG and
+    // inherits color via currentColor — avoids foreignObject namespace pitfalls.
+    const ICON_BOX = 44;
+    const ICON_RENDER = 28; // width/height of the icon glyph
+    const iconBoxX = (NW - ICON_BOX) / 2;
+    const iconBoxY = 32;
+    const iconX = iconBoxX + (ICON_BOX - ICON_RENDER) / 2;
+    const iconY = iconBoxY + (ICON_BOX - ICON_RENDER) / 2;
+
     return (
-        <motion.g
+        <g
             transform={`translate(${tileX}, ${tileY})`}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: highlighted ? 1 : 0.22, y: 0 }}
-            transition={{ duration: 0.25 }}
             onMouseEnter={onMouseEnter}
             onMouseLeave={onMouseLeave}
             onClick={(e) => { e.stopPropagation(); onClick(); }}
-            style={{ cursor: 'pointer' }}
+            style={{
+                cursor: 'pointer',
+                opacity: highlighted ? 1 : 0.22,
+                transition: 'opacity 240ms ease',
+            }}
         >
             {/* Drop shadow card */}
             <rect
@@ -222,16 +234,32 @@ function ServiceTile({
             )}
             {/* Icon container */}
             <rect
-                x={(NW - 44) / 2} y={32}
-                width={44} height={44} rx={10}
+                x={iconBoxX} y={iconBoxY}
+                width={ICON_BOX} height={ICON_BOX} rx={10}
                 fill={`${node.accentColor}1a`}
                 stroke={`${node.accentColor}33`}
                 strokeWidth={1}
             />
-            <foreignObject x={(NW - 28) / 2} y={40} width={28} height={28}>
+            {/* Icon glyph — placed inside a foreignObject so the lucide /
+                react-icons SVG renders with its own width/height attrs and
+                currentColor inheritance. Sized to fit the icon container. */}
+            <foreignObject
+                x={iconX}
+                y={iconY}
+                width={ICON_RENDER}
+                height={ICON_RENDER}
+                style={{ overflow: 'visible', pointerEvents: 'none' }}
+            >
                 <div
-                    className="flex items-center justify-center w-full h-full"
-                    style={{ color: node.accentColor }}
+                    xmlns="http://www.w3.org/1999/xhtml"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '100%',
+                        height: '100%',
+                        color: node.accentColor,
+                    }}
                 >
                     {node.icon}
                 </div>
@@ -302,7 +330,7 @@ function ServiceTile({
                     />
                 </rect>
             )}
-        </motion.g>
+        </g>
     );
 }
 

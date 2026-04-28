@@ -14,6 +14,7 @@ import ResumeDashboard, {
   formatBytes,
   TrashIcon,
 } from "@/components/resume/ResumeDashboard";
+import StreakWidget from "@/components/resume/StreakWidget";
 import type {
   TailorPipelineResult,
   TailoredFullResume,
@@ -3745,6 +3746,8 @@ function TailorTab() {
       transition={{ duration: 0.3 }}
       className="space-y-5"
     >
+      <StreakWidget />
+
       {/* Horizontal progress stepper */}
       <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm px-4 sm:px-8 py-4 shadow-sm">
         <div className="flex items-center justify-center gap-2 sm:gap-4">

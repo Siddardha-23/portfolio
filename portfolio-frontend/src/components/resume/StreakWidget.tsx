@@ -39,11 +39,12 @@ function dayLabel(dateStr: string): string {
 }
 
 function cellTone(count: number): string {
-  if (count <= 0) return 'bg-gray-800/60 border-gray-700/40';
-  if (count === 1) return 'bg-purple-500/40 border-purple-400/40';
-  if (count === 2) return 'bg-purple-500/65 border-purple-400/60';
-  if (count <= 4) return 'bg-gradient-to-br from-purple-500 to-pink-500 border-pink-400/60';
-  return 'bg-gradient-to-br from-amber-400 via-pink-500 to-purple-600 border-amber-300/70 shadow shadow-pink-500/30';
+  if (count <= 0) return 'bg-gray-800/60 border-gray-700/40 text-gray-600';
+  if (count === 1) return 'bg-amber-500/15 border-amber-500/30 text-amber-300';
+  if (count === 2) return 'bg-amber-500/25 border-amber-400/45 text-amber-200';
+  if (count <= 4)
+    return 'bg-gradient-to-br from-amber-500/40 to-pink-500/30 border-pink-400/50 text-amber-100';
+  return 'bg-gradient-to-br from-amber-400 via-pink-500 to-purple-600 border-amber-300/70 text-white shadow shadow-pink-500/30';
 }
 
 const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ compact = false }, ref) => {
@@ -93,7 +94,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
   if (!data) return null;
 
   const isAlive = data.current_streak > 0;
-  // Compact heatmap: only show last 14 days inline to keep height tiny.
+  // Compact heatmap: 14 days of count cells.
   const recent = data.heatmap.slice(-14);
 
   return (
@@ -101,7 +102,12 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
       <div className="absolute -top-8 -right-8 w-28 h-28 rounded-full bg-amber-500/10 blur-2xl pointer-events-none" />
 
       <div className="relative px-3 py-2 flex items-center gap-3 flex-wrap sm:flex-nowrap">
-        <div className="flex items-center gap-2 min-w-0 shrink-0">
+        {/* Left: streak count + flame */}
+        <div
+          className={`flex items-center gap-1.5 shrink-0 pr-3 border-r ${
+            isAlive ? 'border-amber-500/20' : 'border-gray-700/60'
+          }`}
+        >
           <FlameIcon className="w-5 h-5 shrink-0" muted={!isAlive} />
           <span
             className={`text-xl font-bold tabular-nums leading-none ${
@@ -117,45 +123,40 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
           </span>
         </div>
 
-        <div className="h-4 w-px bg-gray-700/60 hidden sm:block" />
-
-        <div className="flex items-center gap-3 text-[11px] text-gray-400 shrink-0">
-          <span>
-            <span className="font-semibold text-gray-200 tabular-nums">{data.today_count}</span>{' '}
-            today
-          </span>
-          <span className="text-gray-600">·</span>
-          <span>
-            <span className="font-semibold text-gray-300 tabular-nums">{data.total_applications}</span>{' '}
-            total
-          </span>
-          {data.longest_streak > 0 && (
-            <>
-              <span className="text-gray-600">·</span>
-              <span>
-                best{' '}
-                <span className="font-semibold text-gray-300 tabular-nums">{data.longest_streak}</span>
-              </span>
-            </>
-          )}
-        </div>
-
+        {/* Right: per-day count cells */}
         {!compact && (
-          <div className="ml-auto flex items-center gap-[2px] shrink-0">
+          <div className="flex items-center gap-1 ml-auto shrink-0">
             {recent.map((cell, idx) => {
               const isToday = idx === recent.length - 1;
+              const tone = cellTone(cell.count);
               return (
                 <div
                   key={cell.date}
                   title={`${dayLabel(cell.date)} • ${cell.count} application${cell.count === 1 ? '' : 's'}`}
-                  className={`w-2 h-2 rounded-sm border ${cellTone(cell.count)} ${
-                    isToday ? 'ring-1 ring-amber-300/60' : ''
+                  className={`relative w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-semibold tabular-nums ${tone} ${
+                    isToday ? 'ring-1 ring-amber-300/70' : ''
                   }`}
-                />
+                >
+                  {cell.count > 0 && (
+                    <FlameIcon className="absolute inset-0 w-full h-full opacity-15 pointer-events-none" />
+                  )}
+                  <span className="relative">{cell.count}</span>
+                </div>
               );
             })}
           </div>
         )}
+
+        {/* Stats row underneath on overflow / mobile */}
+        <div className="flex items-center gap-3 text-[11px] text-gray-400 shrink-0 sm:hidden">
+          <span>
+            <span className="font-semibold text-gray-200 tabular-nums">{data.today_count}</span> today
+          </span>
+          <span className="text-gray-600">·</span>
+          <span>
+            <span className="font-semibold text-gray-300 tabular-nums">{data.total_applications}</span> total
+          </span>
+        </div>
       </div>
     </div>
   );

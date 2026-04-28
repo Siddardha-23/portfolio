@@ -3340,7 +3340,13 @@ function TailorTab() {
           base_resume_filename: activeResumeRef.current?.filename || "",
           base_resume_s3_key: activeResumeRef.current?.s3_key || "",
         });
-        if (resp.data?.record_id) recordIdRef.current = resp.data.record_id;
+        if (resp.data?.record_id) {
+          const isNewRecord = !recordIdRef.current;
+          recordIdRef.current = resp.data.record_id;
+          if (isNewRecord) {
+            window.dispatchEvent(new CustomEvent('resume:application-saved'));
+          }
+        }
       } catch {
         /* silent — analytics only */
       }

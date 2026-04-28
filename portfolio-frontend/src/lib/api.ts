@@ -1023,6 +1023,19 @@ class ApiService {
     return this.request("/resume/tailoring-records");
   }
 
+  async getApplicationStreak(): Promise<
+    ApiResponse<{
+      current_streak: number;
+      longest_streak: number;
+      today_count: number;
+      total_applications: number;
+      last_application_date: string | null;
+      heatmap: { date: string; count: number }[];
+    }>
+  > {
+    return this.request("/resume/streak");
+  }
+
   async batchTailor(
     jdList: { text: string; title: string }[],
   ): Promise<ApiResponse<{ jobs: { job_id: string; title: string }[] }>> {

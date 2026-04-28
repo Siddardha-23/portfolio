@@ -469,6 +469,21 @@ def batch_tailor():
 
 
 # ------------------------------------------------------------------
+# GET /api/resume/streak — Daily application streak summary
+# ------------------------------------------------------------------
+@resume_bp.route("/streak", methods=["GET"])
+@jwt_required()
+def get_streak_route():
+    user_email = get_jwt_identity()
+    try:
+        from services.streak_service import get_streak
+        return jsonify(get_streak(user_email)), 200
+    except Exception as e:
+        logger.exception("Get streak error: %s", e)
+        return jsonify({"error": "Failed to load streak"}), 500
+
+
+# ------------------------------------------------------------------
 # GET /api/resume/tailoring-records — List user's tailoring history
 # ------------------------------------------------------------------
 @resume_bp.route("/tailoring-records", methods=["GET"])
@@ -1410,6 +1425,13 @@ def save_record():
         }
         col.insert_one(record)
         logger.info(f"Tailoring record saved: {rid} for {user_email}")
+
+        try:
+            from services.streak_service import record_application
+            record_application(user_email)
+        except Exception as streak_err:
+            logger.warning(f"Streak update failed for {user_email}: {streak_err}")
+
         return jsonify({"record_id": rid, "version_id": initial["version_id"]}), 201
 
     except Exception as e:

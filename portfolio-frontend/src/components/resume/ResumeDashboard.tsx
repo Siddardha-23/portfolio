@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiService } from '@/lib/api';
+import StreakWidget from './StreakWidget';
 
 export interface BaseResume {
   s3_key: string;
@@ -179,7 +180,9 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
 
   // Active resume card
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
+      <StreakWidget />
+
       <div className="flex items-center gap-2 mb-1">
         <div className="w-6 h-6 rounded-full bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center shrink-0">
           <span className="text-[10px] font-bold text-white">1</span>

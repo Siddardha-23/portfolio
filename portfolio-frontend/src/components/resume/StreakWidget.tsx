@@ -161,10 +161,32 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
               day streak
             </span>
           </div>
+          <span
+            className={`hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none ml-1 px-2 py-1 rounded-full border transition-colors ${
+              todayActive
+                ? 'border-amber-500/30 bg-amber-500/10'
+                : 'border-gray-700/40 bg-gray-800/40'
+            }`}
+            title={`${data.today_count} application${data.today_count === 1 ? '' : 's'} today`}
+          >
+            <span className={todayActive ? 'text-amber-300/80' : 'text-gray-400'}>
+              Today
+            </span>
+            <span
+              className={`tabular-nums font-semibold ${
+                todayActive ? 'text-amber-100' : 'text-gray-500'
+              }`}
+            >
+              {data.today_count}
+            </span>
+          </span>
           {data.longest_streak > 0 && data.longest_streak > data.current_streak && (
-            <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-medium text-gray-500 leading-none ml-1 px-1.5 py-1 rounded-full border border-gray-700/40 bg-gray-800/40">
-              <span className="text-gray-400">best</span>
-              <span className="tabular-nums text-gray-300 font-semibold">{data.longest_streak}</span>
+            <span
+              className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none px-2 py-1 rounded-full border border-gray-700/40 bg-gray-800/40"
+              title={`Personal best: ${data.longest_streak} day${data.longest_streak === 1 ? '' : 's'}`}
+            >
+              <span className="text-gray-400">Best</span>
+              <span className="tabular-nums text-gray-200 font-semibold">{data.longest_streak}</span>
             </span>
           )}
         </div>

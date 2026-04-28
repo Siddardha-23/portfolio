@@ -905,6 +905,7 @@ export default function AdminPortal() {
     tailoring:    { title: 'Tailoring',      subtitle: 'Every JD-tailored session with version + cache metadata.' },
     applications: { title: 'Applications',   subtitle: 'Pipeline across all users — draft through offer.' },
     prep:         { title: 'Interview Prep', subtitle: 'AI-generated prep packs by role type and user.' },
+    environments: { title: 'Environments',   subtitle: 'Per-PR ephemeral preview envs — auto-reaped after 7 days idle.' },
   };
 
   return (

@@ -144,7 +144,10 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
           <div className="flex items-end gap-1.5 ml-auto shrink-0 overflow-x-auto">
             {recent.map((cell, idx) => {
               const isToday = idx === 0;
-              const tone = cellTone(cell.count);
+              const todayActive = isToday && cell.count > 0;
+              const tone = todayActive
+                ? 'bg-gradient-to-br from-amber-400 via-pink-500 to-purple-600 border-amber-300 text-white shadow-lg shadow-amber-500/30'
+                : cellTone(cell.count);
               return (
                 <div
                   key={cell.date}
@@ -152,18 +155,30 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
                   title={`${dayLabel(cell.date)} — ${cell.count} application${cell.count === 1 ? '' : 's'}`}
                 >
                   <div
-                    className={`relative w-7 h-7 rounded-md border flex items-center justify-center text-[12px] font-semibold tabular-nums ${tone} ${
-                      isToday ? 'ring-1 ring-amber-300/70' : ''
+                    className={`relative rounded-md border flex items-center justify-center font-semibold tabular-nums transition-all ${tone} ${
+                      todayActive
+                        ? 'w-9 h-9 text-sm ring-2 ring-amber-300/70 ring-offset-1 ring-offset-gray-900'
+                        : isToday
+                          ? 'w-7 h-7 text-[12px] ring-1 ring-amber-300/40'
+                          : 'w-7 h-7 text-[12px]'
                     }`}
                   >
                     {cell.count > 0 && (
-                      <FlameIcon className="absolute inset-0 w-full h-full opacity-15 pointer-events-none" />
+                      <FlameIcon
+                        className={`absolute inset-0 w-full h-full pointer-events-none ${
+                          todayActive ? 'opacity-30 animate-pulse' : 'opacity-15'
+                        }`}
+                      />
                     )}
                     <span className="relative">{cell.count}</span>
                   </div>
                   <span
                     className={`text-[9px] font-medium leading-none ${
-                      isToday ? 'text-amber-300' : 'text-gray-500'
+                      todayActive
+                        ? 'text-amber-200 font-semibold'
+                        : isToday
+                          ? 'text-amber-300'
+                          : 'text-gray-500'
                     }`}
                   >
                     {isToday ? 'Today' : `${shortDay(cell.date, false)} ${dayOfMonth(cell.date)}`}

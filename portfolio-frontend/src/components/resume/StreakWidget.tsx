@@ -38,6 +38,16 @@ function dayLabel(dateStr: string): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+function shortDay(dateStr: string, isToday: boolean): string {
+  if (isToday) return 'Today';
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+}
+
+function dayOfMonth(dateStr: string): string {
+  return String(parseInt(dateStr.slice(8, 10), 10));
+}
+
 function cellTone(count: number): string {
   if (count <= 0) return 'bg-gray-800/60 border-gray-700/40 text-gray-600';
   if (count === 1) return 'bg-amber-500/15 border-amber-500/30 text-amber-300';
@@ -94,8 +104,9 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
   if (!data) return null;
 
   const isAlive = data.current_streak > 0;
-  // Compact heatmap: 14 days of count cells.
-  const recent = data.heatmap.slice(-14);
+  // Most-recent-first: today, yesterday, ... going back. Show last 10 days
+  // so cells stay readable with their date labels.
+  const recent = [...data.heatmap].reverse().slice(0, 10);
 
   return (
     <div className="relative overflow-hidden rounded-lg border border-amber-500/15 bg-gradient-to-r from-gray-900 via-gray-900 to-amber-950/10">
@@ -107,6 +118,11 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
           className={`flex items-center gap-1.5 shrink-0 pr-3 border-r ${
             isAlive ? 'border-amber-500/20' : 'border-gray-700/60'
           }`}
+          title={
+            data.longest_streak > 0
+              ? `Personal best: ${data.longest_streak} day${data.longest_streak === 1 ? '' : 's'}`
+              : 'Apply daily to start a streak'
+          }
         >
           <FlameIcon className="w-5 h-5 shrink-0" muted={!isAlive} />
           <span
@@ -119,44 +135,44 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
             {data.current_streak}
           </span>
           <span className="text-[10px] font-medium uppercase tracking-wider text-gray-400 leading-none">
-            day{data.current_streak === 1 ? '' : 's'}
+            day streak
           </span>
         </div>
 
-        {/* Right: per-day count cells */}
+        {/* Right: today-first per-day cells, each with its day label */}
         {!compact && (
-          <div className="flex items-center gap-1 ml-auto shrink-0">
+          <div className="flex items-end gap-1.5 ml-auto shrink-0 overflow-x-auto">
             {recent.map((cell, idx) => {
-              const isToday = idx === recent.length - 1;
+              const isToday = idx === 0;
               const tone = cellTone(cell.count);
               return (
                 <div
                   key={cell.date}
-                  title={`${dayLabel(cell.date)} • ${cell.count} application${cell.count === 1 ? '' : 's'}`}
-                  className={`relative w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-semibold tabular-nums ${tone} ${
-                    isToday ? 'ring-1 ring-amber-300/70' : ''
-                  }`}
+                  className="flex flex-col items-center gap-0.5"
+                  title={`${dayLabel(cell.date)} — ${cell.count} application${cell.count === 1 ? '' : 's'}`}
                 >
-                  {cell.count > 0 && (
-                    <FlameIcon className="absolute inset-0 w-full h-full opacity-15 pointer-events-none" />
-                  )}
-                  <span className="relative">{cell.count}</span>
+                  <div
+                    className={`relative w-7 h-7 rounded-md border flex items-center justify-center text-[12px] font-semibold tabular-nums ${tone} ${
+                      isToday ? 'ring-1 ring-amber-300/70' : ''
+                    }`}
+                  >
+                    {cell.count > 0 && (
+                      <FlameIcon className="absolute inset-0 w-full h-full opacity-15 pointer-events-none" />
+                    )}
+                    <span className="relative">{cell.count}</span>
+                  </div>
+                  <span
+                    className={`text-[9px] font-medium leading-none ${
+                      isToday ? 'text-amber-300' : 'text-gray-500'
+                    }`}
+                  >
+                    {isToday ? 'Today' : `${shortDay(cell.date, false)} ${dayOfMonth(cell.date)}`}
+                  </span>
                 </div>
               );
             })}
           </div>
         )}
-
-        {/* Stats row underneath on overflow / mobile */}
-        <div className="flex items-center gap-3 text-[11px] text-gray-400 shrink-0 sm:hidden">
-          <span>
-            <span className="font-semibold text-gray-200 tabular-nums">{data.today_count}</span> today
-          </span>
-          <span className="text-gray-600">·</span>
-          <span>
-            <span className="font-semibold text-gray-300 tabular-nums">{data.total_applications}</span> total
-          </span>
-        </div>
       </div>
     </div>
   );

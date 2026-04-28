@@ -52,7 +52,26 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
 
   const load = useCallback(async () => {
     const resp = await apiService.getApplicationStreak();
-    if (resp.data) setData(resp.data);
+    if (resp.data) {
+      setData(resp.data);
+    } else {
+      // API not available yet (e.g. backend not restarted) — show empty state
+      // rather than disappearing silently.
+      const today = new Date();
+      const heatmap = Array.from({ length: 30 }, (_, i) => {
+        const d = new Date(today);
+        d.setUTCDate(today.getUTCDate() - (29 - i));
+        return { date: d.toISOString().slice(0, 10), count: 0 };
+      });
+      setData({
+        current_streak: 0,
+        longest_streak: 0,
+        today_count: 0,
+        total_applications: 0,
+        last_application_date: null,
+        heatmap,
+      });
+    }
     setLoading(false);
   }, []);
 

@@ -40,6 +40,82 @@ def _collection():
     return DBConnect().get_db().parse_streaks
 
 
+def _records_collection():
+    return DBConnect().get_db().tailoring_records
+
+
+def _backfill_from_records(user_email: str) -> Dict[str, Any]:
+    """Build a streak doc from existing tailoring_records.
+
+    Counts each record's `created_at` as one application on that UTC date.
+    Versions/edits are ignored (only the record itself counts), matching the
+    "edits don't count as new applications" rule. Idempotent: writes the
+    derived state back to parse_streaks so future reads skip the rebuild.
+    """
+    cursor = _records_collection().find(
+        {"user_email": user_email},
+        {"created_at": 1, "_id": 0},
+    )
+    daily_counts: Dict[str, int] = {}
+    total = 0
+    for r in cursor:
+        ts = r.get("created_at")
+        if not ts:
+            continue
+        if hasattr(ts, "astimezone"):
+            ts = ts.astimezone(timezone.utc) if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            key = ts.strftime("%Y-%m-%d")
+        else:
+            key = str(ts)[:10]
+        daily_counts[key] = daily_counts.get(key, 0) + 1
+        total += 1
+
+    if not daily_counts:
+        return {}
+
+    sorted_dates = sorted(daily_counts.keys())
+    last_date = sorted_dates[-1]
+
+    # Walk backward from the last date to find the run of consecutive days.
+    longest = 1
+    current_run = 1
+    for i in range(1, len(sorted_dates)):
+        prev = datetime.strptime(sorted_dates[i - 1], "%Y-%m-%d")
+        curr = datetime.strptime(sorted_dates[i], "%Y-%m-%d")
+        if (curr - prev).days == 1:
+            current_run += 1
+        else:
+            current_run = 1
+        longest = max(longest, current_run)
+
+    # current_streak = consecutive days ending at last_date
+    current_streak = 1
+    for i in range(len(sorted_dates) - 1, 0, -1):
+        prev = datetime.strptime(sorted_dates[i - 1], "%Y-%m-%d")
+        curr = datetime.strptime(sorted_dates[i], "%Y-%m-%d")
+        if (curr - prev).days == 1:
+            current_streak += 1
+        else:
+            break
+
+    update = {
+        "user_email": user_email,
+        "current_streak": current_streak,
+        "longest_streak": max(longest, current_streak),
+        "last_application_date": last_date,
+        "total_applications": total,
+        "daily_counts": _trim_history(daily_counts),
+        "updated_at": datetime.now(timezone.utc),
+        "backfilled_at": datetime.now(timezone.utc),
+    }
+    _collection().update_one(
+        {"user_email": user_email},
+        {"$set": update},
+        upsert=True,
+    )
+    return update
+
+
 def _today() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -102,6 +178,14 @@ def get_streak(user_email: str) -> Dict[str, Any]:
 
     doc = _collection().find_one({"user_email": user_email})
     if not doc:
+        # First read for this user — retrofit from existing tailoring_records
+        # so users who applied before the streak feature shipped see history.
+        try:
+            backfilled = _backfill_from_records(user_email)
+            if backfilled:
+                return _serialize(backfilled)
+        except Exception as e:
+            logger.warning(f"Streak backfill failed for {user_email}: {e}")
         return _empty_summary()
 
     return _serialize(doc)

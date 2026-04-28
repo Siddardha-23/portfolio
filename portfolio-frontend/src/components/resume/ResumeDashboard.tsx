@@ -127,16 +127,22 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
 
   if (loading) {
     return (
-      <div className="animate-pulse">
-        <div className="h-24 rounded-xl bg-gray-800/40" />
+      <div className="space-y-5">
+        <StreakWidget />
+        <div className="animate-pulse">
+          <div className="h-24 rounded-xl bg-gray-800/40" />
+        </div>
       </div>
     );
   }
 
   if (error && !activeResume) {
     return (
-      <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30">
-        <p className="text-sm text-red-300">{error}</p>
+      <div className="space-y-5">
+        <StreakWidget />
+        <div className="px-4 py-3 rounded-lg bg-red-900/20 border border-red-500/30">
+          <p className="text-sm text-red-300">{error}</p>
+        </div>
       </div>
     );
   }
@@ -144,7 +150,9 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
   // No active resume — prompt upload
   if (!activeResume) {
     return (
-      <div className="relative overflow-hidden rounded-xl border border-dashed border-purple-500/30 bg-gradient-to-br from-gray-900 to-gray-950 p-8">
+      <div className="space-y-5">
+        <StreakWidget />
+        <div className="relative overflow-hidden rounded-xl border border-dashed border-purple-500/30 bg-gradient-to-br from-gray-900 to-gray-950 p-8">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(236,72,153,0.06),transparent_60%)]" />
         <div className="relative text-center space-y-4">
           <div className="mx-auto w-14 h-14 rounded-full bg-purple-500/10 flex items-center justify-center">
@@ -173,6 +181,7 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
           </label>
           <p className="text-xs text-gray-500">PDF or DOCX, max 5 MB</p>
           {uploadError && <p className="text-sm text-red-400">{uploadError}</p>}
+        </div>
         </div>
       </div>
     );

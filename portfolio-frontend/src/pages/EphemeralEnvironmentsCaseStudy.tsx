@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ThemeToggle } from '@/components/theme-toggle';
-import AWSRefArchDiagram, { type RefArchDiagramData } from '@/components/AWSRefArchDiagram';
+import AWSEnterpriseArchDiagram, { type EAA_DiagramData } from '@/components/AWSEnterpriseArchDiagram';
 import {
     ArrowLeft, ArrowRight, Sparkles, Github, GitBranch, GitPullRequest,
     Layers, Cpu, Network, Globe, HardDrive, Database, Lock, Activity,
@@ -455,47 +455,200 @@ const GITOPS_LANES: Array<{
 // Main page
 // ============================================================================
 
-const HERO_DIAGRAM: RefArchDiagramData = {
-    title: 'Per-PR Ephemeral Environment',
-    viewBox: [1200, 600],
+// Coordinate plan (viewBox 1600×900):
+//   Trigger   : x ≈ 200,    y mid ≈ 450
+//   CI/CD     : x ≈ 480,    y top 250 / bottom 650
+//   Edge      : x ≈ 800,    y 200 / 450 / 700
+//   Per-PR    : x ≈ 1140,   y 270 / 600
+//   Data + CP : x ≈ 1450,   y 220 / 470 / 720
+const HERO_DIAGRAM: EAA_DiagramData = {
+    title: 'Per-PR Ephemeral Environment — Reference Architecture',
+    subtitle: 'Toggle phases (Provisioning · Request · Teardown) and play through the steps.',
+    viewBox: [1600, 900],
     regions: [
-        { id: 'gh',     label: 'GitHub',                                          x: 30,   y: 60,  width: 180, height: 460, color: '#24292F' },
-        { id: 'ci',     label: 'CI/CD',                                           x: 230,  y: 60,  width: 200, height: 460, color: '#7B42BC' },
-        { id: 'edge',   label: 'AWS Edge — Shared CloudFront',                    x: 450,  y: 60,  width: 230, height: 460, color: '#06B6D4' },
-        { id: 'compute',label: 'AWS — Per-PR Compute (Terraform workspace)',      x: 700,  y: 60,  width: 230, height: 460, color: '#3B82F6' },
-        { id: 'data',   label: 'AWS — Shared Data + Control Plane',               x: 950,  y: 60,  width: 220, height: 460, color: '#10B981' },
+        { id: 'src',     label: 'Source',                          badge: 'GitHub',           x: 60,    y: 90,  width: 280, height: 720, color: '#24292F' },
+        { id: 'ci',      label: 'CI / CD',                         badge: 'GitHub Actions',   x: 360,   y: 90,  width: 260, height: 720, color: '#7B42BC' },
+        { id: 'edge',    label: 'AWS Edge — Shared',               badge: 'Account · Global', x: 640,   y: 90,  width: 320, height: 720, color: '#06B6D4', dashed: true },
+        { id: 'compute', label: 'AWS — Per-PR Compute',            badge: 'TF Workspace',     x: 980,   y: 90,  width: 320, height: 720, color: '#3B82F6', dashed: true },
+        { id: 'data',    label: 'Shared Data + Control Plane',     badge: 'Account',          x: 1320,  y: 90,  width: 260, height: 720, color: '#10B981' },
     ],
     nodes: [
-        { id: 'pr',      label: 'Pull Request',     sublabel: 'opened/synced/closed',  icon: <Github className="h-5 w-5" />,      x: 120,  y: 290, accentColor: '#24292F' },
-        { id: 'up',      label: 'preview-up.yml',   sublabel: 'opened|synced',         icon: <SiGithubactions className="h-5 w-5" />, x: 330, y: 165, accentColor: '#2088FF' },
-        { id: 'down',    label: 'preview-down.yml', sublabel: 'closed|dispatch',       icon: <SiGithubactions className="h-5 w-5" />, x: 330, y: 295, accentColor: '#EF4444' },
-        { id: 'tf',      label: 'Terraform',        sublabel: 'workspace per slug',    icon: <SiTerraform className="h-5 w-5" />,  x: 330, y: 425, accentColor: '#7B42BC' },
-        { id: 'r53',     label: 'Route 53',         sublabel: '*.preview alias',       icon: <Globe className="h-5 w-5" />,        x: 565, y: 165, accentColor: '#8B5CF6' },
-        { id: 'cf',      label: 'CloudFront',       sublabel: 'shared distribution',   icon: <Wifi className="h-5 w-5" />,         x: 565, y: 295, accentColor: '#06B6D4' },
-        { id: 'cfn',     label: 'CF Function',      sublabel: 'host → /{slug}/* rewrite', icon: <Code className="h-5 w-5" />,      x: 565, y: 425, accentColor: '#F59E0B' },
-        { id: 'apigw',   label: 'API Gateway',      sublabel: 'per-PR HTTP API',       icon: <Server className="h-5 w-5" />,       x: 815, y: 200, accentColor: '#E7157B' },
-        { id: 'lambda',  label: 'Lambdas',          sublabel: '5 ARM64 services',      icon: <Cpu className="h-5 w-5" />,          x: 815, y: 380, accentColor: '#FF9900' },
-        { id: 's3',      label: 'S3 Prefix',        sublabel: '/{slug}/*',             icon: <HardDrive className="h-5 w-5" />,    x: 1060, y: 165, accentColor: '#3ECF8E' },
-        { id: 'mongo',   label: 'Mongo Atlas',      sublabel: 'portfolio_pr_{slug}',   icon: <SiMongodb className="h-5 w-5" />,    x: 1060, y: 295, accentColor: '#00684A' },
-        { id: 'ddb',     label: 'DynamoDB',         sublabel: 'tracking + reaper',     icon: <Activity className="h-5 w-5" />,     x: 1060, y: 425, accentColor: '#3B82F6' },
+        // Source
+        {
+            id: 'pr',
+            label: 'Pull Request',
+            sublabel: 'opened · synced · closed',
+            chip: 'Webhook',
+            description: 'GitHub fires pull_request:* webhooks. opened/synchronize/reopened triggers the up workflow; closed triggers the down workflow.',
+            icon: <Github className="h-7 w-7" />,
+            category: 'Source',
+            categoryColor: '#24292F',
+            accentColor: '#24292F',
+            x: 200, y: 450,
+        },
+        // CI/CD
+        {
+            id: 'up',
+            label: 'preview-up.yml',
+            sublabel: 'GitHub Actions',
+            chip: 'Run',
+            description: 'Computes slug, pins the prod Lambda layer ARN, runs terraform workspace-select-or-new, applies the ephemeral module, builds the frontend, syncs S3, posts a sticky PR comment.',
+            icon: <SiGithubactions className="h-7 w-7" />,
+            category: 'CI/CD',
+            categoryColor: '#2088FF',
+            accentColor: '#2088FF',
+            x: 490, y: 250,
+        },
+        {
+            id: 'tf',
+            label: 'Terraform',
+            sublabel: 'workspace per slug',
+            chip: 'IaC',
+            description: 'Per-slug workspace on the existing S3 backend. Reads prod outputs via terraform_remote_state. Module reuse keeps the per-PR root < 100 LOC.',
+            icon: <SiTerraform className="h-7 w-7" />,
+            category: 'IaC',
+            categoryColor: '#7B42BC',
+            accentColor: '#7B42BC',
+            x: 490, y: 450,
+        },
+        {
+            id: 'down',
+            label: 'preview-down.yml',
+            sublabel: 'closed | workflow_dispatch',
+            chip: 'Drain',
+            description: 'Marks DDB destroying, deletes the API GW first to drain inbound traffic, sleeps 30s, drops the per-env Mongo DB, terraform destroy, empties S3 prefix, deletes the workspace + DDB row.',
+            icon: <SiGithubactions className="h-7 w-7" />,
+            category: 'CI/CD',
+            categoryColor: '#EF4444',
+            accentColor: '#EF4444',
+            x: 490, y: 650,
+        },
+        // Edge
+        {
+            id: 'r53',
+            label: 'Route 53',
+            sublabel: '{slug}.preview alias',
+            chip: 'DNS',
+            description: 'Per-slug A/AAAA alias under the wildcard ACM cert *.preview.{domain}. Created and destroyed by Terraform; never touched by hand.',
+            icon: <Globe className="h-7 w-7" />,
+            category: 'Networking',
+            categoryColor: '#8B5CF6',
+            accentColor: '#8B5CF6',
+            x: 800, y: 200,
+        },
+        {
+            id: 'cf',
+            label: 'CloudFront',
+            sublabel: 'shared distribution',
+            chip: 'Edge',
+            description: 'A single CloudFront distribution serves every PR. Skips the 15–20 minute per-PR distribution create entirely. Fronted by *.preview wildcard ACM cert.',
+            icon: <Wifi className="h-7 w-7" />,
+            category: 'Edge',
+            categoryColor: '#06B6D4',
+            accentColor: '#06B6D4',
+            x: 800, y: 450,
+        },
+        {
+            id: 'cfn',
+            label: 'CloudFront Function',
+            sublabel: 'host → /{slug}/* rewrite',
+            chip: 'Viewer-Req',
+            description: 'Viewer-request function rewrites {slug}.preview.{domain}/path to /{slug}/path on the S3 origin and tags /api/* with X-Preview-Slug for the API origin.',
+            icon: <Code className="h-7 w-7" />,
+            category: 'Edge',
+            categoryColor: '#F59E0B',
+            accentColor: '#F59E0B',
+            x: 800, y: 700,
+        },
+        // Per-PR Compute
+        {
+            id: 'apigw',
+            label: 'API Gateway v2',
+            sublabel: 'per-PR HTTP API',
+            chip: 'Per-PR',
+            description: 'HTTP API created per workspace. Mirrors prod\'s 20-route table. CORS scoped to {slug}.preview.{domain}.',
+            icon: <Server className="h-7 w-7" />,
+            category: 'API',
+            categoryColor: '#E7157B',
+            accentColor: '#E7157B',
+            x: 1140, y: 270,
+        },
+        {
+            id: 'lambda',
+            label: 'AWS Lambda',
+            sublabel: '5 services per PR',
+            chip: 'ARM64',
+            description: 'Five Lambdas (visitor, auth, jobs-resume, chat, infra) named portfolio-preview-{slug}-{service}. Pinned shared layer ARN. Reuses prod IAM role.',
+            icon: <Cpu className="h-7 w-7" />,
+            category: 'Compute',
+            categoryColor: '#FF9900',
+            accentColor: '#FF9900',
+            x: 1140, y: 600,
+        },
+        // Shared Data + CP
+        {
+            id: 's3',
+            label: 'S3 Prefix',
+            sublabel: 'portfolio-preview-shared/{slug}/*',
+            chip: 'Origin',
+            description: 'Single shared bucket; one prefix per env. 14-day prefix lifecycle as a teardown safety net. CloudFront origin via OAC.',
+            icon: <HardDrive className="h-7 w-7" />,
+            category: 'Storage',
+            categoryColor: '#3ECF8E',
+            accentColor: '#3ECF8E',
+            x: 1450, y: 220,
+        },
+        {
+            id: 'mongo',
+            label: 'MongoDB Atlas',
+            sublabel: 'portfolio_pr_{slug}',
+            chip: 'Per-env DB',
+            description: 'Single shared M10 cluster; one database per preview env. Schema-level isolation. Drop script refuses any name not prefixed portfolio_pr_.',
+            icon: <SiMongodb className="h-7 w-7" />,
+            category: 'Database',
+            categoryColor: '#00684A',
+            accentColor: '#00684A',
+            x: 1450, y: 470,
+        },
+        {
+            id: 'ddb',
+            label: 'DynamoDB',
+            sublabel: 'portfolio-ephemeral-envs',
+            chip: 'Index',
+            description: 'Operational index for the dashboard (PK=branch_slug). AWS resource tags remain the source of truth — DDB is reconciled, not authoritative.',
+            icon: <Activity className="h-7 w-7" />,
+            category: 'Database',
+            categoryColor: '#3B82F6',
+            accentColor: '#3B82F6',
+            x: 1450, y: 720,
+        },
     ],
     edges: [
-        { from: 'pr',     to: 'up',     label: 'opened',           fromSide: 'right', toSide: 'left' },
-        { from: 'pr',     to: 'down',   label: 'closed',           fromSide: 'right', toSide: 'left', dashed: true },
-        { from: 'up',     to: 'tf',     label: 'apply',            fromSide: 'bottom', toSide: 'top' },
-        { from: 'down',   to: 'tf',     label: 'destroy', dashed: true, fromSide: 'bottom', toSide: 'top' },
-        { from: 'tf',     to: 'r53',    label: 'alias',   dashed: true },
-        { from: 'tf',     to: 'apigw',  label: 'create',  dashed: true },
-        { from: 'tf',     to: 'lambda', label: 'deploy',  dashed: true },
-        { from: 'up',     to: 's3',     label: 'sync',    dashed: true },
-        { from: 'up',     to: 'ddb',                       dashed: true },
-        { from: 'r53',    to: 'cf',     label: 'alias',   dashed: true, fromSide: 'bottom', toSide: 'top' },
-        { from: 'cf',     to: 'cfn',    label: 'viewer-req', fromSide: 'bottom', toSide: 'top' },
-        { from: 'cfn',    to: 's3',     label: 'static',  fromSide: 'right', toSide: 'left' },
-        { from: 'cfn',    to: 'apigw',  label: 'X-Slug',  fromSide: 'right', toSide: 'left' },
-        { from: 'apigw',  to: 'lambda', label: 'invoke',  fromSide: 'bottom', toSide: 'top' },
-        { from: 'lambda', to: 'mongo',  label: 'per-PR DB', fromSide: 'right', toSide: 'left' },
-        { from: 'ddb',    to: 'down',   label: 'reaper',  dashed: true },
+        // ───── Provisioning phase (steps 1..7)
+        { from: 'pr',  to: 'up',     label: 'opened/synced',  phase: 'provision', step: 1, fromSide: 'right', toSide: 'left' },
+        { from: 'up',  to: 'tf',     label: 'apply',          phase: 'provision', step: 2, fromSide: 'bottom', toSide: 'top' },
+        { from: 'tf',  to: 'r53',    label: 'create alias',   phase: 'provision', step: 3, dashed: true,  fromSide: 'right', toSide: 'left' },
+        { from: 'tf',  to: 'apigw',  label: 'create API GW',  phase: 'provision', step: 4, dashed: true,  fromSide: 'right', toSide: 'left' },
+        { from: 'tf',  to: 'lambda', label: 'deploy lambdas', phase: 'provision', step: 5, dashed: true,  fromSide: 'right', toSide: 'left' },
+        { from: 'up',  to: 's3',     label: 'sync /{slug}/*', phase: 'provision', step: 6, dashed: true,  fromSide: 'right', toSide: 'top' },
+        { from: 'up',  to: 'ddb',    label: 'put-item ready', phase: 'provision', step: 7, dashed: true,  fromSide: 'right', toSide: 'top' },
+
+        // ───── Request flow (steps 1..6)
+        { from: 'pr',     to: 'r53',    label: 'DNS lookup',         phase: 'request', step: 1, fromSide: 'right', toSide: 'left' },
+        { from: 'r53',    to: 'cf',     label: 'alias',              phase: 'request', step: 2, dashed: true, fromSide: 'bottom', toSide: 'top' },
+        { from: 'cf',     to: 'cfn',    label: 'viewer-request',     phase: 'request', step: 3, fromSide: 'bottom', toSide: 'top' },
+        { from: 'cfn',    to: 's3',     label: 'rewrite → /{slug}/', phase: 'request', step: 4, fromSide: 'right', toSide: 'left' },
+        { from: 'cfn',    to: 'apigw',  label: 'X-Preview-Slug',     phase: 'request', step: 5, fromSide: 'right', toSide: 'left' },
+        { from: 'apigw',  to: 'lambda', label: 'invoke',             phase: 'request', step: 6, fromSide: 'bottom', toSide: 'top' },
+        { from: 'lambda', to: 'mongo',  label: 'per-PR DB',          phase: 'request', step: 7, fromSide: 'right', toSide: 'left' },
+
+        // ───── Teardown (steps 1..6)
+        { from: 'pr',     to: 'down',   label: 'closed',                phase: 'teardown', step: 1, fromSide: 'right', toSide: 'left' },
+        { from: 'ddb',    to: 'down',   label: 'reaper dispatch',       phase: 'teardown', step: 2, dashed: true, fromSide: 'left', toSide: 'right' },
+        { from: 'down',   to: 'apigw',  label: 'delete API GW (drain)', phase: 'teardown', step: 3, dashed: true, fromSide: 'right', toSide: 'left' },
+        { from: 'down',   to: 'mongo',  label: 'drop_database',         phase: 'teardown', step: 4, dashed: true, fromSide: 'right', toSide: 'left' },
+        { from: 'down',   to: 'tf',     label: 'destroy',               phase: 'teardown', step: 5, dashed: true, fromSide: 'top', toSide: 'bottom' },
+        { from: 'down',   to: 's3',     label: 'rm /{slug}/*',          phase: 'teardown', step: 6, dashed: true, fromSide: 'right', toSide: 'left' },
     ],
 };
 
@@ -682,9 +835,11 @@ export default function EphemeralEnvironmentsCaseStudy() {
                         title="One CloudFront, infinite previews"
                         subtitle="A single shared CloudFront distribution fronts every PR. A viewer-request CloudFront Function rewrites the host to an S3 prefix and tags /api/* with X-Preview-Slug. New envs spin up without ever creating a CloudFront distribution — the slow path is bypassed entirely."
                     />
-                    <Card className="p-3 md:p-5 border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
-                        <AWSRefArchDiagram data={HERO_DIAGRAM} />
-                    </Card>
+                    <AWSEnterpriseArchDiagram
+                        data={HERO_DIAGRAM}
+                        initialPhase="request"
+                        autoPlayDefault
+                    />
                 </section>
 
                 {/* ─── LIFECYCLE ────────────────────────────────────────── */}

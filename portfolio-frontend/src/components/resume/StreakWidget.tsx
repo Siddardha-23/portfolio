@@ -132,7 +132,37 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
       )}
 
       <div className="relative px-4 py-2.5 flex items-center gap-4 flex-wrap sm:flex-nowrap">
-        {/* ── Left: streak count + flame ─────────────────────────────── */}
+        {/* ── Today's count (primary) ───────────────────────────────── */}
+        <div
+          className="flex items-center gap-2 shrink-0"
+          title={`${data.today_count} application${data.today_count === 1 ? '' : 's'} applied today`}
+        >
+          <div className="relative">
+            {todayActive && (
+              <div className="absolute inset-0 -m-1 rounded-full bg-amber-500/25 blur-md pointer-events-none" />
+            )}
+            <FlameIcon className="relative w-6 h-6" muted={!todayActive} />
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <span
+              className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${
+                todayActive
+                  ? 'bg-gradient-to-br from-amber-200 via-pink-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(251,146,60,0.3)]'
+                  : 'text-gray-600'
+              }`}
+            >
+              {data.today_count}
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-500 leading-none">
+              today
+            </span>
+          </div>
+        </div>
+
+        {/* Soft gradient divider */}
+        <div className="hidden sm:block h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-white/10 to-transparent" />
+
+        {/* ── Day streak (secondary) ────────────────────────────────── */}
         <div
           className="flex items-center gap-2 shrink-0"
           title={
@@ -141,17 +171,11 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
               : 'Tailor a resume each day to build a streak'
           }
         >
-          <div className="relative">
-            {isAlive && (
-              <div className="absolute inset-0 -m-1 rounded-full bg-amber-500/20 blur-md pointer-events-none" />
-            )}
-            <FlameIcon className="relative w-6 h-6" muted={!isAlive} />
-          </div>
           <div className="flex items-baseline gap-1.5">
             <span
-              className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${
+              className={`text-xl font-bold tabular-nums leading-none tracking-tight ${
                 isAlive
-                  ? 'bg-gradient-to-br from-amber-200 via-pink-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(251,146,60,0.25)]'
+                  ? 'text-amber-200'
                   : 'text-gray-600'
               }`}
             >
@@ -161,25 +185,6 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
               day streak
             </span>
           </div>
-          <span
-            className={`hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none ml-1 px-2 py-1 rounded-full border transition-colors ${
-              todayActive
-                ? 'border-amber-500/30 bg-amber-500/10'
-                : 'border-gray-700/40 bg-gray-800/40'
-            }`}
-            title={`${data.today_count} application${data.today_count === 1 ? '' : 's'} today`}
-          >
-            <span className={todayActive ? 'text-amber-300/80' : 'text-gray-400'}>
-              Today
-            </span>
-            <span
-              className={`tabular-nums font-semibold ${
-                todayActive ? 'text-amber-100' : 'text-gray-500'
-              }`}
-            >
-              {data.today_count}
-            </span>
-          </span>
           {data.longest_streak > 0 && data.longest_streak > data.current_streak && (
             <span
               className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none px-2 py-1 rounded-full border border-gray-700/40 bg-gray-800/40"

@@ -4,9 +4,9 @@
 
 # AWS managed policy IDs (avoids cloudfront:GetCachePolicy/GetOriginRequestPolicy)
 locals {
-  cloudfront_cache_policy_caching_optimized     = "658327ea-f89d-4fab-a63d-7e88639e58f6"  # Managed-CachingOptimized
-  cloudfront_cache_policy_caching_disabled      = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"  # Managed-CachingDisabled
-  cloudfront_origin_request_policy_all_viewer   = "b689b0a8-53d0-40ab-baf2-68738e2966ac"  # Managed-AllViewerExceptHostHeader
+  cloudfront_cache_policy_caching_optimized   = "658327ea-f89d-4fab-a63d-7e88639e58f6" # Managed-CachingOptimized
+  cloudfront_cache_policy_caching_disabled    = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # Managed-CachingDisabled
+  cloudfront_origin_request_policy_all_viewer = "b689b0a8-53d0-40ab-baf2-68738e2966ac" # Managed-AllViewerExceptHostHeader
 }
 
 # Security response headers policy (DENY framing for main site)
@@ -28,9 +28,9 @@ resource "aws_cloudfront_response_headers_policy" "security" {
       override     = true
     }
     xss_protection {
-      mode_block  = true
-      protection  = true
-      override    = true
+      mode_block = true
+      protection = true
+      override   = true
     }
     referrer_policy {
       referrer_policy = "strict-origin-when-cross-origin"
@@ -39,7 +39,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
     content_security_policy {
       # Allow: map, IP APIs, Google Fonts, data: images; frame-src blob: for resume PDF preview in iframe
       content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com;"
-      override               = true
+      override                = true
     }
   }
 }
@@ -63,9 +63,9 @@ resource "aws_cloudfront_response_headers_policy" "security_framable" {
       override     = true
     }
     xss_protection {
-      mode_block  = true
-      protection  = true
-      override    = true
+      mode_block = true
+      protection = true
+      override   = true
     }
     referrer_policy {
       referrer_policy = "strict-origin-when-cross-origin"
@@ -73,7 +73,7 @@ resource "aws_cloudfront_response_headers_policy" "security_framable" {
     }
     content_security_policy {
       content_security_policy = "default-src 'self'; frame-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com;"
-      override               = true
+      override                = true
     }
   }
 }
@@ -93,8 +93,8 @@ resource "aws_cloudfront_distribution" "frontend" {
   is_ipv6_enabled     = true
   comment             = "Portfolio - ${var.environment}"
   default_root_object = "index.html"
-  price_class         = "PriceClass_100"  # North America & Europe only (cheapest)
-  
+  price_class         = "PriceClass_100" # North America & Europe only (cheapest)
+
   aliases = [
     var.domain_name,
     "www.${var.domain_name}"

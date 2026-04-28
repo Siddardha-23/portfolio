@@ -1,0 +1,221 @@
+name: Preview Env - Up
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write   # for the sticky preview-URL comment
+
+concurrency:
+  # One in-flight up-job per PR; cancels superseded runs.
+  group: preview-up-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: "1.6.0"
+  PROJECT_NAME: portfolio
+
+jobs:
+  preview-up:
+    name: Provision Preview Env
+    runs-on: ubuntu-latest
+    outputs:
+      slug: ${{ steps.slug.outputs.slug }}
+      preview_url: ${{ steps.tf-out.outputs.preview_url }}
+      api_url: ${{ steps.tf-out.outputs.api_url }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute branch slug
+        id: slug
+        run: |
+          chmod +x scripts/slugify.sh
+          slug=$(scripts/slugify.sh "${{ github.head_ref }}")
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+          echo "Resolved slug: $slug"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Pin shared Lambda Layer version
+        id: layer
+        run: |
+          arn=$(aws lambda list-layer-versions \
+            --layer-name "${PROJECT_NAME}-shared" \
+            --query 'LayerVersions[0].LayerVersionArn' \
+            --output text)
+          if [[ "$arn" == "None" || -z "$arn" ]]; then
+            echo "Could not resolve shared layer ARN" >&2
+            exit 1
+          fi
+          echo "arn=$arn" >> "$GITHUB_OUTPUT"
+          echo "Pinned layer ARN: $arn"
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init (preview root)
+        working-directory: infrastructure/terraform/preview
+        run: |
+          cat > backend.hcl <<EOF
+          bucket         = "${{ secrets.TF_BACKEND_BUCKET }}"
+          region         = "${AWS_REGION}"
+          dynamodb_table = "${{ secrets.TF_BACKEND_LOCK_TABLE }}"
+          EOF
+          terraform init -backend-config=backend.hcl
+
+      - name: Select / create workspace
+        working-directory: infrastructure/terraform/preview
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          terraform workspace select "$slug" 2>/dev/null || terraform workspace new "$slug"
+
+      - name: Terraform apply
+        id: apply
+        working-directory: infrastructure/terraform/preview
+        env:
+          TF_VAR_branch_slug: ${{ steps.slug.outputs.slug }}
+          TF_VAR_pr_number: ${{ github.event.pull_request.number }}
+          TF_VAR_head_ref: ${{ github.head_ref }}
+          TF_VAR_actor: ${{ github.actor }}
+          TF_VAR_layer_version_arn: ${{ steps.layer.outputs.arn }}
+          TF_VAR_prod_state_bucket: ${{ secrets.TF_BACKEND_BUCKET }}
+          TF_VAR_prod_state_key: ${{ secrets.TF_PROD_STATE_KEY }}
+        run: terraform apply -auto-approve
+
+      - name: Read Terraform outputs
+        id: tf-out
+        working-directory: infrastructure/terraform/preview
+        run: |
+          preview_url=$(terraform output -raw preview_url)
+          api_url=$(terraform output -raw api_url)
+          api_id=$(terraform output -raw api_id)
+          shared_bucket=$(terraform output -raw preview_shared_bucket)
+          distribution_id=$(terraform output -raw preview_distribution_id)
+          mongo_db=$(terraform output -raw mongo_db_name)
+          ddb=$(terraform output -raw preview_ddb_table)
+          {
+            echo "preview_url=$preview_url"
+            echo "api_url=$api_url"
+            echo "api_id=$api_id"
+            echo "shared_bucket=$shared_bucket"
+            echo "distribution_id=$distribution_id"
+            echo "mongo_db=$mongo_db"
+            echo "ddb=$ddb"
+            echo "lambda_names<<EOF"
+            terraform output -json lambda_function_names
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # ----------------------------------------------------------------------
+      # Push real Lambda code into each preview function (mirrors deploy.yml
+      # logic but scoped to the preview function names).
+      # ----------------------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build & deploy preview Lambda code
+        env:
+          LAMBDA_NAMES_JSON: ${{ steps.tf-out.outputs.lambda_names }}
+        run: |
+          set -euo pipefail
+          cd portfolio-backend
+          for svc in visitor auth jobs-resume chat infra; do
+            echo "--- Packaging $svc ---"
+            (
+              cd "services/$svc"
+              rm -rf .build && mkdir -p .build
+              cp -r app.py lambda_handler.py blueprints requirements.txt .build/ 2>/dev/null || true
+              # service-local deps only; shared deps come from the layer
+              if [[ -s requirements.txt ]]; then
+                pip install --quiet -r requirements.txt -t .build/ --platform manylinux2014_aarch64 --only-binary=:all: --python-version 3.12 || \
+                pip install --quiet -r requirements.txt -t .build/
+              fi
+              (cd .build && zip -qr "../../../dist-$svc.zip" .)
+            )
+            fn=$(echo "$LAMBDA_NAMES_JSON" | python -c "import sys,json; print(json.load(sys.stdin)['$svc'])")
+            echo "Updating $fn"
+            aws lambda update-function-code \
+              --function-name "$fn" \
+              --zip-file "fileb://dist-$svc.zip" \
+              --no-cli-pager >/dev/null
+          done
+
+      - name: Build frontend (preview API base)
+        working-directory: portfolio-frontend
+        env:
+          VITE_API_BASE: https://${{ steps.tf-out.outputs.preview_url == '' && 'placeholder' || steps.slug.outputs.slug }}.preview.${{ secrets.DOMAIN_NAME }}/api
+        run: |
+          npm ci
+          # match the prod env-file pattern used in deploy.yml
+          echo "VITE_API_URL=https://${{ steps.slug.outputs.slug }}.preview.${{ secrets.DOMAIN_NAME }}/api" > .env.production
+          npm run build
+
+      - name: Sync frontend to preview S3 prefix
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          bucket="${{ steps.tf-out.outputs.shared_bucket }}"
+          aws s3 sync portfolio-frontend/dist/ "s3://$bucket/$slug/" \
+            --delete \
+            --cache-control "public,max-age=300"
+          aws s3 cp "portfolio-frontend/dist/index.html" "s3://$bucket/$slug/index.html" \
+            --cache-control "no-cache,no-store,must-revalidate"
+
+      - name: CloudFront invalidate
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ steps.tf-out.outputs.distribution_id }}" \
+            --paths "/${{ steps.slug.outputs.slug }}/*" >/dev/null
+
+      - name: Upsert DynamoDB row
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          ddb="${{ steps.tf-out.outputs.ddb }}"
+          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          aws dynamodb put-item \
+            --table-name "$ddb" \
+            --item "$(cat <<EOF
+          {
+            "branch_slug":       {"S": "$slug"},
+            "pr_number":         {"N": "${{ github.event.pull_request.number }}"},
+            "head_ref":          {"S": "${{ github.head_ref }}"},
+            "actor":             {"S": "${{ github.actor }}"},
+            "status":            {"S": "ready"},
+            "frontend_url":      {"S": "${{ steps.tf-out.outputs.preview_url }}"},
+            "api_url":           {"S": "${{ steps.tf-out.outputs.api_url }}"},
+            "api_id":            {"S": "${{ steps.tf-out.outputs.api_id }}"},
+            "layer_version_arn": {"S": "${{ steps.layer.outputs.arn }}"},
+            "mongo_db":          {"S": "${{ steps.tf-out.outputs.mongo_db }}"},
+            "created_at":        {"S": "$now"},
+            "last_seen_at":      {"S": "$now"},
+            "gh_run_id":         {"S": "${{ github.run_id }}"}
+          }
+          EOF
+          )"
+
+      - name: Sticky PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: portfolio-preview
+          message: |
+            ### Preview environment ready
+
+            - **URL**: ${{ steps.tf-out.outputs.preview_url }}
+            - **API**: ${{ steps.tf-out.outputs.preview_url }}/api/health
+            - **DB**: `${{ steps.tf-out.outputs.mongo_db }}` on shared Atlas cluster
+            - **Slug**: `${{ steps.slug.outputs.slug }}`
+
+            Auto-destroyed when this PR is closed/merged. Inactive envs reaped after 7 days.

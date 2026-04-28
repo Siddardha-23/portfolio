@@ -1,5 +1,6 @@
 from flask import Flask, request
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager
 import logging
 import os
 
@@ -84,6 +85,24 @@ def create_app():
     # Request tracing module
     from blueprints.trace import trace_bp
     app.register_blueprint(trace_bp, url_prefix='/api/trace')
+
+    # JWT for admin endpoints (loaded lazily so local dev without JWT_SECRET still works)
+    jwt_secret = os.getenv('JWT_SECRET_KEY')
+    if not jwt_secret and os.getenv('SSM_JWT_SECRET') and os.getenv('USE_SSM_SECRETS', 'false').lower() == 'true':
+        try:
+            import boto3
+            ssm = boto3.client('ssm', region_name=os.getenv('AWS_REGION_NAME', 'us-east-1'))
+            jwt_secret = ssm.get_parameter(Name=os.getenv('SSM_JWT_SECRET'), WithDecryption=True)['Parameter']['Value']
+        except Exception as e:
+            logger.warning(f"Could not fetch JWT secret from SSM: {e}")
+    if jwt_secret:
+        app.config['JWT_SECRET_KEY'] = jwt_secret
+        JWTManager(app)
+
+    # Ephemeral preview env management (admin-gated)
+    if os.getenv('PREVIEW_ENABLED', 'false').lower() == 'true':
+        from blueprints.admin_environments import admin_envs_bp
+        app.register_blueprint(admin_envs_bp, url_prefix='/api/admin/environments')
 
     # Health check endpoint
     @app.route('/api/health')

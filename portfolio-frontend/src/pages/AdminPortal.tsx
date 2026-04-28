@@ -3,10 +3,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
+import { EnvironmentsPanel } from './admin/EnvironmentsPanel';
 
 const SUPER_ADMIN_EMAIL = 'mannesiddardha@gmail.com';
 
-type Tab = 'overview' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep';
+type Tab = 'overview' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep' | 'environments';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface AdminStats {
@@ -569,6 +570,7 @@ const NAV_ITEMS: { key: Tab; label: string; icon: React.ComponentType<{ c?: stri
   { key: 'tailoring',    label: 'Tailoring',      icon: Icon.Bolt },
   { key: 'applications', label: 'Applications',   icon: Icon.Briefcase },
   { key: 'prep',         label: 'Interview Prep', icon: Icon.Brain },
+  { key: 'environments', label: 'Environments',   icon: Icon.Bolt },
 ];
 
 function Sidebar({
@@ -964,6 +966,8 @@ export default function AdminPortal() {
                 <TailoringPanel records={tailoring} loading={loading} />
               ) : tab === 'applications' ? (
                 <ApplicationsPanel applications={applications} loading={loading} onRefetch={fetchApplications} setApplications={setApplications} />
+              ) : tab === 'environments' ? (
+                <EnvironmentsPanel />
               ) : (
                 <PrepPanel prepPacks={prepPacks} loading={loading} />
               )}

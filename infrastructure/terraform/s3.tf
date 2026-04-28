@@ -14,7 +14,7 @@ resource "aws_s3_bucket" "frontend" {
 # Enable versioning for rollback capability
 resource "aws_s3_bucket_versioning" "frontend" {
   bucket = aws_s3_bucket.frontend.id
-  
+
   versioning_configuration {
     status = "Enabled"
   }
@@ -48,8 +48,8 @@ resource "aws_s3_bucket_policy" "frontend" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid       = "AllowCloudFrontOAC"
-        Effect    = "Allow"
+        Sid    = "AllowCloudFrontOAC"
+        Effect = "Allow"
         Principal = {
           Service = "cloudfront.amazonaws.com"
         }

@@ -66,12 +66,17 @@ locals {
       }
     }
     infra = {
-      description = "Infrastructure insights and tracing"
+      description = "Infrastructure insights, tracing, and ephemeral preview env management"
       memory      = 256
       timeout     = 30
       env_vars = {
-        SSM_MONGODB_URI = aws_ssm_parameter.mongodb_uri.name
-        SSM_GITHUB_PAT  = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""
+        SSM_MONGODB_URI         = aws_ssm_parameter.mongodb_uri.name
+        SSM_GITHUB_PAT          = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""
+        SSM_JWT_SECRET          = aws_ssm_parameter.jwt_secret.name
+        PREVIEW_ENABLED         = var.enable_preview_infra ? "true" : "false"
+        PREVIEW_DDB_TABLE       = var.enable_preview_infra ? aws_dynamodb_table.ephemeral_envs[0].name : ""
+        SSM_PREVIEW_GITHUB_PAT  = var.enable_preview_infra && var.preview_github_pat != "" ? aws_ssm_parameter.preview_github_pat[0].name : ""
+        SSM_PREVIEW_GITHUB_REPO = var.enable_preview_infra && var.preview_github_repo != "" ? aws_ssm_parameter.preview_github_repo[0].name : ""
       }
     }
   }
@@ -106,6 +111,10 @@ locals {
     "ANY /api/infra/{proxy+}" = "infra"
     "GET /api/trace"          = "infra"
     "ANY /api/trace/{proxy+}" = "infra"
+
+    # Ephemeral preview env management - more specific than /api/admin/{proxy+}
+    "GET /api/admin/environments"          = "infra"
+    "ANY /api/admin/environments/{proxy+}" = "infra"
   }
 }
 

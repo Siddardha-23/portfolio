@@ -151,6 +151,41 @@ variable "enable_logging" {
 }
 
 # =============================================================================
+# Ephemeral Preview Environments
+# =============================================================================
+
+variable "enable_preview_infra" {
+  description = "Provision the shared scaffolding for per-PR preview environments (wildcard cert, shared CloudFront, shared S3 bucket, DynamoDB tracking table, scoped CI role)."
+  type        = bool
+  default     = false
+}
+
+variable "preview_subdomain_prefix" {
+  description = "Subdomain segment under which preview envs are addressed: {slug}.{prefix}.{domain}"
+  type        = string
+  default     = "preview"
+}
+
+variable "preview_idle_days" {
+  description = "Days of inactivity before the reaper tears down a preview env"
+  type        = number
+  default     = 7
+}
+
+variable "preview_github_repo" {
+  description = "GitHub repo (owner/name) used for workflow_dispatch teardown calls from the dashboard"
+  type        = string
+  default     = ""
+}
+
+variable "preview_github_pat" {
+  description = "GitHub PAT used by the dashboard backend to trigger preview-down.yml via workflow_dispatch. Stored in SSM."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# =============================================================================
 # Grafana (GCP-hosted) Integration
 # =============================================================================
 

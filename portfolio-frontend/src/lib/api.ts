@@ -2450,6 +2450,39 @@ Object.assign(ApiService.prototype, {
       method: "GET",
     });
   },
+
+  // ============================================
+  // Ephemeral Preview Environments (admin)
+  // ============================================
+  async listAdminEnvironments(this: ApiService, opts?: { fresh?: boolean }) {
+    const qs = opts?.fresh ? "?fresh=true" : "";
+    return this["request"]<{
+      environments: Array<{
+        branch_slug: string;
+        pr_number?: number | string;
+        head_ref?: string;
+        actor?: string;
+        status?: string;
+        frontend_url?: string;
+        api_url?: string;
+        api_id?: string;
+        layer_version_arn?: string;
+        mongo_db?: string;
+        created_at?: string;
+        last_seen_at?: string;
+        gh_run_id?: string;
+        resource_arns?: string[];
+      }>;
+      count: number;
+    }>(`/admin/environments${qs}`);
+  },
+
+  async teardownAdminEnvironment(this: ApiService, slug: string) {
+    return this["request"]<{ ok: boolean; slug: string; status: string }>(
+      `/admin/environments/${encodeURIComponent(slug)}/teardown`,
+      { method: "POST" }
+    );
+  },
 });
 
 export const apiService = new ApiService(API_BASE_URL);

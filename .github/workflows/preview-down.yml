@@ -1,0 +1,177 @@
+name: Preview Env - Down
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      branch_slug:
+        description: "Branch slug (already pr-prefixed) of the env to tear down"
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: preview-down-${{ github.event.pull_request.number || inputs.branch_slug }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  TERRAFORM_VERSION: "1.6.0"
+  PROJECT_NAME: portfolio
+
+jobs:
+  preview-down:
+    name: Tear Down Preview Env
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute slug
+        id: slug
+        run: |
+          chmod +x scripts/slugify.sh
+          if [[ -n "${{ inputs.branch_slug }}" ]]; then
+            slug="${{ inputs.branch_slug }}"
+          else
+            slug=$(scripts/slugify.sh "${{ github.head_ref }}")
+          fi
+          echo "slug=$slug" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform init
+        working-directory: infrastructure/terraform/preview
+        run: |
+          cat > backend.hcl <<EOF
+          bucket         = "${{ secrets.TF_BACKEND_BUCKET }}"
+          region         = "${AWS_REGION}"
+          dynamodb_table = "${{ secrets.TF_BACKEND_LOCK_TABLE }}"
+          EOF
+          terraform init -backend-config=backend.hcl
+
+      - name: Select workspace (idempotent)
+        id: ws
+        working-directory: infrastructure/terraform/preview
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          if terraform workspace select "$slug" 2>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Workspace $slug not found - nothing to destroy"
+          fi
+
+      - name: Read API id and bucket from state
+        if: steps.ws.outputs.exists == 'true'
+        id: tf-out
+        working-directory: infrastructure/terraform/preview
+        run: |
+          api_id=$(terraform output -raw api_id 2>/dev/null || echo "")
+          bucket=$(terraform output -raw preview_shared_bucket 2>/dev/null || echo "")
+          mongo=$(terraform output -raw mongo_db_name 2>/dev/null || echo "")
+          ddb=$(terraform output -raw preview_ddb_table 2>/dev/null || echo "")
+          {
+            echo "api_id=$api_id"
+            echo "bucket=$bucket"
+            echo "mongo=$mongo"
+            echo "ddb=$ddb"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Mark DynamoDB row destroying
+        if: steps.ws.outputs.exists == 'true' && steps.tf-out.outputs.ddb != ''
+        run: |
+          aws dynamodb update-item \
+            --table-name "${{ steps.tf-out.outputs.ddb }}" \
+            --key '{"branch_slug": {"S": "${{ steps.slug.outputs.slug }}"}}' \
+            --update-expression 'SET #s = :s' \
+            --expression-attribute-names '{"#s": "status"}' \
+            --expression-attribute-values '{":s": {"S": "destroying"}}' \
+            >/dev/null || true
+
+      # ----------------------------------------------------------------------
+      # Drain inbound traffic FIRST so the DB drop later doesn't race with
+      # in-flight requests. Deleting the API GW returns 5xx within seconds.
+      # ----------------------------------------------------------------------
+      - name: Delete preview API Gateway (drain traffic)
+        if: steps.ws.outputs.exists == 'true' && steps.tf-out.outputs.api_id != ''
+        run: |
+          aws apigatewayv2 delete-api --api-id "${{ steps.tf-out.outputs.api_id }}" || true
+          echo "Sleeping 30s for in-flight requests to fail/drain"
+          sleep 30
+
+      - name: Drop per-env MongoDB database
+        if: steps.ws.outputs.exists == 'true' && steps.tf-out.outputs.mongo != ''
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          DB_NAME: ${{ steps.tf-out.outputs.mongo }}
+        run: |
+          python -m pip install --quiet pymongo
+          python - <<'PY'
+          import os
+          from pymongo import MongoClient
+          uri = os.environ["MONGODB_URI"]
+          name = os.environ["DB_NAME"]
+          if not name.startswith("portfolio_pr_"):
+              raise SystemExit(f"refusing to drop non-preview db {name!r}")
+          MongoClient(uri).drop_database(name)
+          print(f"dropped {name}")
+          PY
+
+      - name: Empty preview S3 prefix
+        if: steps.ws.outputs.exists == 'true' && steps.tf-out.outputs.bucket != ''
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          aws s3 rm "s3://${{ steps.tf-out.outputs.bucket }}/$slug/" --recursive || true
+
+      - name: Terraform destroy
+        if: steps.ws.outputs.exists == 'true'
+        working-directory: infrastructure/terraform/preview
+        env:
+          TF_VAR_branch_slug: ${{ steps.slug.outputs.slug }}
+          TF_VAR_pr_number: ${{ github.event.pull_request.number || 0 }}
+          TF_VAR_head_ref: ${{ github.head_ref }}
+          TF_VAR_actor: ${{ github.actor }}
+          # Dummy layer ARN - destroy doesn't need a real value, but TF demands the var.
+          TF_VAR_layer_version_arn: "arn:aws:lambda:us-east-1:000000000000:layer:placeholder:1"
+          TF_VAR_prod_state_bucket: ${{ secrets.TF_BACKEND_BUCKET }}
+          TF_VAR_prod_state_key: ${{ secrets.TF_PROD_STATE_KEY }}
+        run: terraform destroy -auto-approve
+
+      - name: Delete workspace
+        if: steps.ws.outputs.exists == 'true'
+        working-directory: infrastructure/terraform/preview
+        run: |
+          terraform workspace select default
+          terraform workspace delete "${{ steps.slug.outputs.slug }}" || true
+
+      - name: Delete DynamoDB row
+        if: steps.tf-out.outputs.ddb != ''
+        run: |
+          aws dynamodb delete-item \
+            --table-name "${{ steps.tf-out.outputs.ddb }}" \
+            --key '{"branch_slug": {"S": "${{ steps.slug.outputs.slug }}"}}' || true
+
+      - name: Update sticky comment
+        if: github.event.pull_request != null
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: portfolio-preview
+          message: |
+            ### Preview environment torn down
+
+            Slug `${{ steps.slug.outputs.slug }}` destroyed at ${{ github.event.pull_request.closed_at }}.

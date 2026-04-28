@@ -90,6 +90,31 @@ output "deployment_summary" {
   EOT
 }
 
+# Preview env wiring (consumed by per-PR root via terraform_remote_state)
+output "lambda_role_arn" {
+  description = "Prod Lambda execution role ARN - reused by preview lambdas"
+  value       = aws_iam_role.lambda.arn
+}
+
+output "route53_zone_id" {
+  description = "Hosted zone id for the primary domain"
+  value       = data.aws_route53_zone.main.zone_id
+}
+
+output "ssm_param_names" {
+  description = "Prod SSM parameter names that preview lambdas reference read-only"
+  value = {
+    SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
+    SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name
+    SSM_IPINFO_TOKEN             = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : ""
+    SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+    SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
+    SSM_APIFY_API_KEY            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
+    SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
+    SSM_GITHUB_PAT               = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""
+  }
+}
+
 # Grafana on GCP
 output "grafana_aws_access_key_id" {
   description = "AWS access key ID for Grafana CloudWatch data source"

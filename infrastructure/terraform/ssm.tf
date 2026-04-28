@@ -13,7 +13,7 @@ resource "aws_ssm_parameter" "mongodb_uri" {
   description = "MongoDB Atlas connection URI"
   type        = "SecureString"
   value       = var.mongodb_uri
-  tier        = "Standard"  # Free tier
+  tier        = "Standard" # Free tier
 
   tags = {
     Name        = "${var.project_name}-mongodb-uri"
@@ -21,7 +21,7 @@ resource "aws_ssm_parameter" "mongodb_uri" {
   }
 
   lifecycle {
-    ignore_changes = [value]  # Don't update if value changes in console
+    ignore_changes = [value] # Don't update if value changes in console
   }
 }
 
@@ -49,8 +49,8 @@ resource "aws_ssm_parameter" "jwt_secret" {
 # IPInfo Token (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "ipinfo_token" {
-  count       = var.ipinfo_token != "" ? 1 : 0
-  
+  count = var.ipinfo_token != "" ? 1 : 0
+
   name        = "/${var.project_name}/${var.environment}/ipinfo-token"
   description = "IPInfo.io API token for geolocation"
   type        = "SecureString"
@@ -71,7 +71,7 @@ resource "aws_ssm_parameter" "ipinfo_token" {
 # Gemini API Key (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "gemini_api_key" {
-  count       = var.gemini_api_key != "" ? 1 : 0
+  count = var.gemini_api_key != "" ? 1 : 0
 
   name        = "/${var.project_name}/${var.environment}/gemini-api-key"
   description = "Google Gemini API key for AI chatbot"
@@ -93,7 +93,7 @@ resource "aws_ssm_parameter" "gemini_api_key" {
 # JSearch API Key (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "jsearch_api_key" {
-  count       = var.jsearch_api_key != "" ? 1 : 0
+  count = var.jsearch_api_key != "" ? 1 : 0
 
   name        = "/${var.project_name}/${var.environment}/jsearch-api-key"
   description = "JSearch RapidAPI key for job search"
@@ -115,7 +115,7 @@ resource "aws_ssm_parameter" "jsearch_api_key" {
 # Apify API Key (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "apify_api_key" {
-  count       = var.apify_api_key != "" ? 1 : 0
+  count = var.apify_api_key != "" ? 1 : 0
 
   name        = "/${var.project_name}/${var.environment}/apify-api-key"
   description = "Apify API token for job listing scrapers"
@@ -137,7 +137,7 @@ resource "aws_ssm_parameter" "apify_api_key" {
 # Job Search Password Hash (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "job_search_password_hash" {
-  count       = var.job_search_password_hash != "" ? 1 : 0
+  count = var.job_search_password_hash != "" ? 1 : 0
 
   name        = "/${var.project_name}/${var.environment}/job-search-password-hash"
   description = "Bcrypt hash of the job search dashboard password"
@@ -159,7 +159,7 @@ resource "aws_ssm_parameter" "job_search_password_hash" {
 # GitHub PAT (SecureString - optional)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "github_pat" {
-  count       = var.github_pat != "" ? 1 : 0
+  count = var.github_pat != "" ? 1 : 0
 
   name        = "/${var.project_name}/${var.environment}/github-pat"
   description = "GitHub PAT for triggering CI/CD Sandbox sandbox.yml"

@@ -11,11 +11,11 @@ data "aws_route53_zone" "main" {
 
 # SSL Certificate for the domain
 resource "aws_acm_certificate" "main" {
-  domain_name               = var.domain_name
+  domain_name = var.domain_name
   subject_alternative_names = [
-    "*.${var.domain_name}"  # Wildcard for subdomains (www, api, etc.)
+    "*.${var.domain_name}" # Wildcard for subdomains (www, api, etc.)
   ]
-  validation_method         = "DNS"
+  validation_method = "DNS"
 
   lifecycle {
     create_before_destroy = true

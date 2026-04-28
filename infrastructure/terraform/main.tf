@@ -6,7 +6,7 @@
 
 terraform {
   required_version = ">= 1.0"
-  
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -51,13 +51,13 @@ data "aws_region" "current" {}
 # =============================================================================
 
 locals {
-  domain_name     = var.domain_name
-  api_subdomain   = "api.${var.domain_name}"
-  www_subdomain   = "www.${var.domain_name}"
-  
+  domain_name   = var.domain_name
+  api_subdomain = "api.${var.domain_name}"
+  www_subdomain = "www.${var.domain_name}"
+
   # S3 bucket names must be globally unique
   frontend_bucket_name = "${var.project_name}-frontend-${data.aws_caller_identity.current.account_id}"
-  
+
   common_tags = {
     Project     = var.project_name
     Environment = var.environment

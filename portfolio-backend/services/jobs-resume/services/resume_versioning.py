@@ -24,8 +24,22 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+
+def _iso_utc(value: Any) -> Any:
+    """Serialize a datetime as ISO with explicit UTC offset.
+
+    Naive datetimes (produced by datetime.utcnow()) are treated as UTC so the
+    resulting string has a +00:00 suffix. Without that, browsers parse the
+    naive ISO as local time and the wall-clock day shifts.
+    """
+    if hasattr(value, "isoformat"):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    return value
 
 
 def canonical_content_hash(tailored: Dict[str, Any]) -> str:
@@ -138,24 +152,20 @@ def serialize_record(record: Dict[str, Any], include_full: bool = False) -> Dict
     out.pop("_id", None)
 
     for key in ("created_at", "updated_at", "ats_scored_at"):
-        val = out.get(key)
-        if hasattr(val, "isoformat"):
-            out[key] = val.isoformat()
+        if key in out:
+            out[key] = _iso_utc(out.get(key))
 
     versions = out.get("versions") or []
     serialized = []
     for v in versions:
         vcopy = dict(v)
         for k in ("created_at",):
-            val = vcopy.get(k)
-            if hasattr(val, "isoformat"):
-                vcopy[k] = val.isoformat()
+            if k in vcopy:
+                vcopy[k] = _iso_utc(vcopy.get(k))
         files = vcopy.get("files") or {}
         for f in files.values():
-            if isinstance(f, dict):
-                ra = f.get("rendered_at")
-                if hasattr(ra, "isoformat"):
-                    f["rendered_at"] = ra.isoformat()
+            if isinstance(f, dict) and "rendered_at" in f:
+                f["rendered_at"] = _iso_utc(f.get("rendered_at"))
         if not include_full:
             vcopy.pop("tailored_resume", None)
         serialized.append(vcopy)
@@ -165,21 +175,17 @@ def serialize_record(record: Dict[str, Any], include_full: bool = False) -> Dict
     app = out.get("application")
     if isinstance(app, dict):
         for k in ("applied_at", "next_action_date", "updated_at"):
-            v = app.get(k)
-            if hasattr(v, "isoformat"):
-                app[k] = v.isoformat()
+            if k in app:
+                app[k] = _iso_utc(app.get(k))
         dates = app.get("interview_dates")
         if isinstance(dates, list):
-            app["interview_dates"] = [
-                d.isoformat() if hasattr(d, "isoformat") else d for d in dates
-            ]
+            app["interview_dates"] = [_iso_utc(d) for d in dates]
 
     # Interview prep — expose metadata in list view, full content in detail view
     prep = out.get("interview_prep")
     if isinstance(prep, dict):
-        gen_at = prep.get("generated_at")
-        if hasattr(gen_at, "isoformat"):
-            prep = {**prep, "generated_at": gen_at.isoformat()}
+        if "generated_at" in prep:
+            prep = {**prep, "generated_at": _iso_utc(prep.get("generated_at"))}
         if not include_full:
             # List response: keep only the "has prep + when" metadata
             out["interview_prep"] = {

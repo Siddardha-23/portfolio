@@ -321,16 +321,27 @@ def _workday_to_record(j: dict) -> dict:
         except Exception:
             pass
 
+    # The Workday actor returns the date under a few possible keys depending
+    # on the actor version. Walk them all so we don't drop entries that just
+    # have a different field name.
+    posted_raw = (
+        j.get("date_posted")
+        or j.get("posted_date")
+        or j.get("datePosted")
+        or j.get("date_published")
+        or j.get("aiDatePosted")
+        or ""
+    )
     return {
         "source": "Workday",
-        "company": (j.get("organization") or "").strip(),
-        "title": (j.get("title") or "").strip(),
+        "company": (j.get("organization") or j.get("aiOrganization") or j.get("company") or "").strip(),
+        "title": (j.get("title") or j.get("aiTitle") or "").strip(),
         "location": location,
-        "posted": (j.get("date_posted") or "")[:10],
+        "posted": str(posted_raw)[:10],
         "salary": salary,
         "applicants": "",
-        "url": j.get("url") or "",
-        "description": "",
+        "url": j.get("url") or j.get("link") or "",
+        "description": (j.get("description") or j.get("aiDescription") or "")[:500],
     }
 
 
@@ -438,8 +449,13 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
     verify: List[dict] = []
     excluded: List[dict] = []
     for r in records:
-        if (r["posted"] or "0000") < cutoff:
-            excluded.append({**r, "reason": f"older than {cutoff} (posted {r['posted'] or 'unknown'})",
+        # Only drop on date when we *know* it's older than the cutoff.
+        # Workday entries often have no parseable date_posted; the actor
+        # already filtered by recency on its side, so trusting them is safer
+        # than dropping them all to "older than cutoff".
+        posted = (r.get("posted") or "").strip()
+        if posted and re.match(r"^\d{4}-\d{2}-\d{2}$", posted) and posted < cutoff:
+            excluded.append({**r, "reason": f"older than {cutoff} (posted {posted})",
                              "tier": "Skip", "score": 0, "flags": ""}); continue
         if not _is_us(r):
             excluded.append({**r, "reason": f"non-US ({r['location']})",
@@ -518,6 +534,24 @@ def run_pipeline(
         "tier_3": sum(1 for r in apply_now + verify if r["tier"] == "Tier 3"),
     }
 
+    def _by_src(rows: List[dict], src: str) -> int:
+        return sum(1 for r in rows if (r.get("source") or "").lower() == src.lower())
+
+    source_breakdown = {
+        "linkedin": {
+            "raw": len(raw_li),
+            "apply_now": _by_src(apply_now, "LinkedIn"),
+            "verify": _by_src(verify, "LinkedIn"),
+            "excluded": _by_src(excluded, "LinkedIn"),
+        },
+        "workday": {
+            "raw": len(raw_wd),
+            "apply_now": _by_src(apply_now, "Workday"),
+            "verify": _by_src(verify, "Workday"),
+            "excluded": _by_src(excluded, "Workday"),
+        },
+    }
+
     return {
         "ok": True,
         "generated_at": today.isoformat(),
@@ -529,6 +563,7 @@ def run_pipeline(
             "total": len(all_raw),
         },
         "tier_counts": tier_counts,
+        "source_breakdown": source_breakdown,
         "totals": {
             "apply_now": len(apply_now),
             "verify_dates": len(verify),

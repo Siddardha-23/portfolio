@@ -467,13 +467,34 @@ export function DailyPipelinePanel() {
           {/* Summary strip */}
           <Card className="border-border/60 bg-card/60">
             <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
-              <SummaryBlock label="LinkedIn" value={result.raw_counts.linkedin} />
-              <SummaryBlock label="Workday" value={result.raw_counts.workday} />
+              <SummaryBlock
+                label="LinkedIn (kept / raw)"
+                value={
+                  result.source_breakdown
+                    ? `${result.source_breakdown.linkedin.apply_now + result.source_breakdown.linkedin.verify} / ${result.source_breakdown.linkedin.raw}`
+                    : result.raw_counts.linkedin
+                }
+              />
+              <SummaryBlock
+                label="Workday (kept / raw)"
+                value={
+                  result.source_breakdown
+                    ? `${result.source_breakdown.workday.apply_now + result.source_breakdown.workday.verify} / ${result.source_breakdown.workday.raw}`
+                    : result.raw_counts.workday
+                }
+              />
               <SummaryBlock label="Apply now" value={result.totals.apply_now} accent="text-emerald-600 dark:text-emerald-400" />
               <SummaryBlock label="Verify dates" value={result.totals.verify_dates} accent="text-amber-600 dark:text-amber-400" />
               <SummaryBlock label="Excluded" value={result.excluded_total} accent="text-muted-foreground" />
             </CardContent>
           </Card>
+
+          {/* Heads-up if Workday returned 0 raw (actor down or token issue) */}
+          {result.source_breakdown && result.source_breakdown.workday.raw === 0 && (
+            <p className="text-[11px] italic text-amber-600 dark:text-amber-400">
+              Workday returned 0 results this run. Check Apify actor status or token rental.
+            </p>
+          )}
 
           {result.errors.length > 0 && (
             <Card className="border-amber-500/40 bg-amber-500/5">
@@ -537,7 +558,7 @@ export function DailyPipelinePanel() {
   );
 }
 
-function SummaryBlock({ label, value, accent }: { label: string; value: number; accent?: string }) {
+function SummaryBlock({ label, value, accent }: { label: string; value: number | string; accent?: string }) {
   return (
     <div className="space-y-0.5">
       <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>

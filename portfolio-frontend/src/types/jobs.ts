@@ -25,6 +25,13 @@ export interface DailyPipelineParams {
   workday_limit?: number;
 }
 
+export interface DailyPipelineSourceCounts {
+  raw: number;
+  apply_now: number;
+  verify: number;
+  excluded: number;
+}
+
 export interface DailyPipelineResult {
   ok: boolean;
   generated_at: string;
@@ -32,6 +39,10 @@ export interface DailyPipelineResult {
   cutoff: string;
   raw_counts: { linkedin: number; workday: number; total: number };
   tier_counts: { tier_1: number; tier_2: number; tier_3: number };
+  source_breakdown?: {
+    linkedin: DailyPipelineSourceCounts;
+    workday: DailyPipelineSourceCounts;
+  };
   totals: { apply_now: number; verify_dates: number; excluded: number; phoenix: number };
   apply_now: DailyPipelineRecord[];
   verify_dates: DailyPipelineRecord[];

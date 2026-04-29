@@ -6,27 +6,35 @@ posting outside our app). Edits/regenerations of the same record are NOT
 counted as separate applications — increments only fire on initial record
 creation.
 
+All "today" / "yesterday" calculations are done in the **user's local
+timezone** (IANA name passed by the client). The doc stores the tz that was
+used to bucket the daily counts so reads in a different tz can detect drift
+and rebuild from tailoring_records.
+
 Storage: a single document per user in `parse_streaks`:
 
     {
       user_email: str,                       # unique
+      tz: str,                               # IANA tz used to bucket dates
       current_streak: int,                   # days in a row ending at last_date
       longest_streak: int,
-      last_application_date: "YYYY-MM-DD",   # UTC date of most recent application
+      last_application_date: "YYYY-MM-DD",   # local date of most recent application
       total_applications: int,
       daily_counts: { "YYYY-MM-DD": int },   # trimmed to last 90 days
       updated_at: datetime,
     }
-
-Dates are computed in UTC. A future improvement could carry the user's
-timezone, but UTC keeps the model self-contained for now.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+try:
+    from zoneinfo import ZoneInfo  # py3.9+
+except ImportError:  # pragma: no cover
+    ZoneInfo = None  # type: ignore
 
 from utils.db_connect import DBConnect
 
@@ -44,18 +52,43 @@ def _records_collection():
     return DBConnect().get_db().tailoring_records
 
 
-def _backfill_from_records(user_email: str) -> Dict[str, Any]:
+def _resolve_tz(tz: Optional[str]):
+    if not tz or ZoneInfo is None:
+        return timezone.utc
+    try:
+        return ZoneInfo(tz)
+    except Exception:
+        return timezone.utc
+
+
+def _today(tz: Optional[str] = None) -> str:
+    return datetime.now(_resolve_tz(tz)).strftime("%Y-%m-%d")
+
+
+def _yesterday(tz: Optional[str] = None) -> str:
+    return (datetime.now(_resolve_tz(tz)) - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
+def _date_key(d: datetime) -> str:
+    return d.strftime("%Y-%m-%d")
+
+
+def _trim_history(daily_counts: Dict[str, int], tz: Optional[str] = None) -> Dict[str, int]:
+    cutoff = _date_key(datetime.now(_resolve_tz(tz)) - timedelta(days=_HISTORY_DAYS))
+    return {k: v for k, v in daily_counts.items() if k >= cutoff}
+
+
+def _backfill_from_records(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
     """Build a streak doc from existing tailoring_records.
 
-    Counts each record's `created_at` as one application on that UTC date.
-    Versions/edits are ignored (only the record itself counts), matching the
-    "edits don't count as new applications" rule. Idempotent: writes the
-    derived state back to parse_streaks so future reads skip the rebuild.
+    Counts each record's `created_at` (converted to the user's local tz) as
+    one application. Versions/edits are ignored.
     """
     cursor = _records_collection().find(
         {"user_email": user_email},
         {"created_at": 1, "_id": 0},
     )
+    local = _resolve_tz(tz)
     daily_counts: Dict[str, int] = {}
     total = 0
     for r in cursor:
@@ -63,8 +96,8 @@ def _backfill_from_records(user_email: str) -> Dict[str, Any]:
         if not ts:
             continue
         if hasattr(ts, "astimezone"):
-            ts = ts.astimezone(timezone.utc) if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
-            key = ts.strftime("%Y-%m-%d")
+            ts_utc = ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+            key = ts_utc.astimezone(local).strftime("%Y-%m-%d")
         else:
             key = str(ts)[:10]
         daily_counts[key] = daily_counts.get(key, 0) + 1
@@ -76,7 +109,6 @@ def _backfill_from_records(user_email: str) -> Dict[str, Any]:
     sorted_dates = sorted(daily_counts.keys())
     last_date = sorted_dates[-1]
 
-    # Walk backward from the last date to find the run of consecutive days.
     longest = 1
     current_run = 1
     for i in range(1, len(sorted_dates)):
@@ -88,7 +120,6 @@ def _backfill_from_records(user_email: str) -> Dict[str, Any]:
             current_run = 1
         longest = max(longest, current_run)
 
-    # current_streak = consecutive days ending at last_date
     current_streak = 1
     for i in range(len(sorted_dates) - 1, 0, -1):
         prev = datetime.strptime(sorted_dates[i - 1], "%Y-%m-%d")
@@ -100,11 +131,12 @@ def _backfill_from_records(user_email: str) -> Dict[str, Any]:
 
     update = {
         "user_email": user_email,
+        "tz": tz or "UTC",
         "current_streak": current_streak,
         "longest_streak": max(longest, current_streak),
         "last_application_date": last_date,
         "total_applications": total,
-        "daily_counts": _trim_history(daily_counts),
+        "daily_counts": _trim_history(daily_counts, tz),
         "updated_at": datetime.now(timezone.utc),
         "backfilled_at": datetime.now(timezone.utc),
     }
@@ -116,29 +148,31 @@ def _backfill_from_records(user_email: str) -> Dict[str, Any]:
     return update
 
 
-def _today() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+def record_application(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
+    """Increment the streak for a new application (new tailoring_record).
 
-
-def _date_key(d: datetime) -> str:
-    return d.strftime("%Y-%m-%d")
-
-
-def _trim_history(daily_counts: Dict[str, int]) -> Dict[str, int]:
-    cutoff = _date_key(datetime.now(timezone.utc) - timedelta(days=_HISTORY_DAYS))
-    return {k: v for k, v in daily_counts.items() if k >= cutoff}
-
-
-def record_application(user_email: str) -> Dict[str, Any]:
-    """Increment the streak for a new application (new tailoring_record)."""
+    `tz` is the user's IANA timezone (e.g. 'America/Phoenix'). When the doc's
+    stored tz differs, the streak is rebuilt from tailoring_records under the
+    new tz before applying the increment, so the doc stays consistent with
+    how dates are bucketed locally.
+    """
     if not user_email:
         return {}
 
-    today = _today()
-    yesterday = _date_key(datetime.now(timezone.utc) - timedelta(days=1))
     col = _collection()
-
     doc = col.find_one({"user_email": user_email}) or {}
+
+    stored_tz = doc.get("tz")
+    if doc and stored_tz != (tz or "UTC"):
+        # tz drift — rebuild from records under the new tz first.
+        try:
+            doc = _backfill_from_records(user_email, tz=tz) or doc
+        except Exception as e:
+            logger.warning(f"Streak rebuild on tz drift failed for {user_email}: {e}")
+
+    today = _today(tz)
+    yesterday = _yesterday(tz)
+
     last_date = doc.get("last_application_date")
     current_streak = int(doc.get("current_streak") or 0)
     longest_streak = int(doc.get("longest_streak") or 0)
@@ -146,7 +180,6 @@ def record_application(user_email: str) -> Dict[str, Any]:
     daily_counts = dict(doc.get("daily_counts") or {})
 
     if last_date == today:
-        # Same day — count goes up, streak unchanged.
         pass
     elif last_date == yesterday:
         current_streak += 1
@@ -156,10 +189,11 @@ def record_application(user_email: str) -> Dict[str, Any]:
     daily_counts[today] = int(daily_counts.get(today, 0)) + 1
     total += 1
     longest_streak = max(longest_streak, current_streak)
-    daily_counts = _trim_history(daily_counts)
+    daily_counts = _trim_history(daily_counts, tz)
 
     update = {
         "user_email": user_email,
+        "tz": tz or "UTC",
         "current_streak": current_streak,
         "longest_streak": longest_streak,
         "last_application_date": today,
@@ -168,36 +202,39 @@ def record_application(user_email: str) -> Dict[str, Any]:
         "updated_at": datetime.now(timezone.utc),
     }
     col.update_one({"user_email": user_email}, {"$set": update}, upsert=True)
-    return _serialize(update)
+    return _serialize(update, tz)
 
 
-def get_streak(user_email: str) -> Dict[str, Any]:
+def get_streak(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
     """Return streak summary + last-30-day heatmap for the user."""
     if not user_email:
-        return _empty_summary()
+        return _empty_summary(tz)
 
     doc = _collection().find_one({"user_email": user_email})
-    if not doc:
-        # First read for this user — retrofit from existing tailoring_records
-        # so users who applied before the streak feature shipped see history.
+
+    needs_rebuild = (
+        doc is None
+        or doc.get("tz") != (tz or "UTC")
+    )
+    if needs_rebuild:
         try:
-            backfilled = _backfill_from_records(user_email)
-            if backfilled:
-                return _serialize(backfilled)
+            rebuilt = _backfill_from_records(user_email, tz=tz)
+            if rebuilt:
+                return _serialize(rebuilt, tz)
         except Exception as e:
             logger.warning(f"Streak backfill failed for {user_email}: {e}")
-        return _empty_summary()
+        if doc is None:
+            return _empty_summary(tz)
 
-    return _serialize(doc)
+    return _serialize(doc, tz)
 
 
-def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
-    today = _today()
-    yesterday = _date_key(datetime.now(timezone.utc) - timedelta(days=1))
+def _serialize(doc: Dict[str, Any], tz: Optional[str] = None) -> Dict[str, Any]:
+    today = _today(tz)
+    yesterday = _yesterday(tz)
     last_date = doc.get("last_application_date")
     stored_streak = int(doc.get("current_streak") or 0)
 
-    # Streak is "alive" only if the last application was today or yesterday.
     if last_date in (today, yesterday):
         current_streak = stored_streak
     else:
@@ -214,12 +251,12 @@ def _serialize(doc: Dict[str, Any]) -> Dict[str, Any]:
         "today_count": today_count,
         "total_applications": total,
         "last_application_date": last_date,
-        "heatmap": _build_heatmap(daily_counts),
+        "heatmap": _build_heatmap(daily_counts, tz),
     }
 
 
-def _build_heatmap(daily_counts: Dict[str, int]) -> List[Dict[str, Any]]:
-    today_dt = datetime.now(timezone.utc)
+def _build_heatmap(daily_counts: Dict[str, int], tz: Optional[str] = None) -> List[Dict[str, Any]]:
+    today_dt = datetime.now(_resolve_tz(tz))
     out: List[Dict[str, Any]] = []
     for offset in range(_HEATMAP_DAYS - 1, -1, -1):
         d = today_dt - timedelta(days=offset)
@@ -228,12 +265,12 @@ def _build_heatmap(daily_counts: Dict[str, int]) -> List[Dict[str, Any]]:
     return out
 
 
-def _empty_summary() -> Dict[str, Any]:
+def _empty_summary(tz: Optional[str] = None) -> Dict[str, Any]:
     return {
         "current_streak": 0,
         "longest_streak": 0,
         "today_count": 0,
         "total_applications": 0,
         "last_application_date": None,
-        "heatmap": _build_heatmap({}),
+        "heatmap": _build_heatmap({}, tz),
     }

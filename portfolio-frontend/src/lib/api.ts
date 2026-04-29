@@ -1001,9 +1001,15 @@ class ApiService {
     base_resume_filename?: string;
     base_resume_s3_key?: string;
   }): Promise<ApiResponse<{ record_id: string; updated?: boolean }>> {
+    let tz: string | undefined;
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      tz = undefined;
+    }
     return this.request("/resume/save-record", {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, tz }),
     });
   }
 
@@ -1033,7 +1039,14 @@ class ApiService {
       heatmap: { date: string; count: number }[];
     }>
   > {
-    return this.request("/resume/streak");
+    let tz = "";
+    try {
+      tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch {
+      tz = "";
+    }
+    const qs = tz ? `?tz=${encodeURIComponent(tz)}` : "";
+    return this.request(`/resume/streak${qs}`);
   }
 
   async batchTailor(

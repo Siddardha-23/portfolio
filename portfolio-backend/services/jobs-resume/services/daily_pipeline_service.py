@@ -309,13 +309,52 @@ def _norm_company(s: str) -> str:
     return (s or "").strip().lower()
 
 
+_RELATIVE_TIME_RE = re.compile(
+    r"^\s*(\d+)\s*(minute|min|hour|hr|day|week|month)s?\s*ago\s*$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_posted(raw: Any, now: Optional[datetime] = None) -> str:
+    """Normalize a posted timestamp into YYYY-MM-DD.
+
+    Handles ISO strings ("2026-04-29T...") and LinkedIn's relative phrases
+    ("2 days ago", "5 hours ago"). Returns "" when unparseable so the
+    downstream cutoff filter treats the row as unknown-date (kept).
+    """
+    if not raw:
+        return ""
+    s = str(raw).strip()
+    # ISO date / datetime — first 10 chars are YYYY-MM-DD when present.
+    if re.match(r"^\d{4}-\d{2}-\d{2}", s):
+        return s[:10]
+    m = _RELATIVE_TIME_RE.match(s)
+    if m:
+        n = int(m.group(1))
+        unit = m.group(2).lower()
+        ref = now or datetime.now(timezone.utc)
+        delta = {
+            "minute": timedelta(minutes=n), "min": timedelta(minutes=n),
+            "hour": timedelta(hours=n),     "hr": timedelta(hours=n),
+            "day": timedelta(days=n),
+            "week": timedelta(weeks=n),
+            "month": timedelta(days=30 * n),
+        }.get(unit, timedelta())
+        return (ref - delta).strftime("%Y-%m-%d")
+    if s.lower() in ("today", "just now"):
+        return (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    if s.lower() == "yesterday":
+        return ((now or datetime.now(timezone.utc)) - timedelta(days=1)).strftime("%Y-%m-%d")
+    return ""
+
+
 def _linkedin_to_record(j: dict) -> dict:
     return {
         "source": "LinkedIn",
         "company": (j.get("companyName") or "").strip(),
         "title": (j.get("title") or "").strip(),
         "location": (j.get("location") or "").strip(),
-        "posted": (j.get("postedAt") or "")[:10],
+        "posted": _normalize_posted(j.get("postedAt") or j.get("postedDate") or j.get("listedAt")),
         "salary": (j.get("salary") or "").strip() or "—",
         "applicants": j.get("applicantsCount") or "",
         "url": j.get("link") or "",
@@ -376,7 +415,7 @@ def _workday_to_record(j: dict) -> dict:
         "company": (j.get("organization") or j.get("aiOrganization") or j.get("company") or "").strip(),
         "title": (j.get("title") or j.get("aiTitle") or "").strip(),
         "location": location,
-        "posted": str(posted_raw)[:10],
+        "posted": _normalize_posted(posted_raw),
         "salary": salary,
         "applicants": "",
         "url": j.get("url") or j.get("link") or "",
@@ -474,11 +513,12 @@ def _role_match(rec: dict, custom_role_terms: Optional[List[str]] = None) -> Lis
     return out
 
 
-def _score(rec: dict) -> Tuple[int, List[str]]:
+def _score(rec: dict, today_iso: Optional[str] = None) -> Tuple[int, List[str]]:
     s = 50
     flags: List[str] = []
     title = rec["title"]
     company = _norm_company(rec["company"])
+    location = rec.get("location") or ""
 
     if any(sp in company for sp in H1B_SPONSORS): s += 30; flags.append("H1B-sponsor")
     if any(ai in company for ai in AI_NATIVE):    s += 20; flags.append("AI-native")
@@ -488,12 +528,16 @@ def _score(rec: dict) -> Tuple[int, List[str]]:
     if BACKEND_TITLE.search(title) or FULLSTACK_TITLE.search(title):
         s += 12; flags.append("Backend/FS")
     if FRONTEND_TITLE.search(title): s += 8; flags.append("Frontend")
+    if PHOENIX_HINTS.search(location): s += 8; flags.append("Phoenix-area")
     try:
         apc = int(rec["applicants"]) if rec["applicants"] else None
         if apc is not None and apc < 30:
             s += 8; flags.append(f"<30 apps ({apc})")
     except (ValueError, TypeError):
         pass
+    # Fresh-post bonus when the post is dated today.
+    if today_iso and rec.get("posted") == today_iso:
+        s += 5; flags.append("Fresh today")
     if SENIORITY_BAD.search(title):       s -= 25; flags.append("senior-ish")
     if re.search(r"\b(II|III|IV)\b", title): s -= 25; flags.append("level II+")
     if CLEARANCE_TEXT.search(title):      s -= 40; flags.append("clearance")
@@ -516,7 +560,38 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
     apply_now: List[dict] = []
     verify: List[dict] = []
     excluded: List[dict] = []
+    today_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # Cross-source dedupe — when LinkedIn and Workday both surface the same role
+    # at the same company, keep one canonical copy. Prefer the entry that has a
+    # parseable date or a non-empty description (more useful for tailoring).
+    seen: Dict[Tuple[str, str], dict] = {}
     for r in records:
+        key = (
+            _norm_company(r.get("company") or ""),
+            (r.get("title") or "").strip().lower(),
+        )
+        if not key[0] or not key[1]:
+            # Anything missing both fields gets a synthetic key so it isn't
+            # collapsed with other empty-field rows.
+            seen[(r.get("source", ""), r.get("url") or id(r))] = r
+            continue
+        existing = seen.get(key)
+        if existing is None:
+            seen[key] = r
+        else:
+            # Choose whichever copy is "richer".
+            def _quality(x: dict) -> int:
+                q = 0
+                if x.get("posted"): q += 2
+                if (x.get("description") or "").strip(): q += 1
+                if x.get("url"): q += 1
+                return q
+            if _quality(r) > _quality(existing):
+                seen[key] = r
+    deduped = list(seen.values())
+
+    for r in deduped:
         # Only drop on date when we *know* it's older than the cutoff.
         # Workday entries often have no parseable date_posted; the actor
         # already filtered by recency on its side, so trusting them is safer
@@ -541,7 +616,7 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
             excluded.append({**r, "reason": "no role-family match",
                              "tier": "Skip", "score": 0, "flags": ""}); continue
 
-        sc, flags = _score(r)
+        sc, flags = _score(r, today_iso=today_iso)
         rec = {**r, "score": sc, "tier": _tier(sc),
                "flags": ", ".join(flags) or "—",
                "roles": ", ".join(roles), "opt": _opt_status(r)}
@@ -596,6 +671,7 @@ def run_pipeline(
     apply_now, verify, excluded = _filter_and_score(
         all_raw, cutoff, custom_role_terms=custom_role_terms
     )
+    duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
     phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]
 
     tier_counts = {
@@ -631,6 +707,7 @@ def run_pipeline(
             "linkedin": len(raw_li),
             "workday": len(raw_wd),
             "total": len(all_raw),
+            "duplicates_dropped": duplicates_dropped,
         },
         "tier_counts": tier_counts,
         "source_breakdown": source_breakdown,

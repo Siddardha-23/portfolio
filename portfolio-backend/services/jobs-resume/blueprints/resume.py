@@ -476,9 +476,10 @@ def batch_tailor():
 def get_streak_route():
     user_email = get_jwt_identity()
     tz = request.args.get("tz") or None
+    force_rebuild = request.args.get("rebuild") == "1"
     try:
         from services.streak_service import get_streak
-        return jsonify(get_streak(user_email, tz=tz)), 200
+        return jsonify(get_streak(user_email, tz=tz, force_rebuild=force_rebuild)), 200
     except Exception as e:
         logger.exception("Get streak error: %s", e)
         return jsonify({"error": "Failed to load streak"}), 500

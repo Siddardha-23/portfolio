@@ -205,7 +205,11 @@ def record_application(user_email: str, tz: Optional[str] = None) -> Dict[str, A
     return _serialize(update, tz)
 
 
-def get_streak(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
+def get_streak(
+    user_email: str,
+    tz: Optional[str] = None,
+    force_rebuild: bool = False,
+) -> Dict[str, Any]:
     """Return streak summary + last-30-day heatmap for the user."""
     if not user_email:
         return _empty_summary(tz)
@@ -213,7 +217,8 @@ def get_streak(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
     doc = _collection().find_one({"user_email": user_email})
 
     needs_rebuild = (
-        doc is None
+        force_rebuild
+        or doc is None
         or doc.get("tz") != (tz or "UTC")
     )
     if needs_rebuild:
@@ -230,27 +235,46 @@ def get_streak(user_email: str, tz: Optional[str] = None) -> Dict[str, Any]:
 
 
 def _serialize(doc: Dict[str, Any], tz: Optional[str] = None) -> Dict[str, Any]:
+    """Always re-derive current_streak from daily_counts so stale stored
+    counters can never lie. Walks backwards from today through the run of
+    consecutive days that have applications.
+    """
     today = _today(tz)
     yesterday = _yesterday(tz)
-    last_date = doc.get("last_application_date")
-    stored_streak = int(doc.get("current_streak") or 0)
-
-    if last_date in (today, yesterday):
-        current_streak = stored_streak
-    else:
-        current_streak = 0
-
     daily_counts = dict(doc.get("daily_counts") or {})
     today_count = int(daily_counts.get(today, 0))
-    longest = int(doc.get("longest_streak") or 0)
-    total = int(doc.get("total_applications") or 0)
+
+    # Find the most recent day with applications, but only if it's still
+    # "alive" (today or yesterday). Otherwise the streak is 0.
+    cursor: Optional[str]
+    if int(daily_counts.get(today, 0)) > 0:
+        cursor = today
+    elif int(daily_counts.get(yesterday, 0)) > 0:
+        cursor = yesterday
+    else:
+        cursor = None
+
+    current_streak = 0
+    if cursor:
+        d = datetime.strptime(cursor, "%Y-%m-%d").date()
+        while int(daily_counts.get(d.strftime("%Y-%m-%d"), 0)) > 0:
+            current_streak += 1
+            d = d - timedelta(days=1)
+
+    last_application_date = (
+        max(k for k, v in daily_counts.items() if int(v) > 0)
+        if any(int(v) > 0 for v in daily_counts.values())
+        else None
+    )
+    longest = max(int(doc.get("longest_streak") or 0), current_streak)
+    total = sum(int(v) for v in daily_counts.values()) or int(doc.get("total_applications") or 0)
 
     return {
         "current_streak": current_streak,
         "longest_streak": longest,
         "today_count": today_count,
         "total_applications": total,
-        "last_application_date": last_date,
+        "last_application_date": last_application_date,
         "heatmap": _build_heatmap(daily_counts, tz),
     }
 

@@ -477,9 +477,50 @@ def get_streak_route():
     user_email = get_jwt_identity()
     tz = request.args.get("tz") or None
     force_rebuild = request.args.get("rebuild") == "1"
+    debug = request.args.get("debug") == "1"
     try:
         from services.streak_service import get_streak
-        return jsonify(get_streak(user_email, tz=tz, force_rebuild=force_rebuild)), 200
+        result = get_streak(user_email, tz=tz, force_rebuild=force_rebuild)
+
+        if debug:
+            from datetime import timezone as _tz
+            try:
+                from zoneinfo import ZoneInfo
+                local = ZoneInfo(tz) if tz else _tz.utc
+            except Exception:
+                local = _tz.utc
+
+            db = DBConnect().get_db()
+            doc = db.parse_streaks.find_one({"user_email": user_email}, {"_id": 0}) or {}
+            records = list(
+                db.tailoring_records.find(
+                    {"user_email": user_email},
+                    {"_id": 0, "record_id": 1, "created_at": 1},
+                ).sort("created_at", -1).limit(50)
+            )
+            mapped = []
+            for r in records:
+                ts = r.get("created_at")
+                utc_iso = local_iso = local_date = None
+                if hasattr(ts, "isoformat"):
+                    ts_aware = ts if ts.tzinfo else ts.replace(tzinfo=_tz.utc)
+                    utc_iso = ts_aware.astimezone(_tz.utc).isoformat()
+                    local_dt = ts_aware.astimezone(local)
+                    local_iso = local_dt.isoformat()
+                    local_date = local_dt.strftime("%Y-%m-%d")
+                mapped.append({
+                    "record_id": r.get("record_id"),
+                    "created_at_utc": utc_iso,
+                    "created_at_local": local_iso,
+                    "local_date": local_date,
+                })
+            result["_debug"] = {
+                "tz_received": tz,
+                "stored_doc": doc,
+                "records": mapped,
+            }
+
+        return jsonify(result), 200
     except Exception as e:
         logger.exception("Get streak error: %s", e)
         return jsonify({"error": "Failed to load streak"}), 500

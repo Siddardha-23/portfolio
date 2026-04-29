@@ -103,6 +103,10 @@ output "route53_zone_id" {
 
 output "ssm_param_names" {
   description = "Prod SSM parameter names that preview lambdas reference read-only"
+  # Marked sensitive because some referenced SSM parameters are SecureStrings,
+  # and the provider propagates sensitivity through the .name attribute. The
+  # values here are just parameter *names* (not secret material).
+  sensitive = true
   value = {
     SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
     SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name

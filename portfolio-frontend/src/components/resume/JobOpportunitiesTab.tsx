@@ -1,13 +1,37 @@
-import { Briefcase, Bookmark, FileText, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bookmark, Zap, Wand2 } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useJobSearch } from '@/hooks/useJobSearch';
-import { JobSearchPanel } from '@/components/job-search/JobSearchPanel';
 import { SavedJobsPanel } from '@/components/job-search/SavedJobsPanel';
-import { ResumePanel } from '@/components/job-search/ResumePanel';
 import { DailyPipelinePanel } from '@/components/job-search/DailyPipelinePanel';
+import { SmartFiltersPanel } from '@/components/job-search/SmartFiltersPanel';
+import type { SmartFilterSuggestions } from '@/types/jobs';
 
 export default function JobOpportunitiesTab() {
   const jobSearch = useJobSearch();
+  const [activeTab, setActiveTab] = useState<'pipeline' | 'smart' | 'saved'>('pipeline');
+  const [pendingSuggestions, setPendingSuggestions] =
+    useState<SmartFilterSuggestions | null>(null);
+
+  // Pick up suggestions handed off from the inline component on the Tailor view.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('pending_smart_filters');
+      if (raw) {
+        sessionStorage.removeItem('pending_smart_filters');
+        const parsed = JSON.parse(raw) as SmartFilterSuggestions;
+        setPendingSuggestions(parsed);
+        setActiveTab('pipeline');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const handleApplySuggestions = (s: SmartFilterSuggestions) => {
+    setPendingSuggestions(s);
+    setActiveTab('pipeline');
+  };
 
   return (
     <div className="space-y-6">
@@ -27,7 +51,8 @@ export default function JobOpportunitiesTab() {
             </span>
           </div>
           <p className="text-sm text-muted-foreground max-w-xl">
-            Live listings merged across JSearch, LinkedIn, Workday and configured company sources - ranked by your resume match.
+            Daily Apify pipeline (LinkedIn + Workday) with resume-aware Smart Filters.
+            Apply moves a job straight into Saved with status = applied.
           </p>
         </div>
         <div className="inline-flex w-fit items-center gap-1.5 rounded-full border border-purple-500/25 bg-purple-500/10 px-3 py-1 text-xs font-medium text-purple-600 dark:text-purple-300">
@@ -36,54 +61,32 @@ export default function JobOpportunitiesTab() {
         </div>
       </div>
 
-      <Tabs defaultValue="pipeline" className="space-y-5">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="space-y-5">
         <TabsList className="bg-muted/60 border border-border/60 backdrop-blur-sm">
           <TabsTrigger value="pipeline" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
             <Zap className="h-3.5 w-3.5" />
             Daily Pipeline
           </TabsTrigger>
-          <TabsTrigger value="listings" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
-            <Briefcase className="h-3.5 w-3.5" />
-            Listings
+          <TabsTrigger value="smart" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
+            <Wand2 className="h-3.5 w-3.5" />
+            Smart Filters
           </TabsTrigger>
           <TabsTrigger value="saved" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
             <Bookmark className="h-3.5 w-3.5" />
             Saved ({jobSearch.savedJobs.length})
           </TabsTrigger>
-          <TabsTrigger value="resume" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
-            <FileText className="h-3.5 w-3.5" />
-            Resume Match
-          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pipeline">
-          <DailyPipelinePanel />
+          <DailyPipelinePanel
+            pendingSuggestions={pendingSuggestions}
+            onSuggestionsConsumed={() => setPendingSuggestions(null)}
+            onJobApplied={jobSearch.loadSavedJobs}
+          />
         </TabsContent>
 
-        <TabsContent value="listings">
-          <JobSearchPanel
-            jobs={jobSearch.jobs}
-            savedJobs={jobSearch.savedJobs}
-            filters={jobSearch.filters}
-            setFilters={jobSearch.setFilters}
-            page={jobSearch.page}
-            totalPages={jobSearch.totalPages}
-            setPage={jobSearch.setPage}
-            loading={jobSearch.loading}
-            error={jobSearch.error}
-            searchJobs={jobSearch.searchJobs}
-            batchSearch={jobSearch.batchSearch}
-            saveJob={jobSearch.saveJob}
-            unsaveJob={jobSearch.unsaveJob}
-            isJobSaved={jobSearch.isJobSaved}
-            quickApply={jobSearch.quickApply}
-            getJobStatus={jobSearch.getJobStatus}
-            batchMeta={jobSearch.batchMeta}
-            hasSearched={jobSearch.hasSearched}
-            filtersLoaded={jobSearch.filtersLoaded}
-            savingFilters={jobSearch.savingFilters}
-            saveFilters={jobSearch.saveFilters}
-          />
+        <TabsContent value="smart">
+          <SmartFiltersPanel onApply={handleApplySuggestions} />
         </TabsContent>
 
         <TabsContent value="saved">
@@ -92,10 +95,6 @@ export default function JobOpportunitiesTab() {
             updateJobStatus={jobSearch.updateJobStatus}
             unsaveJob={jobSearch.unsaveJob}
           />
-        </TabsContent>
-
-        <TabsContent value="resume">
-          <ResumePanel />
         </TabsContent>
       </Tabs>
     </div>

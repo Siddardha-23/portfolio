@@ -1,23 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
-  Trophy, Medal, Award, Calendar, RotateCcw, Clock,
+  Trophy, Medal, Award, Calendar, RotateCcw, Clock, Globe, Briefcase,
+  Tag, CheckCircle2, Eye, EyeOff, Cloud, Server, Layers, Brain, Code2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ChipsInput } from './ChipsInput';
 import { apiService } from '@/lib/api';
 import type {
   DailyPipelineParams,
   DailyPipelineResult,
   DailyPipelineRecord,
+  SmartFilterSuggestions,
 } from '@/types/jobs';
 
+// --------------------------------------------------------------------------
+// Defaults & presets
+// --------------------------------------------------------------------------
 const DEFAULT_LINKEDIN_KEYWORDS = [
   'Cloud Engineer DevOps',
   'Site Reliability Platform Engineer',
@@ -36,6 +40,107 @@ const DEFAULT_WORKDAY_TITLES = [
   'Associate Software Engineer', 'Junior Software Engineer',
   'New Grad Software Engineer', 'Entry Level Software Engineer',
   'Graduate Software Engineer', 'Early Career Software Engineer',
+];
+
+interface Preset {
+  id: string;
+  label: string;
+  icon: JSX.Element;
+  gradient: string;
+  linkedin: string[];
+  workday: string[];
+  customRoles: string[];
+}
+
+const PRESETS: Preset[] = [
+  {
+    id: 'cloud-devops',
+    label: 'Cloud / DevOps',
+    icon: <Cloud className="h-3.5 w-3.5" />,
+    gradient: 'from-sky-500 to-cyan-500',
+    linkedin: [
+      'Cloud Engineer AWS',
+      'DevOps Engineer Kubernetes',
+      'Site Reliability Engineer',
+      'Platform Engineer Terraform',
+    ],
+    workday: [
+      'Cloud Engineer', 'DevOps Engineer', 'Site Reliability Engineer',
+      'Platform Engineer', 'Infrastructure Engineer', 'Cloud Software Engineer',
+      'AWS Engineer', 'Kubernetes Engineer', 'Junior SRE', 'New Grad SRE',
+    ],
+    customRoles: ['terraform', 'kubernetes', 'aws'],
+  },
+  {
+    id: 'backend',
+    label: 'Backend',
+    icon: <Server className="h-3.5 w-3.5" />,
+    gradient: 'from-emerald-500 to-teal-500',
+    linkedin: [
+      'Backend Engineer Python',
+      'Backend Engineer Java new grad',
+      'API Engineer',
+      'distributed systems engineer entry level',
+    ],
+    workday: [
+      'Backend Engineer', 'Backend Software Engineer', 'API Engineer',
+      'Server Engineer', 'Junior Backend Engineer', 'Associate Backend Engineer',
+      'New Grad Backend Engineer',
+    ],
+    customRoles: ['python', 'java', 'go', 'distributed'],
+  },
+  {
+    id: 'fullstack',
+    label: 'Full-Stack',
+    icon: <Layers className="h-3.5 w-3.5" />,
+    gradient: 'from-violet-500 to-indigo-500',
+    linkedin: [
+      'Full Stack Engineer React',
+      'Full Stack Developer Node',
+      'Full Stack Engineer new grad',
+    ],
+    workday: [
+      'Full Stack Engineer', 'Full Stack Software Engineer', 'Full Stack Developer',
+      'Junior Full Stack Engineer', 'Associate Full Stack Engineer',
+      'New Grad Full Stack Engineer',
+    ],
+    customRoles: ['react', 'node', 'typescript'],
+  },
+  {
+    id: 'ai-ml',
+    label: 'AI / ML',
+    icon: <Brain className="h-3.5 w-3.5" />,
+    gradient: 'from-fuchsia-500 to-purple-500',
+    linkedin: [
+      'AI Engineer agentic',
+      'Machine Learning Engineer entry level',
+      'GenAI Engineer LLM',
+      'Applied AI Engineer new grad',
+    ],
+    workday: [
+      'AI Engineer', 'ML Engineer', 'Machine Learning Engineer',
+      'Applied AI Engineer', 'Agentic AI Engineer', 'GenAI Engineer',
+      'LLM Engineer', 'Junior ML Engineer', 'New Grad AI Engineer',
+    ],
+    customRoles: ['agentic', 'llm', 'rag', 'pytorch'],
+  },
+  {
+    id: 'frontend',
+    label: 'Frontend',
+    icon: <Code2 className="h-3.5 w-3.5" />,
+    gradient: 'from-orange-500 to-pink-500',
+    linkedin: [
+      'Frontend Engineer React',
+      'Frontend Developer entry level',
+      'UI Engineer new grad',
+    ],
+    workday: [
+      'Frontend Engineer', 'Frontend Software Engineer', 'Frontend Developer',
+      'UI Engineer', 'Web Engineer', 'Junior Frontend Engineer',
+      'New Grad Frontend Engineer',
+    ],
+    customRoles: ['react', 'typescript', 'nextjs', 'tailwind'],
+  },
 ];
 
 const TIER_STYLES: Record<string, { label: string; ring: string; chip: string; icon: JSX.Element }> = {
@@ -59,48 +164,46 @@ const TIER_STYLES: Record<string, { label: string; ring: string; chip: string; i
   },
 };
 
-const linesToList = (s: string) =>
-  s.split(/[\n,]/).map((p) => p.trim()).filter(Boolean);
-
-const listToLines = (xs: string[]) => xs.join('\n');
-
-const STORAGE_KEY = 'daily_pipeline_state_v1';
-const RESULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+// --------------------------------------------------------------------------
+// Persistence
+// --------------------------------------------------------------------------
+const STORAGE_KEY = 'daily_pipeline_state_v2';
+const RESULT_TTL_MS = 30 * 60 * 1000;
 
 interface PersistedState {
-  linkedinText: string;
-  workdayText: string;
-  customRoles: string;
+  linkedinKws: string[];
+  workdayTitles: string[];
+  customRoles: string[];
   pastDays: number;
   showAdvanced: boolean;
   result: DailyPipelineResult | null;
   resultAt: number | null;
+  appliedIds: string[];
+  showApplied: boolean;
 }
 
-// Module-level in-memory cache — survives any unmount/remount of the panel as
-// long as the page isn't reloaded. This is the primary store; sessionStorage
-// is a best-effort backup that may silently fail on quota for large payloads.
 let _memoryCache: PersistedState | null = null;
 
-// Strip heavy fields before serializing to sessionStorage to avoid the ~5MB
-// quota limit. Descriptions can be huge and we don't render them.
+function _recordId(rec: DailyPipelineRecord) {
+  return rec.url || `${rec.source}-${rec.company}-${rec.title}`;
+}
+
 function _slimForStorage(state: PersistedState): PersistedState {
   if (!state.result) return state;
-  const slimRec = (r: DailyPipelineRecord) => ({ ...r, description: undefined });
+  const slim = (r: DailyPipelineRecord) => ({ ...r, description: undefined });
   return {
     ...state,
     result: {
       ...state.result,
-      apply_now: state.result.apply_now.map(slimRec),
-      verify_dates: state.result.verify_dates.map(slimRec),
-      phoenix: state.result.phoenix.map(slimRec),
-      excluded_sample: state.result.excluded_sample.map(slimRec),
+      apply_now: state.result.apply_now.map(slim),
+      verify_dates: state.result.verify_dates.map(slim),
+      phoenix: state.result.phoenix.map(slim),
+      excluded_sample: state.result.excluded_sample.map(slim),
     },
   };
 }
 
 function readPersisted(): PersistedState | null {
-  // Memory wins over storage — it's the freshest copy.
   if (_memoryCache) {
     if (_memoryCache.result && _memoryCache.resultAt && Date.now() - _memoryCache.resultAt > RESULT_TTL_MS) {
       _memoryCache = { ..._memoryCache, result: null, resultAt: null };
@@ -127,11 +230,22 @@ function writePersisted(state: PersistedState) {
   try {
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_slimForStorage(state)));
   } catch {
-    /* quota / disabled — module cache still has it */
+    /* quota / disabled */
   }
 }
 
-function PipelineRow({ rec }: { rec: DailyPipelineRecord }) {
+// --------------------------------------------------------------------------
+// Job row
+// --------------------------------------------------------------------------
+function PipelineRow({
+  rec,
+  applied,
+  onApply,
+}: {
+  rec: DailyPipelineRecord;
+  applied: boolean;
+  onApply: () => void;
+}) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const flagList = (rec.flags || '')
     .split(',')
@@ -139,7 +253,19 @@ function PipelineRow({ rec }: { rec: DailyPipelineRecord }) {
     .filter((f) => f && f !== '—');
 
   return (
-    <Card className={`group rounded-xl border ${tierStyle?.ring || 'border-border/60'} backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}>
+    <Card
+      className={`group relative rounded-xl border ${
+        applied
+          ? 'border-emerald-500/40 bg-emerald-500/5 opacity-60'
+          : tierStyle?.ring || 'border-border/60'
+      } backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}
+    >
+      {applied && (
+        <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+          <CheckCircle2 className="h-3 w-3" />
+          Applied · in Saved
+        </div>
+      )}
       <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
         <div className="flex flex-shrink-0 flex-col items-center gap-1.5 sm:w-20">
           {tierStyle && (
@@ -203,13 +329,25 @@ function PipelineRow({ rec }: { rec: DailyPipelineRecord }) {
           {rec.url ? (
             <Button
               size="sm"
-              asChild
-              className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
+              onClick={onApply}
+              disabled={applied}
+              className={`gap-1 ${
+                applied
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90'
+              }`}
             >
-              <a href={rec.url} target="_blank" rel="noopener noreferrer">
-                Apply
-                <ExternalLink className="h-3 w-3" />
-              </a>
+              {applied ? (
+                <>
+                  <CheckCircle2 className="h-3 w-3" />
+                  Applied
+                </>
+              ) : (
+                <>
+                  Apply
+                  <ExternalLink className="h-3 w-3" />
+                </>
+              )}
             </Button>
           ) : null}
         </div>
@@ -218,33 +356,72 @@ function PipelineRow({ rec }: { rec: DailyPipelineRecord }) {
   );
 }
 
-function TierGroup({ title, items, accent }: { title: string; items: DailyPipelineRecord[]; accent: string }) {
+function TierGroup({
+  title,
+  items,
+  accent,
+  appliedIds,
+  showApplied,
+  onApply,
+}: {
+  title: string;
+  items: DailyPipelineRecord[];
+  accent: string;
+  appliedIds: Set<string>;
+  showApplied: boolean;
+  onApply: (rec: DailyPipelineRecord) => void;
+}) {
+  const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold uppercase tracking-wider">{title}</h3>
-        <Badge variant="outline" className={accent}>{items.length}</Badge>
+        <Badge variant="outline" className={accent}>
+          {visible.length}{visible.length !== items.length ? ` / ${items.length}` : ''}
+        </Badge>
       </div>
       <div className="space-y-2">
-        {items.map((rec, i) => (
-          <PipelineRow key={`${rec.url}-${i}`} rec={rec} />
-        ))}
+        {visible.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-border/60 p-4 text-center text-xs italic text-muted-foreground">
+            All applied! Toggle "Show applied" to see them again.
+          </p>
+        ) : (
+          visible.map((rec) => (
+            <PipelineRow
+              key={_recordId(rec)}
+              rec={rec}
+              applied={appliedIds.has(_recordId(rec))}
+              onApply={() => onApply(rec)}
+            />
+          ))
+        )}
       </div>
     </div>
   );
 }
 
-export function DailyPipelinePanel() {
+// --------------------------------------------------------------------------
+// Main panel
+// --------------------------------------------------------------------------
+export interface DailyPipelinePanelProps {
+  /** Pending suggestions handed in from SmartFiltersPanel — consumed once. */
+  pendingSuggestions?: SmartFilterSuggestions | null;
+  onSuggestionsConsumed?: () => void;
+  /** Optional refresh of saved-jobs in parent after Apply. */
+  onJobApplied?: () => void;
+}
+
+export function DailyPipelinePanel({
+  pendingSuggestions,
+  onSuggestionsConsumed,
+  onJobApplied,
+}: DailyPipelinePanelProps) {
   const persisted = typeof window !== 'undefined' ? readPersisted() : null;
 
-  const [linkedinText, setLinkedinText] = useState(
-    persisted?.linkedinText ?? listToLines(DEFAULT_LINKEDIN_KEYWORDS),
-  );
-  const [workdayText, setWorkdayText] = useState(
-    persisted?.workdayText ?? listToLines(DEFAULT_WORKDAY_TITLES),
-  );
-  const [customRoles, setCustomRoles] = useState(persisted?.customRoles ?? '');
+  const [linkedinKws, setLinkedinKws] = useState<string[]>(persisted?.linkedinKws ?? DEFAULT_LINKEDIN_KEYWORDS);
+  const [workdayTitles, setWorkdayTitles] = useState<string[]>(persisted?.workdayTitles ?? DEFAULT_WORKDAY_TITLES);
+  const [customRoles, setCustomRoles] = useState<string[]>(persisted?.customRoles ?? []);
   const [pastDays, setPastDays] = useState(persisted?.pastDays ?? 1);
   const [showAdvanced, setShowAdvanced] = useState(persisted?.showAdvanced ?? false);
 
@@ -252,19 +429,38 @@ export function DailyPipelinePanel() {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DailyPipelineResult | null>(persisted?.result ?? null);
   const [resultAt, setResultAt] = useState<number | null>(persisted?.resultAt ?? null);
+  const [appliedIds, setAppliedIds] = useState<string[]>(persisted?.appliedIds ?? []);
+  const [showApplied, setShowApplied] = useState<boolean>(persisted?.showApplied ?? true);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
 
-  // Persist to sessionStorage on any change.
+  // Persist
   useEffect(() => {
     writePersisted({
-      linkedinText,
-      workdayText,
+      linkedinKws,
+      workdayTitles,
       customRoles,
       pastDays,
       showAdvanced,
       result,
       resultAt,
+      appliedIds,
+      showApplied,
     });
-  }, [linkedinText, workdayText, customRoles, pastDays, showAdvanced, result, resultAt]);
+  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied]);
+
+  // Consume incoming smart-filter suggestions
+  useEffect(() => {
+    if (!pendingSuggestions) return;
+    setLinkedinKws(pendingSuggestions.linkedin_keyword_sets);
+    setWorkdayTitles(pendingSuggestions.workday_titles);
+    setCustomRoles(pendingSuggestions.custom_role_terms);
+    setPastDays(pendingSuggestions.past_days);
+    setShowAdvanced(true);
+    setActivePreset(null);
+    onSuggestionsConsumed?.();
+  }, [pendingSuggestions, onSuggestionsConsumed]);
+
+  const appliedSet = useMemo(() => new Set(appliedIds), [appliedIds]);
 
   const handleRun = async () => {
     setLoading(true);
@@ -273,9 +469,9 @@ export function DailyPipelinePanel() {
     setResultAt(null);
 
     const params: DailyPipelineParams = {
-      linkedin_keywords: linesToList(linkedinText),
-      workday_titles: linesToList(workdayText),
-      custom_role_terms: linesToList(customRoles),
+      linkedin_keywords: linkedinKws,
+      workday_titles: workdayTitles,
+      custom_role_terms: customRoles,
       past_days: pastDays,
     };
 
@@ -295,28 +491,73 @@ export function DailyPipelinePanel() {
     setResultAt(Date.now());
     toast.success(
       `Pipeline complete: ${resp.data.totals.apply_now} jobs to apply` +
-        (resp.data.totals.verify_dates ? `, ${resp.data.totals.verify_dates} to verify` : '')
+        (resp.data.totals.verify_dates ? `, ${resp.data.totals.verify_dates} to verify` : ''),
     );
   };
 
   const handleReset = () => {
-    setLinkedinText(listToLines(DEFAULT_LINKEDIN_KEYWORDS));
-    setWorkdayText(listToLines(DEFAULT_WORKDAY_TITLES));
-    setCustomRoles('');
+    setLinkedinKws(DEFAULT_LINKEDIN_KEYWORDS);
+    setWorkdayTitles(DEFAULT_WORKDAY_TITLES);
+    setCustomRoles([]);
     setPastDays(1);
+    setActivePreset(null);
     setResult(null);
     setResultAt(null);
   };
 
-  // Group apply_now by tier
+  const applyPreset = (p: Preset) => {
+    setLinkedinKws(p.linkedin);
+    setWorkdayTitles(p.workday);
+    setCustomRoles(p.customRoles);
+    setActivePreset(p.id);
+    toast.success(`Loaded preset: ${p.label}`);
+  };
+
+  const handleApply = async (rec: DailyPipelineRecord) => {
+    const id = _recordId(rec);
+    if (rec.url) window.open(rec.url, '_blank', 'noopener,noreferrer');
+
+    const job = {
+      job_id: id,
+      title: rec.title,
+      company: rec.company,
+      logo: '',
+      location: rec.location || '',
+      apply_link: rec.url || '',
+      description: rec.description || '',
+      salary: rec.salary || '',
+      employment_type: 'FULLTIME',
+      posted_date: rec.posted || '',
+      h1b_sponsor: (rec.flags || '').toLowerCase().includes('h1b'),
+      remote: /remote/i.test(rec.location || ''),
+      match_score: rec.score ?? 0,
+      matching_skills: [],
+      missing_skills: [],
+      source: rec.source || 'LinkedIn',
+    };
+
+    try {
+      await apiService.saveJob(job as any);
+    } catch {
+      /* tolerate duplicate save */
+    }
+    await apiService.updateSavedJob(id, { status: 'applied' });
+
+    setAppliedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    onJobApplied?.();
+    toast.success('Saved as Applied — see the Saved tab.');
+  };
+
   const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1');
   const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2');
   const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3');
+  const allApplyNow = result?.apply_now || [];
+  const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
 
   return (
     <div className="space-y-6">
       {/* Hero / config */}
-      <Card className="border-purple-500/30 bg-gradient-to-br from-purple-500/5 via-transparent to-indigo-500/5">
+      <Card className="overflow-hidden border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10">
         <CardContent className="space-y-5 p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
@@ -328,9 +569,9 @@ export function DailyPipelinePanel() {
                 </Badge>
               </div>
               <p className="max-w-2xl text-xs text-muted-foreground">
-                One click → scrapes both actors in parallel, scores against an entry-level / cloud / backend / AI profile,
-                and groups results by Tier. Defaults are pre-filled — tweak the keywords or add custom roles for any other
-                domain.
+                One click runs both Apify actors in parallel, scores results against your profile,
+                and groups them into Tier 1/2/3. Tweak the chips below or pick a preset — every change
+                persists per session. Smart Filters tab can auto-fill these from your resume.
               </p>
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
@@ -342,26 +583,56 @@ export function DailyPipelinePanel() {
                 disabled={loading}
               >
                 <RotateCcw className="h-3 w-3" />
-                Reset defaults
+                Reset
               </Button>
               <Button
                 onClick={handleRun}
                 disabled={loading}
-                className="gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
+                className="gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-purple-500/20 hover:opacity-90"
               >
                 <Sparkles className="h-4 w-4" />
-                {loading ? 'Running pipeline…' : 'Run pipeline'}
+                {loading ? 'Running…' : 'Run pipeline'}
               </Button>
             </div>
           </div>
 
-          {/* Quick controls — always visible */}
+          {/* Preset persona chips */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <Tag className="mr-1 inline h-3 w-3" />
+              Quick presets
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.map((p) => {
+                const active = activePreset === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => applyPreset(p)}
+                    className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
+                      active
+                        ? `border-transparent bg-gradient-to-r ${p.gradient} text-white shadow-sm`
+                        : 'border-border/60 bg-card hover:border-purple-500/40 hover:bg-purple-500/5'
+                    }`}
+                  >
+                    <span className={active ? 'text-white' : 'text-muted-foreground group-hover:text-foreground'}>
+                      {p.icon}
+                    </span>
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Quick controls */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 <Calendar className="mr-1 inline h-3 w-3" />
                 Past days
-              </Label>
+              </label>
               <Input
                 type="number"
                 min={1}
@@ -372,56 +643,60 @@ export function DailyPipelinePanel() {
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                Custom role keywords (optional)
-              </Label>
-              <Input
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Custom role keywords (used to keep adjacent roles)
+              </label>
+              <ChipsInput
+                values={customRoles}
+                onChange={setCustomRoles}
                 placeholder="e.g. data engineer, security, mobile"
-                value={customRoles}
-                onChange={(e) => setCustomRoles(e.target.value)}
-                className="focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
+                maxItems={20}
+                accentClass="border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300"
+                emptyState="Optional — only needed if you want roles outside the built-in families."
               />
-              <p className="text-[10px] text-muted-foreground">
-                Comma-separated. Roles outside the built-in families (Cloud, Backend, Full-Stack, AI/ML, Frontend, SWE)
-                won't be scored otherwise.
-              </p>
             </div>
           </div>
 
           {/* Advanced toggle */}
-          <div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowAdvanced((v) => !v)}
-              className="gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {showAdvanced ? '▾' : '▸'} Advanced — edit LinkedIn searches & Workday titles
-            </Button>
-          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowAdvanced((v) => !v)}
+            className="gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            {showAdvanced ? '▾' : '▸'} Advanced — edit LinkedIn searches & Workday titles
+          </Button>
 
           {showAdvanced && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  LinkedIn keyword searches (one per line, max 10)
-                </Label>
-                <Textarea
-                  rows={6}
-                  value={linkedinText}
-                  onChange={(e) => setLinkedinText(e.target.value)}
-                  className="font-mono text-xs focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Globe className="mr-1 inline h-3 w-3" />
+                  LinkedIn keyword phrases
+                </p>
+                <ChipsInput
+                  values={linkedinKws}
+                  onChange={setLinkedinKws}
+                  placeholder="Add a search phrase…"
+                  maxItems={10}
+                  defaultValues={DEFAULT_LINKEDIN_KEYWORDS}
+                  accentClass="border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300"
+                  helperText="Each phrase is sent as one LinkedIn search URL. Be specific (3-6 words)."
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-[11px] uppercase tracking-wider text-muted-foreground">
-                  Workday titles (one per line)
-                </Label>
-                <Textarea
-                  rows={6}
-                  value={workdayText}
-                  onChange={(e) => setWorkdayText(e.target.value)}
-                  className="font-mono text-xs focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  <Briefcase className="mr-1 inline h-3 w-3" />
+                  Workday job titles
+                </p>
+                <ChipsInput
+                  values={workdayTitles}
+                  onChange={setWorkdayTitles}
+                  placeholder="Add a title… or paste a comma-separated list"
+                  maxItems={120}
+                  defaultValues={DEFAULT_WORKDAY_TITLES}
+                  accentClass="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                  helperText="Anchor each title to a software domain word so 'New Grad' doesn't pull non-tech roles."
                 />
               </div>
             </div>
@@ -464,6 +739,7 @@ export function DailyPipelinePanel() {
               {' '}· Run pipeline to refresh.
             </p>
           )}
+
           {/* Summary strip */}
           <Card className="border-border/60 bg-card/60">
             <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
@@ -483,17 +759,44 @@ export function DailyPipelinePanel() {
                     : result.raw_counts.workday
                 }
               />
-              <SummaryBlock label="Apply now" value={result.totals.apply_now} accent="text-emerald-600 dark:text-emerald-400" />
-              <SummaryBlock label="Verify dates" value={result.totals.verify_dates} accent="text-amber-600 dark:text-amber-400" />
+              <SummaryBlock
+                label="Remaining to apply"
+                value={remainingApply}
+                accent="text-emerald-600 dark:text-emerald-400"
+              />
+              <SummaryBlock
+                label="Verify dates"
+                value={result.totals.verify_dates}
+                accent="text-amber-600 dark:text-amber-400"
+              />
               <SummaryBlock label="Excluded" value={result.excluded_total} accent="text-muted-foreground" />
             </CardContent>
           </Card>
 
-          {/* Heads-up if Workday returned 0 raw (actor down or token issue) */}
+          {/* Heads-up if Workday returned 0 raw */}
           {result.source_breakdown && result.source_breakdown.workday.raw === 0 && (
             <p className="text-[11px] italic text-amber-600 dark:text-amber-400">
               Workday returned 0 results this run. Check Apify actor status or token rental.
             </p>
+          )}
+
+          {/* Show applied toggle */}
+          {appliedIds.length > 0 && (
+            <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/30 p-2">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                {appliedIds.length} applied this session
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 text-[11px]"
+                onClick={() => setShowApplied((v) => !v)}
+              >
+                {showApplied ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                {showApplied ? 'Hide applied' : 'Show applied'}
+              </Button>
+            </div>
           )}
 
           {result.errors.length > 0 && (
@@ -514,16 +817,25 @@ export function DailyPipelinePanel() {
             title={`🥇 Tier 1 — apply first (${tier1.length})`}
             items={tier1}
             accent="border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
+            appliedIds={appliedSet}
+            showApplied={showApplied}
+            onApply={handleApply}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
             items={tier2}
             accent="border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"
+            appliedIds={appliedSet}
+            showApplied={showApplied}
+            onApply={handleApply}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
             items={tier3}
             accent="border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300"
+            appliedIds={appliedSet}
+            showApplied={showApplied}
+            onApply={handleApply}
           />
 
           {result.verify_dates.length > 0 && (
@@ -531,6 +843,9 @@ export function DailyPipelinePanel() {
               title={`⚠️ Verify dates (interns / co-ops) — ${result.verify_dates.length}`}
               items={result.verify_dates}
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              appliedIds={appliedSet}
+              showApplied={showApplied}
+              onApply={handleApply}
             />
           )}
 
@@ -539,6 +854,9 @@ export function DailyPipelinePanel() {
               title={`📍 Phoenix-area highlights (${result.phoenix.length})`}
               items={result.phoenix}
               accent="border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300"
+              appliedIds={appliedSet}
+              showApplied={showApplied}
+              onApply={handleApply}
             />
           )}
 
@@ -547,7 +865,7 @@ export function DailyPipelinePanel() {
               <CardContent className="flex flex-col items-center gap-2 p-8 text-center">
                 <p className="text-sm font-medium">No matches in the past {result.past_days} day(s).</p>
                 <p className="text-xs text-muted-foreground">
-                  Try widening the window or adding custom role keywords.
+                  Try widening the window, adding custom role keywords, or pick a preset above.
                 </p>
               </CardContent>
             </Card>

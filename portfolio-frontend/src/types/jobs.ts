@@ -25,6 +25,16 @@ export interface DailyPipelineParams {
   workday_limit?: number;
 }
 
+export interface SmartFilterSuggestions {
+  headline: string;
+  rationale: string;
+  linkedin_keyword_sets: string[];
+  workday_titles: string[];
+  custom_role_terms: string[];
+  past_days: number;
+  preset_tags: string[];
+}
+
 export interface DailyPipelineSourceCounts {
   raw: number;
   apply_now: number;

@@ -238,6 +238,33 @@ def _split_lines(value, max_items: int, max_len: int = 200) -> list:
     return cleaned[:max_items]
 
 
+@jobs_bp.route("/pipeline/suggest-filters", methods=["GET"])
+@jwt_required()
+def suggest_pipeline_filters():
+    """Return resume-aware filter suggestions for the daily pipeline."""
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"jobs_suggest:{client_ip}", max_requests=15, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    user_email = get_jwt_identity()
+    try:
+        from services.resume_service import get_resume_service
+        from services.filter_suggester_service import suggest_filters
+
+        svc = get_resume_service()
+        resume = svc.parser.ensure_structured_resume(user_email=user_email)
+        if not resume or not resume.get("structured"):
+            return jsonify({"error": "No resume found. Upload a resume to enable smart filters."}), 404
+        suggestions = suggest_filters(resume["structured"])
+        return jsonify({"suggestions": suggestions}), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        logger.error(f"Filter suggestion error: {e}")
+        return jsonify({"error": "Failed to generate suggestions"}), 500
+
+
 @jobs_bp.route("/pipeline", methods=["POST"])
 @jwt_required()
 def daily_pipeline():

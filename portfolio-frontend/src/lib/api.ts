@@ -638,6 +638,14 @@ class ApiService {
     return submitResp as ApiResponse<import("../types/jobs").BatchSearchResponse>;
   }
 
+  async suggestPipelineFilters() {
+    return this.request<{ suggestions: import("../types/jobs").SmartFilterSuggestions }>(
+      "/jobs/pipeline/suggest-filters",
+      { method: "GET" },
+      45000,
+    );
+  }
+
   async runDailyPipeline(
     params: import("../types/jobs").DailyPipelineParams,
     onPartial?: (partial: import("../types/jobs").DailyPipelineResult) => void,

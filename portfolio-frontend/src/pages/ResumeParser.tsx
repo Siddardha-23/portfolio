@@ -15,6 +15,7 @@ import ResumeDashboard, {
   TrashIcon,
 } from "@/components/resume/ResumeDashboard";
 import StreakWidget from "@/components/resume/StreakWidget";
+import { SmartFiltersInline } from "@/components/job-search/SmartFiltersInline";
 import type {
   TailorPipelineResult,
   TailoredFullResume,
@@ -3748,6 +3749,8 @@ function TailorTab() {
     >
       <StreakWidget />
 
+      <SmartFiltersInline />
+
       {/* Horizontal progress stepper */}
       <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm px-4 sm:px-8 py-4 shadow-sm">
         <div className="flex items-center justify-center gap-2 sm:gap-4">
@@ -5747,6 +5750,14 @@ export default function ResumeParser() {
     setMobileNavOpen(false);
     setUserMenuOpen(false);
   }, []);
+
+  // Allow child components (e.g. SmartFiltersInline on the Tailor view) to
+  // request a navigation hop into the Daily Pipeline tab without prop drilling.
+  useEffect(() => {
+    const handler = () => selectNav('jobs');
+    window.addEventListener('portfolio:navigate-to-jobs', handler);
+    return () => window.removeEventListener('portfolio:navigate-to-jobs', handler);
+  }, [selectNav]);
 
   useEffect(() => {
     void apiService.recordCareerCopilotTab(activeNav).catch(() => {});

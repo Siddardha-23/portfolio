@@ -3160,9 +3160,30 @@ function TailorTab() {
   const atsAbortRef = useRef<AbortController | null>(null);
   const tailorTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const recordIdRef = useRef<string | null>(null);
+  // When a tailor flow is launched from the Daily Pipeline, this holds the
+  // pipeline job_id so we can flip its saved status to 'applied' once the
+  // tailoring record saves.
+  const pendingJobIdRef = useRef<string | null>(null);
   const [downloading, setDownloading] = useState<"pdf" | "docx" | null>(null);
   const [resumeLoadError, setResumeLoadError] = useState("");
   const [editing, setEditing] = useState(false);
+
+  // Consume any "tailor this job" handoff from the Daily Pipeline.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('pending_tailor_job');
+      if (!raw) return;
+      sessionStorage.removeItem('pending_tailor_job');
+      const parsed = JSON.parse(raw) as { job_id: string; jd_text: string; title?: string; company?: string };
+      if (parsed?.job_id) pendingJobIdRef.current = parsed.job_id;
+      if (parsed?.jd_text) setJdText(parsed.jd_text);
+      if (parsed?.title || parsed?.company) {
+        toast.info(`Tailoring for ${parsed.title || ''}${parsed.company ? ' @ ' + parsed.company : ''} — apply status auto-tracks`);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Lock page scroll while the full-screen editor overlay is mounted.
   // Without this, wheel/touch gestures chain through to the TailorTab
@@ -3347,6 +3368,18 @@ function TailorTab() {
           recordIdRef.current = resp.data.record_id;
           if (isNewRecord) {
             window.dispatchEvent(new CustomEvent('resume:application-saved'));
+            // If this tailor flow was launched from the Daily Pipeline, mark
+            // the originating saved job as 'applied' once tailoring lands.
+            const jobId = pendingJobIdRef.current;
+            if (jobId) {
+              pendingJobIdRef.current = null;
+              try {
+                await apiService.updateSavedJob(jobId, { status: 'applied' });
+                toast.success('Marked as Applied in your application tracker');
+              } catch {
+                /* silent */
+              }
+            }
           }
         }
       } catch {
@@ -5751,12 +5784,16 @@ export default function ResumeParser() {
     setUserMenuOpen(false);
   }, []);
 
-  // Allow child components (e.g. SmartFiltersInline on the Tailor view) to
-  // request a navigation hop into the Daily Pipeline tab without prop drilling.
+  // Allow child components to request navigation hops without prop drilling.
   useEffect(() => {
-    const handler = () => selectNav('jobs');
-    window.addEventListener('portfolio:navigate-to-jobs', handler);
-    return () => window.removeEventListener('portfolio:navigate-to-jobs', handler);
+    const toJobs = () => selectNav('jobs');
+    const toTailor = () => selectNav('tailor');
+    window.addEventListener('portfolio:navigate-to-jobs', toJobs);
+    window.addEventListener('portfolio:navigate-to-tailor', toTailor);
+    return () => {
+      window.removeEventListener('portfolio:navigate-to-jobs', toJobs);
+      window.removeEventListener('portfolio:navigate-to-tailor', toTailor);
+    };
   }, [selectNav]);
 
   useEffect(() => {

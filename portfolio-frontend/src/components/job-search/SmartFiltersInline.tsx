@@ -5,7 +5,34 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiService } from '@/lib/api';
+import { clearSuggestionsCache } from './SmartFiltersPanel';
 import type { SmartFilterSuggestions } from '@/types/jobs';
+
+// Reuse the same module-level cache key as SmartFiltersPanel — both surfaces
+// share one cached set of suggestions. Cache logic is duplicated here as a
+// dependency-free read so this file doesn't need to import the storage helpers.
+const SUGGEST_STORAGE_KEY = 'smart_filters_suggestions_v1';
+const SUGGEST_TTL_MS = 24 * 60 * 60 * 1000;
+
+function readCached(): SmartFilterSuggestions | null {
+  try {
+    const raw = sessionStorage.getItem(SUGGEST_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { data: SmartFilterSuggestions; cachedAt: number };
+    if (Date.now() - parsed.cachedAt > SUGGEST_TTL_MS) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCached(data: SmartFilterSuggestions) {
+  try {
+    sessionStorage.setItem(SUGGEST_STORAGE_KEY, JSON.stringify({ data, cachedAt: Date.now() }));
+  } catch {
+    /* quota */
+  }
+}
 
 const PENDING_KEY = 'pending_smart_filters';
 const DISMISSED_KEY = 'smart_filters_inline_dismissed';
@@ -25,15 +52,26 @@ const PRESET_GRADIENTS: Record<string, string> = {
  * where DailyPipelinePanel consumes the pending suggestions on next mount.
  */
 export function SmartFiltersInline() {
-  const [loading, setLoading] = useState(true);
+  const cached = typeof window !== 'undefined' ? readCached() : null;
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<SmartFilterSuggestions | null>(null);
+  const [suggestions, setSuggestions] = useState<SmartFilterSuggestions | null>(cached);
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(
     typeof window !== 'undefined' && sessionStorage.getItem(DISMISSED_KEY) === '1',
   );
 
-  const load = async () => {
+  const load = async (force = false) => {
+    if (!force) {
+      const c = readCached();
+      if (c) {
+        setSuggestions(c);
+        setLoading(false);
+        return;
+      }
+    } else {
+      clearSuggestionsCache();
+    }
     setLoading(true);
     setError(null);
     const resp = await apiService.suggestPipelineFilters();
@@ -42,11 +80,14 @@ export function SmartFiltersInline() {
       setError(resp.error);
       return;
     }
-    setSuggestions(resp.data?.suggestions || null);
+    if (resp.data?.suggestions) {
+      setSuggestions(resp.data.suggestions);
+      writeCached(resp.data.suggestions);
+    }
   };
 
   useEffect(() => {
-    if (dismissed) return;
+    if (dismissed || suggestions) return;
     load();
   }, [dismissed]);
 
@@ -165,7 +206,7 @@ export function SmartFiltersInline() {
             <ArrowRight className="h-3 w-3" />
           </Button>
           <Button
-            onClick={load}
+            onClick={() => load(true)}
             size="sm"
             variant="ghost"
             className="gap-1.5 text-xs"

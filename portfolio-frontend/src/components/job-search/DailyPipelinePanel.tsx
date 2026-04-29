@@ -4,6 +4,7 @@ import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
   Trophy, Medal, Award, Calendar, RotateCcw, Clock, Globe, Briefcase,
   Tag, CheckCircle2, Eye, EyeOff, Cloud, Server, Layers, Brain, Code2,
+  Wand2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -241,10 +242,12 @@ function PipelineRow({
   rec,
   applied,
   onApply,
+  onTailor,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
   onApply: () => void;
+  onTailor: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const flagList = (rec.flags || '')
@@ -325,7 +328,7 @@ function PipelineRow({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 items-start">
+        <div className="flex flex-shrink-0 flex-col items-stretch gap-1.5 sm:w-28">
           {rec.url ? (
             <Button
               size="sm"
@@ -350,6 +353,17 @@ function PipelineRow({
               )}
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onTailor}
+            disabled={applied}
+            className="gap-1 border-purple-500/30 text-[11px] text-purple-700 hover:bg-purple-500/10 dark:text-purple-300"
+            title="Open this job in Tailor — auto-marks Applied once tailoring saves"
+          >
+            <Wand2 className="h-3 w-3" />
+            Tailor
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -363,6 +377,7 @@ function TierGroup({
   appliedIds,
   showApplied,
   onApply,
+  onTailor,
 }: {
   title: string;
   items: DailyPipelineRecord[];
@@ -370,6 +385,7 @@ function TierGroup({
   appliedIds: Set<string>;
   showApplied: boolean;
   onApply: (rec: DailyPipelineRecord) => void;
+  onTailor: (rec: DailyPipelineRecord) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
@@ -393,6 +409,7 @@ function TierGroup({
               rec={rec}
               applied={appliedIds.has(_recordId(rec))}
               onApply={() => onApply(rec)}
+              onTailor={() => onTailor(rec)}
             />
           ))
         )}
@@ -511,6 +528,47 @@ export function DailyPipelinePanel({
     setCustomRoles(p.customRoles);
     setActivePreset(p.id);
     toast.success(`Loaded preset: ${p.label}`);
+  };
+
+  const handleTailor = async (rec: DailyPipelineRecord) => {
+    const id = _recordId(rec);
+    const job = {
+      job_id: id,
+      title: rec.title,
+      company: rec.company,
+      logo: '',
+      location: rec.location || '',
+      apply_link: rec.url || '',
+      description: rec.description || '',
+      salary: rec.salary || '',
+      employment_type: 'FULLTIME',
+      posted_date: rec.posted || '',
+      h1b_sponsor: (rec.flags || '').toLowerCase().includes('h1b'),
+      remote: /remote/i.test(rec.location || ''),
+      match_score: rec.score ?? 0,
+      matching_skills: [],
+      missing_skills: [],
+      source: rec.source || 'LinkedIn',
+    };
+    // Save (or no-op if already saved) so the application tracker picks it up.
+    try { await apiService.saveJob(job as any); } catch { /* duplicate-ok */ }
+
+    const jdSeed = rec.description?.trim() ||
+      `${rec.title} at ${rec.company}\n${rec.location || ''}\n${rec.url || ''}\n\n` +
+      `(Paste the full job description here to tailor — applied status will be auto-set once tailoring is saved.)`;
+
+    try {
+      sessionStorage.setItem('pending_tailor_job', JSON.stringify({
+        job_id: id,
+        jd_text: jdSeed,
+        title: rec.title,
+        company: rec.company,
+        url: rec.url || '',
+      }));
+    } catch { /* quota */ }
+
+    window.dispatchEvent(new CustomEvent('portfolio:navigate-to-tailor'));
+    toast.success('Opening Tailor — applied status will be set when tailoring saves.');
   };
 
   const handleApply = async (rec: DailyPipelineRecord) => {
@@ -820,6 +878,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             showApplied={showApplied}
             onApply={handleApply}
+            onTailor={handleTailor}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
@@ -828,6 +887,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             showApplied={showApplied}
             onApply={handleApply}
+            onTailor={handleTailor}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
@@ -836,6 +896,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             showApplied={showApplied}
             onApply={handleApply}
+            onTailor={handleTailor}
           />
 
           {result.verify_dates.length > 0 && (
@@ -846,6 +907,7 @@ export function DailyPipelinePanel({
               appliedIds={appliedSet}
               showApplied={showApplied}
               onApply={handleApply}
+              onTailor={handleTailor}
             />
           )}
 
@@ -857,6 +919,7 @@ export function DailyPipelinePanel({
               appliedIds={appliedSet}
               showApplied={showApplied}
               onApply={handleApply}
+              onTailor={handleTailor}
             />
           )}
 

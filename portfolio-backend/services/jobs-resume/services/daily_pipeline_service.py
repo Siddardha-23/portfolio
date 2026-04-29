@@ -85,6 +85,7 @@ DEFAULT_WORKDAY_TITLES = [
 ]
 
 BODY_SHOPS = {
+    # Original list
     "beaconfire", "jobs via dice", "turing", "aditi", "apetan", "sira",
     "teksystems", "jobright", "chatgpt jobs", "dataannotation",
     "tata consultancy services", "tcs", "infosys", "wipro", "cognizant",
@@ -92,6 +93,44 @@ BODY_SHOPS = {
     "techtriad", "cgi", "candid", "compunnel", "kforce", "robert half",
     "insight global", "hays", "randstad", "ust global", "mphasis",
     "ltimindtree", "ltts", "l&t technology", "synechron", "virtusa",
+    # Extended staffing / body shops that frequently pollute LinkedIn entry-level
+    "softhq", "zycus", "saxon global", "diverse lynx", "pyramid consulting",
+    "judge group", "the judge group", "modis", "akkodis", "iconma",
+    "eteam", "etalent", "infojini", "bayone", "bayone solutions",
+    "spar information systems", "spar group", "softpath", "zillion technologies",
+    "talent burst", "talentburst", "softworld", "matlen silver", "vdart",
+    "v-dart", "smartIMS", "smartims", "infinite computer solutions",
+    "intellectt", "intellectt inc", "harvey nash", "experis", "manpower",
+    "kelly services", "system soft", "systemsoft", "pinnacle group",
+    "pinnacle technical", "tek experts", "tekberry", "tekgroup",
+    "computer task group", "ctg ", "donatech", "donato technologies",
+    "rangam consultants", "rangam", "wisestaffing", "wise staffing",
+    "alphapoint technology", "advanced systems group", "asg",
+    "kavaliro", "stefanini", "amerit consulting", "anveta",
+    "talent serv", "talentserv", "rishabh software",
+    "encora", "softworld inc", "millennium consulting",
+    "collabera", "collabera digital", "sysmind", "wsource group",
+    "us tech solutions", "ustech solutions", "us tech",
+    "eclaro", "talent groups", "iqvia consulting",
+    "marlabs", "softonic", "infomatics", "tek-hub",
+    "the icon", "icon consultants",
+    "mastech", "mastech digital", "trianz",
+    "iquasar", "i-quasar",
+    "amtex", "amtex enterprises",
+    "n harris computer", "harris computer corporation",
+    "magnit", "magnit global",
+    "k force", "kforce inc",
+    "dice", "diceus", "techorbit", "tech orbit",
+    "sage it", "sage-it", "talent acquisition group",
+    "raja sw", "rajasoftwares", "raja software",
+    "smartsoft technologies", "smarttech", "infinity quest",
+    "trigyn", "trigyn technologies",
+    "ascendion", "ascendion engineering",
+    "saicon", "saicon consultants",
+    "datrose", "datrose llc",
+    "primus knowledge", "primus software",
+    "innova solutions", "innova", "katalyst", "katalyst healthcares",
+    "metasys technologies", "metasys", "infoways",
 }
 CLEARANCE_COMPANIES = {
     "rtx", "raytheon", "lockheed", "northrop", "leidos", "caci",
@@ -365,11 +404,40 @@ def _is_us(rec: dict) -> bool:
     )
 
 
+_STAFFING_HINT = re.compile(
+    r"\b(staffing|recruit(ing|ers?)|consultanc(y|ies)|placement(s)?|"
+    r"workforce solutions|human capital|talent solutions|talent partners|"
+    r"contract(?:s|ing)?|c2c|w2|corp[- ]to[- ]corp|body shop|"
+    r"sourcing solutions|talent network|talent group|talent acquisition)\b",
+    re.IGNORECASE,
+)
+
+
 def _blocked_company(rec: dict) -> Optional[str]:
     c = _norm_company(rec["company"])
     for bs in BODY_SHOPS:
         if bs in c:
             return f"body-shop:{bs}"
+    # Generic staffing/recruiting hint anywhere in the company name —
+    # catches the long tail of LLCs we haven't curated by name.
+    if _STAFFING_HINT.search(rec["company"] or "") or _STAFFING_HINT.search(rec["description"] or ""):
+        return "staffing/recruiting agency"
+    return None
+
+
+def _ghost_job_reason(rec: dict) -> Optional[str]:
+    """Heuristics for low-quality / ghost postings."""
+    # Very high applicant count = saturated, often reposted
+    try:
+        apc = int(rec.get("applicants") or 0)
+    except (ValueError, TypeError):
+        apc = 0
+    if apc >= 500:
+        return f"saturated posting ({apc}+ applicants)"
+    # Reposted-from-old indicator on LinkedIn descriptions
+    desc = (rec.get("description") or "").lower()
+    if "reposted" in desc and ("month" in desc or "30 days" in desc):
+        return "reposted (likely stale / ghost)"
     return None
 
 
@@ -463,6 +531,8 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
         if (why := _healthcare_noise(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _blocked_company(r)):
+            excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
+        if (why := _ghost_job_reason(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _clearance_block(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue

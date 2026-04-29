@@ -92,6 +92,8 @@ export default function ApplicationsTab() {
   const [staleApps, setStaleApps] = useState<Array<{ record_id: string; job_title: string; company: string; days_stale: number }>>([]);
   const [followups, setFollowups] = useState<Record<string, { subject: string; message: string }>>({});
   const [reframe, setReframe] = useState<{ acknowledgement: string; what_went_right: string; next_actions: string[]; silver_lining: string } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<ApplicationStatus | null>(null);
 
   const fetch = useCallback(async () => {
     setLoading(true);
@@ -130,6 +132,44 @@ export default function ApplicationsTab() {
       if (refr.data?.reframe) setReframe(refr.data.reframe);
     }
   }, [updateRecord]);
+
+  // Drag & drop handlers — optimistic update, then persist via the
+  // existing updateApplication endpoint. Rollback on failure.
+  const handleDrop = useCallback(async (status: ApplicationStatus) => {
+    const id = draggingId;
+    setDraggingId(null);
+    setDragOverCol(null);
+    if (!id) return;
+    const current = records.find((r) => r.record_id === id);
+    if (!current) return;
+    const prev = (current.application?.status || 'draft') as ApplicationStatus;
+    if (prev === status) return;
+    // Optimistic
+    updateRecord(id, (r) => ({
+      ...r,
+      application: { ...(r.application || {}), status },
+    }));
+    setSavingId(id);
+    const resp = await apiService.updateApplication(id, { status });
+    setSavingId(null);
+    if (resp.error) {
+      // Rollback
+      updateRecord(id, (r) => ({
+        ...r,
+        application: { ...(r.application || {}), status: prev },
+      }));
+      toast.error('Failed to move card — reverted.');
+      return;
+    }
+    updateRecord(id, (r) => ({
+      ...r,
+      application: { ...(r.application || {}), ...resp.data!.application },
+    }));
+    if (status === 'rejected') {
+      const refr = await apiService.reframeRejection(id);
+      if (refr.data?.reframe) setReframe(refr.data.reframe);
+    }
+  }, [draggingId, records, updateRecord]);
 
   const handlePatch = useCallback(async (id: string, patch: Parameters<typeof apiService.updateApplication>[1]) => {
     setSavingId(id);
@@ -364,11 +404,28 @@ export default function ApplicationsTab() {
 
       {/* Pipeline */}
       {view === "kanban" ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+        <>
+          <p className="text-[11px] italic text-gray-500 dark:text-gray-400">
+            Tip: drag a card between columns to update its status.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
           {COLUMNS.map(col => {
             const list = grouped[col.key];
+            const isDragOver = dragOverCol === col.key;
             return (
-              <div key={col.key} className="relative rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white/40 dark:bg-gray-900/30 overflow-hidden backdrop-blur-sm">
+              <div
+                key={col.key}
+                onDragOver={(e) => { e.preventDefault(); setDragOverCol(col.key); }}
+                onDragLeave={(e) => {
+                  if (e.currentTarget === e.target) setDragOverCol((c) => (c === col.key ? null : c));
+                }}
+                onDrop={(e) => { e.preventDefault(); handleDrop(col.key); }}
+                className={`relative rounded-xl border overflow-hidden backdrop-blur-sm transition-all ${
+                  isDragOver
+                    ? 'border-purple-500/60 bg-purple-500/10 ring-2 ring-purple-500/40 scale-[1.01]'
+                    : 'border-gray-200 dark:border-white/[0.07] bg-white/40 dark:bg-gray-900/30'
+                }`}
+              >
                 <div className={`absolute inset-y-0 left-0 w-0.5 ${col.dot}`} />
                 <div className="px-3 py-2.5 border-b border-gray-200 dark:border-gray-800/60 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
@@ -381,26 +438,42 @@ export default function ApplicationsTab() {
                 </div>
                 <div className="p-2 space-y-2 min-h-[80px] max-h-[68vh] overflow-y-auto">
                   {list.map(r => (
-                    <ApplicationCard
+                    <div
                       key={r.record_id}
-                      record={r}
-                      saving={savingId === r.record_id}
-                      isEditing={editing === r.record_id}
-                      onToggleEdit={() => setEditing(editing === r.record_id ? null : r.record_id)}
-                      onStatusChange={(s) => handleStatusChange(r.record_id, s)}
-                      onPatch={(patch) => handlePatch(r.record_id, patch)}
-                    />
+                      draggable
+                      onDragStart={(e) => {
+                        setDraggingId(r.record_id);
+                        e.dataTransfer.effectAllowed = 'move';
+                        try { e.dataTransfer.setData('text/plain', r.record_id); } catch { /* */ }
+                      }}
+                      onDragEnd={() => { setDraggingId(null); setDragOverCol(null); }}
+                      className={`cursor-grab active:cursor-grabbing transition-opacity ${
+                        draggingId === r.record_id ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <ApplicationCard
+                        record={r}
+                        saving={savingId === r.record_id}
+                        isEditing={editing === r.record_id}
+                        onToggleEdit={() => setEditing(editing === r.record_id ? null : r.record_id)}
+                        onStatusChange={(s) => handleStatusChange(r.record_id, s)}
+                        onPatch={(patch) => handlePatch(r.record_id, patch)}
+                      />
+                    </div>
                   ))}
                   {list.length === 0 && (
                     <div className="py-6 text-center">
-                      <p className="text-[10px] text-gray-400 dark:text-gray-600 italic">Nothing here</p>
+                      <p className="text-[10px] text-gray-400 dark:text-gray-600 italic">
+                        {isDragOver ? 'Drop here' : 'Nothing here'}
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
             );
           })}
-        </div>
+          </div>
+        </>
       ) : (
         <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm overflow-hidden shadow-sm">
           <table className="w-full text-xs">

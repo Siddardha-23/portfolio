@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Wand2, Sparkles, RefreshCw, ArrowRight, AlertCircle, Brain, Calendar,
@@ -28,24 +28,85 @@ const PRESET_GRADIENTS: Record<string, string> = {
   security: 'from-red-500 to-rose-500',
 };
 
-export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPanelProps) {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [suggestions, setSuggestions] = useState<SmartFilterSuggestions | null>(null);
+// Module-level cache so switching tabs doesn't burn another Gemini call.
+// 24-hour TTL — resume content rarely changes; "Regenerate" busts it manually.
+const SUGGEST_TTL_MS = 24 * 60 * 60 * 1000;
+const SUGGEST_STORAGE_KEY = 'smart_filters_suggestions_v1';
 
-  const load = async () => {
+interface CachedSuggestions {
+  data: SmartFilterSuggestions;
+  cachedAt: number;
+}
+
+let _suggestCache: CachedSuggestions | null = null;
+
+function readSuggestCache(): SmartFilterSuggestions | null {
+  if (_suggestCache && Date.now() - _suggestCache.cachedAt < SUGGEST_TTL_MS) {
+    return _suggestCache.data;
+  }
+  try {
+    const raw = sessionStorage.getItem(SUGGEST_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as CachedSuggestions;
+    if (Date.now() - parsed.cachedAt > SUGGEST_TTL_MS) return null;
+    _suggestCache = parsed;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeSuggestCache(data: SmartFilterSuggestions) {
+  _suggestCache = { data, cachedAt: Date.now() };
+  try {
+    sessionStorage.setItem(SUGGEST_STORAGE_KEY, JSON.stringify(_suggestCache));
+  } catch {
+    /* quota — module cache still has it */
+  }
+}
+
+export function clearSuggestionsCache() {
+  _suggestCache = null;
+  try { sessionStorage.removeItem(SUGGEST_STORAGE_KEY); } catch { /* */ }
+}
+
+export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPanelProps) {
+  const cached = readSuggestCache();
+  const [loading, setLoading] = useState(!cached);
+  const [error, setError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<SmartFilterSuggestions | null>(cached);
+  const inflight = useRef(false);
+
+  const load = async (force = false) => {
+    if (inflight.current) return;
+    if (!force) {
+      const c = readSuggestCache();
+      if (c) {
+        setSuggestions(c);
+        setLoading(false);
+        return;
+      }
+    } else {
+      clearSuggestionsCache();
+    }
+    inflight.current = true;
     setLoading(true);
     setError(null);
     const resp = await apiService.suggestPipelineFilters();
+    inflight.current = false;
     setLoading(false);
     if (resp.error) {
       setError(resp.error);
       return;
     }
-    setSuggestions(resp.data?.suggestions || null);
+    if (resp.data?.suggestions) {
+      setSuggestions(resp.data.suggestions);
+      writeSuggestCache(resp.data.suggestions);
+    }
   };
 
   useEffect(() => {
+    if (suggestions) return; // cache hit on first render
     load();
   }, []);
 
@@ -122,7 +183,7 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
             </div>
             <div className="flex flex-shrink-0 items-center gap-2">
               <Button
-                onClick={load}
+                onClick={() => load(true)}
                 variant="ghost"
                 size="sm"
                 className="gap-1.5 text-xs"

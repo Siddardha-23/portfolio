@@ -67,6 +67,18 @@ def _resume_summary(structured: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+_GENERALIST_BASELINE = [
+    "Software Engineer", "Software Developer",
+    "Software Engineer I", "Software Engineer II",
+    "Associate Software Engineer", "Junior Software Engineer",
+    "New Grad Software Engineer", "Entry Level Software Engineer",
+    "Graduate Software Engineer", "Early Career Software Engineer",
+    "Backend Engineer", "Backend Software Engineer",
+    "Frontend Engineer", "Frontend Software Engineer",
+    "Full Stack Engineer", "Full Stack Software Engineer",
+]
+
+
 def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
     """Return a JSON suggestion bundle the UI can prefill onto the pipeline form."""
     slim = _resume_summary(structured_resume)
@@ -75,26 +87,42 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         "for a daily job-hunt pipeline that scrapes LinkedIn (keyword search URLs) "
         "and Workday (titleSearch[]).\n\n"
         f"CANDIDATE PROFILE (JSON):\n{slim}\n\n"
+        "IMPORTANT — DO NOT NARROW TOO MUCH. Even if the candidate's primary domain is "
+        "(say) Cloud or AI, they will still apply to general SWE / Backend / Full-Stack / "
+        "Frontend roles, especially at the entry level. The output must always include a "
+        "generalist baseline of these titles plus persona-specific specializations.\n\n"
         "Produce ONE JSON object with these fields:\n"
-        '  - "headline": short one-line summary of the candidate persona (e.g., "Cloud + AI new-grad").\n'
-        '  - "rationale": 1-2 sentence reasoning that justifies the suggested filters.\n'
-        '  - "linkedin_keyword_sets": 4-6 short keyword phrases (3-6 words each) to feed to '
-        "LinkedIn's keyword search. Each phrase must be specific enough to surface relevant "
-        "roles and is OK to combine domain + seniority (e.g., \"Backend Engineer Python AWS\").\n"
-        '  - "workday_titles": 12-30 job titles tailored to the candidate. Always anchor them '
-        "to a software domain word (Software, Engineer, DevOps, SRE, Backend, etc.) so generic "
-        '"New Grad" doesn\'t pull non-tech roles. Include early-career variants like '
-        '"Junior", "Associate", "New Grad", "I", "Graduate" where appropriate.\n'
-        '  - "custom_role_terms": 4-8 single keyword terms (1-2 words) that describe the '
-        "candidate's adjacent specializations (e.g., 'security', 'data engineer', 'mobile').\n"
-        '  - "past_days": integer 1-7 — how stale to allow postings to be. Use 1 for active '
-        "applicants, 3-7 for niche roles where daily volume is low.\n"
+        '  - "headline": short one-line summary of the candidate persona (e.g., "Cloud-leaning generalist SWE — open to backend/full-stack").\n'
+        '  - "rationale": 1-2 sentences justifying the suggested filters and noting the breadth.\n'
+        '  - "linkedin_keyword_sets": 5-8 keyword phrases (3-6 words each) for LinkedIn search. '
+        "MUST include at least 2 generalist phrases like \"software engineer new grad\" or "
+        "\"entry level software engineer\" plus 3-5 persona-specific phrases combining domain "
+        "+ stack (e.g., \"Backend Engineer Python AWS\").\n"
+        '  - "workday_titles": 25-50 job titles. MUST include the entire generalist baseline '
+        f"(these exact titles): {_GENERALIST_BASELINE} — plus persona-specific titles. Each "
+        "title must be anchored to a software domain word (Software, Engineer, DevOps, SRE, "
+        'Backend, Frontend, AI, ML, etc.) so generic "New Grad" doesn\'t pull non-tech roles. '
+        'Include early-career variants ("Junior", "Associate", "New Grad", "I", "II", "Graduate").\n'
+        '  - "custom_role_terms": 5-10 single keyword terms (1-2 words each) covering adjacent '
+        "specializations the candidate could apply for ('security', 'data engineer', 'mobile', "
+        "'distributed systems', etc.).\n"
+        '  - "past_days": integer 1-7 — how stale to allow postings. Use 1 for active applicants.\n'
         '  - "preset_tags": 1-3 short labels classifying the candidate '
         '(e.g., ["cloud-devops","ai-ml","backend","frontend","fullstack","data","security"]).\n\n'
         "Return ONLY the JSON object, no commentary."
     )
     raw = gemini_json(prompt=prompt, model=GEMINI_FLASH, temperature=0.35, schema=_SUGGESTION_SCHEMA)
-    return _coerce(raw)
+    coerced = _coerce(raw)
+
+    # Belt-and-braces: ensure the generalist baseline is always present, even if
+    # the model shaved it off.
+    existing = {t.lower() for t in coerced["workday_titles"]}
+    for t in _GENERALIST_BASELINE:
+        if t.lower() not in existing:
+            coerced["workday_titles"].append(t)
+            existing.add(t.lower())
+    coerced["workday_titles"] = coerced["workday_titles"][:60]
+    return coerced
 
 
 def _coerce(raw: Any) -> Dict[str, Any]:

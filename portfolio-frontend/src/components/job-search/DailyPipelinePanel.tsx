@@ -77,16 +77,45 @@ interface PersistedState {
   resultAt: number | null;
 }
 
+// Module-level in-memory cache — survives any unmount/remount of the panel as
+// long as the page isn't reloaded. This is the primary store; sessionStorage
+// is a best-effort backup that may silently fail on quota for large payloads.
+let _memoryCache: PersistedState | null = null;
+
+// Strip heavy fields before serializing to sessionStorage to avoid the ~5MB
+// quota limit. Descriptions can be huge and we don't render them.
+function _slimForStorage(state: PersistedState): PersistedState {
+  if (!state.result) return state;
+  const slimRec = (r: DailyPipelineRecord) => ({ ...r, description: undefined });
+  return {
+    ...state,
+    result: {
+      ...state.result,
+      apply_now: state.result.apply_now.map(slimRec),
+      verify_dates: state.result.verify_dates.map(slimRec),
+      phoenix: state.result.phoenix.map(slimRec),
+      excluded_sample: state.result.excluded_sample.map(slimRec),
+    },
+  };
+}
+
 function readPersisted(): PersistedState | null {
+  // Memory wins over storage — it's the freshest copy.
+  if (_memoryCache) {
+    if (_memoryCache.result && _memoryCache.resultAt && Date.now() - _memoryCache.resultAt > RESULT_TTL_MS) {
+      _memoryCache = { ..._memoryCache, result: null, resultAt: null };
+    }
+    return _memoryCache;
+  }
   try {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedState;
     if (parsed.result && parsed.resultAt && Date.now() - parsed.resultAt > RESULT_TTL_MS) {
-      // Result is stale — keep inputs, drop result.
       parsed.result = null;
       parsed.resultAt = null;
     }
+    _memoryCache = parsed;
     return parsed;
   } catch {
     return null;
@@ -94,10 +123,11 @@ function readPersisted(): PersistedState | null {
 }
 
 function writePersisted(state: PersistedState) {
+  _memoryCache = state;
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_slimForStorage(state)));
   } catch {
-    /* quota / disabled */
+    /* quota / disabled — module cache still has it */
   }
 }
 

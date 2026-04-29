@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
@@ -63,6 +63,43 @@ const linesToList = (s: string) =>
   s.split(/[\n,]/).map((p) => p.trim()).filter(Boolean);
 
 const listToLines = (xs: string[]) => xs.join('\n');
+
+const STORAGE_KEY = 'daily_pipeline_state_v1';
+const RESULT_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+interface PersistedState {
+  linkedinText: string;
+  workdayText: string;
+  customRoles: string;
+  pastDays: number;
+  showAdvanced: boolean;
+  result: DailyPipelineResult | null;
+  resultAt: number | null;
+}
+
+function readPersisted(): PersistedState | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedState;
+    if (parsed.result && parsed.resultAt && Date.now() - parsed.resultAt > RESULT_TTL_MS) {
+      // Result is stale — keep inputs, drop result.
+      parsed.result = null;
+      parsed.resultAt = null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writePersisted(state: PersistedState) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* quota / disabled */
+  }
+}
 
 function PipelineRow({ rec }: { rec: DailyPipelineRecord }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
@@ -169,20 +206,41 @@ function TierGroup({ title, items, accent }: { title: string; items: DailyPipeli
 }
 
 export function DailyPipelinePanel() {
-  const [linkedinText, setLinkedinText] = useState(listToLines(DEFAULT_LINKEDIN_KEYWORDS));
-  const [workdayText, setWorkdayText] = useState(listToLines(DEFAULT_WORKDAY_TITLES));
-  const [customRoles, setCustomRoles] = useState('');
-  const [pastDays, setPastDays] = useState(1);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const persisted = typeof window !== 'undefined' ? readPersisted() : null;
+
+  const [linkedinText, setLinkedinText] = useState(
+    persisted?.linkedinText ?? listToLines(DEFAULT_LINKEDIN_KEYWORDS),
+  );
+  const [workdayText, setWorkdayText] = useState(
+    persisted?.workdayText ?? listToLines(DEFAULT_WORKDAY_TITLES),
+  );
+  const [customRoles, setCustomRoles] = useState(persisted?.customRoles ?? '');
+  const [pastDays, setPastDays] = useState(persisted?.pastDays ?? 1);
+  const [showAdvanced, setShowAdvanced] = useState(persisted?.showAdvanced ?? false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<DailyPipelineResult | null>(null);
+  const [result, setResult] = useState<DailyPipelineResult | null>(persisted?.result ?? null);
+  const [resultAt, setResultAt] = useState<number | null>(persisted?.resultAt ?? null);
+
+  // Persist to sessionStorage on any change.
+  useEffect(() => {
+    writePersisted({
+      linkedinText,
+      workdayText,
+      customRoles,
+      pastDays,
+      showAdvanced,
+      result,
+      resultAt,
+    });
+  }, [linkedinText, workdayText, customRoles, pastDays, showAdvanced, result, resultAt]);
 
   const handleRun = async () => {
     setLoading(true);
     setError(null);
     setResult(null);
+    setResultAt(null);
 
     const params: DailyPipelineParams = {
       linkedin_keywords: linesToList(linkedinText),
@@ -204,6 +262,7 @@ export function DailyPipelinePanel() {
       return;
     }
     setResult(resp.data);
+    setResultAt(Date.now());
     toast.success(
       `Pipeline complete: ${resp.data.totals.apply_now} jobs to apply` +
         (resp.data.totals.verify_dates ? `, ${resp.data.totals.verify_dates} to verify` : '')
@@ -215,6 +274,8 @@ export function DailyPipelinePanel() {
     setWorkdayText(listToLines(DEFAULT_WORKDAY_TITLES));
     setCustomRoles('');
     setPastDays(1);
+    setResult(null);
+    setResultAt(null);
   };
 
   // Group apply_now by tier
@@ -366,6 +427,13 @@ export function DailyPipelinePanel() {
       {/* Results */}
       {result && !loading && (
         <div className="space-y-6">
+          {resultAt && Date.now() - resultAt > 30_000 && (
+            <p className="text-[11px] italic text-muted-foreground">
+              Showing cached result from{' '}
+              {new Date(resultAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {' '}· Run pipeline to refresh.
+            </p>
+          )}
           {/* Summary strip */}
           <Card className="border-border/60 bg-card/60">
             <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">

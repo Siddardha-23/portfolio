@@ -554,6 +554,19 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 )
             svc.complete_job(job_id, result)
 
+        elif job_type == "daily_pipeline":
+            from services.daily_pipeline_service import run_pipeline
+
+            result = run_pipeline(
+                linkedin_keywords=payload.get("linkedin_keywords"),
+                workday_titles=payload.get("workday_titles"),
+                past_days=int(payload.get("past_days", 1) or 1),
+                custom_role_terms=payload.get("custom_role_terms"),
+                linkedin_count=int(payload.get("linkedin_count", 80) or 80),
+                workday_limit=int(payload.get("workday_limit", 200) or 200),
+            )
+            svc.complete_job(job_id, result)
+
         else:
             svc.fail_job(job_id, f"Unknown job type: {job_type}")
 

@@ -1,9 +1,10 @@
-import { Briefcase, Bookmark, FileText } from 'lucide-react';
+import { Briefcase, Bookmark, FileText, Zap } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useJobSearch } from '@/hooks/useJobSearch';
 import { JobSearchPanel } from '@/components/job-search/JobSearchPanel';
 import { SavedJobsPanel } from '@/components/job-search/SavedJobsPanel';
 import { ResumePanel } from '@/components/job-search/ResumePanel';
+import { DailyPipelinePanel } from '@/components/job-search/DailyPipelinePanel';
 
 export default function JobOpportunitiesTab() {
   const jobSearch = useJobSearch();
@@ -35,8 +36,12 @@ export default function JobOpportunitiesTab() {
         </div>
       </div>
 
-      <Tabs defaultValue="listings" className="space-y-5">
+      <Tabs defaultValue="pipeline" className="space-y-5">
         <TabsList className="bg-muted/60 border border-border/60 backdrop-blur-sm">
+          <TabsTrigger value="pipeline" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
+            <Zap className="h-3.5 w-3.5" />
+            Daily Pipeline
+          </TabsTrigger>
           <TabsTrigger value="listings" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
             <Briefcase className="h-3.5 w-3.5" />
             Listings
@@ -50,6 +55,10 @@ export default function JobOpportunitiesTab() {
             Resume Match
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="pipeline">
+          <DailyPipelinePanel />
+        </TabsContent>
 
         <TabsContent value="listings">
           <JobSearchPanel

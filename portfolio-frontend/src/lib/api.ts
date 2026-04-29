@@ -638,6 +638,28 @@ class ApiService {
     return submitResp as ApiResponse<import("../types/jobs").BatchSearchResponse>;
   }
 
+  async runDailyPipeline(
+    params: import("../types/jobs").DailyPipelineParams,
+    onPartial?: (partial: import("../types/jobs").DailyPipelineResult) => void,
+  ): Promise<ApiResponse<import("../types/jobs").DailyPipelineResult>> {
+    const submitResp = await this.request<{ job_id: string }>(
+      "/jobs/pipeline",
+      {
+        method: "POST",
+        body: JSON.stringify(params),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: "Failed to start pipeline" };
+    return this.pollJob<import("../types/jobs").DailyPipelineResult>(
+      submitResp.data.job_id,
+      900000,
+      undefined,
+      onPartial,
+    );
+  }
+
   async analyzeJob(
     job: import("../types/jobs").Job,
     action: "summarize" | "missing_skills" | "cover_letter",

@@ -5,6 +5,7 @@ Authentication is handled by the unified auth service (/api/auth/login).
 All endpoints require a valid JWT whose identity is the user's email.
 """
 import logging
+import re
 
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
@@ -215,6 +216,89 @@ def batch_search():
     except Exception as e:
         logger.error(f"Batch search error: {e}")
         return jsonify({"error": "Batch search failed"}), 500
+
+
+# ------------------------------------------------------------------
+# POST /api/jobs/pipeline   (daily Apify pipeline: LinkedIn + Workday)
+# ------------------------------------------------------------------
+
+def _split_lines(value, max_items: int, max_len: int = 200) -> list:
+    """Accept a list[str] or a newline/comma separated string, return cleaned list."""
+    if isinstance(value, list):
+        items = [str(x) for x in value]
+    elif isinstance(value, str):
+        items = re.split(r"[\n,]", value)
+    else:
+        items = []
+    cleaned = []
+    for item in items:
+        s = InputSanitizer.sanitize_string(item, max_length=max_len)
+        if s:
+            cleaned.append(s)
+    return cleaned[:max_items]
+
+
+@jobs_bp.route("/pipeline", methods=["POST"])
+@jwt_required()
+def daily_pipeline():
+    """Run the daily Apify pipeline: parallel LinkedIn + Workday scrape, score, tier.
+
+    Body (all optional - sensible defaults match job_pipeline.py):
+        {
+          "linkedin_keywords": ["Cloud Engineer DevOps", ...],
+          "workday_titles":    ["Cloud Engineer", "Backend Engineer", ...],
+          "past_days":         1,
+          "custom_role_terms": ["security", "data engineer"],
+          "linkedin_count":    80,
+          "workday_limit":     200
+        }
+    Returns: {"job_id": "..."}  - poll /api/resume/job/<id> for the result.
+    """
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"jobs_pipeline:{client_ip}", max_requests=6, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Pipeline runs are limited to 6 / 5 min."}), 429
+
+    data = request.get_json(silent=True) or {}
+    try:
+        past_days = int(data.get("past_days") or 1)
+    except (TypeError, ValueError):
+        past_days = 1
+    past_days = max(1, min(past_days, 30))
+
+    linkedin_keywords = _split_lines(data.get("linkedin_keywords"), max_items=10, max_len=200)
+    workday_titles = _split_lines(data.get("workday_titles"), max_items=200, max_len=120)
+    custom_role_terms = _split_lines(data.get("custom_role_terms"), max_items=20, max_len=80)
+
+    try:
+        linkedin_count = max(10, min(int(data.get("linkedin_count") or 80), 200))
+    except (TypeError, ValueError):
+        linkedin_count = 80
+    try:
+        workday_limit = max(20, min(int(data.get("workday_limit") or 200), 500))
+    except (TypeError, ValueError):
+        workday_limit = 200
+
+    user_email = get_jwt_identity()
+    payload = {
+        "linkedin_keywords": linkedin_keywords or None,
+        "workday_titles": workday_titles or None,
+        "past_days": past_days,
+        "custom_role_terms": custom_role_terms or None,
+        "linkedin_count": linkedin_count,
+        "workday_limit": workday_limit,
+        "user_email": user_email,
+    }
+
+    try:
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        job_id = svc.create_job("daily_pipeline", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "daily_pipeline", payload)
+        return jsonify({"job_id": job_id}), 202
+    except Exception as e:
+        logger.error(f"Daily pipeline submit error: {e}")
+        return jsonify({"error": "Failed to start pipeline"}), 500
 
 
 # ------------------------------------------------------------------

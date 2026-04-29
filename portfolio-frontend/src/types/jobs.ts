@@ -1,3 +1,51 @@
+export interface DailyPipelineRecord {
+  source: string;
+  company: string;
+  title: string;
+  location: string;
+  posted: string;
+  salary: string;
+  applicants?: string | number;
+  url: string;
+  description?: string;
+  score?: number;
+  tier?: 'Tier 1' | 'Tier 2' | 'Tier 3' | 'Skip';
+  flags?: string;
+  roles?: string;
+  opt?: string;
+  reason?: string;
+}
+
+export interface DailyPipelineParams {
+  linkedin_keywords?: string[];
+  workday_titles?: string[];
+  past_days?: number;
+  custom_role_terms?: string[];
+  linkedin_count?: number;
+  workday_limit?: number;
+}
+
+export interface DailyPipelineResult {
+  ok: boolean;
+  generated_at: string;
+  past_days: number;
+  cutoff: string;
+  raw_counts: { linkedin: number; workday: number; total: number };
+  tier_counts: { tier_1: number; tier_2: number; tier_3: number };
+  totals: { apply_now: number; verify_dates: number; excluded: number; phoenix: number };
+  apply_now: DailyPipelineRecord[];
+  verify_dates: DailyPipelineRecord[];
+  phoenix: DailyPipelineRecord[];
+  excluded_sample: DailyPipelineRecord[];
+  excluded_total: number;
+  errors: string[];
+  inputs: {
+    linkedin_keywords: string[];
+    workday_titles: string[];
+    custom_role_terms: string[];
+  };
+}
+
 export interface Job {
   job_id: string;
   title: string;
@@ -112,3 +160,4 @@ export interface BatchSearchResponse {
   skipped_sources?: Record<string, string>;
   cache_bypassed?: boolean;
 }
+

@@ -34,7 +34,10 @@ locals {
     jobs-resume = {
       description = "Job search and resume tailoring"
       memory      = 512
-      timeout     = 300
+      # 900s (Lambda max) — async path runs the Apify daily pipeline
+      # (parallel LinkedIn + Workday scrapes + scoring) which can exceed 5 min.
+      # API Gateway requests still return in <30s thanks to the 202 + poll pattern.
+      timeout     = 900
       env_vars = {
         SSM_MONGODB_URI               = aws_ssm_parameter.mongodb_uri.name
         SSM_JWT_SECRET                = aws_ssm_parameter.jwt_secret.name

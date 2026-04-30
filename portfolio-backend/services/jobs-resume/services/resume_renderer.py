@@ -162,9 +162,12 @@ class ResumeRenderer:
         pdf.set_y(mt)
         w = pdf.w - 2 * ml  # usable width ≈ 184.6mm
 
-        # ── Name (centered, bold, UPPERCASE) — LaTeX: \namesize\bfseries\MakeUppercase ──
+        # ── Name (centered, bold) — render exactly as parsed (Title Case
+        # via ResumeParser._normalize_name). The previous LaTeX template
+        # forced \MakeUppercase, but recruiters / users prefer the natural
+        # form. Section headers below remain uppercased.
         pdf.set_font("Times", "B", self._NAME_SIZE)
-        pdf.cell(w, 6.5, name.upper(), align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w, 6.5, name, align="C", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(0.5)  # \nameskip = \smallskip
 
         # ── Contact line (centered, pipe-separated, black text) ──
@@ -677,7 +680,7 @@ class ResumeRenderer:
         name = (contact.get("name", "") or "Resume").strip()
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(name.upper())
+        run = p.add_run(name)
         set_run_font(run, title_size, bold=True)
         tight(p, before=0, after=1.0)
 

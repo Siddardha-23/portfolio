@@ -294,6 +294,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
         elif job_type == "upload_parse":
             user_email = payload.get("user_email", "")
+            content_hash = payload.get("content_hash", "")
             # file_base64 + mime_type for Gemini multi-modal (new path)
             # Falls back to pdf_base64 for backward compatibility
             file_base64 = payload.get("file_base64") or payload.get("pdf_base64")
@@ -325,7 +326,9 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 return
 
             # Store in DB
-            doc = svc.parser.save_parsed_resume(validated, raw_text, user_email=user_email)
+            doc = svc.parser.save_parsed_resume(
+                validated, raw_text, user_email=user_email, content_hash=content_hash
+            )
             svc.complete_job(job_id, {"parsed_resume": doc})
 
         elif job_type == "tailor":
@@ -364,10 +367,14 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             result = svc.tailor.tailor(structured, payload["jd_analysis"])
 
-            # Normalize contact whitespace (safety net for resumes parsed before the fix)
+            # Normalize contact whitespace + proper-case the name
+            # (safety net for resumes parsed before name-normalization was added).
             result_contact = result.get("contact", {})
             if result_contact.get("name"):
-                result_contact["name"] = " ".join(result_contact["name"].split())
+                from services.resume_parser import ResumeParser as _RP
+                result_contact["name"] = _RP._normalize_name(
+                    " ".join(result_contact["name"].split())
+                )
             if result_contact.get("phone"):
                 result_contact["phone"] = " ".join(result_contact["phone"].split())
 

@@ -76,6 +76,12 @@ _MONTH_PATTERN = re.compile(r"(?i)\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov
 # Words that indicate a date range extends to the current date
 _PRESENT_KEYWORDS = frozenset({"present", "current", "now", "ongoing", "today"})
 
+# Roman numeral suffixes (preserved uppercase)
+_NAME_NUMERIC_SUFFIXES = frozenset({"ii", "iii", "iv", "v"})
+
+# Textual suffixes (preserved with leading capital)
+_NAME_TEXT_SUFFIXES = frozenset({"jr", "sr"})
+
 # ---------------------------------------------------------------------------
 # Extraction prompt template
 # ---------------------------------------------------------------------------
@@ -154,6 +160,40 @@ _EXTRACTION_PROMPT = (
     '  "extracted_urls": ["https://linkedin.com/in/...", "https://github.com/...", "...all '
     'hyperlinked URLs found in the document — actual href targets, not display text"]\n'
     "}\n\n"
+)
+
+# Slim variant — used when raw text + hyperlinks have already been extracted
+# locally (pypdf for PDFs, python-docx for DOCX). Drops the `raw_text` and
+# `extracted_urls` fields, which used to dominate output token cost.
+# Saves ~3-4k output tokens per parse, cutting wall time roughly proportionally.
+_EXTRACTION_PROMPT_SLIM = (
+    "You are a strict resume parser. Your ONLY job is to extract information that is "
+    "explicitly present in the resume. NEVER infer, synthesize, or invent anything.\n\n"
+    "CRITICAL MANDATORY FIELDS — you MUST extract these if they exist anywhere in the resume:\n"
+    "1. CONTACT: full name, email, phone, LinkedIn URL, GitHub URL.\n"
+    "   - The name is almost ALWAYS the very first line or the largest text at the top of the resume.\n"
+    "   - For linkedin and github, prefer the actual hyperlink URL target over display text.\n"
+    "2. EDUCATION: institution/university name is NEVER optional. Also extract degree, location, "
+    "dates, GPA, and relevant coursework.\n\n"
+    "STRICT EXTRACTION RULES:\n"
+    "1. Extract ONLY information explicitly present in the resume. NEVER fabricate or invent.\n"
+    "2. Summary: If no summary/objective section exists, return empty string. DO NOT write one.\n"
+    "3. Location/Employment type: If not stated, use empty string. DO NOT guess.\n"
+    "4. Bullet points: Copy the original bullet text verbatim. Do NOT rewrite or condense.\n"
+    "5. If a section is absent, use an empty string or empty array. Never null.\n"
+    "6. Extract skills from ALL sections (not just 'Skills'). Categorize into logical groups "
+    "(Languages, Frameworks, Cloud & DevOps, Databases, Tools, etc.).\n\n"
+    "Return a JSON object with EXACTLY this structure (ALL top-level keys REQUIRED):\n"
+    "{\n"
+    '  "contact": {"name":"","email":"","phone":"","linkedin":"","github":""},\n'
+    '  "summary": "",\n'
+    '  "skills": {"Category Name": ["Skill1", "Skill2"]},\n'
+    '  "experience": [{"title":"","company":"","location":"","dates":"","type":"","bullets":[]}],\n'
+    '  "education": [{"degree":"","institution":"","location":"","dates":"","gpa":"","coursework":""}],\n'
+    '  "projects": [{"name":"","dates":"","bullets":[],"tech":""}]\n'
+    "}\n\n"
+    "Do NOT include a raw_text field. Do NOT include an extracted_urls field. Return ONLY the "
+    "structured JSON above.\n\n"
 )
 
 
@@ -256,27 +296,77 @@ class ResumeParser:
         import base64
         from google.genai import types
 
-        # Build multi-modal or text-only parts for the API call
-        parts = self._build_extraction_parts(raw_text, file_base64, mime_type, types, base64)
+        # ---- Local pre-extraction (text layer + PDF /Annots / DOCX rels) ----
+        # Doing this locally cuts the dominant cost (Gemini transcribing the
+        # whole document into raw_text) and gives byte-perfect hyperlink targets.
+        # If the PDF is image-based or extraction fails, local_text is empty
+        # and we transparently fall back to the legacy FULL prompt path.
+        local_text = ""
+        local_urls: list = []
+        if file_base64:
+            try:
+                from services.text_extractor import (
+                    extract_text,
+                    is_text_healthy,
+                    clean_extracted_text,
+                )
 
-        # Call Gemini Flash for fast, factual extraction
+                file_bytes = base64.b64decode(file_base64)
+                local_text_raw, local_urls = extract_text(file_bytes, mime_type)
+                local_text_clean = clean_extracted_text(local_text_raw)
+                if is_text_healthy(local_text_clean):
+                    local_text = local_text_clean
+                    logger.info(
+                        "Resume parse: local extraction OK (%d chars, %d links) — "
+                        "using slim Gemini prompt",
+                        len(local_text),
+                        len(local_urls),
+                    )
+                else:
+                    logger.info(
+                        "Resume parse: local extraction yielded %d chars (insufficient) — "
+                        "falling back to full Gemini transcription",
+                        len(local_text_clean) if local_text_clean else 0,
+                    )
+            except Exception as e:
+                logger.warning("Local pre-extraction failed, falling back to LLM: %s", e)
+
+        use_slim = bool(local_text)
+
+        # Build multi-modal or text-only parts for the API call
+        parts = self._build_extraction_parts(
+            raw_text, file_base64, mime_type, types, base64, slim=use_slim
+        )
+
+        # Call Gemini Flash. Slim path needs far fewer output tokens because
+        # we no longer ask for raw_text or extracted_urls.
         result = gemini_json(
             prompt=None,  # Prompt is embedded in the parts
             parts=parts,
-            max_tokens=24000,
+            max_tokens=6000 if use_slim else 24000,
             temperature=0.2,  # Low temp for factual extraction
             model=GEMINI_FLASH,
         )
 
-        # Extract raw_text and extracted_urls from Gemini response
+        # In slim mode the model is instructed not to emit these, but be
+        # defensive: pop them either way so they don't leak into the schema.
         gemini_raw_text = result.pop("raw_text", "") or ""
-        extracted_urls = result.pop("extracted_urls", []) or []
+        gemini_urls = result.pop("extracted_urls", []) or []
 
-        # Use Gemini-extracted raw text, falling back to input raw_text
-        effective_raw_text = gemini_raw_text if gemini_raw_text.strip() else raw_text
+        # Decide on the authoritative raw_text + URL set:
+        #   - Slim path: local extraction is canonical (byte-perfect text +
+        #     /Annots URI targets are more reliable than LLM scraping).
+        #   - Full path: Gemini transcribed the document; use that.
+        if use_slim:
+            effective_raw_text = local_text
+            extracted_urls = local_urls
+        else:
+            effective_raw_text = gemini_raw_text if gemini_raw_text.strip() else raw_text
+            extracted_urls = gemini_urls
 
-        # Build synthetic [Extracted Link: ...] markers from Gemini's URL extraction
-        # (preserves contract for _backfill_contact which greps for these markers)
+        # Build synthetic [Extracted Link: ...] markers — preserves the
+        # contract for _backfill_contact which greps for these tokens to
+        # source authoritative hyperlink hrefs.
         if extracted_urls:
             link_markers = "\n".join(f"[Extracted Link: {url}]" for url in extracted_urls if url)
             effective_raw_text = effective_raw_text + "\n" + link_markers
@@ -310,7 +400,9 @@ class ResumeParser:
         return result, effective_raw_text
 
     @staticmethod
-    def _build_extraction_parts(raw_text, file_base64, mime_type, types, base64) -> list:
+    def _build_extraction_parts(
+        raw_text, file_base64, mime_type, types, base64, slim: bool = False
+    ) -> list:
         """Build the Gemini API parts list based on available input.
 
         Multi-modal path (preferred): sends file bytes (PDF or DOCX) directly
@@ -324,26 +416,33 @@ class ResumeParser:
             mime_type: MIME type of the file (e.g., application/pdf).
             types: google.genai.types module (passed to avoid circular import).
             base64: base64 module (passed to avoid re-import).
+            slim: If True, use the slim prompt (no raw_text / extracted_urls fields).
+                Caller is responsible for sourcing those locally.
 
         Returns:
             List of types.Part objects for the Gemini API call.
         """
+        prompt_template = _EXTRACTION_PROMPT_SLIM if slim else _EXTRACTION_PROMPT
+
         if file_base64:
             # Multi-modal: send the original file for visual understanding
             file_bytes = base64.b64decode(file_base64)
-
-            return [
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                types.Part.from_text(
-                    text=_EXTRACTION_PROMPT
-                    + "Extract from the attached document. For any hyperlinked text, "
+            tail = (
+                "Extract from the attached document."
+                if slim
+                else (
+                    "Extract from the attached document. For any hyperlinked text, "
                     "extract the actual URL target (not the display text) and include "
                     "it in the extracted_urls array."
-                ),
+                )
+            )
+            return [
+                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
+                types.Part.from_text(text=prompt_template + tail),
             ]
         else:
             # Text-only fallback: embed raw text in the prompt
-            prompt = _EXTRACTION_PROMPT + f"=== RESUME TEXT ===\n{raw_text[:_MAX_TEXT_CHARS]}"
+            prompt = prompt_template + f"=== RESUME TEXT ===\n{raw_text[:_MAX_TEXT_CHARS]}"
             return [types.Part.from_text(text=prompt)]
 
     @staticmethod
@@ -521,8 +620,99 @@ class ResumeParser:
         if contact.get("github"):
             contact["github"] = ResumeParser._normalize_github(contact["github"])
 
+        # Proper-case the name regardless of source (Gemini extract / regex fallback / display text)
+        # so "HARSHITH SIDDARDHA MANNE" → "Harshith Siddardha Manne" everywhere.
+        if contact.get("name"):
+            original_name = contact["name"]
+            normalized_name = ResumeParser._normalize_name(original_name)
+            if original_name != normalized_name:
+                logger.info("Contact: normalized name '%s' → '%s'", original_name, normalized_name)
+            contact["name"] = normalized_name
+
         result["contact"] = contact
         return result
+
+    @staticmethod
+    def _normalize_name(name: str) -> str:
+        """Convert a person's name to proper Title Case while preserving common
+        capitalization patterns (Mc/Mac, O', hyphens, initials, suffixes).
+
+        Examples:
+          "HARSHITH SIDDARDHA MANNE" → "Harshith Siddardha Manne"
+          "harshith siddardha manne" → "Harshith Siddardha Manne"
+          "Harshith Siddardha Manne" → "Harshith Siddardha Manne" (unchanged)
+          "MCDONALD"                  → "McDonald"
+          "O'CONNOR"                  → "O'Connor"
+          "MARY-JANE WATSON"          → "Mary-Jane Watson"
+          "JOHN F. KENNEDY JR"        → "John F. Kennedy Jr"
+          "JANE SMITH II"             → "Jane Smith II"
+
+        A word that already contains internal mixed-case (e.g., "McDonald",
+        "DeShawn") is left untouched so user-curated capitalization survives.
+        """
+        if not name or not name.strip():
+            return name
+
+        cleaned = " ".join(name.split())
+
+        def _cap_simple(w: str) -> str:
+            return (w[:1].upper() + w[1:].lower()) if w else w
+
+        def _cap_compound(w: str) -> str:
+            # Hyphen-separated: "MARY-JANE" → "Mary-Jane"
+            if "-" in w:
+                return "-".join(_cap_compound(p) for p in w.split("-"))
+            # Apostrophe-separated: "O'CONNOR" → "O'Connor"
+            if "'" in w:
+                segs = w.split("'")
+                return "'".join(
+                    _cap_simple(s) if i == 0 else _cap_simple(s) for i, s in enumerate(segs)
+                )
+            lower = w.lower()
+            # Mc-prefix: "MCDONALD" → "McDonald"
+            if lower.startswith("mc") and len(lower) > 2 and lower[2:].isalpha():
+                return "Mc" + _cap_simple(lower[2:])
+            # Mac-prefix: "MACARTHUR" → "MacArthur" (skip short words like "Mack", "Mach")
+            if lower.startswith("mac") and len(lower) > 4 and lower[3:].isalpha():
+                return "Mac" + _cap_simple(lower[3:])
+            return _cap_simple(w)
+
+        def _fix(word: str) -> str:
+            if not word:
+                return word
+            # Strip trailing punctuation for analysis, re-attach later
+            trailing = ""
+            core = word
+            while core and core[-1] in ".,;":
+                trailing = core[-1] + trailing
+                core = core[:-1]
+            if not core:
+                return word
+
+            lower_core = core.lower()
+
+            # Initials like "F" or "F." — single alpha char
+            if len(core) == 1 and core.isalpha():
+                return core.upper() + trailing
+
+            # Roman-numeral suffixes ("II", "III", ...) — uppercase
+            if lower_core in _NAME_NUMERIC_SUFFIXES:
+                return lower_core.upper() + trailing
+
+            # Text suffixes ("Jr", "Sr") — capitalized
+            if lower_core in _NAME_TEXT_SUFFIXES:
+                return lower_core.capitalize() + trailing
+
+            # Preserve already-mixed case (McDonald, DeShawn, iPhone-like)
+            has_lower = any(c.islower() for c in core)
+            has_upper = any(c.isupper() for c in core)
+            if has_lower and has_upper:
+                return core + trailing
+
+            # All-upper or all-lower → apply compound title-casing
+            return _cap_compound(core) + trailing
+
+        return " ".join(_fix(w) for w in cleaned.split(" "))
 
     @staticmethod
     def _normalize_linkedin(url: str) -> str:
@@ -607,6 +797,27 @@ class ResumeParser:
             re.IGNORECASE,
         )
 
+        # Strip trailing date/year fragments glued onto the institution line by
+        # cross-column-aware extractors (e.g. "Arizona State University, Tempe, AZMay 2026").
+        date_strip_re = re.compile(
+            r"\s*(?:"
+            r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*\d{4}"
+            r"|(?:Spring|Summer|Fall|Winter)\s*\d{4}"
+            r"|\b(?:19|20)\d{2}\s*[-–—]\s*(?:Present|Current|(?:19|20)\d{2})"
+            r"|\b(?:19|20)\d{2}\b"
+            r")\s*$",
+            re.IGNORECASE,
+        )
+
+        def _trim_institution(line: str) -> str:
+            prev = None
+            cur = line.strip()
+            # Run repeatedly so e.g. "...AZMay 2026" → "...AZ" → "...AZ"
+            while prev != cur:
+                prev = cur
+                cur = date_strip_re.sub("", cur).strip().rstrip(",;|").strip()
+            return cur
+
         for edu_entry in education:
             if not isinstance(edu_entry, dict):
                 continue
@@ -624,11 +835,10 @@ class ResumeParser:
                     for line in search_window.split("\n"):
                         line = line.strip()
                         if uni_pattern.search(line) and len(line) < 100:
-                            # Clean up the line — take just the institution part
-                            edu_entry["institution"] = line
+                            edu_entry["institution"] = _trim_institution(line)
                             logger.info(
                                 "Education backfill: found institution '%s' near degree '%s'",
-                                line,
+                                edu_entry["institution"],
                                 degree,
                             )
                             break
@@ -638,9 +848,10 @@ class ResumeParser:
                 for line in raw_text.split("\n"):
                     line = line.strip()
                     if uni_pattern.search(line) and len(line) < 100 and not line.startswith("["):
-                        edu_entry["institution"] = line
+                        edu_entry["institution"] = _trim_institution(line)
                         logger.info(
-                            "Education backfill: found institution '%s' via global search", line
+                            "Education backfill: found institution '%s' via global search",
+                            edu_entry["institution"],
                         )
                         break
 
@@ -694,7 +905,10 @@ class ResumeParser:
                             non_date_segments.append(seg_stripped)
 
                 if non_date_segments:
-                    degree = non_date_segments[0]
+                    # Join all non-date segments with comma so multi-part degrees
+                    # like "Master of Science | Information Technology" keep
+                    # both halves instead of dropping the specialization.
+                    degree = ", ".join(non_date_segments)
                 if not edu.get("dates", "").strip() and date_segments:
                     edu["dates"] = " - ".join(date_segments)
 
@@ -788,7 +1002,13 @@ class ResumeParser:
         structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 
-    def save_parsed_resume(self, structured: dict, raw_text: str, user_email: str = "") -> dict:
+    def save_parsed_resume(
+        self,
+        structured: dict,
+        raw_text: str,
+        user_email: str = "",
+        content_hash: str = "",
+    ) -> dict:
         """Build flat status fields, persist to MongoDB, and return the document.
 
         This method is separated from upload_and_parse so the async job worker
@@ -817,6 +1037,7 @@ class ResumeParser:
         doc = {
             "user_email": user_email,
             "structured": structured,
+            "content_hash": content_hash,
             "raw_text": raw_text[:_MAX_TEXT_CHARS],
             "raw_text_length": len(raw_text),
             "skills": flat_skills,
@@ -867,6 +1088,13 @@ class ResumeParser:
         resume = self.user_resumes.find_one(query, sort=[("parsed_at", -1)])
         if resume:
             resume.pop("_id", None)
+            # Backwards-compat: resumes parsed before name normalization may
+            # still hold ALL-CAPS names. Normalize on read so display is correct.
+            structured = resume.get("structured")
+            if isinstance(structured, dict):
+                contact = structured.get("contact")
+                if isinstance(contact, dict) and contact.get("name"):
+                    contact["name"] = ResumeParser._normalize_name(contact["name"])
         return resume
 
     def ensure_structured_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
@@ -916,12 +1144,16 @@ class ResumeParser:
         try:
             from services.s3_service import get_storage_service
             import base64 as _b64
+            import hashlib as _hashlib
 
             file_bytes = get_storage_service().get_resume(base["s3_key"])
             file_b64 = _b64.b64encode(file_bytes).decode("utf-8")
             mime_type = self.get_mime_type(base.get("filename", "resume.pdf"))
+            content_hash = base.get("content_hash") or _hashlib.sha256(file_bytes).hexdigest()
             structured, raw_text = self.parse_to_structured("", file_b64, mime_type)
-            result = self.save_parsed_resume(structured, raw_text, user_email=user_email)
+            result = self.save_parsed_resume(
+                structured, raw_text, user_email=user_email, content_hash=content_hash
+            )
             logger.info(
                 "ensure_structured_resume: successfully re-parsed resume for %s", user_email
             )

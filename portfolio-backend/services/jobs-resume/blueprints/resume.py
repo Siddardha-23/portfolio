@@ -1702,16 +1702,63 @@ def upload():
     original_filename = file.filename
 
     try:
+        import hashlib
+
         from services.resume_service import get_resume_service, ResumeService
         from services.resume_parser import ResumeParser
 
         # Validate file structure (lightweight, no text extraction)
         ResumeParser.validate_file(file_bytes, original_filename)
 
+        # Content hash — used to skip Gemini re-parse when the same file is
+        # uploaded twice. Per-user (a user re-uploading the exact same bytes
+        # gets back their existing parsed structured data instantly).
+        content_hash = hashlib.sha256(file_bytes).hexdigest()
+
+        db = DBConnect().get_db()
+        svc = get_resume_service()
+
+        # Cache hit: same file already uploaded by this user AND already parsed.
+        existing_base = db.user_resumes.find_one(
+            {"user_email": user_email, "type": "base", "content_hash": content_hash}
+        )
+        existing_structured = svc.parser.get_structured_resume(user_email=user_email)
+        if (
+            existing_base
+            and existing_base.get("s3_key")
+            and existing_structured
+            and existing_structured.get("structured")
+            and existing_structured.get("content_hash") == content_hash
+        ):
+            # Reactivate this base doc; deactivate others.
+            db.user_resumes.update_many(
+                {"user_email": user_email, "type": "base"},
+                {"$set": {"is_active": False}},
+            )
+            db.user_resumes.update_one(
+                {"_id": existing_base["_id"]},
+                {"$set": {"is_active": True}},
+            )
+
+            # Synthesize an already-completed job so the frontend can poll
+            # the same /job/<id> endpoint and get the parsed result back
+            # without invoking Gemini at all.
+            job_id = svc.create_job(
+                "upload_parse",
+                {"cached": True, "content_hash": content_hash, "user_email": user_email},
+                user_email=user_email,
+            )
+            svc.complete_job(job_id, {"parsed_resume": existing_structured})
+            logger.info(
+                "Resume upload cache HIT for %s (content_hash=%s) — skipping Gemini parse",
+                user_email,
+                content_hash[:12],
+            )
+            return jsonify({"job_id": job_id, "cached": True}), 202
+
         # Upload file to S3 and store metadata
         try:
             storage = get_storage_service()
-            db = DBConnect().get_db()
             user = db.users.find_one({"email": user_email})
             if user:
                 user_id = str(user["_id"])
@@ -1725,6 +1772,7 @@ def upload():
                         "filename": original_filename,
                         "uploaded_at": datetime.utcnow(),
                         "size_bytes": len(file_bytes),
+                        "content_hash": content_hash,
                         "is_active": True,
                     }
                 )
@@ -1742,11 +1790,11 @@ def upload():
         file_b64 = base64.b64encode(file_bytes).decode("utf-8")
         mime_type = ResumeParser.get_mime_type(original_filename)
 
-        svc = get_resume_service()
         payload = {
             "file_base64": file_b64,
             "mime_type": mime_type,
             "user_email": user_email,
+            "content_hash": content_hash,
         }
         job_id = svc.create_job("upload_parse", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "upload_parse", payload)

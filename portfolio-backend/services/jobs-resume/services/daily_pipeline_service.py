@@ -759,6 +759,14 @@ def _workday_to_record(j: dict) -> dict:
 # --------------------------------------------------------------------------
 # Filters / scoring
 # --------------------------------------------------------------------------
+_US_STATE_CODES = frozenset({
+    "al","ak","az","ar","ca","co","ct","de","fl","ga","hi","id","il","in",
+    "ia","ks","ky","la","me","md","ma","mi","mn","ms","mo","mt","ne","nv",
+    "nh","nj","nm","ny","nc","nd","oh","ok","or","pa","ri","sc","sd","tn",
+    "tx","ut","vt","va","wa","wv","wi","wy","dc",
+})
+
+
 def _is_us(rec: dict) -> bool:
     loc = _clean_str(rec.get("location")).lower()
     if not loc:
@@ -768,9 +776,13 @@ def _is_us(rec: dict) -> bool:
     # Standalone "US" / "U.S." / "U.S.A." tokens
     if re.search(r"\b(us|u\.s\.|u\.s\.a\.)\b", loc):
         return True
+    # Any token that is a US state abbreviation (handles bare "NY", "TX",
+    # "Plano, TX", "Remote, CA", etc.)
+    tokens = re.findall(r"[a-z]{2,}", loc)
+    if any(t in _US_STATE_CODES for t in tokens):
+        return True
     return bool(
-        re.search(r",\s*[a-z]{2}\b", loc)
-        or re.search(
+        re.search(
             r"\b(new york|san francisco|seattle|austin|chicago|boston|atlanta|"
             r"denver|phoenix|chandler|scottsdale|tempe|dallas|houston|raleigh|"
             r"durham|charlotte|miami|los angeles|san diego|portland|nashville)\b",

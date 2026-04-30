@@ -362,6 +362,7 @@ def daily_pipeline():
         workday_limit = 300
 
     user_email = get_jwt_identity()
+    include_indeed = bool(data.get("include_indeed", False))
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
         "workday_titles": workday_titles or None,
@@ -369,6 +370,7 @@ def daily_pipeline():
         "custom_role_terms": custom_role_terms or None,
         "linkedin_count": linkedin_count,
         "workday_limit": workday_limit,
+        "include_indeed": include_indeed,
         "user_email": user_email,
     }
 

@@ -577,6 +577,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 custom_role_terms=payload.get("custom_role_terms"),
                 linkedin_count=int(payload.get("linkedin_count", 80) or 80),
                 workday_limit=int(payload.get("workday_limit", 200) or 200),
+                include_indeed=bool(payload.get("include_indeed", False)),
                 apify_token=user_key,
             )
             # Surface which token tier was used so the UI can display it.

@@ -1037,6 +1037,7 @@ def run_pipeline(
     linkedin_count: int = 80,
     workday_limit: int = 200,
     apify_token: Optional[str] = None,
+    include_indeed: bool = False,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1056,9 +1057,11 @@ def run_pipeline(
     today = datetime.now(timezone.utc)
     cutoff = (today - timedelta(days=past_days)).strftime("%Y-%m-%d")
 
-    # Run Apify scrapes (LinkedIn+Workday, Indeed) and direct-ATS in parallel.
-    # ATS APIs have no Apify dependency so they keep delivering even when the
-    # Apify token is missing or an actor is rate-limited.
+    # Run Apify scrapes (LinkedIn+Workday, optional Indeed) and direct-ATS in
+    # parallel. ATS APIs have no Apify dependency so they keep delivering even
+    # when the Apify token is missing or an actor is rate-limited. Indeed is
+    # opt-in (include_indeed=True) — its date reliability is poor and its
+    # listings are dominated by body-shop reposts.
     with ThreadPoolExecutor(max_workers=3) as pool:
         f_apify = pool.submit(
             _scrape_in_parallel,
@@ -1069,10 +1072,10 @@ def run_pipeline(
             linkedin_count=linkedin_count,
             workday_limit=workday_limit,
         )
-        f_indeed = pool.submit(_scrape_indeed, token)
+        f_indeed = pool.submit(_scrape_indeed, token) if include_indeed else None
         f_ats = pool.submit(_scrape_ats_direct)
         linkedin_items, workday_items, errors = f_apify.result()
-        indeed_items = f_indeed.result()
+        indeed_items = f_indeed.result() if f_indeed is not None else []
         ats_items = f_ats.result()
 
     # Source-4 fallback: only fire for companies that returned 0 postings from

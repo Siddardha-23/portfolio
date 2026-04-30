@@ -196,6 +196,7 @@ interface PersistedState {
   showApplied: boolean;
   workdayLimit?: number;
   linkedinCount?: number;
+  includeIndeed?: boolean;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -458,6 +459,7 @@ export function DailyPipelinePanel({
   const [showAdvanced, setShowAdvanced] = useState(persisted?.showAdvanced ?? false);
   const [workdayLimit, setWorkdayLimit] = useState<number>(persisted?.workdayLimit ?? 300);
   const [linkedinCount, setLinkedinCount] = useState<number>(persisted?.linkedinCount ?? 80);
+  const [includeIndeed, setIncludeIndeed] = useState<boolean>(persisted?.includeIndeed ?? false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -484,8 +486,9 @@ export function DailyPipelinePanel({
       showApplied,
       workdayLimit,
       linkedinCount,
+      includeIndeed,
     });
-  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount]);
+  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed]);
 
   // Consume incoming smart-filter suggestions
   useEffect(() => {
@@ -514,6 +517,7 @@ export function DailyPipelinePanel({
       past_days: pastDays,
       workday_limit: workdayLimit,
       linkedin_count: linkedinCount,
+      include_indeed: includeIndeed,
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -809,6 +813,20 @@ export function DailyPipelinePanel({
                 <p className="text-[10px] text-muted-foreground">
                   Higher caps return more raw rows. Filtering accuracy stays the same — only recall changes.
                 </p>
+                <label className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-2 cursor-pointer hover:border-purple-500/40">
+                  <input
+                    type="checkbox"
+                    checked={includeIndeed}
+                    onChange={(e) => setIncludeIndeed(e.target.checked)}
+                    className="mt-0.5 h-3.5 w-3.5 accent-purple-600"
+                  />
+                  <div className="space-y-0.5">
+                    <p className="text-[11px] font-medium leading-tight">Include Indeed (extra Apify cost)</p>
+                    <p className="text-[10px] leading-tight text-muted-foreground">
+                      ~$0.75 / run. Off by default — Indeed dates are unreliable and listings are dominated by body-shop reposts. Turn on for slow days when you've exhausted LinkedIn / Workday / ATS direct.
+                    </p>
+                  </div>
+                </label>
               </div>
               <div className="space-y-1.5">
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">

@@ -23,6 +23,7 @@ export interface DailyPipelineParams {
   custom_role_terms?: string[];
   linkedin_count?: number;
   workday_limit?: number;
+  include_indeed?: boolean;
 }
 
 export interface ApifyKeyStatus {

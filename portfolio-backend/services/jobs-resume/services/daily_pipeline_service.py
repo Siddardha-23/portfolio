@@ -36,6 +36,15 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------
 LINKEDIN_ACTOR = "curious_coder~linkedin-jobs-scraper"
 WORKDAY_ACTOR = "fantastic-jobs~workday-jobs-api"
+INDEED_ACTOR = "borderline~indeed-scraper"
+
+# Source 3 — Indeed queries (3 calls per spec). Watch for OPT body shops:
+# the _opt_body_shop_reason filter catches "$30K-$60K + STEM OPT" patterns.
+INDEED_QUERIES = [
+    "software engineer new grad",
+    "cloud engineer DevOps",
+    "full stack AI engineer",
+]
 
 # Source 5 — Direct ATS APIs (free, no Apify, no auth). Each tuple is (slug,
 # display name) for the public job-board endpoints. Operators can extend these
@@ -465,6 +474,43 @@ def _ats_apify_fallback(
         })
     logger.info("[ats-apify-fallback] %s -> %d postings (covered %d companies)",
                 ats_type, len(out), len(missing_companies))
+    return out
+
+
+def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 50) -> List[Dict[str, Any]]:
+    """Source 3 — Indeed scrape. Returns normalized records or [] on any failure."""
+    if not token:
+        return []
+    qs = queries if queries is not None else INDEED_QUERIES
+    out: List[Dict[str, Any]] = []
+    for q in qs:
+        payload = {
+            "country": "us",
+            "query": q,
+            "level": "entry_level",
+            "jobType": "fulltime",
+            "fromDays": "1",
+            "sort": "date",
+            "maxRows": max_rows,
+        }
+        try:
+            items = _run_actor(INDEED_ACTOR, payload, token, timeout_s=180)
+        except Exception as e:
+            logger.warning("Indeed actor query=%r failed: %s", q, e)
+            continue
+        for j in items or []:
+            out.append({
+                "source": "Indeed",
+                "company": (j.get("companyName") or j.get("company") or "").strip(),
+                "title": (j.get("jobTitle") or j.get("title") or "").strip(),
+                "location": (j.get("location") or "").strip(),
+                "posted": _normalize_posted(j.get("date") or j.get("postedAt") or j.get("posted_at")),
+                "salary": (j.get("salary") or j.get("salary_text") or "—") or "—",
+                "applicants": "",
+                "url": j.get("url") or j.get("jobUrl") or j.get("job_url") or "",
+                "description": (j.get("description") or j.get("jobDescription") or "")[:500],
+            })
+    logger.info("[indeed] %d total postings across %d queries", len(out), len(qs))
     return out
 
 
@@ -911,10 +957,10 @@ def run_pipeline(
     today = datetime.now(timezone.utc)
     cutoff = (today - timedelta(days=past_days)).strftime("%Y-%m-%d")
 
-    # Run Apify scrape and direct-ATS in parallel — ATS APIs have no Apify
-    # dependency, so they keep delivering even if the Apify token is missing
-    # or an actor is rate-limited.
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    # Run Apify scrapes (LinkedIn+Workday, Indeed) and direct-ATS in parallel.
+    # ATS APIs have no Apify dependency so they keep delivering even when the
+    # Apify token is missing or an actor is rate-limited.
+    with ThreadPoolExecutor(max_workers=3) as pool:
         f_apify = pool.submit(
             _scrape_in_parallel,
             token=token,
@@ -924,8 +970,10 @@ def run_pipeline(
             linkedin_count=linkedin_count,
             workday_limit=workday_limit,
         )
+        f_indeed = pool.submit(_scrape_indeed, token)
         f_ats = pool.submit(_scrape_ats_direct)
         linkedin_items, workday_items, errors = f_apify.result()
+        indeed_items = f_indeed.result()
         ats_items = f_ats.result()
 
     # Source-4 fallback: only fire for companies that returned 0 postings from
@@ -951,8 +999,9 @@ def run_pipeline(
 
     raw_li = [_linkedin_to_record(x) for x in linkedin_items]
     raw_wd = [_workday_to_record(x) for x in workday_items]
-    raw_ats = ats_items  # already normalized by the ATS fetchers
-    all_raw = raw_li + raw_wd + raw_ats
+    raw_in = indeed_items   # already normalized by _scrape_indeed
+    raw_ats = ats_items     # already normalized by the ATS fetchers
+    all_raw = raw_li + raw_wd + raw_in + raw_ats
 
     apply_now, verify, excluded = _filter_and_score(
         all_raw, cutoff, custom_role_terms=custom_role_terms
@@ -990,6 +1039,12 @@ def run_pipeline(
             "verify": _by_src(verify, "Workday"),
             "excluded": _by_src(excluded, "Workday"),
         },
+        "indeed": {
+            "raw": len(raw_in),
+            "apply_now": _by_src(apply_now, "Indeed"),
+            "verify": _by_src(verify, "Indeed"),
+            "excluded": _by_src(excluded, "Indeed"),
+        },
         "ats_direct": {
             "raw": len(raw_ats),
             "apply_now": _ats_count(apply_now),
@@ -1006,6 +1061,7 @@ def run_pipeline(
         "raw_counts": {
             "linkedin": len(raw_li),
             "workday": len(raw_wd),
+            "indeed": len(raw_in),
             "ats_direct": len(raw_ats),
             "total": len(all_raw),
             "duplicates_dropped": duplicates_dropped,

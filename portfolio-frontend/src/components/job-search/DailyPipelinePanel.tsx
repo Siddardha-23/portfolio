@@ -819,7 +819,13 @@ export function DailyPipelinePanel({
                     : result.raw_counts.workday
                 }
               />
-              {result.source_breakdown?.ats_direct && (
+              {result.source_breakdown?.indeed && result.source_breakdown.indeed.raw > 0 && (
+                <SummaryBlock
+                  label="Indeed (kept / raw)"
+                  value={`${result.source_breakdown.indeed.apply_now + result.source_breakdown.indeed.verify} / ${result.source_breakdown.indeed.raw}`}
+                />
+              )}
+              {result.source_breakdown?.ats_direct && result.source_breakdown.ats_direct.raw > 0 && (
                 <SummaryBlock
                   label="ATS direct (kept / raw)"
                   value={`${result.source_breakdown.ats_direct.apply_now + result.source_breakdown.ats_direct.verify} / ${result.source_breakdown.ats_direct.raw}`}

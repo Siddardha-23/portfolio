@@ -555,6 +555,15 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             svc.complete_job(job_id, result)
 
         elif job_type == "daily_pipeline":
+            # Idempotency guard — Lambda async invocations are at-least-once,
+            # so AWS may retry the same job after a transient failure or long
+            # run. Re-running would duplicate paid Apify scrapes for the same
+            # logical pipeline. Bail out if this job already completed.
+            existing = svc.get_job(job_id, user_email=payload.get("user_email", ""))
+            if existing and existing.get("status") == "completed":
+                logger.info(f"Skipping daily_pipeline job {job_id}: already completed")
+                return
+
             from services.daily_pipeline_service import run_pipeline
 
             result = run_pipeline(

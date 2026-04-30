@@ -50,6 +50,7 @@ export interface DailyPipelineResult {
   raw_counts: {
     linkedin: number;
     workday: number;
+    indeed?: number;
     ats_direct?: number;
     total: number;
     duplicates_dropped?: number;
@@ -58,6 +59,7 @@ export interface DailyPipelineResult {
   source_breakdown?: {
     linkedin: DailyPipelineSourceCounts;
     workday: DailyPipelineSourceCounts;
+    indeed?: DailyPipelineSourceCounts;
     ats_direct?: DailyPipelineSourceCounts;
   };
   totals: { apply_now: number; verify_dates: number; excluded: number; phoenix: number };

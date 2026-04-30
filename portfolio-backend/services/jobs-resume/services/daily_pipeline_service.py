@@ -321,16 +321,15 @@ def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
         return []
     out: List[Dict[str, Any]] = []
     for j in items:
-        loc = (j.get("location") or {}).get("name") or ""
         out.append({
             "source": "Greenhouse",
             "company": display,
-            "title": (j.get("title") or "").strip(),
-            "location": loc,
+            "title": _clean_str(j.get("title")),
+            "location": _clean_str(j.get("location")),
             "posted": _normalize_posted(j.get("updated_at")),
             "salary": "—",
             "applicants": "",
-            "url": j.get("absolute_url") or "",
+            "url": _clean_str(j.get("absolute_url")),
             "description": "",
         })
     return out
@@ -349,7 +348,6 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for j in items:
         cats = j.get("categories") or {}
-        loc = cats.get("location") or ""
         # Lever createdAt is a ms epoch.
         posted_iso = ""
         ts = j.get("createdAt")
@@ -361,12 +359,12 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
         out.append({
             "source": "Lever",
             "company": display,
-            "title": (j.get("text") or "").strip(),
-            "location": loc,
+            "title": _clean_str(j.get("text")),
+            "location": _clean_str(cats.get("location") or cats.get("allLocations")),
             "posted": posted_iso,
             "salary": "—",
             "applicants": "",
-            "url": j.get("hostedUrl") or j.get("applyUrl") or "",
+            "url": _clean_str(j.get("hostedUrl") or j.get("applyUrl")),
             "description": "",
         })
     return out
@@ -384,18 +382,15 @@ def _fetch_ashby(slug: str, display: str) -> List[Dict[str, Any]]:
         return []
     out: List[Dict[str, Any]] = []
     for j in items:
-        loc = j.get("location") or j.get("locationName") or ""
-        if isinstance(loc, dict):
-            loc = loc.get("name") or ""
         out.append({
             "source": "Ashby",
             "company": display,
-            "title": (j.get("title") or "").strip(),
-            "location": loc,
+            "title": _clean_str(j.get("title")),
+            "location": _clean_str(j.get("location") or j.get("locationName")),
             "posted": _normalize_posted(j.get("publishedAt") or j.get("updatedAt")),
             "salary": "—",
             "applicants": "",
-            "url": j.get("jobUrl") or j.get("applyUrl") or "",
+            "url": _clean_str(j.get("jobUrl") or j.get("applyUrl")),
             "description": "",
         })
     return out
@@ -462,14 +457,14 @@ def _ats_apify_fallback(
     for j in items or []:
         out.append({
             "source": f"{label} (Apify)",
-            "company": (j.get("company") or j.get("companyName") or j.get("organization") or "").strip(),
-            "title": (j.get("title") or "").strip(),
-            "location": (j.get("location") or j.get("locationName") or "").strip(),
+            "company": _clean_str(j.get("company") or j.get("companyName") or j.get("organization")),
+            "title": _clean_str(j.get("title")),
+            "location": _clean_str(j.get("location") or j.get("locationName")),
             # spec note: posted_at is always null here — _normalize_posted("") -> ""
             "posted": _normalize_posted(j.get("posted_at") or j.get("posted") or j.get("createdAt")),
-            "salary": (j.get("salary") or j.get("salary_text") or "—") or "—",
+            "salary": _clean_str(j.get("salary") or j.get("salary_text")) or "—",
             "applicants": "",
-            "url": j.get("url") or j.get("job_url") or j.get("apply_url") or "",
+            "url": _clean_str(j.get("url") or j.get("job_url") or j.get("apply_url")),
             "description": "",
         })
     logger.info("[ats-apify-fallback] %s -> %d postings (covered %d companies)",
@@ -501,14 +496,14 @@ def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: in
         for j in items or []:
             out.append({
                 "source": "Indeed",
-                "company": (j.get("companyName") or j.get("company") or "").strip(),
-                "title": (j.get("jobTitle") or j.get("title") or "").strip(),
-                "location": (j.get("location") or "").strip(),
+                "company": _clean_str(j.get("companyName") or j.get("company")),
+                "title": _clean_str(j.get("jobTitle") or j.get("title")),
+                "location": _clean_str(j.get("location")),
                 "posted": _normalize_posted(j.get("date") or j.get("postedAt") or j.get("posted_at")),
-                "salary": (j.get("salary") or j.get("salary_text") or "—") or "—",
+                "salary": _clean_str(j.get("salary") or j.get("salary_text")) or "—",
                 "applicants": "",
-                "url": j.get("url") or j.get("jobUrl") or j.get("job_url") or "",
-                "description": (j.get("description") or j.get("jobDescription") or "")[:500],
+                "url": _clean_str(j.get("url") or j.get("jobUrl") or j.get("job_url")),
+                "description": _clean_str(j.get("description") or j.get("jobDescription"))[:500],
             })
     logger.info("[indeed] %d total postings across %d queries", len(out), len(qs))
     return out
@@ -560,8 +555,35 @@ def _scrape_in_parallel(
 # --------------------------------------------------------------------------
 # Normalization
 # --------------------------------------------------------------------------
-def _norm_company(s: str) -> str:
-    return (s or "").strip().lower()
+def _clean_str(value: Any) -> str:
+    """Coerce arbitrary actor-returned values into a clean string.
+
+    Apify/ATS responses occasionally return dicts ({"name": "..."} or
+    {"display": "..."}) or lists of strings where we expect a plain string,
+    which then crashes downstream `.strip()` / regex calls.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in ("name", "display", "displayName", "text", "value", "label"):
+            v = value.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return ""
+    if isinstance(value, (list, tuple)):
+        parts: List[str] = []
+        for item in value:
+            s = _clean_str(item)
+            if s:
+                parts.append(s)
+        return ", ".join(parts)
+    return str(value).strip()
+
+
+def _norm_company(s: Any) -> str:
+    return _clean_str(s).lower()
 
 
 _RELATIVE_TIME_RE = re.compile(
@@ -606,14 +628,14 @@ def _normalize_posted(raw: Any, now: Optional[datetime] = None) -> str:
 def _linkedin_to_record(j: dict) -> dict:
     return {
         "source": "LinkedIn",
-        "company": (j.get("companyName") or "").strip(),
-        "title": (j.get("title") or "").strip(),
-        "location": (j.get("location") or "").strip(),
+        "company": _clean_str(j.get("companyName")),
+        "title": _clean_str(j.get("title")),
+        "location": _clean_str(j.get("location")),
         "posted": _normalize_posted(j.get("postedAt") or j.get("postedDate") or j.get("listedAt")),
-        "salary": (j.get("salary") or "").strip() or "—",
+        "salary": _clean_str(j.get("salary")) or "—",
         "applicants": j.get("applicantsCount") or "",
-        "url": j.get("link") or "",
-        "description": j.get("descriptionText") or "",
+        "url": _clean_str(j.get("link")),
+        "description": _clean_str(j.get("descriptionText")),
     }
 
 
@@ -667,14 +689,14 @@ def _workday_to_record(j: dict) -> dict:
     )
     return {
         "source": "Workday",
-        "company": (j.get("organization") or j.get("aiOrganization") or j.get("company") or "").strip(),
-        "title": (j.get("title") or j.get("aiTitle") or "").strip(),
-        "location": location,
+        "company": _clean_str(j.get("organization") or j.get("aiOrganization") or j.get("company")),
+        "title": _clean_str(j.get("title") or j.get("aiTitle")),
+        "location": _clean_str(location),
         "posted": _normalize_posted(posted_raw),
         "salary": salary,
         "applicants": "",
-        "url": j.get("url") or j.get("link") or "",
-        "description": (j.get("description") or j.get("aiDescription") or "")[:500],
+        "url": _clean_str(j.get("url") or j.get("link")),
+        "description": _clean_str(j.get("description") or j.get("aiDescription"))[:500],
     }
 
 
@@ -682,7 +704,7 @@ def _workday_to_record(j: dict) -> dict:
 # Filters / scoring
 # --------------------------------------------------------------------------
 def _is_us(rec: dict) -> bool:
-    loc = (rec["location"] or "").lower()
+    loc = _clean_str(rec.get("location")).lower()
     if not loc:
         return True
     if "united states" in loc or "usa" in loc or "remote" in loc:
@@ -711,13 +733,13 @@ _STAFFING_HINT = re.compile(
 
 
 def _blocked_company(rec: dict) -> Optional[str]:
-    c = _norm_company(rec["company"])
+    c = _norm_company(rec.get("company"))
     for bs in BODY_SHOPS:
         if bs in c:
             return f"body-shop:{bs}"
     # Generic staffing/recruiting hint anywhere in the company name —
     # catches the long tail of LLCs we haven't curated by name.
-    if _STAFFING_HINT.search(rec["company"] or "") or _STAFFING_HINT.search(rec["description"] or ""):
+    if _STAFFING_HINT.search(_clean_str(rec.get("company"))) or _STAFFING_HINT.search(_clean_str(rec.get("description"))):
         return "staffing/recruiting agency"
     return None
 
@@ -730,8 +752,8 @@ _SUMMER_2026_RE = re.compile(
 
 def _opt_body_shop_reason(rec: dict) -> Optional[str]:
     """Drop low-pay 'OPT-friendly' postings — common with shady consultancies."""
-    desc = (rec.get("description") or "").lower()
-    salary = rec.get("salary") or ""
+    desc = _clean_str(rec.get("description")).lower()
+    salary = _clean_str(rec.get("salary"))
     if "opt" not in desc:
         return None
     # Pull the largest dollar figure we can find from the salary string.
@@ -749,8 +771,8 @@ def _opt_body_shop_reason(rec: dict) -> Optional[str]:
 
 def _summer_intern_block(rec: dict) -> Optional[str]:
     """Hard-exclude Summer/May/June 2026 internship starts — collide with OPT EAD start."""
-    title = rec.get("title") or ""
-    desc = (rec.get("description") or "")
+    title = _clean_str(rec.get("title"))
+    desc = _clean_str(rec.get("description"))
     if not INTERN_TITLE.search(title):
         return None
     if _SUMMER_2026_RE.search(title) or _SUMMER_2026_RE.search(desc):
@@ -768,28 +790,30 @@ def _ghost_job_reason(rec: dict) -> Optional[str]:
     if apc >= 500:
         return f"saturated posting ({apc}+ applicants)"
     # Reposted-from-old indicator on LinkedIn descriptions
-    desc = (rec.get("description") or "").lower()
+    desc = _clean_str(rec.get("description")).lower()
     if "reposted" in desc and ("month" in desc or "30 days" in desc):
         return "reposted (likely stale / ghost)"
     return None
 
 
 def _clearance_block(rec: dict) -> Optional[str]:
-    c = _norm_company(rec["company"])
+    c = _norm_company(rec.get("company"))
     for cl in CLEARANCE_COMPANIES:
         if cl in c:
             return f"clearance-co:{cl}"
-    if CLEARANCE_TEXT.search(rec["title"]) or CLEARANCE_TEXT.search(rec["description"]):
+    title = _clean_str(rec.get("title"))
+    desc = _clean_str(rec.get("description"))
+    if CLEARANCE_TEXT.search(title) or CLEARANCE_TEXT.search(desc):
         return "clearance-required"
     return None
 
 
 def _healthcare_noise(rec: dict) -> Optional[str]:
-    return "off-domain (healthcare/non-tech)" if HEALTHCARE_NOISE_TITLE.search(rec["title"]) else None
+    return "off-domain (healthcare/non-tech)" if HEALTHCARE_NOISE_TITLE.search(_clean_str(rec.get("title"))) else None
 
 
 def _role_match(rec: dict, custom_role_terms: Optional[List[str]] = None) -> List[str]:
-    t = rec["title"]
+    t = _clean_str(rec.get("title"))
     out: List[str] = []
     if CLOUD_TITLE.search(t): out.append("Cloud/DevOps/SRE")
     if BACKEND_TITLE.search(t): out.append("Backend")
@@ -810,9 +834,9 @@ def _role_match(rec: dict, custom_role_terms: Optional[List[str]] = None) -> Lis
 def _score(rec: dict, today_iso: Optional[str] = None) -> Tuple[int, List[str]]:
     s = 50
     flags: List[str] = []
-    title = rec["title"]
-    company = _norm_company(rec["company"])
-    location = rec.get("location") or ""
+    title = _clean_str(rec.get("title"))
+    company = _norm_company(rec.get("company"))
+    location = _clean_str(rec.get("location"))
 
     if any(sp in company for sp in H1B_SPONSORS): s += 30; flags.append("H1B-sponsor")
     if any(ai in company for ai in AI_NATIVE):    s += 20; flags.append("AI-native")

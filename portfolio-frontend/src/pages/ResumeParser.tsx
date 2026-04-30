@@ -5784,6 +5784,19 @@ export default function ResumeParser() {
     setUserMenuOpen(false);
   }, []);
 
+  // Track which tabs the user has visited so we can keep heavy tabs (Tailor,
+  // Jobs) mounted in the background. Without this, switching tabs unmounts
+  // <TailorTab /> mid-run — the tailor request still completes in the network
+  // stack, but its setResult lands on a dead component, and on remount the
+  // user sees a blank tailor view. Keeping mounted preserves state and lets
+  // in-flight async finish into the live component.
+  const [visitedTabs, setVisitedTabs] = useState<Set<NavTab>>(() => new Set([activeNav]));
+  useEffect(() => {
+    setVisitedTabs((prev) => (prev.has(activeNav) ? prev : new Set([...prev, activeNav])));
+  }, [activeNav]);
+  const isVisible = (tab: NavTab) => activeNav === tab;
+  const wasVisited = (tab: NavTab) => visitedTabs.has(tab);
+
   // Allow child components to request navigation hops without prop drilling.
   useEffect(() => {
     const toJobs = () => selectNav('jobs');
@@ -6055,7 +6068,14 @@ export default function ResumeParser() {
 
             <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
               <div className="mx-auto max-w-[1500px]">
-              {activeNav === "tailor" && <TailorTab />}
+              {/* Tailor + Jobs stay mounted once visited so an in-flight tailor
+                  or pipeline run doesn't drop its results when the user switches
+                  away mid-run. Other tabs unmount as before. */}
+              {wasVisited("tailor") && (
+                <div style={{ display: isVisible("tailor") ? undefined : "none" }}>
+                  <TailorTab />
+                </div>
+              )}
               {activeNav === "batch" && (
                 <Suspense
                   fallback={
@@ -6065,16 +6085,18 @@ export default function ResumeParser() {
                   <BatchTailor />
                 </Suspense>
               )}
-              {activeNav === "jobs" && (
-                <Suspense
-                  fallback={
-                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
-                    </div>
-                  }
-                >
-                  <JobOpportunitiesTab />
-                </Suspense>
+              {wasVisited("jobs") && (
+                <div style={{ display: isVisible("jobs") ? undefined : "none" }}>
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                        <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
+                      </div>
+                    }
+                  >
+                    <JobOpportunitiesTab />
+                  </Suspense>
+                </div>
               )}
               {activeNav === "my-resumes" && <MyResumesTab />}
               {activeNav === "tailored" && <TailoredResumesTab />}

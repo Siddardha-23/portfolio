@@ -47,11 +47,18 @@ export interface DailyPipelineResult {
   generated_at: string;
   past_days: number;
   cutoff: string;
-  raw_counts: { linkedin: number; workday: number; total: number };
+  raw_counts: {
+    linkedin: number;
+    workday: number;
+    ats_direct?: number;
+    total: number;
+    duplicates_dropped?: number;
+  };
   tier_counts: { tier_1: number; tier_2: number; tier_3: number };
   source_breakdown?: {
     linkedin: DailyPipelineSourceCounts;
     workday: DailyPipelineSourceCounts;
+    ats_direct?: DailyPipelineSourceCounts;
   };
   totals: { apply_now: number; verify_dates: number; excluded: number; phoenix: number };
   apply_now: DailyPipelineRecord[];

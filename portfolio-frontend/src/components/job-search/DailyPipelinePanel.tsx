@@ -29,6 +29,8 @@ const DEFAULT_LINKEDIN_KEYWORDS = [
   'full stack engineer AI',
   'backend engineer Python AWS',
   'agentic AI engineer new grad',
+  'software engineer new grad entry level',
+  'associate software engineer h1b sponsor',
 ];
 
 const DEFAULT_WORKDAY_TITLES = [
@@ -817,6 +819,12 @@ export function DailyPipelinePanel({
                     : result.raw_counts.workday
                 }
               />
+              {result.source_breakdown?.ats_direct && (
+                <SummaryBlock
+                  label="ATS direct (kept / raw)"
+                  value={`${result.source_breakdown.ats_direct.apply_now + result.source_breakdown.ats_direct.verify} / ${result.source_breakdown.ats_direct.raw}`}
+                />
+              )}
               <SummaryBlock
                 label="Remaining to apply"
                 value={remainingApply}

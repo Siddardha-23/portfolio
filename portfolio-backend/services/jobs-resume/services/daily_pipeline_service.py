@@ -37,12 +37,53 @@ logger = logging.getLogger(__name__)
 LINKEDIN_ACTOR = "curious_coder~linkedin-jobs-scraper"
 WORKDAY_ACTOR = "fantastic-jobs~workday-jobs-api"
 
+# Source 5 — Direct ATS APIs (free, no Apify, no auth). Each tuple is (slug,
+# display name) for the public job-board endpoints. Operators can extend these
+# lists; failures on a single slug are logged and skipped.
+# (slug, display name, domain) — domain is used by the Source-4 Apify
+# fallback when our direct slug guess for Source 5 misses the board.
+DEFAULT_GREENHOUSE_SLUGS = [
+    ("anthropic", "Anthropic", "anthropic.com"),
+    ("openai", "OpenAI", "openai.com"),
+    ("notion", "Notion", "notion.so"),
+    ("scaleai", "Scale AI", "scale.com"),
+    ("snorkelai", "Snorkel AI", "snorkel.ai"),
+    ("glean", "Glean", "glean.com"),
+    ("stripe", "Stripe", "stripe.com"),
+    ("procoretechnologies", "Procore", "procore.com"),
+    ("cohere", "Cohere", "cohere.com"),
+]
+DEFAULT_LEVER_SLUGS = [
+    ("ramp", "Ramp", "ramp.com"),
+    ("brex", "Brex", "brex.com"),
+    ("rippling", "Rippling", "rippling.com"),
+    ("happyrobot", "HappyRobot", "happyrobot.ai"),
+    ("taktile", "Taktile", "taktile.com"),
+]
+DEFAULT_ASHBY_SLUGS = [
+    ("cognitionai", "Cognition", "cognition.ai"),
+    ("decagon", "Decagon", "decagon.ai"),
+    ("sierra", "Sierra", "sierra.ai"),
+    ("harvey", "Harvey", "harvey.ai"),
+]
+
+# Source 4 fallback — Apify actor used when Source 5 (direct ATS APIs)
+# returned no postings for a configured company. Hard-coded here so the
+# fallback is always available whenever the Apify token is present.
+_ATS_APIFY_ACTOR = "enosgb~ats-job-scraper"
+
+
+def _ats_apify_actor_id() -> str:
+    return _ATS_APIFY_ACTOR
+
 DEFAULT_LINKEDIN_KEYWORD_SETS = [
     "Cloud Engineer DevOps",
     "Site Reliability Platform Engineer",
     "full stack engineer AI",
     "backend engineer Python AWS",
     "agentic AI engineer new grad",
+    "software engineer new grad entry level",
+    "associate software engineer h1b sponsor",
 ]
 
 DEFAULT_WORKDAY_TITLES = [
@@ -259,6 +300,174 @@ def _build_linkedin_url(keywords: str, past_days: int) -> str:
     )
 
 
+def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
+    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+    try:
+        r = requests.get(url, timeout=10)
+        if not r.ok:
+            return []
+        items = (r.json() or {}).get("jobs") or []
+    except Exception as e:
+        logger.warning("Greenhouse %s failed: %s", slug, e)
+        return []
+    out: List[Dict[str, Any]] = []
+    for j in items:
+        loc = (j.get("location") or {}).get("name") or ""
+        out.append({
+            "source": "Greenhouse",
+            "company": display,
+            "title": (j.get("title") or "").strip(),
+            "location": loc,
+            "posted": _normalize_posted(j.get("updated_at")),
+            "salary": "—",
+            "applicants": "",
+            "url": j.get("absolute_url") or "",
+            "description": "",
+        })
+    return out
+
+
+def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
+    url = f"https://api.lever.co/v0/postings/{slug}?mode=json"
+    try:
+        r = requests.get(url, timeout=10)
+        if not r.ok:
+            return []
+        items = r.json() or []
+    except Exception as e:
+        logger.warning("Lever %s failed: %s", slug, e)
+        return []
+    out: List[Dict[str, Any]] = []
+    for j in items:
+        cats = j.get("categories") or {}
+        loc = cats.get("location") or ""
+        # Lever createdAt is a ms epoch.
+        posted_iso = ""
+        ts = j.get("createdAt")
+        if isinstance(ts, (int, float)) and ts > 0:
+            try:
+                posted_iso = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        out.append({
+            "source": "Lever",
+            "company": display,
+            "title": (j.get("text") or "").strip(),
+            "location": loc,
+            "posted": posted_iso,
+            "salary": "—",
+            "applicants": "",
+            "url": j.get("hostedUrl") or j.get("applyUrl") or "",
+            "description": "",
+        })
+    return out
+
+
+def _fetch_ashby(slug: str, display: str) -> List[Dict[str, Any]]:
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+    try:
+        r = requests.get(url, timeout=10)
+        if not r.ok:
+            return []
+        items = (r.json() or {}).get("jobs") or []
+    except Exception as e:
+        logger.warning("Ashby %s failed: %s", slug, e)
+        return []
+    out: List[Dict[str, Any]] = []
+    for j in items:
+        loc = j.get("location") or j.get("locationName") or ""
+        if isinstance(loc, dict):
+            loc = loc.get("name") or ""
+        out.append({
+            "source": "Ashby",
+            "company": display,
+            "title": (j.get("title") or "").strip(),
+            "location": loc,
+            "posted": _normalize_posted(j.get("publishedAt") or j.get("updatedAt")),
+            "salary": "—",
+            "applicants": "",
+            "url": j.get("jobUrl") or j.get("applyUrl") or "",
+            "description": "",
+        })
+    return out
+
+
+def _scrape_ats_direct(
+    greenhouse: Optional[List[Tuple[str, str, str]]] = None,
+    lever: Optional[List[Tuple[str, str, str]]] = None,
+    ashby: Optional[List[Tuple[str, str, str]]] = None,
+) -> List[Dict[str, Any]]:
+    """Fan out to Greenhouse / Lever / Ashby in parallel and merge results."""
+    gh = greenhouse if greenhouse is not None else DEFAULT_GREENHOUSE_SLUGS
+    lv = lever if lever is not None else DEFAULT_LEVER_SLUGS
+    ab = ashby if ashby is not None else DEFAULT_ASHBY_SLUGS
+    tasks = []
+    out: List[Dict[str, Any]] = []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for slug, name, _domain in gh:
+            tasks.append(pool.submit(_fetch_greenhouse, slug, name))
+        for slug, name, _domain in lv:
+            tasks.append(pool.submit(_fetch_lever, slug, name))
+        for slug, name, _domain in ab:
+            tasks.append(pool.submit(_fetch_ashby, slug, name))
+        for fut in tasks:
+            try:
+                out.extend(fut.result(timeout=15))
+            except Exception as e:
+                logger.warning("ATS fetch worker failed: %s", e)
+    logger.info("[ats-direct] fetched %d total postings", len(out))
+    return out
+
+
+def _ats_apify_fallback(
+    missing_companies: List[Tuple[str, str, str]],
+    ats_type: str,
+    token: str,
+    max_per_company: int = 50,
+) -> List[Dict[str, Any]]:
+    """Run the Source-4 Apify ATS actor for companies that Source 5 missed.
+
+    No-ops cleanly when APIFY_ATS_ACTOR isn't configured, the token is empty,
+    or there's nothing to fetch. Per the spec caveats: posted_at is always
+    null on this actor, so we route everything through _normalize_posted (which
+    returns "" for missing dates and the cutoff filter then keeps it). We do
+    not pass `filters.keywords` — Python-side filtering does the work.
+    """
+    actor = _ats_apify_actor_id()
+    if not actor or not missing_companies or not token:
+        return []
+    payload = {
+        "ats_override": ats_type,
+        "include_description": False,
+        "include_salary": True,
+        "max_jobs_per_company": max_per_company,
+        "companies": [{"name": name, "domain": domain} for _slug, name, domain in missing_companies],
+    }
+    try:
+        items = _run_actor(actor, payload, token, timeout_s=300)
+    except Exception as e:
+        logger.warning("ATS Apify fallback (%s) failed: %s", ats_type, e)
+        return []
+    out: List[Dict[str, Any]] = []
+    label = ats_type.capitalize()
+    for j in items or []:
+        out.append({
+            "source": f"{label} (Apify)",
+            "company": (j.get("company") or j.get("companyName") or j.get("organization") or "").strip(),
+            "title": (j.get("title") or "").strip(),
+            "location": (j.get("location") or j.get("locationName") or "").strip(),
+            # spec note: posted_at is always null here — _normalize_posted("") -> ""
+            "posted": _normalize_posted(j.get("posted_at") or j.get("posted") or j.get("createdAt")),
+            "salary": (j.get("salary") or j.get("salary_text") or "—") or "—",
+            "applicants": "",
+            "url": j.get("url") or j.get("job_url") or j.get("apply_url") or "",
+            "description": "",
+        })
+    logger.info("[ats-apify-fallback] %s -> %d postings (covered %d companies)",
+                ats_type, len(out), len(missing_companies))
+    return out
+
+
 def _scrape_in_parallel(
     token: str,
     linkedin_keywords: List[str],
@@ -432,6 +641,9 @@ def _is_us(rec: dict) -> bool:
         return True
     if "united states" in loc or "usa" in loc or "remote" in loc:
         return True
+    # Standalone "US" / "U.S." / "U.S.A." tokens
+    if re.search(r"\b(us|u\.s\.|u\.s\.a\.)\b", loc):
+        return True
     return bool(
         re.search(r",\s*[a-z]{2}\b", loc)
         or re.search(
@@ -461,6 +673,42 @@ def _blocked_company(rec: dict) -> Optional[str]:
     # catches the long tail of LLCs we haven't curated by name.
     if _STAFFING_HINT.search(rec["company"] or "") or _STAFFING_HINT.search(rec["description"] or ""):
         return "staffing/recruiting agency"
+    return None
+
+
+_SUMMER_2026_RE = re.compile(
+    r"\b(summer\s*2026|may\s*2026|june\s*2026|jun\s*2026|2026\s+summer)\b",
+    re.IGNORECASE,
+)
+
+
+def _opt_body_shop_reason(rec: dict) -> Optional[str]:
+    """Drop low-pay 'OPT-friendly' postings — common with shady consultancies."""
+    desc = (rec.get("description") or "").lower()
+    salary = rec.get("salary") or ""
+    if "opt" not in desc:
+        return None
+    # Pull the largest dollar figure we can find from the salary string.
+    nums = re.findall(r"\$?\s*([\d]{2,3}(?:[, ]\d{3})*|[\d]{4,6})", salary)
+    cleaned: List[int] = []
+    for n in nums:
+        try:
+            cleaned.append(int(n.replace(",", "").replace(" ", "")))
+        except ValueError:
+            continue
+    if cleaned and max(cleaned) < 70_000:
+        return f"OPT body-shop pattern (salary < $70K + 'OPT' in description)"
+    return None
+
+
+def _summer_intern_block(rec: dict) -> Optional[str]:
+    """Hard-exclude Summer/May/June 2026 internship starts — collide with OPT EAD start."""
+    title = rec.get("title") or ""
+    desc = (rec.get("description") or "")
+    if not INTERN_TITLE.search(title):
+        return None
+    if _SUMMER_2026_RE.search(title) or _SUMMER_2026_RE.search(desc):
+        return "summer-2026 intern (OPT EAD timing conflict)"
     return None
 
 
@@ -539,7 +787,11 @@ def _score(rec: dict, today_iso: Optional[str] = None) -> Tuple[int, List[str]]:
     if today_iso and rec.get("posted") == today_iso:
         s += 5; flags.append("Fresh today")
     if SENIORITY_BAD.search(title):       s -= 25; flags.append("senior-ish")
-    if re.search(r"\b(II|III|IV)\b", title): s -= 25; flags.append("level II+")
+    # Catch roman numerals II/III/IV AND arabic 2/3/4 in titles like
+    # "SDE 2", "SWE 3", "Software Engineer 2". Allow "I" and "1" through
+    # because those are early-career.
+    if re.search(r"\b(II|III|IV)\b|\b(SDE|SWE|Software Engineer)\s*[234]\b", title, re.IGNORECASE):
+        s -= 25; flags.append("level II+")
     if CLEARANCE_TEXT.search(title):      s -= 40; flags.append("clearance")
     return s, flags
 
@@ -611,6 +863,10 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _clearance_block(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
+        if (why := _summer_intern_block(r)):
+            excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
+        if (why := _opt_body_shop_reason(r)):
+            excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         roles = _role_match(r, custom_role_terms=custom_role_terms)
         if not roles:
             excluded.append({**r, "reason": "no role-family match",
@@ -655,18 +911,48 @@ def run_pipeline(
     today = datetime.now(timezone.utc)
     cutoff = (today - timedelta(days=past_days)).strftime("%Y-%m-%d")
 
-    linkedin_items, workday_items, errors = _scrape_in_parallel(
-        token=token,
-        linkedin_keywords=li_kw or DEFAULT_LINKEDIN_KEYWORD_SETS,
-        workday_titles=wd_titles or DEFAULT_WORKDAY_TITLES,
-        past_days=past_days,
-        linkedin_count=linkedin_count,
-        workday_limit=workday_limit,
-    )
+    # Run Apify scrape and direct-ATS in parallel — ATS APIs have no Apify
+    # dependency, so they keep delivering even if the Apify token is missing
+    # or an actor is rate-limited.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_apify = pool.submit(
+            _scrape_in_parallel,
+            token=token,
+            linkedin_keywords=li_kw or DEFAULT_LINKEDIN_KEYWORD_SETS,
+            workday_titles=wd_titles or DEFAULT_WORKDAY_TITLES,
+            past_days=past_days,
+            linkedin_count=linkedin_count,
+            workday_limit=workday_limit,
+        )
+        f_ats = pool.submit(_scrape_ats_direct)
+        linkedin_items, workday_items, errors = f_apify.result()
+        ats_items = f_ats.result()
+
+    # Source-4 fallback: only fire for companies that returned 0 postings from
+    # Source 5 (direct API). When APIFY_ATS_ACTOR is unset, _ats_apify_fallback
+    # returns []. Still gated by the existing Apify token.
+    if token and _ats_apify_actor_id():
+        def _missing(slugs: List[Tuple[str, str, str]], label: str) -> List[Tuple[str, str, str]]:
+            seen = {(r.get("company") or "").strip().lower() for r in ats_items if r.get("source") == label}
+            return [t for t in slugs if t[1].lower() not in seen]
+
+        fallback_jobs: List[Dict[str, Any]] = []
+        for slugs, ats_type, label in (
+            (DEFAULT_GREENHOUSE_SLUGS, "greenhouse", "Greenhouse"),
+            (DEFAULT_LEVER_SLUGS, "lever", "Lever"),
+            (DEFAULT_ASHBY_SLUGS, "ashby", "Ashby"),
+        ):
+            missing = _missing(slugs, label)
+            if missing:
+                fallback_jobs.extend(_ats_apify_fallback(missing, ats_type, token))
+        if fallback_jobs:
+            logger.info("[ats-direct] Apify fallback added %d postings", len(fallback_jobs))
+            ats_items.extend(fallback_jobs)
 
     raw_li = [_linkedin_to_record(x) for x in linkedin_items]
     raw_wd = [_workday_to_record(x) for x in workday_items]
-    all_raw = raw_li + raw_wd
+    raw_ats = ats_items  # already normalized by the ATS fetchers
+    all_raw = raw_li + raw_wd + raw_ats
 
     apply_now, verify, excluded = _filter_and_score(
         all_raw, cutoff, custom_role_terms=custom_role_terms
@@ -683,6 +969,14 @@ def run_pipeline(
     def _by_src(rows: List[dict], src: str) -> int:
         return sum(1 for r in rows if (r.get("source") or "").lower() == src.lower())
 
+    _ATS_SOURCES = {
+        "Greenhouse", "Lever", "Ashby",
+        "Greenhouse (Apify)", "Lever (Apify)", "Ashby (Apify)",
+    }
+
+    def _ats_count(rows: List[dict]) -> int:
+        return sum(1 for r in rows if (r.get("source") or "") in _ATS_SOURCES)
+
     source_breakdown = {
         "linkedin": {
             "raw": len(raw_li),
@@ -696,6 +990,12 @@ def run_pipeline(
             "verify": _by_src(verify, "Workday"),
             "excluded": _by_src(excluded, "Workday"),
         },
+        "ats_direct": {
+            "raw": len(raw_ats),
+            "apply_now": _ats_count(apply_now),
+            "verify": _ats_count(verify),
+            "excluded": _ats_count(excluded),
+        },
     }
 
     return {
@@ -706,6 +1006,7 @@ def run_pipeline(
         "raw_counts": {
             "linkedin": len(raw_li),
             "workday": len(raw_wd),
+            "ats_direct": len(raw_ats),
             "total": len(all_raw),
             "duplicates_dropped": duplicates_dropped,
         },

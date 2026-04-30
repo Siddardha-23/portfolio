@@ -185,6 +185,8 @@ interface PersistedState {
   resultAt: number | null;
   appliedIds: string[];
   showApplied: boolean;
+  workdayLimit?: number;
+  linkedinCount?: number;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -445,6 +447,8 @@ export function DailyPipelinePanel({
   const [customRoles, setCustomRoles] = useState<string[]>(persisted?.customRoles ?? []);
   const [pastDays, setPastDays] = useState(persisted?.pastDays ?? 1);
   const [showAdvanced, setShowAdvanced] = useState(persisted?.showAdvanced ?? false);
+  const [workdayLimit, setWorkdayLimit] = useState<number>(persisted?.workdayLimit ?? 300);
+  const [linkedinCount, setLinkedinCount] = useState<number>(persisted?.linkedinCount ?? 80);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -469,8 +473,10 @@ export function DailyPipelinePanel({
       resultAt,
       appliedIds,
       showApplied,
+      workdayLimit,
+      linkedinCount,
     });
-  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied]);
+  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount]);
 
   // Consume incoming smart-filter suggestions
   useEffect(() => {
@@ -497,6 +503,8 @@ export function DailyPipelinePanel({
       workday_titles: workdayTitles,
       custom_role_terms: customRoles,
       past_days: pastDays,
+      workday_limit: workdayLimit,
+      linkedin_count: linkedinCount,
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -752,7 +760,47 @@ export function DailyPipelinePanel({
           </Button>
 
           {showAdvanced && (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Per-source recall caps (raise for slow days, lower to save Apify credits)
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">LinkedIn jobs / phrase</label>
+                    <Select value={String(linkedinCount)} onValueChange={(v) => setLinkedinCount(Number(v))}>
+                      <SelectTrigger className="focus:border-purple-500/40 focus:ring-purple-500/40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="40">40 (fast)</SelectItem>
+                        <SelectItem value="80">80 (default)</SelectItem>
+                        <SelectItem value="120">120</SelectItem>
+                        <SelectItem value="200">200</SelectItem>
+                        <SelectItem value="250">250 (max)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-muted-foreground">Workday total limit</label>
+                    <Select value={String(workdayLimit)} onValueChange={(v) => setWorkdayLimit(Number(v))}>
+                      <SelectTrigger className="focus:border-purple-500/40 focus:ring-purple-500/40">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="100">100 (fast)</SelectItem>
+                        <SelectItem value="200">200</SelectItem>
+                        <SelectItem value="300">300 (default)</SelectItem>
+                        <SelectItem value="500">500</SelectItem>
+                        <SelectItem value="800">800 (max)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Higher caps return more raw rows. Filtering accuracy stays the same — only recall changes.
+                </p>
+              </div>
               <div className="space-y-1.5">
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   <Globe className="mr-1 inline h-3 w-3" />

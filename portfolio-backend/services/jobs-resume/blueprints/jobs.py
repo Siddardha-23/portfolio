@@ -353,13 +353,13 @@ def daily_pipeline():
     custom_role_terms = _split_lines(data.get("custom_role_terms"), max_items=20, max_len=80)
 
     try:
-        linkedin_count = max(10, min(int(data.get("linkedin_count") or 80), 200))
+        linkedin_count = max(10, min(int(data.get("linkedin_count") or 80), 250))
     except (TypeError, ValueError):
         linkedin_count = 80
     try:
-        workday_limit = max(20, min(int(data.get("workday_limit") or 200), 500))
+        workday_limit = max(20, min(int(data.get("workday_limit") or 300), 800))
     except (TypeError, ValueError):
-        workday_limit = 200
+        workday_limit = 300
 
     user_email = get_jwt_identity()
     payload = {

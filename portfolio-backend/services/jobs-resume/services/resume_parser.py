@@ -359,7 +359,10 @@ class ResumeParser:
         """
         from services.gemini_client import gemini_json, GEMINI_FLASH
         import base64
+        import time
         from google.genai import types
+
+        t0 = time.perf_counter()
 
         # ---- Local pre-extraction (text layer + PDF /Annots / DOCX rels) ----
         # Doing this locally cuts the dominant cost (Gemini transcribing the
@@ -368,6 +371,7 @@ class ResumeParser:
         # and we transparently fall back to the legacy FULL prompt path.
         local_text = ""
         local_urls: list = []
+        local_extract_status = "skipped"  # one of: skipped | ok | unhealthy | error | unavailable
         if file_base64:
             try:
                 from services.text_extractor import (
@@ -381,6 +385,7 @@ class ResumeParser:
                 local_text_clean = clean_extracted_text(local_text_raw)
                 if is_text_healthy(local_text_clean):
                     local_text = local_text_clean
+                    local_extract_status = "ok"
                     logger.info(
                         "Resume parse: local extraction OK (%d chars, %d links) — "
                         "using slim Gemini prompt",
@@ -388,14 +393,18 @@ class ResumeParser:
                         len(local_urls),
                     )
                 else:
-                    logger.info(
-                        "Resume parse: local extraction yielded %d chars (insufficient) — "
-                        "falling back to full Gemini transcription",
+                    local_extract_status = "unhealthy"
+                    logger.warning(
+                        "Resume parse: local extraction yielded %d chars (unhealthy) — "
+                        "falling back to FULL Gemini transcription. "
+                        "If this happens often, check pypdf install and PDF text layer.",
                         len(local_text_clean) if local_text_clean else 0,
                     )
             except Exception as e:
+                local_extract_status = "error"
                 logger.warning("Local pre-extraction failed, falling back to LLM: %s", e)
 
+        t_local = time.perf_counter()
         use_slim = bool(local_text)
 
         # Build multi-modal or text-only parts for the API call
@@ -412,6 +421,8 @@ class ResumeParser:
             temperature=0.2,  # Low temp for factual extraction
             model=GEMINI_FLASH,
         )
+
+        t_gemini = time.perf_counter()
 
         # In slim mode the model is instructed not to emit these, but be
         # defensive: pop them either way so they don't leak into the schema.
@@ -461,6 +472,26 @@ class ResumeParser:
         from services.title_normalizer import normalize_titles
 
         result = normalize_titles(result)
+
+        # ---- Single-line timing summary ----
+        # Look for this in production logs to diagnose slow parses. If
+        # `path=full` here, the slim optimization was bypassed (most likely
+        # cause: pypdf not installed in the runtime, or the PDF has no text
+        # layer / encrypted / etc.). If `path=slim` but total > ~30s, the
+        # cost is in Gemini-side latency, not local extraction.
+        t_end = time.perf_counter()
+        logger.info(
+            "RESUME_PARSE_TIMING path=%s local_extract=%s local_ms=%d "
+            "gemini_ms=%d post_ms=%d total_ms=%d local_chars=%d local_urls=%d",
+            "slim" if use_slim else "full",
+            local_extract_status,
+            int((t_local - t0) * 1000),
+            int((t_gemini - t_local) * 1000),
+            int((t_end - t_gemini) * 1000),
+            int((t_end - t0) * 1000),
+            len(local_text),
+            len(local_urls),
+        )
 
         return result, effective_raw_text
 

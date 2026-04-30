@@ -1719,10 +1719,17 @@ def upload():
         svc = get_resume_service()
 
         # Cache hit: same file already uploaded by this user AND already parsed.
+        # Cheap check FIRST: only load the (potentially large) parsed structured
+        # doc when a base hit exists. On cache misses this avoids a full doc
+        # fetch per upload.
         existing_base = db.user_resumes.find_one(
             {"user_email": user_email, "type": "base", "content_hash": content_hash}
         )
-        existing_structured = svc.parser.get_structured_resume(user_email=user_email)
+        existing_structured = (
+            svc.parser.get_structured_resume(user_email=user_email)
+            if existing_base and existing_base.get("s3_key")
+            else None
+        )
         if (
             existing_base
             and existing_base.get("s3_key")

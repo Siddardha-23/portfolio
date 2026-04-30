@@ -25,6 +25,12 @@ export interface DailyPipelineParams {
   workday_limit?: number;
 }
 
+export interface ApifyKeyStatus {
+  has_key: boolean;
+  masked?: string;
+  updated_at?: string | null;
+}
+
 export interface SmartFilterSuggestions {
   headline: string;
   rationale: string;

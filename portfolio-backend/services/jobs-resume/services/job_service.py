@@ -212,6 +212,7 @@ class JobService:
         self.user_resumes = self.db.user_resumes
         self.saved_jobs = self.db.saved_jobs
         self.job_filter_preferences = self.db.job_filter_preferences
+        self.user_apify_keys = self.db.user_apify_keys
         self._ensure_indexes()
 
     def _ensure_indexes(self):
@@ -228,8 +229,79 @@ class JobService:
             )
             self.saved_jobs.create_index("job_id", unique=True)
             self.job_filter_preferences.create_index("user_email", unique=True)
+            self.user_apify_keys.create_index("user_email", unique=True)
         except Exception as e:
             logger.warning(f"Index creation warning: {e}")
+
+    # ------------------------------------------------------------------
+    # Per-user Apify key (BYO-key — falls back to the shared SSM/env key)
+    # ------------------------------------------------------------------
+
+    def get_user_apify_key(self, user_email: str) -> Optional[str]:
+        """Return the raw stored key for use by the pipeline; never sent to UI."""
+        if not user_email:
+            return None
+        try:
+            doc = self.user_apify_keys.find_one({"user_email": user_email})
+            if doc and isinstance(doc.get("apify_key"), str) and doc["apify_key"].strip():
+                return doc["apify_key"].strip()
+        except Exception as e:
+            logger.warning(f"get_user_apify_key failed for {user_email}: {e}")
+        return None
+
+    def get_user_apify_key_status(self, user_email: str) -> Dict[str, Any]:
+        """Public-safe view: has_key + masked tail + updated_at."""
+        if not user_email:
+            return {"has_key": False}
+        try:
+            doc = self.user_apify_keys.find_one({"user_email": user_email})
+        except Exception as e:
+            logger.warning(f"get_user_apify_key_status failed for {user_email}: {e}")
+            return {"has_key": False}
+        if not doc or not doc.get("apify_key"):
+            return {"has_key": False}
+        key = str(doc["apify_key"])
+        masked = ("•" * 8 + key[-4:]) if len(key) >= 4 else "••••"
+        updated = doc.get("updated_at")
+        return {
+            "has_key": True,
+            "masked": masked,
+            "updated_at": updated.isoformat() if hasattr(updated, "isoformat") else updated,
+        }
+
+    def set_user_apify_key(self, user_email: str, apify_key: str) -> Dict[str, Any]:
+        if not user_email:
+            return {"ok": False, "error": "Authentication required"}
+        key = (apify_key or "").strip()
+        if not key:
+            return {"ok": False, "error": "Apify key cannot be empty"}
+        if not re.match(r"^apify_api_[A-Za-z0-9]{20,}$", key):
+            return {"ok": False, "error": "Invalid format. Expected apify_api_... (40+ chars)."}
+        now = datetime.now(timezone.utc)
+        try:
+            self.user_apify_keys.update_one(
+                {"user_email": user_email},
+                {"$set": {
+                    "user_email": user_email,
+                    "apify_key": key,
+                    "updated_at": now,
+                }, "$setOnInsert": {"created_at": now}},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.error(f"set_user_apify_key failed for {user_email}: {e}")
+            return {"ok": False, "error": "Failed to save key"}
+        return {"ok": True, **self.get_user_apify_key_status(user_email)}
+
+    def delete_user_apify_key(self, user_email: str) -> Dict[str, Any]:
+        if not user_email:
+            return {"ok": False, "error": "Authentication required"}
+        try:
+            self.user_apify_keys.delete_one({"user_email": user_email})
+        except Exception as e:
+            logger.error(f"delete_user_apify_key failed for {user_email}: {e}")
+            return {"ok": False, "error": "Failed to remove key"}
+        return {"ok": True, "has_key": False}
 
     # ------------------------------------------------------------------
     # JSearch API

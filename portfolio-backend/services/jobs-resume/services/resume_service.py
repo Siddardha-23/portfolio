@@ -565,6 +565,10 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 return
 
             from services.daily_pipeline_service import run_pipeline
+            from services.job_service import get_job_service
+
+            user_email = payload.get("user_email", "")
+            user_key = get_job_service().get_user_apify_key(user_email) if user_email else None
 
             result = run_pipeline(
                 linkedin_keywords=payload.get("linkedin_keywords"),
@@ -573,7 +577,10 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 custom_role_terms=payload.get("custom_role_terms"),
                 linkedin_count=int(payload.get("linkedin_count", 80) or 80),
                 workday_limit=int(payload.get("workday_limit", 200) or 200),
+                apify_token=user_key,
             )
+            # Surface which token tier was used so the UI can display it.
+            result["used_user_apify_key"] = bool(user_key)
             svc.complete_job(job_id, result)
 
         else:

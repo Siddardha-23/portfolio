@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChipsInput } from './ChipsInput';
+import { ApifyKeyCard } from './ApifyKeyCard';
 import { apiService } from '@/lib/api';
 import type {
   DailyPipelineParams,
@@ -616,6 +617,9 @@ export function DailyPipelinePanel({
 
   return (
     <div className="space-y-6">
+      {/* BYO Apify key */}
+      <ApifyKeyCard />
+
       {/* Hero / config */}
       <Card className="overflow-hidden border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10">
         <CardContent className="space-y-5 p-5">

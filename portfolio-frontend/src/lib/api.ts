@@ -638,6 +638,30 @@ class ApiService {
     return submitResp as ApiResponse<import("../types/jobs").BatchSearchResponse>;
   }
 
+  async getApifyKey() {
+    return this.request<import("../types/jobs").ApifyKeyStatus>(
+      "/jobs/apify-key",
+      { method: "GET" },
+    );
+  }
+
+  async setApifyKey(apifyKey: string) {
+    return this.request<import("../types/jobs").ApifyKeyStatus & { ok: boolean }>(
+      "/jobs/apify-key",
+      {
+        method: "PUT",
+        body: JSON.stringify({ apify_key: apifyKey }),
+      },
+    );
+  }
+
+  async deleteApifyKey() {
+    return this.request<{ ok: boolean; has_key: boolean }>(
+      "/jobs/apify-key",
+      { method: "DELETE" },
+    );
+  }
+
   async suggestPipelineFilters() {
     return this.request<{ suggestions: import("../types/jobs").SmartFilterSuggestions }>(
       "/jobs/pipeline/suggest-filters",

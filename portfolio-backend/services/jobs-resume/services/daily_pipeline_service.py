@@ -968,9 +968,14 @@ def run_pipeline(
     custom_role_terms: Optional[List[str]] = None,
     linkedin_count: int = 80,
     workday_limit: int = 200,
+    apify_token: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Run the full daily pipeline and return tier-grouped JSON."""
-    token = _get_apify_token()
+    """Run the full daily pipeline and return tier-grouped JSON.
+
+    apify_token: when provided (e.g. a per-user BYO key), it overrides the
+    shared SSM/env token. None falls back to _get_apify_token().
+    """
+    token = (apify_token or "").strip() or _get_apify_token()
     if not token:
         raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN is not configured")
 

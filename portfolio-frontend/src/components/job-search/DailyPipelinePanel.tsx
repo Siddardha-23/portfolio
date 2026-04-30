@@ -36,15 +36,20 @@ const DEFAULT_LINKEDIN_KEYWORDS = [
 ];
 
 const DEFAULT_WORKDAY_TITLES = [
+  // Cloud / DevOps / SRE / Platform
   'Cloud Engineer', 'DevOps Engineer', 'Site Reliability Engineer',
-  'Platform Engineer', 'Infrastructure Engineer', 'Backend Engineer',
-  'Backend Software Engineer', 'API Engineer', 'Full Stack Engineer',
-  'Full Stack Software Engineer', 'Frontend Engineer', 'AI Engineer',
-  'ML Engineer', 'Machine Learning Engineer', 'Agentic AI Engineer',
-  'Software Engineer', 'Software Developer', 'Software Engineer I',
+  'Platform Engineer', 'Infrastructure Engineer',
+  // Backend / Full-Stack / Frontend
+  'Backend Engineer', 'Full Stack Engineer', 'Frontend Engineer',
+  'Software Developer',
+  // AI / ML
+  'AI Engineer', 'Machine Learning Engineer', 'Applied Scientist',
+  // General SWE early-career
+  'Software Engineer', 'Software Engineer I',
   'Associate Software Engineer', 'Junior Software Engineer',
   'New Grad Software Engineer', 'Entry Level Software Engineer',
-  'Graduate Software Engineer', 'Early Career Software Engineer',
+  'Software Development Engineer', 'SDE I',
+  'Member of Technical Staff', 'Graduate Software Engineer',
 ];
 
 interface Preset {

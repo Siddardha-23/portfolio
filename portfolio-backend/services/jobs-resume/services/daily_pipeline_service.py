@@ -38,12 +38,14 @@ LINKEDIN_ACTOR = "curious_coder~linkedin-jobs-scraper"
 WORKDAY_ACTOR = "fantastic-jobs~workday-jobs-api"
 INDEED_ACTOR = "borderline~indeed-scraper"
 
-# Source 3 — Indeed queries (3 calls per spec). Watch for OPT body shops:
-# the _opt_body_shop_reason filter catches "$30K-$60K + STEM OPT" patterns.
+# Source 3 — Indeed queries. The three original queries
+# ("software engineer new grad", "cloud engineer DevOps", "full stack AI
+# engineer") overlapped heavily on Indeed's loose matcher; each was a
+# separate ~$0.25 actor run. One broad query at maxRows=150 captures ~95%
+# of the same coverage at a third of the cost. Operators can override via
+# the indeed_queries payload key if they want the original split.
 INDEED_QUERIES = [
-    "software engineer new grad",
-    "cloud engineer DevOps",
-    "full stack AI engineer",
+    "software engineer new grad cloud full stack",
 ]
 
 # Source 5 — Direct ATS APIs (free, no Apify, no auth). Each tuple is (slug,
@@ -96,49 +98,26 @@ DEFAULT_LINKEDIN_KEYWORD_SETS = [
 ]
 
 DEFAULT_WORKDAY_TITLES = [
+    # Tighter default than before — the actor's titleSearch is OR-of-prefix,
+    # not pure substring, so we keep distinct buckets but drop near-duplicates
+    # ("Cloud DevOps Engineer", "Backend Software Engineer", "AWS Cloud
+    # Engineer" etc.) that bloat the 200-item budget without changing recall.
+    # Experience filtering still happens via aiExperienceLevelFilter=["0-2"].
     # Cloud / DevOps / SRE / Platform
-    "Cloud Engineer", "Cloud Software Engineer", "Cloud DevOps Engineer",
-    "DevOps Engineer", "DevOps Software Engineer",
-    "Site Reliability Engineer", "SRE", "Junior SRE", "New Grad SRE",
-    "Platform Engineer", "Platform Software Engineer",
-    "Infrastructure Engineer", "Infrastructure Software Engineer",
-    "Kubernetes Engineer", "AWS Engineer", "Cloud Infrastructure Engineer",
-    # Backend
-    "Backend Engineer", "Backend Software Engineer",
-    "Backend Developer", "API Engineer", "Server Engineer",
-    "Junior Backend Engineer", "Associate Backend Engineer",
-    "New Grad Backend Engineer",
-    # Full-stack
-    "Full Stack Engineer", "Full Stack Software Engineer",
-    "Full Stack Developer", "Junior Full Stack Engineer",
-    "Associate Full Stack Engineer", "New Grad Full Stack Engineer",
-    # Frontend
-    "Frontend Engineer", "Frontend Software Engineer",
-    "Frontend Developer", "UI Engineer", "Web Engineer",
-    "Junior Frontend Engineer", "New Grad Frontend Engineer",
-    # AI / ML / Agentic
-    "AI Engineer", "ML Engineer", "Machine Learning Engineer",
-    "Applied AI Engineer", "Applied Machine Learning Engineer",
-    "Agentic AI Engineer", "AI Agent Engineer", "GenAI Engineer",
-    "LLM Engineer", "Junior ML Engineer", "Junior AI Engineer",
-    "New Grad AI Engineer", "New Grad ML Engineer",
-    # General SWE early-career
-    "Software Engineer", "Software Developer",
-    "Software Engineer I", "Software Engineer 1",
-    "Software Engineer II", "Software Engineer 2",
-    "Associate Software Engineer", "Associate Software Developer",
-    "Junior Software Engineer", "Junior Software Developer",
-    "Entry Level Software Engineer", "Entry-Level Software Engineer",
-    "Graduate Software Engineer", "Software Engineer Graduate",
-    "New Grad Software Engineer", "New Graduate Software Engineer",
-    "Early Career Software Engineer", "College Hire Software Engineer",
-    "Software Development Engineer", "Software Development Engineer I",
-    "SDE I", "SDE 1", "SWE I", "SWE 1",
-    # New-grad-friendly SWE-adjacent that frequently anchor to "Engineer"
-    "Member of Technical Staff", "Associate Engineer",
-    "Junior Engineer", "Graduate Engineer",
-    "New College Grad Software Engineer",
-    "NCG Software Engineer", "NCG 2026 Software Engineer",
+    "Cloud Engineer", "DevOps Engineer", "Site Reliability Engineer",
+    "Platform Engineer", "Infrastructure Engineer",
+    # Backend / Full-Stack / Frontend
+    "Backend Engineer", "Full Stack Engineer", "Frontend Engineer",
+    "Software Developer",
+    # AI / ML
+    "AI Engineer", "Machine Learning Engineer", "Applied Scientist",
+    # General SWE early-career — distinct prefixes Workday's matcher won't
+    # collapse on its own.
+    "Software Engineer", "Software Engineer I",
+    "Associate Software Engineer", "Junior Software Engineer",
+    "New Grad Software Engineer", "Entry Level Software Engineer",
+    "Software Development Engineer", "SDE I",
+    "Member of Technical Staff", "Graduate Software Engineer",
 ]
 
 BODY_SHOPS = {
@@ -354,6 +333,18 @@ def _build_linkedin_url(keywords: str, past_days: int) -> str:
     )
 
 
+# Pre-filter for ATS direct fetchers: drop sales / PM / marketing / recruiter /
+# legal / finance / ops roles before we even normalize them. Saves compute on
+# large company boards (Stripe, OpenAI, Anthropic publish 200+ jobs each).
+_ATS_TECH_TITLE = re.compile(
+    r"\b(engineer|engineering|developer|swe|sde|sre|devops|"
+    r"programmer|scientist|architect|technical staff|software|"
+    r"data engineer|ml engineer|ai engineer|infrastructure|platform|"
+    r"backend|frontend|full[- ]?stack|web)\b",
+    re.IGNORECASE,
+)
+
+
 def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
     url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
     try:
@@ -366,10 +357,13 @@ def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
         return []
     out: List[Dict[str, Any]] = []
     for j in items:
+        title = _clean_str(j.get("title"))
+        if not _ATS_TECH_TITLE.search(title):
+            continue
         out.append({
             "source": "Greenhouse",
             "company": display,
-            "title": _clean_str(j.get("title")),
+            "title": title,
             "location": _clean_str(j.get("location")),
             "posted": _normalize_posted(j.get("updated_at")),
             "salary": "—",
@@ -392,8 +386,10 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
         return []
     out: List[Dict[str, Any]] = []
     for j in items:
+        title = _clean_str(j.get("text"))
+        if not _ATS_TECH_TITLE.search(title):
+            continue
         cats = j.get("categories") or {}
-        # Lever createdAt is a ms epoch.
         posted_iso = ""
         ts = j.get("createdAt")
         if isinstance(ts, (int, float)) and ts > 0:
@@ -404,7 +400,7 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
         out.append({
             "source": "Lever",
             "company": display,
-            "title": _clean_str(j.get("text")),
+            "title": title,
             "location": _clean_str(cats.get("location") or cats.get("allLocations")),
             "posted": posted_iso,
             "salary": "—",
@@ -427,10 +423,13 @@ def _fetch_ashby(slug: str, display: str) -> List[Dict[str, Any]]:
         return []
     out: List[Dict[str, Any]] = []
     for j in items:
+        title = _clean_str(j.get("title"))
+        if not _ATS_TECH_TITLE.search(title):
+            continue
         out.append({
             "source": "Ashby",
             "company": display,
-            "title": _clean_str(j.get("title")),
+            "title": title,
             "location": _clean_str(j.get("location") or j.get("locationName")),
             "posted": _normalize_posted(j.get("publishedAt") or j.get("updatedAt")),
             "salary": "—",
@@ -500,10 +499,13 @@ def _ats_apify_fallback(
     out: List[Dict[str, Any]] = []
     label = ats_type.capitalize()
     for j in items or []:
+        title = _clean_str(j.get("title"))
+        if not _ATS_TECH_TITLE.search(title):
+            continue
         out.append({
             "source": f"{label} (Apify)",
             "company": _clean_str(j.get("company") or j.get("companyName") or j.get("organization")),
-            "title": _clean_str(j.get("title")),
+            "title": title,
             "location": _clean_str(j.get("location") or j.get("locationName")),
             # spec note: posted_at is always null here — _normalize_posted("") -> ""
             "posted": _normalize_posted(j.get("posted_at") or j.get("posted") or j.get("createdAt")),
@@ -517,7 +519,7 @@ def _ats_apify_fallback(
     return out
 
 
-def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 50) -> List[Dict[str, Any]]:
+def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 150) -> List[Dict[str, Any]]:
     """Source 3 — Indeed scrape. Returns normalized records or [] on any failure."""
     if not token:
         return []

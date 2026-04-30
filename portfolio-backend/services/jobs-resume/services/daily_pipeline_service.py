@@ -38,14 +38,16 @@ LINKEDIN_ACTOR = "curious_coder~linkedin-jobs-scraper"
 WORKDAY_ACTOR = "fantastic-jobs~workday-jobs-api"
 INDEED_ACTOR = "borderline~indeed-scraper"
 
-# Source 3 — Indeed queries. The three original queries
-# ("software engineer new grad", "cloud engineer DevOps", "full stack AI
-# engineer") overlapped heavily on Indeed's loose matcher; each was a
-# separate ~$0.25 actor run. One broad query at maxRows=150 captures ~95%
-# of the same coverage at a third of the cost. Operators can override via
-# the indeed_queries payload key if they want the original split.
+# Source 3 — Indeed queries. Three focused queries beat one OR'd query:
+# Indeed's default matcher is AND-of-tokens, so a single "software engineer
+# new grad cloud full stack" only finds titles containing every word (rare).
+# Three narrow queries each rank precise matches first, accepting the ~$0.75
+# per pipeline cost (3 × $0.25). Override via indeed_queries payload key to
+# trim runs.
 INDEED_QUERIES = [
-    "software engineer new grad cloud full stack",
+    "software engineer new grad",
+    "cloud engineer DevOps",
+    "full stack AI engineer",
 ]
 
 # Source 5 — Direct ATS APIs (free, no Apify, no auth). Each tuple is (slug,
@@ -98,19 +100,26 @@ DEFAULT_LINKEDIN_KEYWORD_SETS = [
 ]
 
 DEFAULT_WORKDAY_TITLES = [
-    # Tighter default than before — the actor's titleSearch is OR-of-prefix,
-    # not pure substring, so we keep distinct buckets but drop near-duplicates
-    # ("Cloud DevOps Engineer", "Backend Software Engineer", "AWS Cloud
-    # Engineer" etc.) that bloat the 200-item budget without changing recall.
-    # Experience filtering still happens via aiExperienceLevelFilter=["0-2"].
+    # The actor's titleSearch is token-AND (every query token must appear in
+    # the title). Junior/Associate/New-Grad/Senior variants are absorbed by
+    # the parent because the parent's tokens are still present. We only keep
+    # variants whose *tokens differ* from the parent — they'd otherwise be
+    # genuine misses. aiExperienceLevelFilter=["0-2"] handles seniority.
+    #
     # Cloud / DevOps / SRE / Platform
     "Cloud Engineer", "DevOps Engineer", "Site Reliability Engineer",
+    "SRE",  # bare token — distinct from "Site Reliability Engineer"
     "Platform Engineer", "Infrastructure Engineer",
+    "AWS Engineer", "Kubernetes Engineer",  # distinct specialty tokens
     # Backend / Full-Stack / Frontend
-    "Backend Engineer", "Full Stack Engineer", "Frontend Engineer",
-    "Software Developer",
-    # AI / ML
-    "AI Engineer", "Machine Learning Engineer", "Applied Scientist",
+    "Backend Engineer", "Backend Developer",
+    "Full Stack Engineer", "Full Stack Developer",
+    "Frontend Engineer", "Frontend Developer",
+    "API Engineer", "Software Developer",
+    # AI / ML — keep both spellings; "ML" and "Machine Learning" are
+    # different tokens, similarly LLM / GenAI.
+    "AI Engineer", "Machine Learning Engineer", "ML Engineer",
+    "LLM Engineer", "GenAI Engineer", "Applied Scientist",
     # General SWE early-career — distinct prefixes Workday's matcher won't
     # collapse on its own.
     "Software Engineer", "Software Engineer I",
@@ -337,7 +346,7 @@ def _build_linkedin_url(keywords: str, past_days: int) -> str:
 # legal / finance / ops roles before we even normalize them. Saves compute on
 # large company boards (Stripe, OpenAI, Anthropic publish 200+ jobs each).
 _ATS_TECH_TITLE = re.compile(
-    r"\b(engineer|engineering|developer|swe|sde|sre|devops|"
+    r"\b(engineer|engineering|developer|swe|sde|sre|mts|devops|"
     r"programmer|scientist|architect|technical staff|software|"
     r"data engineer|ml engineer|ai engineer|infrastructure|platform|"
     r"backend|frontend|full[- ]?stack|web)\b",
@@ -519,7 +528,7 @@ def _ats_apify_fallback(
     return out
 
 
-def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 150) -> List[Dict[str, Any]]:
+def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 75) -> List[Dict[str, Any]]:
     """Source 3 — Indeed scrape. Returns normalized records or [] on any failure."""
     if not token:
         return []

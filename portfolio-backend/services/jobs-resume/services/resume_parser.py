@@ -137,6 +137,16 @@ _EXTRACTION_PROMPT = (
     "G. Categorize into these groups when applicable: Languages, Frameworks & Libraries,\n"
     "   Cloud & DevOps, Databases, Tools & Platforms, Methodologies. Add new groups\n"
     "   only if no existing group fits.\n\n"
+    "CERTIFICATIONS — STRICT NO-FABRICATION RULE:\n"
+    "- If the resume has a 'Certifications' / 'Certificates' / 'Licenses' section, OR if\n"
+    "  certifications are explicitly named anywhere in the resume (e.g., a bullet says\n"
+    "  'AWS Certified Solutions Architect – Associate (2023)'), extract every entry as a\n"
+    "  string in the certifications array.\n"
+    "- Preserve the EXACT name as written, including issuer/year if shown\n"
+    "  (e.g., 'AWS Certified Solutions Architect – Associate (2023)').\n"
+    "- If NO certifications are mentioned anywhere in the resume, return an EMPTY ARRAY [].\n"
+    "- NEVER invent or infer certifications based on skills, education, or job titles.\n"
+    "  ('AWS' as a skill is NOT evidence of any AWS certification.)\n\n"
     "Return a JSON object with EXACTLY this structure (ALL top-level keys are REQUIRED):\n"
     "{\n"
     '  "contact": {\n'
@@ -178,6 +188,7 @@ _EXTRACTION_PROMPT = (
     '      "tech": "Tech1, Tech2"\n'
     "    }\n"
     "  ],\n"
+    '  "certifications": ["AWS Certified Solutions Architect – Associate (2023)", "..."],\n'
     '  "raw_text": "Full verbatim plain-text transcription of all visible text in the document, '
     'preserving line breaks. Include ALL text from every page/section.",\n'
     '  "extracted_urls": ["https://linkedin.com/in/...", "https://github.com/...", "...all '
@@ -229,6 +240,13 @@ _EXTRACTION_PROMPT_SLIM = (
     "F. Extract skills from ALL sections (bullets and summary often contain technologies).\n"
     "G. Categorize into: Languages, Frameworks & Libraries, Cloud & DevOps, Databases,\n"
     "   Tools & Platforms, Methodologies. Add new groups only if no existing group fits.\n\n"
+    "CERTIFICATIONS — STRICT NO-FABRICATION RULE:\n"
+    "- Extract every entry from a 'Certifications' / 'Certificates' / 'Licenses' section,\n"
+    "  OR named explicitly anywhere in the resume (e.g., a bullet 'Earned AWS Certified\n"
+    "  Solutions Architect – Associate (2023)').\n"
+    "- Preserve the EXACT name as written, including issuer/year if shown.\n"
+    "- If NO certifications are mentioned anywhere, return an EMPTY ARRAY [].\n"
+    "- NEVER invent or infer certifications from skills, education, or job titles.\n\n"
     "Return a JSON object with EXACTLY this structure (ALL top-level keys REQUIRED):\n"
     "{\n"
     '  "contact": {"name":"","email":"","phone":"","linkedin":"","github":""},\n'
@@ -236,7 +254,8 @@ _EXTRACTION_PROMPT_SLIM = (
     '  "skills": {"Category Name": ["Skill1", "Skill2"]},\n'
     '  "experience": [{"title":"","company":"","location":"","dates":"","type":"","bullets":[]}],\n'
     '  "education": [{"degree":"","institution":"","location":"","dates":"","gpa":"","coursework":""}],\n'
-    '  "projects": [{"name":"","dates":"","bullets":[],"tech":""}]\n'
+    '  "projects": [{"name":"","dates":"","bullets":[],"tech":""}],\n'
+    '  "certifications": []\n'
     "}\n\n"
     "Do NOT include a raw_text field. Do NOT include an extracted_urls field. Return ONLY the "
     "structured JSON above.\n\n"
@@ -1100,7 +1119,12 @@ class ResumeParser:
                 }
                 for edu in structured.get("education", [])
             ],
-            "certifications": [],
+            # Mirror structured.certifications at the top level for backwards
+            # compat with status/list endpoints. Empty list when the resume
+            # had none — the parser prompt forbids fabrication.
+            "certifications": [
+                c for c in (structured.get("certifications") or []) if isinstance(c, str) and c.strip()
+            ],
             "parsed_at": datetime.now(timezone.utc),
         }
 

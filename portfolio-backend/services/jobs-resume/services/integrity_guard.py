@@ -148,8 +148,14 @@ class IntegrityGuard:
         tailored, cap_enforced = self.enforce_project_rules(original, tailored)
         report.project_cap_enforced = cap_enforced
 
-        # Step 4: Force certifications to empty
-        tailored["certifications"] = []
+        # Step 4: Force certifications to mirror the ORIGINAL parsed resume.
+        # The parser is the single source of truth for certifications (its
+        # prompt forbids fabrication). The tailor must NEITHER drop nor
+        # invent certs — preserve them verbatim from the source.
+        original_certs = original.get("certifications") or []
+        tailored["certifications"] = [
+            c for c in original_certs if isinstance(c, str) and c.strip()
+        ]
 
         # Step 5: Check experience count
         report.experience_count_mismatch = (

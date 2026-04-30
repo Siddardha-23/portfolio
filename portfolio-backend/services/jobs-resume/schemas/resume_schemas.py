@@ -49,16 +49,16 @@ PARSED_RESUME_SCHEMA = {
         "bullets": [str],
         "tech": str,
     }],
-}
-
-# TailoredFullResume adds certifications[] to the parsed schema.
-# NOTE: The tailor prompt instructs AI to NOT generate certifications.
-# The field exists for frontend contract compatibility and is always forced
-# to [] by IntegrityGuard.enforce() after tailoring.
-TAILORED_RESUME_SCHEMA = {
-    **PARSED_RESUME_SCHEMA,
+    # Certifications are extracted ONLY if explicitly present in the resume
+    # (the parser prompt forbids fabrication). For users without a certs
+    # section, this stays []. Downstream the tailor pipeline now PRESERVES
+    # this list instead of forcing it empty — IntegrityGuard mirrors
+    # original.certifications onto tailored.certifications.
     "certifications": [str],
 }
+
+# TailoredFullResume mirrors the parsed schema 1:1.
+TAILORED_RESUME_SCHEMA = dict(PARSED_RESUME_SCHEMA)
 
 # Matches JDAnalysis
 JD_ANALYSIS_SCHEMA = {

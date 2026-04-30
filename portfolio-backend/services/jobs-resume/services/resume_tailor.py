@@ -173,7 +173,8 @@ class ResumeTailor:
             "   - Each experience entry's: company, title, location, dates\n"
             "   - Each education entry's: institution, degree, location, dates, gpa\n"
             "4. NEVER fabricate experience, companies, metrics, or skills not in the original.\n"
-            "5. certifications: always return an empty array [].\n"
+            "5. certifications: COPY the certifications array EXACTLY from the ORIGINAL resume.\n"
+            "   Do NOT add, remove, modify, or reorder any entries. The system enforces this.\n"
             "6. Every field must be a non-null string or array — never null.\n"
             "7. Return the COMPLETE resume JSON — not just the changed parts.\n\n"
             f"=== CURRENT TAILORED RESUME ===\n{current_payload}\n\n"
@@ -267,7 +268,8 @@ class ResumeTailor:
             "4. NEVER add major skills the candidate does not possess.\n"
             "5. You MAY add small, closely related skills (e.g., if they know Docker, you can add 'containerization').\n"
             "6. Projects: Include ONLY projects from the original resume. If none exist, return an empty projects array []. The backend will handle project generation separately.\n"
-            "7. certifications: always return an empty array [].\n"
+            "7. certifications: COPY the certifications array EXACTLY from the ORIGINAL resume.\n"
+            "   Do NOT add, remove, modify, or reorder entries. The system enforces this.\n"
             "8. Every field in the JSON MUST be a non-null string or array — never null.\n\n"
             "FEW-SHOT EXAMPLES (How to Tailor without Hallucinating):\n"
             "Example 1: Aligning to JD without inventing skills\n"
@@ -344,7 +346,7 @@ class ResumeTailor:
             '      "tech": "Tech1, Tech2, Tech3"\n'
             "    }\n"
             "  ],\n"
-            '  "certifications": []\n'
+            '  "certifications": ["...exact copy from ORIGINAL.certifications, even if empty []..."]\n'
             "}\n\n"
             f"=== ORIGINAL RESUME (STRUCTURED JSON) ===\n{resume_payload}\n\n"
             f"=== JOB DESCRIPTION ANALYSIS ===\n{jd_json}"

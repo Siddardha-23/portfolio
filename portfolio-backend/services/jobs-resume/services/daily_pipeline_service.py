@@ -125,13 +125,20 @@ DEFAULT_WORKDAY_TITLES = [
     # General SWE early-career
     "Software Engineer", "Software Developer",
     "Software Engineer I", "Software Engineer 1",
+    "Software Engineer II", "Software Engineer 2",
     "Associate Software Engineer", "Associate Software Developer",
     "Junior Software Engineer", "Junior Software Developer",
     "Entry Level Software Engineer", "Entry-Level Software Engineer",
     "Graduate Software Engineer", "Software Engineer Graduate",
     "New Grad Software Engineer", "New Graduate Software Engineer",
-    "Early Career Software Engineer",
-    "SWE I", "SWE 1",
+    "Early Career Software Engineer", "College Hire Software Engineer",
+    "Software Development Engineer", "Software Development Engineer I",
+    "SDE I", "SDE 1", "SWE I", "SWE 1",
+    # New-grad-friendly SWE-adjacent that frequently anchor to "Engineer"
+    "Member of Technical Staff", "Associate Engineer",
+    "Junior Engineer", "Graduate Engineer",
+    "New College Grad Software Engineer",
+    "NCG Software Engineer", "NCG 2026 Software Engineer",
 ]
 
 BODY_SHOPS = {
@@ -282,18 +289,53 @@ def _get_apify_token() -> str:
     )
 
 
+_CREDIT_EXHAUSTED_HINTS = (
+    "monthly-usage-limit-exceeded",
+    "monthly-usage-hard-limit-exceeded",
+    "actor-monthly-usage-limit-exceeded",
+    "credit",
+    "payment-required",
+    "subscription",
+    "insufficient",
+)
+
+
+def _classify_apify_error(status_code: int, body_text: str) -> str:
+    """Return a structured error code the UI can pattern-match on."""
+    body = (body_text or "").lower()
+    if status_code == 402 or any(h in body for h in _CREDIT_EXHAUSTED_HINTS):
+        return "APIFY_CREDITS_EXHAUSTED"
+    if status_code in (401, 403):
+        return "APIFY_AUTH_FAILED"
+    if status_code == 429:
+        return "APIFY_RATE_LIMITED"
+    return "APIFY_ERROR"
+
+
 def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) -> List[Dict[str, Any]]:
-    """Run an Apify actor synchronously and return its dataset items."""
+    """Run an Apify actor synchronously and return its dataset items.
+
+    Raises RuntimeError on failure with a structured error-code prefix so the
+    pipeline result can surface a clear message to the user (e.g. exhausted
+    credits → prompt to update their BYO Apify key).
+    """
     url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items?token={quote(token)}"
     logger.info("[apify] starting %s ...", actor)
     t0 = time.time()
     try:
         r = requests.post(url, json=run_input, timeout=timeout_s)
     except requests.RequestException as e:
-        raise RuntimeError(f"Apify {actor} request failed: {e}") from e
+        raise RuntimeError(f"APIFY_ERROR: {actor} request failed: {e}") from e
     if r.status_code >= 400:
-        raise RuntimeError(f"Apify {actor} returned {r.status_code} {r.reason}")
+        code = _classify_apify_error(r.status_code, r.text)
+        raise RuntimeError(f"{code}: {actor} returned {r.status_code} {r.reason}")
     items = r.json() if r.headers.get("content-type", "").startswith("application/json") else []
+    if isinstance(items, dict) and items.get("error"):
+        # Some actors return a JSON error body with HTTP 200 — sniff it.
+        err = items["error"]
+        body = err.get("type", "") + " " + err.get("message", "")
+        code = _classify_apify_error(0, body)
+        raise RuntimeError(f"{code}: {actor} reported {err.get('type', 'error')}")
     if not isinstance(items, list):
         items = []
     logger.info("[apify] %s -> %d items in %.1fs", actor, len(items), time.time() - t0)
@@ -301,6 +343,9 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
 
 
 def _build_linkedin_url(keywords: str, past_days: int) -> str:
+    # past_days <= 1 (incl. 0 / "today only") still uses LinkedIn's 24h
+    # window since LinkedIn doesn't expose a sub-day filter; we then tighten
+    # to today's date during _filter_and_score with our own cutoff.
     f_tpr = "r86400" if past_days <= 1 else f"r{86400 * max(1, past_days)}"
     base = "https://www.linkedin.com/jobs/search/?"
     return (
@@ -981,7 +1026,9 @@ def run_pipeline(
 
     li_kw = [k.strip() for k in (linkedin_keywords or DEFAULT_LINKEDIN_KEYWORD_SETS) if k and k.strip()]
     wd_titles = [t.strip() for t in (workday_titles or DEFAULT_WORKDAY_TITLES) if t and t.strip()]
-    past_days = max(1, min(int(past_days or 1), 30))
+    # past_days=0 means "today only" — cutoff is today's date, so anything
+    # posted before today is excluded.
+    past_days = max(0, min(int(past_days if past_days is not None else 1), 30))
 
     today = datetime.now(timezone.utc)
     cutoff = (today - timedelta(days=past_days)).strftime("%Y-%m-%d")
@@ -1082,9 +1129,12 @@ def run_pipeline(
         },
     }
 
+    credits_exhausted = any("APIFY_CREDITS_EXHAUSTED" in (e or "") for e in errors)
+
     return {
         "ok": True,
         "generated_at": today.isoformat(),
+        "credits_exhausted": credits_exhausted,
         "past_days": past_days,
         "cutoff": cutoff,
         "raw_counts": {

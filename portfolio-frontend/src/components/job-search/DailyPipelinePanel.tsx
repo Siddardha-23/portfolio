@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -452,6 +453,9 @@ export function DailyPipelinePanel({
   const [appliedIds, setAppliedIds] = useState<string[]>(persisted?.appliedIds ?? []);
   const [showApplied, setShowApplied] = useState<boolean>(persisted?.showApplied ?? true);
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  // Bumped each time we want to pop the Apify key card open (e.g. after a
+  // credit-exhausted run). The card only reacts when this value changes.
+  const [apifyForceOpen, setApifyForceOpen] = useState<number | undefined>(undefined);
 
   // Persist
   useEffect(() => {
@@ -509,10 +513,18 @@ export function DailyPipelinePanel({
     }
     setResult(resp.data);
     setResultAt(Date.now());
-    toast.success(
-      `Pipeline complete: ${resp.data.totals.apply_now} jobs to apply` +
-        (resp.data.totals.verify_dates ? `, ${resp.data.totals.verify_dates} to verify` : ''),
-    );
+    if (resp.data.credits_exhausted) {
+      setApifyForceOpen(Date.now());
+      toast.error(
+        'Apify credits are exhausted. Update your API key to keep running the pipeline.',
+        { duration: 8000 },
+      );
+    } else {
+      toast.success(
+        `Pipeline complete: ${resp.data.totals.apply_now} jobs to apply` +
+          (resp.data.totals.verify_dates ? `, ${resp.data.totals.verify_dates} to verify` : ''),
+      );
+    }
   };
 
   const handleReset = () => {
@@ -618,7 +630,7 @@ export function DailyPipelinePanel({
   return (
     <div className="space-y-6">
       {/* BYO Apify key */}
-      <ApifyKeyCard />
+      <ApifyKeyCard forceOpenSignal={apifyForceOpen} />
 
       {/* Hero / config */}
       <Card className="overflow-hidden border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10">
@@ -697,14 +709,22 @@ export function DailyPipelinePanel({
                 <Calendar className="mr-1 inline h-3 w-3" />
                 Past days
               </label>
-              <Input
-                type="number"
-                min={1}
-                max={30}
-                value={pastDays}
-                onChange={(e) => setPastDays(Math.max(1, Math.min(30, Number(e.target.value) || 1)))}
-                className="focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
-              />
+              <Select
+                value={String(pastDays)}
+                onValueChange={(v) => setPastDays(Math.max(0, Math.min(30, Number(v) || 0)))}
+              >
+                <SelectTrigger className="focus:border-purple-500/40 focus:ring-purple-500/40">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Today only</SelectItem>
+                  <SelectItem value="1">Past 1 day</SelectItem>
+                  <SelectItem value="3">Past 3 days</SelectItem>
+                  <SelectItem value="7">Past week</SelectItem>
+                  <SelectItem value="14">Past 2 weeks</SelectItem>
+                  <SelectItem value="30">Past month</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -796,6 +816,33 @@ export function DailyPipelinePanel({
       {/* Results */}
       {result && !loading && (
         <div className="space-y-6">
+          {result.credits_exhausted && (
+            <Card className="border-red-500/40 bg-red-500/5">
+              <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                      Apify credits exhausted
+                    </p>
+                    <p className="text-[11px] text-red-700/80 dark:text-red-300/80">
+                      The Apify token used for this run hit its monthly limit. Add or update your own
+                      Apify API key above to keep running the daily pipeline — your free Apify account
+                      includes ~$5 monthly credit.
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setApifyForceOpen(Date.now())}
+                  className="gap-1.5 bg-gradient-to-r from-red-500 to-rose-500 text-white hover:opacity-90"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Update API key
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           {resultAt && Date.now() - resultAt > 30_000 && (
             <p className="text-[11px] italic text-muted-foreground">
               Showing cached result from{' '}

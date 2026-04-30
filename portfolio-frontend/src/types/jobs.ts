@@ -53,6 +53,8 @@ export interface DailyPipelineResult {
   generated_at: string;
   past_days: number;
   cutoff: string;
+  credits_exhausted?: boolean;
+  used_user_apify_key?: boolean;
   raw_counts: {
     linkedin: number;
     workday: number;

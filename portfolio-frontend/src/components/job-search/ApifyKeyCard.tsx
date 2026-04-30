@@ -15,9 +15,11 @@ interface ApifyKeyCardProps {
   /** Optional callback when the key status changes — lets the parent
    *  refresh the pipeline UI affordances. */
   onChange?: (status: ApifyKeyStatus) => void;
+  /** Force the card open in edit mode (e.g. after credit exhaustion). */
+  forceOpenSignal?: number;
 }
 
-export function ApifyKeyCard({ onChange }: ApifyKeyCardProps) {
+export function ApifyKeyCard({ onChange, forceOpenSignal }: ApifyKeyCardProps) {
   const [status, setStatus] = useState<ApifyKeyStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
@@ -43,6 +45,15 @@ export function ApifyKeyCard({ onChange }: ApifyKeyCardProps) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Parent can yank the card open in edit mode after a credit-exhausted run.
+  useEffect(() => {
+    if (forceOpenSignal !== undefined) {
+      setEditing(true);
+      setDraft('');
+      setError(null);
+    }
+  }, [forceOpenSignal]);
 
   const handleSave = async () => {
     const trimmed = draft.trim();
@@ -90,6 +101,49 @@ export function ApifyKeyCard({ onChange }: ApifyKeyCardProps) {
     onChange?.({ has_key: false });
     toast.success('Your Apify key has been removed.');
   };
+
+  // Collapsed pill: render once a key is set and the user isn't editing.
+  // The full guide / actions still live one click away.
+  if (status?.has_key && !editing) {
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Key className="h-3 w-3 flex-shrink-0 text-emerald-600 dark:text-emerald-400" />
+          <span className="font-medium text-emerald-700 dark:text-emerald-300">
+            Your Apify key
+          </span>
+          <span className="font-mono text-muted-foreground">{status.masked}</span>
+          {status.updated_at && (
+            <span className="text-[10px] text-muted-foreground">
+              · updated {new Date(status.updated_at).toLocaleDateString()}
+            </span>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { setEditing(true); setDraft(''); setError(null); }}
+            disabled={saving}
+            className="h-7 gap-1 text-[11px]"
+          >
+            <Pencil className="h-3 w-3" />
+            Update
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={handleDelete}
+            disabled={saving}
+            className="h-7 gap-1 text-[11px] text-red-600 hover:bg-red-500/10 hover:text-red-700 dark:text-red-300"
+          >
+            <Trash2 className="h-3 w-3" />
+            Remove
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Card className="border-border/60 bg-card/60">

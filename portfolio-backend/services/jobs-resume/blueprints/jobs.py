@@ -342,10 +342,11 @@ def daily_pipeline():
 
     data = request.get_json(silent=True) or {}
     try:
-        past_days = int(data.get("past_days") or 1)
+        past_days = int(data.get("past_days") if data.get("past_days") is not None else 1)
     except (TypeError, ValueError):
         past_days = 1
-    past_days = max(1, min(past_days, 30))
+    # 0 = "Today only" (cutoff = today). 1-30 days otherwise.
+    past_days = max(0, min(past_days, 30))
 
     linkedin_keywords = _split_lines(data.get("linkedin_keywords"), max_items=10, max_len=200)
     workday_titles = _split_lines(data.get("workday_titles"), max_items=200, max_len=120)

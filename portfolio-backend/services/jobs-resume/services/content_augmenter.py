@@ -17,7 +17,7 @@ import copy
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError, as_completed
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -562,17 +562,29 @@ class ContentAugmenter:
         different resume sections), then runs weak verbs sequentially
         (since it modifies bullets that keyword density may have changed).
         """
-        # Step 1: Run keyword density + summary alignment in PARALLEL
+        # Step 1: Run keyword density + summary alignment in PARALLEL.
         # These are independent: keyword density modifies bullets,
         # summary alignment modifies the summary field.
-        keyword_result = {}
-        summary_result = {}
+        #
+        # Timeout handling: a `with ThreadPoolExecutor(...)` block waits on
+        # __exit__ for ALL submitted threads, even ones we abandoned via
+        # `future.result(timeout=...)`. If keyword density's Gemini call hangs
+        # (network 503 retries, etc.), the timeout fires at 25s but then the
+        # context manager blocks for another 30+ seconds waiting for the
+        # runaway thread — adding ~30s of pure wasted wall time.
+        #
+        # Fix: explicit executor lifecycle + shutdown(wait=False) on timeout
+        # so we return as soon as our useful work is done. Orphan threads
+        # finish on their own without blocking the request.
+        keyword_result = tailored
+        summary_result = tailored
 
-        # Deep-copy sections for parallel modification to avoid races
         tailored_for_keywords = copy.deepcopy(tailored)
         tailored_for_summary = copy.deepcopy(tailored)
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        executor = ThreadPoolExecutor(max_workers=2)
+        had_timeout = False
+        try:
             future_kw = executor.submit(
                 self._enforce_keyword_density, tailored_for_keywords, jd_analysis
             )
@@ -580,18 +592,39 @@ class ContentAugmenter:
                 self._verify_summary_alignment, tailored_for_summary, jd_analysis
             )
 
-            # Collect results
             try:
-                keyword_result = future_kw.result(timeout=30)
+                keyword_result = future_kw.result(timeout=25)
+            except FuturesTimeoutError:
+                had_timeout = True
+                logger.warning(
+                    "ContentAugmenter ATS: keyword density timed out (>25s) — abandoning thread"
+                )
+                keyword_result = tailored
             except Exception as e:
-                logger.error("ContentAugmenter ATS: keyword density parallel failed: %s", e)
+                logger.error("ContentAugmenter ATS: keyword density failed: %s", e)
                 keyword_result = tailored
 
             try:
-                summary_result = future_summary.result(timeout=30)
-            except Exception as e:
-                logger.error("ContentAugmenter ATS: summary alignment parallel failed: %s", e)
+                summary_result = future_summary.result(timeout=20)
+            except FuturesTimeoutError:
+                had_timeout = True
+                logger.warning(
+                    "ContentAugmenter ATS: summary alignment timed out (>20s) — abandoning thread"
+                )
                 summary_result = tailored
+            except Exception as e:
+                logger.error("ContentAugmenter ATS: summary alignment failed: %s", e)
+                summary_result = tailored
+        finally:
+            # Don't wait for orphan threads. They finish on their own; the
+            # Lambda either reuses the warm container with the thread idle,
+            # or the container is recycled. Either way, this request returns
+            # immediately instead of holding the user.
+            executor.shutdown(wait=False)
+            if had_timeout:
+                logger.info(
+                    "ContentAugmenter ATS: returning early; orphan thread will complete in background"
+                )
 
         # Merge: take experience/projects from keyword result, summary from summary result
         tailored["experience"] = keyword_result.get("experience", tailored.get("experience", []))

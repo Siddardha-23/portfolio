@@ -51,8 +51,10 @@ jobs:
         run: |
           arn=$(aws lambda list-layer-versions \
             --layer-name "${PROJECT_NAME}-shared" \
+            --max-items 1 \
             --query 'LayerVersions[0].LayerVersionArn' \
-            --output text)
+            --output text \
+            | head -n1)
           if [[ "$arn" == "None" || -z "$arn" ]]; then
             echo "Could not resolve shared layer ARN" >&2
             exit 1

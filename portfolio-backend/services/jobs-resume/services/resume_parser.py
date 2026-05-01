@@ -480,7 +480,12 @@ class ResumeParser:
         # layer / encrypted / etc.). If `path=slim` but total > ~30s, the
         # cost is in Gemini-side latency, not local extraction.
         t_end = time.perf_counter()
-        logger.info(
+        # NOTE: emitted at WARNING (not INFO) because AWS Lambda's preconfigured
+        # root logger swallows INFO-level records from user code — verified by
+        # `aws logs filter-log-events --filter-pattern '"[INFO]"'` returning
+        # zero hits over 7 days. WARNING is reliably surfaced. Telemetry only,
+        # no actual warning.
+        logger.warning(
             "RESUME_PARSE_TIMING path=%s local_extract=%s local_ms=%d "
             "gemini_ms=%d post_ms=%d total_ms=%d local_chars=%d local_urls=%d",
             "slim" if use_slim else "full",

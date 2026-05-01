@@ -972,6 +972,36 @@ class ApiService {
     }>(submitResp.data.job_id, 120000, signal);
   }
 
+  // Combined endpoint: extracts JD analysis AND tailors the resume inside a
+  // single Lambda invocation, returning both. Saves ~22s (no inter-job HTTP
+  // round-trip) plus ~10s from parallel project generation. The legacy
+  // extractJD + tailorResumeForParser pair remains available as a fallback.
+  async tailorResumeWithJDText(
+    jobDescription: string,
+    signal?: AbortSignal,
+  ): Promise<
+    ApiResponse<{
+      jd_analysis: import("../types/resume").JDAnalysis;
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>
+  > {
+    const submitResp = await this.request<{ job_id: string }>(
+      "/resume/tailor-with-jd",
+      {
+        method: "POST",
+        body: JSON.stringify({ job_description: jobDescription }),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
+
+    return this.pollJob<{
+      jd_analysis: import("../types/resume").JDAnalysis;
+      tailored_resume: import("../types/resume").TailoredFullResume;
+    }>(submitResp.data.job_id, 120000, signal);
+  }
+
   async regenerateResume(
     tailoredResume: import("../types/resume").TailoredFullResume,
     jdAnalysis: import("../types/resume").JDAnalysis,

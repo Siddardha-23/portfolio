@@ -3467,29 +3467,12 @@ function TailorTab() {
       80,
     );
 
-    const jdResp = await apiService.extractJD(jdText.trim());
-    if (ctrl.signal.aborted) {
-      cleanup();
-      return;
-    }
-    if (jdResp.error) {
-      cleanup();
-      setTailorError(jdResp.error);
-      return;
-    }
-    if (!jdResp.data?.jd_analysis) {
-      cleanup();
-      setTailorError("Failed to analyze job description.");
-      return;
-    }
-
-    const analysis = jdResp.data.jd_analysis;
-    setAnalyzingJD(false);
-
-    // Phase 2: Tailor resume
+    // Combined extract-jd + tailor in ONE backend job. Saves ~22s of
+    // inter-job HTTP round-trip vs the legacy two-call flow + ~10s from
+    // parallel project generation inside the job.
     setTailoring(true);
-    const tailorResp = await apiService.tailorResumeForParser(
-      analysis,
+    const combined = await apiService.tailorResumeWithJDText(
+      jdText.trim(),
       ctrl.signal,
     );
     if (ctrl.signal.aborted) {
@@ -3498,26 +3481,31 @@ function TailorTab() {
     }
 
     cleanup();
-    if (tailorResp.error) {
-      setTailorError(tailorResp.error);
+    if (combined.error) {
+      setTailorError(combined.error);
       return;
     }
-    if (tailorResp.data) {
-      setResult({
-        jd_analysis: analysis,
-        tailored_resume: tailorResp.data.tailored_resume,
-      });
-      setVersions([
-        {
-          id: `v1-${Date.now()}`,
-          resume: tailorResp.data.tailored_resume,
-          label: "Initial tailoring",
-          timestamp: Date.now(),
-        },
-      ]);
-      // Await so downstream downloads / regenerations see recordIdRef set.
-      await saveRecord(analysis, tailorResp.data.tailored_resume, jdText);
+    if (!combined.data?.jd_analysis || !combined.data?.tailored_resume) {
+      setTailorError("Failed to tailor resume.");
+      return;
     }
+
+    const analysis = combined.data.jd_analysis;
+    const tailoredResume = combined.data.tailored_resume;
+    setResult({
+      jd_analysis: analysis,
+      tailored_resume: tailoredResume,
+    });
+    setVersions([
+      {
+        id: `v1-${Date.now()}`,
+        resume: tailoredResume,
+        label: "Initial tailoring",
+        timestamp: Date.now(),
+      },
+    ]);
+    // Await so downstream downloads / regenerations see recordIdRef set.
+    await saveRecord(analysis, tailoredResume, jdText);
 
     function cleanup() {
       if (tailorTimerRef.current) clearInterval(tailorTimerRef.current);

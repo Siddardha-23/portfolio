@@ -477,6 +477,158 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             svc.complete_job(job_id, {"cover_letter": cover_text})
 
+        elif job_type == "extract_and_tailor":
+            # Combined single-tailor flow: extract JD analysis, then tailor +
+            # project generation in PARALLEL (project gen reads the original
+            # resume only — independent of tailored output), then augmenter
+            # (which naturally skips Phase 1 because projects are pre-injected
+            # to the cap), then normalization.
+            #
+            # Saves ~22s vs separate /extract-jd + /tailor jobs (no inter-job
+            # HTTP round-trip + poll lag) and ~10s vs sequential project gen.
+            # No accuracy change — same Gemini calls in different orchestration.
+            from concurrent.futures import (
+                ThreadPoolExecutor,
+                TimeoutError as FuturesTimeoutError,
+            )
+
+            user_email = payload.get("user_email", "")
+            jd_text = payload.get("job_description", "")
+            if not jd_text:
+                svc.fail_job(job_id, "job_description is required")
+                return
+
+            # Step 1: Extract JD analysis (sequential — required input for tailor)
+            jd_analysis = svc.extract_jd(jd_text)
+
+            # Step 2: Load the user's structured resume (re-parsing from S3 if needed)
+            resume = svc.parser.ensure_structured_resume(user_email=user_email)
+            if not resume or not resume.get("structured"):
+                svc.fail_job(
+                    job_id,
+                    "No parsed resume found. Please re-upload your resume on the "
+                    "My Resumes tab and try again.",
+                )
+                return
+
+            structured = resume["structured"]
+            raw_text = resume.get("raw_text", "")
+            if raw_text:
+                from services.resume_parser import ResumeParser
+
+                contact = structured.get("contact", {})
+                contact_fields = ("name", "email", "phone", "linkedin", "github")
+                missing_contact = [
+                    f for f in contact_fields if not contact.get(f, "").strip()
+                ]
+                if missing_contact:
+                    structured = ResumeParser._backfill_contact(structured, raw_text)
+
+                edu_missing = any(
+                    not edu.get("institution", "").strip()
+                    for edu in structured.get("education", [])
+                )
+                if edu_missing:
+                    structured = ResumeParser._backfill_education(structured, raw_text)
+
+            # Step 3: PARALLEL — tailor + (optional) project generation.
+            # Project generation only runs if the original resume has fewer
+            # than the cap of projects (the augmenter will need them anyway).
+            # Reading `original` only — never depends on tailor's output.
+            from services.content_augmenter import _MAX_PROJECTS as _PROJECT_CAP
+
+            existing_project_count = len(structured.get("projects", []))
+            projects_needed = max(0, _PROJECT_CAP - existing_project_count)
+
+            executor = ThreadPoolExecutor(max_workers=2)
+            try:
+                future_tailor = executor.submit(
+                    svc.tailor.tailor, structured, jd_analysis
+                )
+                future_projects = None
+                if projects_needed > 0:
+                    future_projects = executor.submit(
+                        svc.project_generator.generate_batch,
+                        projects_needed,
+                        structured,
+                        jd_analysis,
+                        structured.get("projects", []),
+                    )
+
+                # Wait for tailor (the longer call). Fail loudly if tailor errors.
+                try:
+                    result = future_tailor.result(timeout=120)
+                except Exception as e:
+                    logger.error("extract_and_tailor: tailor failed: %s", e)
+                    svc.fail_job(job_id, f"Tailoring failed: {e}")
+                    return
+
+                # Best-effort: collect parallel project gen. If it errored or
+                # timed out, we let the augmenter fall back to sequential
+                # project generation later. Either way, the user still gets
+                # a resume — only difference is wall time.
+                parallel_projects = []
+                if future_projects is not None:
+                    try:
+                        parallel_projects = future_projects.result(timeout=60)
+                    except FuturesTimeoutError:
+                        logger.warning(
+                            "extract_and_tailor: parallel project gen timed out — "
+                            "augmenter will retry sequentially"
+                        )
+                        parallel_projects = []
+                    except Exception as e:
+                        logger.warning(
+                            "extract_and_tailor: parallel project gen failed (%s) — "
+                            "augmenter will retry sequentially", e
+                        )
+                        parallel_projects = []
+            finally:
+                # Don't wait for orphan threads (same pattern as ATS hardening fix).
+                executor.shutdown(wait=False)
+
+            # Step 4: Inject parallel-generated projects into tailored result.
+            # Augmenter's Phase 1 will skip if we've reached the cap.
+            if parallel_projects:
+                tailored_projects = list(result.get("projects") or [])
+                for proj in parallel_projects:
+                    if len(tailored_projects) >= _PROJECT_CAP:
+                        break
+                    if not svc.augmenter._is_duplicate_project(proj, tailored_projects):
+                        tailored_projects.append(proj)
+                result["projects"] = tailored_projects
+                logger.info(
+                    "extract_and_tailor: pre-injected %d parallel projects (final count %d)",
+                    len(parallel_projects),
+                    len(tailored_projects),
+                )
+
+            # Step 5: Same post-tailor pipeline as the legacy `tailor` job.
+            result_contact = result.get("contact", {})
+            if result_contact.get("name"):
+                from services.resume_parser import ResumeParser as _RP
+                result_contact["name"] = _RP._normalize_name(
+                    " ".join(result_contact["name"].split())
+                )
+            if result_contact.get("phone"):
+                result_contact["phone"] = " ".join(result_contact["phone"].split())
+
+            result = svc.augmenter.augment(result, structured, jd_analysis)
+
+            from services.date_normalizer import normalize_dates
+            from services.title_normalizer import normalize_titles
+
+            result = normalize_dates(result)
+            result = normalize_titles(result)
+
+            svc.complete_job(
+                job_id,
+                {
+                    "tailored_resume": result,
+                    "jd_analysis": jd_analysis,
+                },
+            )
+
         elif job_type == "batch_tailor_item":
             # Combined: extract JD → tailor resume (single job for batch efficiency)
             user_email = payload.get("user_email", "")

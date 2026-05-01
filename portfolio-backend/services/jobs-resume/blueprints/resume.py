@@ -114,6 +114,53 @@ def tailor():
 
 
 # ------------------------------------------------------------------
+# POST /api/resume/tailor-with-jd — Combined: extract JD + tailor in ONE job
+# ------------------------------------------------------------------
+# This endpoint replaces the two-step /extract-jd then /tailor sequence on
+# the frontend, eliminating one HTTP round-trip + ~22s of poll lag. Inside
+# the job, project generation is also run in parallel with tailor.tailor()
+# for another ~10s saving. Same Gemini calls, just a tighter orchestration.
+#
+# Returns BOTH jd_analysis and tailored_resume on completion.
+# Old /extract-jd and /tailor endpoints remain operational for fallback.
+
+
+@resume_bp.route("/tailor-with-jd", methods=["POST"])
+@jwt_required()
+def tailor_with_jd():
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"resume_tailor:{client_ip}", max_requests=10, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Try again in a few minutes."}), 429
+
+    data = request.get_json(force=True) or {}
+    jd_text = data.get("job_description", "")
+    if not jd_text or not isinstance(jd_text, str):
+        return jsonify({"error": "job_description is required"}), 400
+
+    jd_text = InputSanitizer.sanitize_string(jd_text, max_length=10000)
+    if not jd_text:
+        return jsonify({"error": "Invalid job description"}), 400
+
+    try:
+        user_email = get_jwt_identity()
+        from services.resume_service import get_resume_service, ResumeService
+
+        svc = get_resume_service()
+        payload = {"job_description": jd_text, "user_email": user_email}
+        job_id = svc.create_job("extract_and_tailor", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "extract_and_tailor", payload)
+        return jsonify({"job_id": job_id}), 202
+
+    except Exception as e:
+        logger.error(f"Resume tailor-with-jd error: {e}")
+        return (
+            jsonify({"error": "Failed to start resume tailoring. Please try again."}),
+            500,
+        )
+
+
+# ------------------------------------------------------------------
 # POST /api/resume/regenerate — Regenerate tailored resume with user feedback
 # ------------------------------------------------------------------
 @resume_bp.route("/regenerate", methods=["POST"])

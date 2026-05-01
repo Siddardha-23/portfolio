@@ -3440,15 +3440,20 @@ function TailorTab() {
     }
   }, [result, atsLoading, updateRecordATS]);
 
-  // Combined analyze + tailor in one action (like Jobscan / Teal)
+  // Combined analyze + tailor in one action (like Jobscan / Teal).
+  // Backend is ONE combined `extract_and_tailor` job, but we drive the
+  // progress indicator through both visual phases (Analyze JD → Tailor)
+  // via a timed transition so the user sees the work moving forward
+  // instead of one indicator stuck while the single API call runs.
   const handleTailoring = useCallback(async () => {
     if (!jdText.trim()) return;
     tailorAbortRef.current?.abort();
     const ctrl = new AbortController();
     tailorAbortRef.current = ctrl;
 
-    // Phase 1: Analyze JD
+    // Visual phase 1: Analyze JD (UI only — backend has already started both)
     setAnalyzingJD(true);
+    setTailoring(false);
     setTailorError("");
     setResult(null);
     setTailorElapsed(0);
@@ -3467,19 +3472,28 @@ function TailorTab() {
       80,
     );
 
-    // Combined extract-jd + tailor in ONE backend job. Saves ~22s of
-    // inter-job HTTP round-trip vs the legacy two-call flow + ~10s from
-    // parallel project generation inside the job.
-    setTailoring(true);
+    // Schedule the visual transition into "Tailor" phase. Backend's
+    // extract_jd portion typically takes ~12s, so transitioning at 12s
+    // matches reality closely. If the API returns earlier (rare), the
+    // cleanup() in the finally path clears this transition timer.
+    let phaseTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+      setAnalyzingJD(false);
+      setTailoring(true);
+      phaseTimer = null;
+    }, 12000);
+
+    // Combined extract-jd + tailor in ONE backend job.
     const combined = await apiService.tailorResumeWithJDText(
       jdText.trim(),
       ctrl.signal,
     );
     if (ctrl.signal.aborted) {
+      if (phaseTimer) clearTimeout(phaseTimer);
       cleanup();
       return;
     }
 
+    if (phaseTimer) clearTimeout(phaseTimer);
     cleanup();
     if (combined.error) {
       setTailorError(combined.error);
@@ -4399,13 +4413,20 @@ function TailorTab() {
                         hint: "Preparing PDF and DOCX output",
                       },
                     ].map((step, i) => {
+                      // Visual step mapping for the combined extract+tailor
+                      // job (~70-80s typical). The single backend invocation
+                      // is split into 4 visual phases:
+                      //  0 (analyze):   T=0  -> 12s  (handled by analyzingJD)
+                      //  1 (tailor):    T=12 -> 25s  (~13s window)
+                      //  2 (augment):   T=25 -> 55s  (~30s — matches augmenter pipeline)
+                      //  3 (finalize):  T=55s+      (final stretch)
                       const current = analyzingJD
                         ? 0
                         : !tailoring
                           ? -1
-                          : tailorElapsed < 15
+                          : tailorElapsed < 25
                             ? 1
-                            : tailorElapsed < 40
+                            : tailorElapsed < 55
                               ? 2
                               : 3;
                       const status =

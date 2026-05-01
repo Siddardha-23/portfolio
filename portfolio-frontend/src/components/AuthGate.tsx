@@ -1268,7 +1268,13 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="Confirm your password"
-                          className={inputWithToggleClasses}
+                          className={`${inputWithToggleClasses} ${
+                            confirmPassword && password !== confirmPassword
+                              ? 'border-red-500 focus:border-red-500'
+                              : confirmPassword && password === confirmPassword
+                              ? 'border-green-500 focus:border-green-500'
+                              : ''
+                          }`}
                           autoComplete="new-password"
                         />
                         <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)}
@@ -1276,6 +1282,12 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showConfirmPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
+                      {confirmPassword && password !== confirmPassword && (
+                        <p className="text-xs text-red-400 mt-1">Passwords do not match.</p>
+                      )}
+                      {confirmPassword && password === confirmPassword && password.length >= 6 && (
+                        <p className="text-xs text-green-400 mt-1">Passwords match.</p>
+                      )}
                     </div>
                     <div>
                       <label htmlFor="reg-role" className={labelClasses}>

@@ -130,7 +130,7 @@ export default function ResumeDashboard({ onStartTailoring }: ResumeDashboardPro
       <div className="space-y-5">
         <StreakWidget />
         <div className="animate-pulse">
-          <div className="h-24 rounded-xl bg-gray-800/40" />
+          <div className="h-24 rounded-xl bg-gray-200 dark:bg-gray-800/40" />
         </div>
       </div>
     );

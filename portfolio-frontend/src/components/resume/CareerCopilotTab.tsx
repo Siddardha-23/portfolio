@@ -930,10 +930,10 @@ export default function CareerCopilotTab() {
                     placeholder="Ask: outreach, PPT, project scaffold, STAR answers, tailoring…"
                     className="min-h-[44px] flex-1 rounded-xl border border-gray-200 bg-white/90 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500/50 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 dark:border-white/10 dark:bg-gray-950/60 dark:text-white"
                   />
-                  <button type="button" disabled={sending} onClick={() => void send()}
-                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-5 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 transition hover:opacity-95 disabled:opacity-50"
+                  <button type="button" disabled={sending || !input.trim()} onClick={() => void send()}
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-sm font-semibold text-white shadow-md shadow-indigo-500/25 dark:shadow-indigo-500/10 transition-all duration-200 hover:scale-105 hover:shadow-lg hover:shadow-indigo-500/40 dark:hover:shadow-indigo-500/20 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:hover:shadow-md"
                   >
-                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Send
+                    {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   </button>
                 </div>
               </div>

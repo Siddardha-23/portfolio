@@ -62,7 +62,7 @@ export default function JobOpportunitiesTab() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="space-y-5">
-        <TabsList className="bg-muted/60 border border-border/60 backdrop-blur-sm">
+        <TabsList className="border border-gray-200/80 bg-white/60 dark:border-white/10 dark:bg-gray-900/40 backdrop-blur-sm">
           <TabsTrigger value="pipeline" className="gap-1.5 data-[state=active]:bg-background data-[state=active]:text-purple-600 dark:data-[state=active]:text-purple-300">
             <Zap className="h-3.5 w-3.5" />
             Daily Pipeline

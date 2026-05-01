@@ -179,12 +179,12 @@ export default function BatchTailor() {
           <div className="flex items-center gap-3">
             {jdEntries.length < 5 && (
               <button type="button" onClick={addEntry}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-purple-400 border border-purple-500/20 hover:bg-purple-500/10 transition-all">
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-purple-600 dark:text-purple-400 border border-purple-500/30 hover:bg-purple-500/10 hover:text-purple-700 hover:border-purple-400 dark:hover:bg-purple-500/20 dark:hover:text-purple-300 dark:hover:border-purple-400/50 transition-all duration-200">
                 <PlusIcon className="w-4 h-4" />Add Job Description
               </button>
             )}
             <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-700 disabled:to-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 dark:disabled:from-gray-800 dark:disabled:to-gray-800 dark:disabled:text-gray-600 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
               {submitting ? (
                 <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Submitting...</>
               ) : (

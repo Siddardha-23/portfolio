@@ -159,10 +159,22 @@ export default function Register() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Confirm your password"
-                  className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500"
+                  className={`bg-black/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500 ${
+                    confirmPassword && password !== confirmPassword 
+                      ? 'border-red-500' 
+                      : confirmPassword && password === confirmPassword
+                      ? 'border-green-500'
+                      : 'border-pink-800/50'
+                  }`}
                   required
                   disabled={isLoading}
                 />
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-xs text-red-400">Passwords do not match</p>
+                )}
+                {confirmPassword && password === confirmPassword && (
+                  <p className="text-xs text-green-400">Passwords match</p>
+                )}
               </div>
             </CardContent>
 

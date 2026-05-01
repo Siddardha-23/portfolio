@@ -568,14 +568,18 @@ class ContentAugmenter:
         #
         # Timeout handling: a `with ThreadPoolExecutor(...)` block waits on
         # __exit__ for ALL submitted threads, even ones we abandoned via
-        # `future.result(timeout=...)`. If keyword density's Gemini call hangs
-        # (network 503 retries, etc.), the timeout fires at 25s but then the
-        # context manager blocks for another 30+ seconds waiting for the
-        # runaway thread — adding ~30s of pure wasted wall time.
+        # `future.result(timeout=...)`. If keyword density's Gemini call
+        # hangs (e.g. 503 retries), the per-future timeout fires at 30s but
+        # then the context manager blocks for another ~30s waiting for the
+        # runaway thread — net ~60s of wall time per timeout for what was
+        # already abandoned.
         #
-        # Fix: explicit executor lifecycle + shutdown(wait=False) on timeout
+        # Fix: explicit executor lifecycle + shutdown(wait=False) in finally
         # so we return as soon as our useful work is done. Orphan threads
-        # finish on their own without blocking the request.
+        # finish on their own without blocking this request. Per-future
+        # timeouts are unchanged from the original (30s each) — accuracy is
+        # preserved: any Gemini response that would have completed inside
+        # 30s before is still captured now.
         keyword_result = tailored
         summary_result = tailored
 
@@ -593,11 +597,11 @@ class ContentAugmenter:
             )
 
             try:
-                keyword_result = future_kw.result(timeout=25)
+                keyword_result = future_kw.result(timeout=30)
             except FuturesTimeoutError:
                 had_timeout = True
                 logger.warning(
-                    "ContentAugmenter ATS: keyword density timed out (>25s) — abandoning thread"
+                    "ContentAugmenter ATS: keyword density timed out (>30s) — abandoning thread"
                 )
                 keyword_result = tailored
             except Exception as e:
@@ -605,11 +609,11 @@ class ContentAugmenter:
                 keyword_result = tailored
 
             try:
-                summary_result = future_summary.result(timeout=20)
+                summary_result = future_summary.result(timeout=30)
             except FuturesTimeoutError:
                 had_timeout = True
                 logger.warning(
-                    "ContentAugmenter ATS: summary alignment timed out (>20s) — abandoning thread"
+                    "ContentAugmenter ATS: summary alignment timed out (>30s) — abandoning thread"
                 )
                 summary_result = tailored
             except Exception as e:

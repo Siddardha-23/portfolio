@@ -65,7 +65,10 @@ locals {
     for k, v in local.prod.ssm_param_names : k => v if v != ""
   }
 
-  mongo_db_name = "portfolio_pr_${var.branch_slug}"
+  # Atlas caps database names at 38 bytes; the slug is already prefixed with "pr-"
+  # by slugify.sh and capped at ~30 chars, so the slug-with-underscores stays well
+  # under the limit. Hyphens converted because Mongo DB names with '-' are unusual.
+  mongo_db_name = replace(var.branch_slug, "-", "_")
 }
 
 module "ephemeral" {

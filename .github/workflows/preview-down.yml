@@ -126,7 +126,7 @@ jobs:
           from pymongo import MongoClient
           uri = os.environ["MONGODB_URI"]
           name = os.environ["DB_NAME"]
-          if not name.startswith("portfolio_pr_"):
+          if not name.startswith("pr_"):
               raise SystemExit(f"refusing to drop non-preview db {name!r}")
           MongoClient(uri).drop_database(name)
           print(f"dropped {name}")

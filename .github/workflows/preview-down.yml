@@ -36,7 +36,8 @@ jobs:
         run: |
           chmod +x scripts/slugify.sh
           if [[ -n "${{ inputs.branch_slug }}" ]]; then
-            slug="${{ inputs.branch_slug }}"
+            # Trim whitespace from human-entered workflow_dispatch input.
+            slug=$(echo "${{ inputs.branch_slug }}" | xargs)
           else
             slug=$(scripts/slugify.sh "${{ github.head_ref }}")
           fi

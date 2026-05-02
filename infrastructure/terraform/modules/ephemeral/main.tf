@@ -37,7 +37,7 @@ locals {
       LOG_LEVEL       = "INFO"
       AWS_REGION_NAME = var.aws_region
       USE_SSM_SECRETS = "true"
-      MONGO_DB_NAME   = var.mongo_db_name
+      DB_NAME         = var.mongo_db_name
       PREVIEW_SLUG    = var.branch_slug
     },
     var.extra_env_vars,

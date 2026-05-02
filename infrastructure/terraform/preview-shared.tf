@@ -152,8 +152,10 @@ resource "aws_cloudfront_function" "preview_rewrite" {
       if (uri.indexOf("/api/") === 0) {
         return req;
       }
-      // Rewrite static asset path: /foo -> /{slug}/foo, "/" -> /{slug}/index.html
-      if (uri === "/" || uri === "") {
+      // Static asset (has a file extension) -> /{slug}{uri}
+      // SPA route or root -> /{slug}/index.html (lets React Router handle it client-side).
+      var hasExtension = /\.[a-zA-Z0-9]+$/.test(uri);
+      if (uri === "/" || uri === "" || !hasExtension) {
         req.uri = "/" + slug + "/index.html";
       } else {
         req.uri = "/" + slug + uri;

@@ -27,9 +27,8 @@ terraform {
 provider "aws" {
   region = var.aws_region
 
-  # Use named profile for local development
-  # Comment this out if using environment variables or IAM role
-  profile = "portfolio"
+  # Local terraform uses AWS_PROFILE env var (set to "personal" for admin-perm bootstraps).
+  # CI runs without a profile (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env vars).
 
   default_tags {
     tags = {

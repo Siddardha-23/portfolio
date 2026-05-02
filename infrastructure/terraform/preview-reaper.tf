@@ -6,16 +6,12 @@
 # preview-down.yml via workflow_dispatch.
 # =============================================================================
 
-data "archive_file" "reaper_placeholder" {
+data "archive_file" "reaper" {
   count = local.preview_enabled ? 1 : 0
 
   type        = "zip"
-  output_path = "${path.module}/placeholder-reaper.zip"
-
-  source {
-    filename = "reaper.py"
-    content  = "def handler(event, context): return {'ok': True, 'placeholder': True}"
-  }
+  output_path = "${path.module}/reaper.zip"
+  source_file = "${path.module}/../../portfolio-backend/services/preview-reaper/reaper.py"
 }
 
 resource "aws_cloudwatch_log_group" "reaper" {
@@ -42,8 +38,8 @@ resource "aws_lambda_function" "reaper" {
   memory_size   = 256
   timeout       = 120
 
-  filename         = data.archive_file.reaper_placeholder[0].output_path
-  source_code_hash = data.archive_file.reaper_placeholder[0].output_base64sha256
+  filename         = data.archive_file.reaper[0].output_path
+  source_code_hash = data.archive_file.reaper[0].output_base64sha256
 
   layers = [aws_lambda_layer_version.shared.arn]
 
@@ -68,8 +64,10 @@ resource "aws_lambda_function" "reaper" {
   }
 
   lifecycle {
-    # CI deploys the real handler; ignore subsequent code drift.
-    ignore_changes = [filename, source_code_hash, layers]
+    # Layer ARN is updated by deploy.yml on every backend deploy; we don't want
+    # terraform to fight CI on layer version. Code is managed by terraform via
+    # the data.archive_file above.
+    ignore_changes = [layers]
   }
 
   depends_on = [aws_cloudwatch_log_group.reaper]

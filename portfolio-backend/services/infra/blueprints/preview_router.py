@@ -102,7 +102,7 @@ def proxy(subpath: str):
             data=request.get_data(),
             allow_redirects=False,
             timeout=_TIMEOUT_SECS,
-            stream=False,
+            stream=True,
         )
     except requests.Timeout:
         logger.warning("Upstream timeout slug=%s target=%s", slug, target)
@@ -111,8 +111,21 @@ def proxy(subpath: str):
         logger.exception("Upstream proxy failed slug=%s target=%s", slug, target)
         return {"error": "preview upstream error"}, 502
 
+    # Stream chunks instead of buffering whole body in memory. Note: API Gateway
+    # HTTP API integrations buffer the full response before returning, so SSE /
+    # text/event-stream endpoints will not stream incrementally end-to-end —
+    # they'll arrive as one batch. Streaming here at least keeps memory bounded
+    # and supports large response bodies.
+    def _iter_body():
+        try:
+            for chunk in upstream.iter_content(chunk_size=8192):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
     return Response(
-        upstream.content,
+        _iter_body(),
         status=upstream.status_code,
         headers=_filter_response_headers(upstream.headers),
     )

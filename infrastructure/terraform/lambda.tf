@@ -352,6 +352,11 @@ resource "aws_lambda_function" "service" {
   timeout       = each.value.timeout
   description   = each.value.description
 
+  # Infra Lambda fronts /api/preview-route/* (proxy to per-PR API GWs) in addition
+  # to its own /api/infra, /api/trace, /api/admin/environments routes. Reserve
+  # concurrency so a preview traffic burst can't starve prod's admin paths.
+  reserved_concurrent_executions = each.key == "infra" ? 100 : -1
+
   # Placeholder - will be updated by CI/CD
   filename         = data.archive_file.service_placeholder[each.key].output_path
   source_code_hash = data.archive_file.service_placeholder[each.key].output_base64sha256

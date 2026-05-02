@@ -120,6 +120,38 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # ----------------------------------------------------------------------
+      # Register the env in DDB *before* deploying code, so the preview-router
+      # Lambda on prod can resolve the per-PR API GW URL from the moment any
+      # request lands. Otherwise users hitting the URL between CloudFront cache
+      # invalidation and the upsert get a 404.
+      # ----------------------------------------------------------------------
+      - name: Upsert DynamoDB row
+        run: |
+          slug="${{ steps.slug.outputs.slug }}"
+          ddb="${{ steps.tf-out.outputs.ddb }}"
+          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          aws dynamodb put-item \
+            --table-name "$ddb" \
+            --item "$(cat <<EOF
+          {
+            "branch_slug":       {"S": "$slug"},
+            "pr_number":         {"N": "${{ github.event.pull_request.number }}"},
+            "head_ref":          {"S": "${{ github.head_ref }}"},
+            "actor":             {"S": "${{ github.actor }}"},
+            "status":            {"S": "deploying"},
+            "frontend_url":      {"S": "${{ steps.tf-out.outputs.preview_url }}"},
+            "api_url":           {"S": "${{ steps.tf-out.outputs.api_url }}"},
+            "api_id":            {"S": "${{ steps.tf-out.outputs.api_id }}"},
+            "layer_version_arn": {"S": "${{ steps.layer.outputs.arn }}"},
+            "mongo_db":          {"S": "${{ steps.tf-out.outputs.mongo_db }}"},
+            "created_at":        {"S": "$now"},
+            "last_seen_at":      {"S": "$now"},
+            "gh_run_id":         {"S": "${{ github.run_id }}"}
+          }
+          EOF
+          )"
+
+      # ----------------------------------------------------------------------
       # Push real Lambda code into each preview function (mirrors deploy.yml
       # logic but scoped to the preview function names).
       # ----------------------------------------------------------------------
@@ -198,31 +230,15 @@ jobs:
             --distribution-id "${{ steps.tf-out.outputs.distribution_id }}" \
             --paths "/${{ steps.slug.outputs.slug }}/*" >/dev/null
 
-      - name: Upsert DynamoDB row
+      # Mark the DDB row as ready now that code + frontend are deployed.
+      - name: Mark env ready in DDB
         run: |
-          slug="${{ steps.slug.outputs.slug }}"
-          ddb="${{ steps.tf-out.outputs.ddb }}"
-          now=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          aws dynamodb put-item \
-            --table-name "$ddb" \
-            --item "$(cat <<EOF
-          {
-            "branch_slug":       {"S": "$slug"},
-            "pr_number":         {"N": "${{ github.event.pull_request.number }}"},
-            "head_ref":          {"S": "${{ github.head_ref }}"},
-            "actor":             {"S": "${{ github.actor }}"},
-            "status":            {"S": "ready"},
-            "frontend_url":      {"S": "${{ steps.tf-out.outputs.preview_url }}"},
-            "api_url":           {"S": "${{ steps.tf-out.outputs.api_url }}"},
-            "api_id":            {"S": "${{ steps.tf-out.outputs.api_id }}"},
-            "layer_version_arn": {"S": "${{ steps.layer.outputs.arn }}"},
-            "mongo_db":          {"S": "${{ steps.tf-out.outputs.mongo_db }}"},
-            "created_at":        {"S": "$now"},
-            "last_seen_at":      {"S": "$now"},
-            "gh_run_id":         {"S": "${{ github.run_id }}"}
-          }
-          EOF
-          )"
+          aws dynamodb update-item \
+            --table-name "${{ steps.tf-out.outputs.ddb }}" \
+            --key '{"branch_slug":{"S":"${{ steps.slug.outputs.slug }}"}}' \
+            --update-expression "SET #s = :s, last_seen_at = :ts" \
+            --expression-attribute-names '{"#s":"status"}' \
+            --expression-attribute-values "$(printf '{":s":{"S":"ready"},":ts":{"S":"%s"}}' "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
 
       - name: Sticky PR comment
         uses: marocchino/sticky-pull-request-comment@v2

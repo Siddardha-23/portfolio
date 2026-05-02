@@ -107,6 +107,7 @@ jobs:
           distribution_id=$(terraform output -raw preview_distribution_id)
           mongo_db=$(terraform output -raw mongo_db_name)
           ddb=$(terraform output -raw preview_ddb_table)
+          lambda_names=$(terraform output -json lambda_function_names | jq -c .)
           {
             echo "preview_url=$preview_url"
             echo "api_url=$api_url"
@@ -115,9 +116,7 @@ jobs:
             echo "distribution_id=$distribution_id"
             echo "mongo_db=$mongo_db"
             echo "ddb=$ddb"
-            echo "lambda_names<<EOF"
-            terraform output -json lambda_function_names
-            echo "EOF"
+            echo "lambda_names=$lambda_names"
           } >> "$GITHUB_OUTPUT"
 
       # ----------------------------------------------------------------------

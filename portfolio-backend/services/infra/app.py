@@ -86,6 +86,12 @@ def create_app():
     from blueprints.trace import trace_bp
     app.register_blueprint(trace_bp, url_prefix='/api/trace')
 
+    # Preview environment proxy: routes /api/preview-route/<path> to the per-PR
+    # API Gateway looked up in DynamoDB. Only useful when PREVIEW_ENABLED=true.
+    if os.getenv('PREVIEW_ENABLED', 'false').lower() == 'true':
+        from blueprints.preview_router import preview_router_bp
+        app.register_blueprint(preview_router_bp, url_prefix='/api/preview-route')
+
     # JWT for admin endpoints (loaded lazily so local dev without JWT_SECRET still works)
     jwt_secret = os.getenv('JWT_SECRET_KEY')
     if not jwt_secret and os.getenv('SSM_JWT_SECRET') and os.getenv('USE_SSM_SECRETS', 'false').lower() == 'true':

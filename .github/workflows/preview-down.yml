@@ -126,10 +126,23 @@ jobs:
           from pymongo import MongoClient
           uri = os.environ["MONGODB_URI"]
           name = os.environ["DB_NAME"]
-          if not name.startswith("pr_"):
-              raise SystemExit(f"refusing to drop non-preview db {name!r}")
-          MongoClient(uri).drop_database(name)
-          print(f"dropped {name}")
+          # Accept both the new short name (pr_<slug>) and the legacy long name
+          # (portfolio_pr_<slug>) so we can clean up envs created before the rename.
+          if not (name.startswith("pr_") or name.startswith("portfolio_pr_")):
+              print(f"skipping drop for non-preview db {name!r}")
+              raise SystemExit(0)
+          if len(name.encode()) > 38:
+              # Atlas validation rejects names >38 bytes; this slug pre-dates the
+              # rename and the per-PR db never got created (routing was broken),
+              # so there is nothing to drop. Continue with terraform teardown.
+              print(f"skipping drop: {name!r} exceeds Atlas's 38-byte limit (legacy name; db never existed)")
+              raise SystemExit(0)
+          try:
+              MongoClient(uri).drop_database(name)
+              print(f"dropped {name}")
+          except Exception as e:
+              # Don't fail the teardown if the DB is already gone or otherwise unreachable.
+              print(f"WARNING: drop_database({name!r}) failed: {e}")
           PY
 
       - name: Empty preview S3 prefix

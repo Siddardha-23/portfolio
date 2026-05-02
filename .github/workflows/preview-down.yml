@@ -19,7 +19,7 @@ concurrency:
 
 env:
   AWS_REGION: us-east-1
-  TERRAFORM_VERSION: "1.6.0"
+  TERRAFORM_VERSION: "1.11.0"
   PROJECT_NAME: portfolio
 
 jobs:
@@ -58,9 +58,9 @@ jobs:
         working-directory: infrastructure/terraform/preview
         run: |
           cat > backend.hcl <<EOF
-          bucket         = "${{ secrets.TF_BACKEND_BUCKET }}"
-          region         = "${AWS_REGION}"
-          dynamodb_table = "${{ secrets.TF_BACKEND_LOCK_TABLE }}"
+          bucket       = "${{ secrets.TF_BACKEND_BUCKET }}"
+          region       = "${AWS_REGION}"
+          use_lockfile = true
           EOF
           terraform init -backend-config=backend.hcl
 

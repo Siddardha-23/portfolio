@@ -353,9 +353,14 @@ resource "aws_lambda_function" "service" {
   description   = each.value.description
 
   # Infra Lambda fronts /api/preview-route/* (proxy to per-PR API GWs) in addition
-  # to its own /api/infra, /api/trace, /api/admin/environments routes. Reserve
-  # concurrency so a preview traffic burst can't starve prod's admin paths.
-  reserved_concurrent_executions = each.key == "infra" ? 100 : -1
+  # to its own /api/infra, /api/trace, /api/admin/environments routes.
+  #
+  # Reserved concurrency would isolate prod paths from preview traffic spikes,
+  # but it requires the unreserved pool to stay >= 10 (account minimum). On the
+  # default 10-concurrent-executions account limit, any reservation here fails.
+  # Once the account limit is raised via Service Quotas (Lambda > Concurrent
+  # executions, request 1000), bump infra to e.g. 100 here.
+  reserved_concurrent_executions = -1
 
   # Placeholder - will be updated by CI/CD
   filename         = data.archive_file.service_placeholder[each.key].output_path

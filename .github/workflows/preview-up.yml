@@ -131,6 +131,8 @@ jobs:
       - name: Build & deploy preview Lambda code
         env:
           LAMBDA_NAMES_JSON: ${{ steps.tf-out.outputs.lambda_names }}
+          PREVIEW_BUCKET: ${{ steps.tf-out.outputs.shared_bucket }}
+          MAX_DIRECT: "50000000"
         run: |
           set -euo pipefail
           cd portfolio-backend
@@ -148,11 +150,25 @@ jobs:
               (cd .build && zip -qr "../../../dist-$svc.zip" .)
             )
             fn=$(echo "$LAMBDA_NAMES_JSON" | python -c "import sys,json; print(json.load(sys.stdin)['$svc'])")
-            echo "Updating $fn"
-            aws lambda update-function-code \
-              --function-name "$fn" \
-              --zip-file "fileb://dist-$svc.zip" \
-              --no-cli-pager >/dev/null
+            zip_size=$(stat -c%s "dist-$svc.zip")
+            if [[ "$zip_size" -gt "$MAX_DIRECT" ]]; then
+              echo "Package is $(( zip_size / 1048576 ))MB - deploying via S3"
+              s3_key="lambda-deploy/${fn}-${GITHUB_SHA}.zip"
+              aws s3 cp "dist-$svc.zip" "s3://${PREVIEW_BUCKET}/${s3_key}" --no-cli-pager >/dev/null
+              aws lambda update-function-code \
+                --function-name "$fn" \
+                --s3-bucket "${PREVIEW_BUCKET}" \
+                --s3-key "${s3_key}" \
+                --no-cli-pager >/dev/null
+              aws s3 rm "s3://${PREVIEW_BUCKET}/${s3_key}" --no-cli-pager >/dev/null || true
+            else
+              echo "Package is $(( zip_size / 1048576 ))MB - deploying directly"
+              aws lambda update-function-code \
+                --function-name "$fn" \
+                --zip-file "fileb://dist-$svc.zip" \
+                --no-cli-pager >/dev/null
+            fi
+            aws lambda wait function-updated --function-name "$fn"
           done
 
       - name: Build frontend (preview API base)

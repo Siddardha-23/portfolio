@@ -174,11 +174,13 @@ jobs:
       - name: Build frontend (preview API base)
         working-directory: portfolio-frontend
         env:
-          VITE_API_BASE: https://${{ steps.tf-out.outputs.preview_url == '' && 'placeholder' || steps.slug.outputs.slug }}.preview.${{ secrets.DOMAIN_NAME }}/api
+          # Talk directly to the per-PR API Gateway. CloudFront /api/* goes to prod,
+          # so bypassing it keeps preview Lambda + per-PR Mongo db isolation intact.
+          # CORS on the per-PR API Gateway already allows https://<slug>.preview.<domain>.
+          VITE_API_BASE: ${{ steps.tf-out.outputs.api_url }}
         run: |
           npm ci
-          # match the prod env-file pattern used in deploy.yml
-          echo "VITE_API_URL=https://${{ steps.slug.outputs.slug }}.preview.${{ secrets.DOMAIN_NAME }}/api" > .env.production
+          echo "VITE_API_URL=${{ steps.tf-out.outputs.api_url }}" > .env.production
           npm run build
 
       - name: Sync frontend to preview S3 prefix

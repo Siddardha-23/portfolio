@@ -118,6 +118,10 @@ locals {
     # Ephemeral preview env management - more specific than /api/admin/{proxy+}
     "GET /api/admin/environments"          = "infra"
     "ANY /api/admin/environments/{proxy+}" = "infra"
+
+    # Preview env proxy: receives rewritten /api/* requests from the preview
+    # CloudFront distribution and proxies to the per-PR API Gateway.
+    "ANY /api/preview-route/{proxy+}" = "infra"
   }
 }
 

@@ -276,8 +276,8 @@ function PipelineRow({
       className={`group relative rounded-xl border ${
         applied
           ? 'border-emerald-500/40 bg-emerald-500/5 opacity-60'
-          : tierStyle?.ring || 'border-border/60'
-      } backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}
+          : tierStyle?.ring || 'border-gray-200/80 dark:border-white/[0.08]'
+      } bg-white/90 dark:bg-gray-900/50 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}
     >
       {applied && (
         <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
@@ -654,7 +654,7 @@ export function DailyPipelinePanel({
       <ApifyKeyCard forceOpenSignal={apifyForceOpen} />
 
       {/* Hero / config */}
-      <Card className="overflow-hidden border-purple-500/30 bg-gradient-to-br from-purple-500/10 via-transparent to-indigo-500/10">
+      <Card className="overflow-hidden border-gray-200/80 dark:border-white/[0.08] bg-white/90 dark:bg-gray-900/50 bg-gradient-to-br from-purple-500/5 via-transparent to-indigo-500/5 dark:from-transparent dark:via-transparent dark:to-transparent">
         <CardContent className="space-y-5 p-5">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div className="space-y-1">
@@ -674,9 +674,9 @@ export function DailyPipelinePanel({
             <div className="flex flex-shrink-0 items-center gap-2">
               <Button
                 onClick={handleReset}
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="gap-1.5 text-xs"
+                className="gap-1.5 text-xs border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-500/30"
                 disabled={loading}
               >
                 <RotateCcw className="h-3 w-3" />
@@ -710,7 +710,7 @@ export function DailyPipelinePanel({
                     className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition ${
                       active
                         ? `border-transparent bg-gradient-to-r ${p.gradient} text-white shadow-sm`
-                        : 'border-border/60 bg-card hover:border-purple-500/40 hover:bg-purple-500/5'
+                        : 'border-gray-200/80 dark:border-white/[0.08] bg-white/80 dark:bg-gray-900/40 hover:border-purple-500/40 hover:bg-purple-500/5'
                     }`}
                   >
                     <span className={active ? 'text-white' : 'text-muted-foreground group-hover:text-foreground'}>
@@ -764,10 +764,10 @@ export function DailyPipelinePanel({
 
           {/* Advanced toggle */}
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => setShowAdvanced((v) => !v)}
-            className="gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="gap-1 text-xs border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-500/30"
           >
             {showAdvanced ? '▾' : '▸'} Advanced — edit LinkedIn searches & Workday titles
           </Button>
@@ -877,7 +877,7 @@ export function DailyPipelinePanel({
 
       {/* Error */}
       {error && !loading && (
-        <Card className="border-red-500/40 bg-red-500/5">
+        <Card className="border-red-500/40 bg-red-500/5 dark:bg-red-500/10">
           <CardContent className="flex items-start gap-2 p-4">
             <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
             <div className="text-sm">

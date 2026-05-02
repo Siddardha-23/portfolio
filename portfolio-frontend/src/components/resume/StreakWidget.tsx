@@ -58,10 +58,10 @@ function variantFor(count: number): CellVariant {
 }
 
 const CELL_BASE_STYLES: Record<CellVariant, string> = {
-  empty: 'bg-gray-800/40 border-gray-700/30 text-gray-600',
-  low: 'bg-amber-500/10 border-amber-500/25 text-amber-300',
-  mid: 'bg-amber-500/20 border-amber-400/40 text-amber-200',
-  high: 'bg-gradient-to-br from-amber-500/35 to-pink-500/25 border-pink-400/45 text-amber-100',
+  empty: 'bg-gray-100 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700/30 text-gray-400 dark:text-gray-600',
+  low: 'bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/25 text-amber-600 dark:text-amber-300',
+  mid: 'bg-amber-100 dark:bg-amber-500/20 border-amber-300 dark:border-amber-400/40 text-amber-700 dark:text-amber-200',
+  high: 'bg-gradient-to-br from-amber-200 to-pink-100 dark:from-amber-500/35 dark:to-pink-500/25 border-pink-300 dark:border-pink-400/45 text-amber-800 dark:text-amber-100',
   peak: 'bg-gradient-to-br from-amber-400 via-pink-500 to-purple-600 border-amber-300/70 text-white',
 };
 
@@ -103,7 +103,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
 
   if (loading) {
     return (
-      <div className="animate-pulse h-12 rounded-xl bg-gray-800/40 border border-gray-700/30" />
+      <div className="animate-pulse h-12 rounded-xl bg-gray-200 dark:bg-gray-800/40 border border-gray-300 dark:border-gray-700/30" />
     );
   }
 
@@ -114,13 +114,13 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
   const recent = [...data.heatmap].reverse().slice(0, 10);
 
   return (
-    <div className="group relative overflow-hidden rounded-xl border border-white/[0.06] bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset]">
+    <div className="group relative overflow-hidden rounded-xl border border-gray-200 dark:border-white/[0.06] bg-gradient-to-br from-white via-gray-50 to-white dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 shadow-sm dark:shadow-[0_1px_0_0_rgba(255,255,255,0.04)_inset]">
       {/* Top accent bar — gradient when alive, neutral when not */}
       <div
         className={`absolute inset-x-0 top-0 h-px ${
           isAlive
             ? 'bg-gradient-to-r from-transparent via-amber-400/60 to-transparent'
-            : 'bg-gradient-to-r from-transparent via-gray-700/40 to-transparent'
+            : 'bg-gradient-to-r from-transparent via-gray-300/40 dark:via-gray-700/40 to-transparent'
         }`}
       />
       {/* Ambient glow — only when streak is alive */}
@@ -148,7 +148,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
               className={`text-2xl font-bold tabular-nums leading-none tracking-tight ${
                 todayActive
                   ? 'bg-gradient-to-br from-amber-200 via-pink-300 to-purple-300 bg-clip-text text-transparent drop-shadow-[0_0_12px_rgba(251,146,60,0.3)]'
-                  : 'text-gray-600'
+                  : 'text-gray-400 dark:text-gray-600'
               }`}
             >
               {data.today_count}
@@ -160,7 +160,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
         </div>
 
         {/* Soft gradient divider */}
-        <div className="hidden sm:block h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-white/10 to-transparent" />
+        <div className="hidden sm:block h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-gray-300 dark:via-white/10 to-transparent" />
 
         {/* ── Day streak (secondary) ────────────────────────────────── */}
         <div
@@ -175,8 +175,8 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
             <span
               className={`text-xl font-bold tabular-nums leading-none tracking-tight ${
                 isAlive
-                  ? 'text-amber-200'
-                  : 'text-gray-600'
+                  ? 'text-amber-500 dark:text-amber-200'
+                  : 'text-gray-400 dark:text-gray-600'
               }`}
             >
               {data.current_streak}
@@ -187,18 +187,18 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
           </div>
           {data.longest_streak > 0 && data.longest_streak > data.current_streak && (
             <span
-              className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none px-2 py-1 rounded-full border border-gray-700/40 bg-gray-800/40"
+              className="hidden md:inline-flex items-center gap-1.5 text-[10px] font-medium leading-none px-2 py-1 rounded-full border border-gray-200 dark:border-gray-700/40 bg-gray-100 dark:bg-gray-800/40"
               title={`Personal best: ${data.longest_streak} day${data.longest_streak === 1 ? '' : 's'}`}
             >
-              <span className="text-gray-400">Best</span>
-              <span className="tabular-nums text-gray-200 font-semibold">{data.longest_streak}</span>
+              <span className="text-gray-500 dark:text-gray-400">Best</span>
+              <span className="tabular-nums text-gray-700 dark:text-gray-200 font-semibold">{data.longest_streak}</span>
             </span>
           )}
         </div>
 
         {/* Soft gradient divider */}
         <div
-          className={`hidden sm:block h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-white/10 to-transparent`}
+          className={`hidden sm:block h-8 w-px shrink-0 bg-gradient-to-b from-transparent via-gray-300 dark:via-white/10 to-transparent`}
         />
 
         {/* ── Right: today-first per-day cells ───────────────────────── */}
@@ -215,7 +215,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
                 : CELL_BASE_STYLES[variant];
 
               const sizing = isHeroToday
-                ? 'w-10 h-10 text-base ring-2 ring-amber-300/70 ring-offset-2 ring-offset-gray-950'
+                ? 'w-10 h-10 text-base ring-2 ring-amber-300/70 ring-offset-2 ring-offset-white dark:ring-offset-gray-950'
                 : isToday
                   ? 'w-7 h-7 text-[12px] ring-1 ring-amber-400/40'
                   : 'w-7 h-7 text-[12px]';
@@ -230,7 +230,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
                     className={`relative rounded-lg border flex items-center justify-center font-semibold tabular-nums transition-all duration-200 ${baseTone} ${sizing} ${
                       isActive
                         ? 'group-hover/cell:-translate-y-0.5 group-hover/cell:shadow-md'
-                        : 'group-hover/cell:border-gray-600/50'
+                        : 'group-hover/cell:border-gray-300 dark:group-hover/cell:border-gray-600/50'
                     }`}
                   >
                     {isActive && (
@@ -242,7 +242,7 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
                     )}
                     {/* Empty days show a dim dot rather than a loud "0" */}
                     {!isActive ? (
-                      <span className="w-1 h-1 rounded-full bg-gray-600/60" />
+                      <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600/60" />
                     ) : (
                       <span className="relative leading-none">{cell.count}</span>
                     )}
@@ -250,12 +250,12 @@ const StreakWidget = forwardRef<StreakWidgetHandle, { compact?: boolean }>(({ co
                   <span
                     className={`text-[9px] font-semibold uppercase tracking-wider leading-none ${
                       isHeroToday
-                        ? 'text-amber-200'
+                        ? 'text-amber-600 dark:text-amber-200'
                         : isToday
-                          ? 'text-amber-400/80'
+                          ? 'text-amber-500 dark:text-amber-400/80'
                           : isActive
-                            ? 'text-gray-400'
-                            : 'text-gray-600'
+                            ? 'text-gray-500 dark:text-gray-400'
+                            : 'text-gray-400 dark:text-gray-600'
                     }`}
                   >
                     {isToday ? 'Today' : `${shortDay(cell.date)} ${dayOfMonth(cell.date)}`}

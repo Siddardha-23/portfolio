@@ -1573,7 +1573,7 @@ function MyResumesTab() {
     return (
       <div className="animate-pulse space-y-3">
         <div className="h-16 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />
-        <div className="h-16 rounded-xl bg-gray-800/30" />
+        <div className="h-16 rounded-xl bg-gray-100/30 dark:bg-gray-800/30" />
       </div>
     );
 
@@ -5657,8 +5657,8 @@ function ResumeSectionNav({
                     aria-current={active ? "page" : undefined}
                     aria-label={item.badge ? `${item.label} (${item.badge})` : item.label}
                     title={collapsed ? `${item.label}${item.badge ? ` - ${item.badge}` : ""}` : undefined}
-                    className={`group relative flex h-10 w-full items-center rounded-lg text-sm font-semibold transition-all duration-200 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
-                      collapsed ? "justify-center px-0" : "gap-3 px-2.5"
+                    className={`group relative flex w-full items-center rounded-lg text-sm font-semibold transition-all duration-200 hover:translate-x-[1px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 ${
+                      collapsed ? "h-10 justify-center px-0" : "min-h-[2.5rem] gap-3 py-2 px-3"
                     } ${
                       active
                         ? "bg-gradient-to-r from-indigo-500/15 via-purple-500/10 to-transparent text-gray-950 shadow-sm ring-1 ring-indigo-500/20 dark:text-white"
@@ -5867,21 +5867,23 @@ export default function ResumeParser() {
                 </h1>
               </div>
 
-              <div className="min-w-0 flex-1">
-                <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-gray-200 bg-gray-50/80 px-3 py-1.5 text-sm font-semibold text-gray-700 shadow-sm shadow-black/[0.02] dark:border-white/10 dark:bg-white/[0.04] dark:text-gray-200">
-                  <span className="shrink-0 text-indigo-500 dark:text-indigo-300">
+              <div className="min-w-0 flex-1 ml-4 border-l border-gray-200 dark:border-gray-800 pl-4 py-0.5">
+                <div className="flex items-center gap-1.5 text-gray-900 dark:text-gray-100">
+                  <span className="text-indigo-500 dark:text-indigo-400">
                     {activeNavItem.icon}
                   </span>
-                  <span className="truncate">{activeNavItem.label}</span>
+                  <h2 className="text-sm font-bold truncate">{activeNavItem.label}</h2>
                   {activeNavItem.badge && (
-                    <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                    <span className="ml-1 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
                       {activeNavItem.badge}
                     </span>
                   )}
                 </div>
-                <p className="mt-1 hidden truncate text-[11px] font-medium text-gray-500 dark:text-gray-400 lg:block">
-                  {activeNavItem.hint || "AI-guided resume and career workspace"}
-                </p>
+                {activeNavItem.hint && (
+                  <p className="mt-0.5 text-[11px] font-medium text-gray-500 dark:text-gray-400 truncate">
+                    {activeNavItem.hint}
+                  </p>
+                )}
               </div>
 
               {/* Right actions */}

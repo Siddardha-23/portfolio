@@ -148,8 +148,11 @@ resource "aws_cloudfront_function" "preview_rewrite" {
       req.headers["x-preview-slug"] = { value: slug };
 
       var uri = req.uri;
-      // Leave /api/* alone; the API origin will inspect X-Preview-Slug.
+      // Rewrite /api/<path> -> /api/preview-route/<path> so prod's API Gateway
+      // routes the request to the infra service's preview_router blueprint,
+      // which proxies it to the per-PR API Gateway based on X-Preview-Slug.
       if (uri.indexOf("/api/") === 0) {
+        req.uri = "/api/preview-route" + uri.substring(4);
         return req;
       }
       // Static asset (has a file extension) -> /{slug}{uri}

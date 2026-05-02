@@ -94,7 +94,7 @@ export function ChipsInput({
             onKeyDown={handleKey}
             onPaste={handlePaste}
             placeholder={placeholder}
-            className="pr-10 focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
+            className="pr-10 border-gray-200 bg-white/80 dark:border-white/10 dark:bg-gray-950/60 focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
           />
           {draft.trim() && (
             <button
@@ -110,10 +110,10 @@ export function ChipsInput({
         {defaultValues && (
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={() => onChange(defaultValues)}
-            className="gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            className="gap-1 text-[11px] border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-500/30"
           >
             <RotateCcw className="h-3 w-3" />
             Reset
@@ -145,11 +145,11 @@ export function ChipsInput({
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
           placeholder={`Filter ${values.length} items…`}
-          className="h-8 text-xs focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
+          className="h-8 text-xs border-gray-200 bg-white/80 dark:border-white/10 dark:bg-gray-950/60 focus-visible:border-purple-500/40 focus-visible:ring-purple-500/40"
         />
       )}
 
-      <div className="flex flex-wrap gap-1.5 rounded-lg border border-border/60 bg-muted/30 p-2 min-h-[3.5rem]">
+      <div className="flex flex-wrap gap-1.5 rounded-lg border border-gray-200/80 dark:border-white/[0.08] bg-gray-50/50 dark:bg-gray-900/40 p-2 min-h-[3.5rem]">
         {filtered.length === 0 ? (
           <p className="m-auto text-xs italic text-muted-foreground">{emptyState}</p>
         ) : (

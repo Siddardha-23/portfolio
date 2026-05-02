@@ -5,7 +5,7 @@
 # =============================================================================
 
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.11"
 
   required_providers {
     aws = {
@@ -14,14 +14,13 @@ terraform {
     }
   }
 
-  # Uncomment to use S3 backend for state management (recommended for production)
-  # backend "s3" {
-  #   bucket         = "portfolio-terraform-state"
-  #   key            = "portfolio/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   encrypt        = true
-  #   dynamodb_table = "terraform-locks"
-  # }
+  backend "s3" {
+    bucket       = "portfolio-terraform-state-024230653681"
+    key          = "portfolio/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
 }
 
 # Primary provider - us-east-1 required for CloudFront ACM certificates

@@ -35,7 +35,37 @@ function writeCached(data: SmartFilterSuggestions) {
 }
 
 const PENDING_KEY = 'pending_smart_filters';
-const DISMISSED_KEY = 'smart_filters_inline_dismissed';
+
+// Discovery-state lifecycle for the inline teaser. Stored in localStorage so
+// the choice persists across browser restarts. Three states:
+//   - 'new'       → never seen; show the card
+//   - 'used'      → user clicked "Apply to Daily Pipeline"; never re-show
+//   - 'dismissed' → user X'd the card; never re-show
+// The Smart Filters tab in Job Opportunities is the canonical home for repeat
+// use, so we don't need to nag in the Tailor view ever again.
+const STATE_KEY = 'smart_filters_inline_state_v1';
+type InlineState = 'new' | 'used' | 'dismissed';
+
+function readState(): InlineState {
+  try {
+    const v = localStorage.getItem(STATE_KEY);
+    if (v === 'used' || v === 'dismissed') return v;
+    // One-time migration: respect any prior session-scoped dismissal
+    // so users who already X'd it don't see the card again.
+    const legacy = sessionStorage.getItem('smart_filters_inline_dismissed');
+    if (legacy === '1') {
+      localStorage.setItem(STATE_KEY, 'dismissed');
+      return 'dismissed';
+    }
+  } catch {
+    /* storage disabled */
+  }
+  return 'new';
+}
+
+function writeState(s: InlineState) {
+  try { localStorage.setItem(STATE_KEY, s); } catch { /* */ }
+}
 
 const PRESET_GRADIENTS: Record<string, string> = {
   'cloud-devops': 'from-sky-500 to-cyan-500',
@@ -52,14 +82,17 @@ const PRESET_GRADIENTS: Record<string, string> = {
  * where DailyPipelinePanel consumes the pending suggestions on next mount.
  */
 export function SmartFiltersInline() {
-  const cached = typeof window !== 'undefined' ? readCached() : null;
-  const [loading, setLoading] = useState(!cached);
+  const initialState = typeof window !== 'undefined' ? readState() : 'new';
+  // Compute alive *before* anything else — when the card has been used or
+  // dismissed previously, we render nothing and never make the suggester call.
+  const [state, setState] = useState<InlineState>(initialState);
+  const alive = state === 'new';
+
+  const cached = alive && typeof window !== 'undefined' ? readCached() : null;
+  const [loading, setLoading] = useState(alive && !cached);
   const [error, setError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<SmartFilterSuggestions | null>(cached);
   const [expanded, setExpanded] = useState(false);
-  const [dismissed, setDismissed] = useState(
-    typeof window !== 'undefined' && sessionStorage.getItem(DISMISSED_KEY) === '1',
-  );
 
   const load = async (force = false) => {
     if (!force) {
@@ -87,15 +120,16 @@ export function SmartFiltersInline() {
   };
 
   useEffect(() => {
-    if (dismissed || suggestions) return;
+    if (!alive || suggestions) return;
     load();
-  }, [dismissed]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alive]);
 
-  if (dismissed) return null;
+  if (!alive) return null;
 
   const dismiss = () => {
-    sessionStorage.setItem(DISMISSED_KEY, '1');
-    setDismissed(true);
+    writeState('dismissed');
+    setState('dismissed');
   };
 
   const handleApply = () => {
@@ -105,6 +139,9 @@ export function SmartFiltersInline() {
     } catch {
       /* ignore quota */
     }
+    // Mark used so the teaser never re-appears on this browser.
+    writeState('used');
+    setState('used');
     window.dispatchEvent(new CustomEvent('portfolio:navigate-to-jobs'));
   };
 

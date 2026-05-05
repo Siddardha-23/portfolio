@@ -2801,3 +2801,158 @@ def career_copilot_playground_evaluate():
     except Exception as e:
         logger.exception("playground evaluate: %s", e)
         return jsonify({"error": str(e)[:200]}), 500
+
+
+# ==================================================================
+# Gmail integration — auto-update application status from inbox
+# ==================================================================
+# Flow:
+#   1. GET  /gmail/status                  → is the user linked? gmail address, last sync.
+#   2. GET  /gmail/auth-url                → returns a one-time Google consent URL.
+#   3. POST /gmail/callback {code,state}   → exchanges code, stores encrypted refresh token.
+#   4. POST /gmail/sync                    → pulls new mail, classifies, updates statuses.
+#   5. GET  /gmail/suggestions             → list pending suggestions for review.
+#   6. POST /gmail/suggestions/<id>/apply  → confirm and apply a suggested status change.
+#   7. POST /gmail/suggestions/<id>/dismiss → discard a suggestion.
+#   8. POST /gmail/disconnect              → revoke + remove the link.
+
+
+@resume_bp.route("/gmail/status", methods=["GET"])
+@jwt_required()
+def gmail_status():
+    user_email = get_jwt_identity()
+    try:
+        from services import gmail_service
+    except Exception as e:
+        logger.exception("gmail import failed: %s", e)
+        return jsonify({"error": "Gmail integration unavailable"}), 500
+
+    configured = gmail_service.gmail_configured()
+    conn = gmail_service.get_connection(user_email) if configured else None
+    pending = 0
+    if conn:
+        pending = gmail_service._suggestions().count_documents({
+            "user_email": user_email, "applied": False, "dismissed": False,
+        })
+    return jsonify({
+        "configured": configured,
+        "connected": bool(conn),
+        "gmail_address": (conn or {}).get("gmail_address"),
+        "last_synced_at": (conn or {}).get("last_synced_at").isoformat() if conn and conn.get("last_synced_at") else None,
+        "pending_suggestions": pending,
+    }), 200
+
+
+@resume_bp.route("/gmail/auth-url", methods=["GET"])
+@jwt_required()
+def gmail_auth_url():
+    user_email = get_jwt_identity()
+    from services import gmail_service
+    if not gmail_service.gmail_configured():
+        return jsonify({"error": "Gmail OAuth is not configured on the server"}), 503
+    try:
+        url = gmail_service.build_auth_url(user_email)
+        return jsonify({"auth_url": url}), 200
+    except Exception as e:
+        logger.exception("gmail auth-url error: %s", e)
+        return jsonify({"error": "Failed to build Gmail auth URL"}), 500
+
+
+@resume_bp.route("/gmail/callback", methods=["POST"])
+@jwt_required()
+def gmail_callback():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    code = (data.get("code") or "").strip()
+    state = (data.get("state") or "").strip()
+    if not code or not state:
+        return jsonify({"error": "code and state are required"}), 400
+
+    from services import gmail_service
+    issued_to = gmail_service.consume_state(state)
+    if not issued_to or issued_to != user_email:
+        return jsonify({"error": "Invalid or expired OAuth state"}), 400
+    try:
+        tokens = gmail_service.exchange_code_for_tokens(code)
+        result = gmail_service.store_connection(user_email, tokens)
+        return jsonify({"connected": True, **result}), 200
+    except Exception as e:
+        logger.exception("gmail callback error: %s", e)
+        return jsonify({"error": str(e)[:240] or "Failed to link Gmail"}), 500
+
+
+@resume_bp.route("/gmail/sync", methods=["POST"])
+@jwt_required()
+def gmail_sync():
+    user_email = get_jwt_identity()
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"gmail_sync:{user_email}:{client_ip}", max_requests=6, window_seconds=300):
+        return jsonify({"error": "Sync rate limit hit. Try again in a few minutes."}), 429
+
+    from services import gmail_service
+    try:
+        summary = gmail_service.sync_user(user_email)
+        return jsonify({"ok": True, **summary}), 200
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.exception("gmail sync error: %s", e)
+        return jsonify({"error": "Gmail sync failed"}), 500
+
+
+@resume_bp.route("/gmail/suggestions", methods=["GET"])
+@jwt_required()
+def gmail_list_suggestions():
+    user_email = get_jwt_identity()
+    include_resolved = request.args.get("include_resolved", "false").lower() == "true"
+    from services import gmail_service
+    try:
+        items = gmail_service.list_suggestions(user_email, include_resolved=include_resolved)
+        return jsonify({"suggestions": items}), 200
+    except Exception as e:
+        logger.exception("gmail suggestions error: %s", e)
+        return jsonify({"error": "Failed to load suggestions"}), 500
+
+
+@resume_bp.route("/gmail/suggestions/<suggestion_id>/apply", methods=["POST"])
+@jwt_required()
+def gmail_apply_suggestion(suggestion_id):
+    user_email = get_jwt_identity()
+    from services import gmail_service
+    try:
+        s = gmail_service.apply_suggestion(user_email, suggestion_id)
+        return jsonify({"suggestion": s}), 200
+    except LookupError:
+        return jsonify({"error": "Suggestion not found"}), 404
+    except Exception as e:
+        logger.exception("gmail apply error: %s", e)
+        return jsonify({"error": "Failed to apply suggestion"}), 500
+
+
+@resume_bp.route("/gmail/suggestions/<suggestion_id>/dismiss", methods=["POST"])
+@jwt_required()
+def gmail_dismiss_suggestion(suggestion_id):
+    user_email = get_jwt_identity()
+    from services import gmail_service
+    try:
+        ok = gmail_service.dismiss_suggestion(user_email, suggestion_id)
+        if not ok:
+            return jsonify({"error": "Suggestion not found"}), 404
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("gmail dismiss error: %s", e)
+        return jsonify({"error": "Failed to dismiss suggestion"}), 500
+
+
+@resume_bp.route("/gmail/disconnect", methods=["POST"])
+@jwt_required()
+def gmail_disconnect():
+    user_email = get_jwt_identity()
+    from services import gmail_service
+    try:
+        gmail_service.disconnect(user_email)
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        logger.exception("gmail disconnect error: %s", e)
+        return jsonify({"error": "Failed to disconnect"}), 500

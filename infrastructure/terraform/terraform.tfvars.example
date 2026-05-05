@@ -36,6 +36,32 @@ jwt_secret_key = "your-super-secret-jwt-key-here-change-this"
 ipinfo_token = ""
 
 # =============================================================================
+# Gmail Integration (optional)
+# =============================================================================
+# Enables auto-update of application status from emails on the Applications tab.
+#
+# Setup steps:
+#   1. Google Cloud Console → APIs & Services → Library → enable Gmail API.
+#   2. APIs & Services → Credentials → Create OAuth client ID → "Web application".
+#   3. Authorized redirect URIs (add BOTH):
+#        https://manneharshithsiddardha.com/oauth/gmail/callback
+#        http://localhost:5173/oauth/gmail/callback
+#      The redirect URI registered in Google MUST exactly match
+#      `google_oauth_redirect_uri` (or the default https://<domain>/oauth/gmail/callback).
+#   4. OAuth consent screen → "Testing" mode → add yourself as a test user.
+#      (Public/Production verification requires Google's CASA review.)
+#   5. Generate the encryption key:
+#        python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#      ⚠️ Store this key securely. Rotating it invalidates every linked user's
+#      Gmail connection — they'll have to re-link.
+#
+# Leave all four blank to keep the feature disabled (UI hides itself).
+google_oauth_client_id     = ""
+google_oauth_client_secret = ""
+google_oauth_redirect_uri  = "" # leave blank to default to https://<domain_name>/oauth/gmail/callback
+gmail_token_encryption_key = ""
+
+# =============================================================================
 # Lambda Configuration
 # =============================================================================
 

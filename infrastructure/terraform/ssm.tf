@@ -178,6 +178,93 @@ resource "aws_ssm_parameter" "github_pat" {
 }
 
 # -----------------------------------------------------------------------------
+# Gmail Integration: Google OAuth Client ID (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "google_oauth_client_id" {
+  count = var.google_oauth_client_id != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/google-oauth-client-id"
+  description = "Google Cloud OAuth client ID (Gmail readonly)"
+  type        = "SecureString"
+  value       = var.google_oauth_client_id
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-google-oauth-client-id"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Gmail Integration: Google OAuth Client Secret (SecureString - optional)
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "google_oauth_client_secret" {
+  count = var.google_oauth_client_secret != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/google-oauth-client-secret"
+  description = "Google Cloud OAuth client secret"
+  type        = "SecureString"
+  value       = var.google_oauth_client_secret
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-google-oauth-client-secret"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Gmail Integration: OAuth Redirect URI (String - non-sensitive)
+# Defaults to https://<domain>/oauth/gmail/callback if not explicitly set.
+# Must match exactly the value registered in the Google Cloud OAuth client.
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "google_oauth_redirect_uri" {
+  count = var.google_oauth_client_id != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/google-oauth-redirect-uri"
+  description = "OAuth redirect URI registered in the Google client"
+  type        = "String"
+  value = var.google_oauth_redirect_uri != "" ? var.google_oauth_redirect_uri : "https://${var.domain_name}/oauth/gmail/callback"
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-google-oauth-redirect-uri"
+    Environment = var.environment
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Gmail Integration: Token Encryption Key (SecureString - optional)
+# WARNING: rotating this key invalidates every linked user's refresh token.
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "gmail_token_encryption_key" {
+  count = var.gmail_token_encryption_key != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/gmail-token-encryption-key"
+  description = "Fernet-compatible key used to encrypt stored Gmail refresh tokens"
+  type        = "SecureString"
+  value       = var.gmail_token_encryption_key
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-gmail-token-encryption-key"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Non-sensitive Configuration (String - not encrypted)
 # -----------------------------------------------------------------------------
 resource "aws_ssm_parameter" "allowed_origins" {
@@ -219,9 +306,13 @@ output "ssm_parameter_paths" {
     gemini_api_key           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
     jsearch_api_key          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
     apify_api_key            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : "not configured"
-    job_search_password_hash = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
-    github_pat               = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
-    allowed_origins          = aws_ssm_parameter.allowed_origins.name
-    environment              = aws_ssm_parameter.environment.name
+    job_search_password_hash    = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
+    github_pat                  = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
+    google_oauth_client_id      = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : "not configured"
+    google_oauth_client_secret  = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : "not configured"
+    google_oauth_redirect_uri   = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_redirect_uri[0].name : "not configured"
+    gmail_token_encryption_key  = var.gmail_token_encryption_key != "" ? aws_ssm_parameter.gmail_token_encryption_key[0].name : "not configured"
+    allowed_origins             = aws_ssm_parameter.allowed_origins.name
+    environment                 = aws_ssm_parameter.environment.name
   }
 }

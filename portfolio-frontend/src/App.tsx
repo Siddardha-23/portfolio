@@ -18,6 +18,7 @@ const ResumeParser = lazy(() => import('./pages/ResumeParser'));
 const DeployRunner = lazy(() => import('./components/DeployRunner'));
 const CloudLab = lazy(() => import('./pages/CloudLab'));
 const AdminPortal = lazy(() => import('./pages/AdminPortal'));
+const GmailCallback = lazy(() => import('./pages/GmailCallback'));
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ function AppContent() {
           <Route path="/project/:slug" element={<ProjectArchitecture />} />
           <Route path="/resume-parser" element={<Suspense fallback={<RouteLoadingFallback />}><ResumeParser /></Suspense>} />
           <Route path="/admin" element={<Suspense fallback={<RouteLoadingFallback />}><AdminPortal /></Suspense>} />
+          <Route path="/oauth/gmail/callback" element={<Suspense fallback={<RouteLoadingFallback />}><GmailCallback /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

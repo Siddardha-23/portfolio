@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { apiService } from "@/lib/api";
 import type { ApplicationStatus, TailoringRecord } from "@/types/resume";
 import { formatDate } from "@/components/resume/ResumeDashboard";
+import GmailIntegration from "@/components/resume/GmailIntegration";
 
 // ─── Column config ────────────────────────────────────────────────────────
 const COLUMNS: {
@@ -299,6 +300,8 @@ export default function ApplicationsTab() {
           </div>
         </div>
       </div>
+
+      <GmailIntegration onSyncComplete={fetch} />
 
       {/* Metric row */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">

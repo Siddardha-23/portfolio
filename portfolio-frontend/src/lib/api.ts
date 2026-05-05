@@ -1950,6 +1950,90 @@ class ApiService {
   }
 
   // ============================================
+  // Gmail integration — auto-update application status from inbox
+  // ============================================
+
+  async getGmailStatus(): Promise<ApiResponse<{
+    configured: boolean;
+    connected: boolean;
+    gmail_address?: string | null;
+    last_synced_at?: string | null;
+    pending_suggestions: number;
+  }>> {
+    return this.request("/resume/gmail/status");
+  }
+
+  async getGmailAuthUrl(): Promise<ApiResponse<{ auth_url: string }>> {
+    return this.request("/resume/gmail/auth-url");
+  }
+
+  async finishGmailLink(
+    code: string,
+    state: string,
+  ): Promise<ApiResponse<{ connected: boolean; gmail_address?: string; linked_at?: string }>> {
+    return this.request("/resume/gmail/callback", {
+      method: "POST",
+      body: JSON.stringify({ code, state }),
+    });
+  }
+
+  async syncGmail(): Promise<ApiResponse<{
+    ok: boolean;
+    messages_scanned: number;
+    auto_applied: number;
+    suggested: number;
+    ignored: number;
+  }>> {
+    return this.request("/resume/gmail/sync", { method: "POST" }, 60000);
+  }
+
+  async listGmailSuggestions(includeResolved = false): Promise<ApiResponse<{
+    suggestions: Array<{
+      suggestion_id: string;
+      record_id: string;
+      company?: string;
+      title?: string;
+      from_name?: string;
+      from_address?: string;
+      subject?: string;
+      snippet?: string;
+      current_status: string;
+      suggested_status: string;
+      confidence: number;
+      reason?: string;
+      applied: boolean;
+      dismissed: boolean;
+      auto_applied?: boolean;
+      created_at?: string;
+    }>;
+  }>> {
+    const qs = includeResolved ? "?include_resolved=true" : "";
+    return this.request(`/resume/gmail/suggestions${qs}`);
+  }
+
+  async applyGmailSuggestion(
+    suggestionId: string,
+  ): Promise<ApiResponse<{ suggestion: any }>> {
+    return this.request(
+      `/resume/gmail/suggestions/${suggestionId}/apply`,
+      { method: "POST" },
+    );
+  }
+
+  async dismissGmailSuggestion(
+    suggestionId: string,
+  ): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request(
+      `/resume/gmail/suggestions/${suggestionId}/dismiss`,
+      { method: "POST" },
+    );
+  }
+
+  async disconnectGmail(): Promise<ApiResponse<{ ok: boolean }>> {
+    return this.request("/resume/gmail/disconnect", { method: "POST" });
+  }
+
+  // ============================================
   // Admin endpoints (/api/admin)
   // ============================================
 

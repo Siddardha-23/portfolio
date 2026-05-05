@@ -144,3 +144,32 @@ class SandboxConfigMeta(type):
 class SandboxConfig(object, metaclass=SandboxConfigMeta):
     """Configuration for GitHub Actions CI/CD Sandbox"""
     pass
+
+
+class GmailOAuthConfigMeta(type):
+    @property
+    def GOOGLE_OAUTH_CLIENT_ID(cls):
+        return _get_config_value('GOOGLE_OAUTH_CLIENT_ID', '')
+
+    @property
+    def GOOGLE_OAUTH_CLIENT_SECRET(cls):
+        return _get_config_value('GOOGLE_OAUTH_CLIENT_SECRET', '')
+
+    @property
+    def GOOGLE_OAUTH_REDIRECT_URI(cls):
+        return _get_config_value('GOOGLE_OAUTH_REDIRECT_URI', '')
+
+    @property
+    def GMAIL_TOKEN_ENCRYPTION_KEY(cls):
+        return _get_config_value('GMAIL_TOKEN_ENCRYPTION_KEY', '')
+
+
+class GmailOAuthConfig(object, metaclass=GmailOAuthConfigMeta):
+    """Gmail OAuth + token-encryption configuration.
+
+    Required for the Applications-tab Gmail auto-status feature.
+    Redirect URI must exactly match the value registered in the Google Cloud
+    OAuth client (e.g. http://localhost:5173/oauth/gmail/callback for dev).
+    GMAIL_TOKEN_ENCRYPTION_KEY can be any string — it's hashed to a Fernet key.
+    """
+    pass

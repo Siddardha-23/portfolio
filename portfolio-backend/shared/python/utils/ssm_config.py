@@ -96,6 +96,10 @@ def get_all_secrets() -> Dict[str, str]:
         'APIFY_TOKEN': os.getenv('SSM_APIFY_TOKEN'),
         'JOB_SEARCH_PASSWORD_HASH': os.getenv('SSM_JOB_SEARCH_PASSWORD_HASH'),
         'GITHUB_PAT': os.getenv('SSM_GITHUB_PAT'),
+        'GOOGLE_OAUTH_CLIENT_ID': os.getenv('SSM_GOOGLE_OAUTH_CLIENT_ID'),
+        'GOOGLE_OAUTH_CLIENT_SECRET': os.getenv('SSM_GOOGLE_OAUTH_CLIENT_SECRET'),
+        'GOOGLE_OAUTH_REDIRECT_URI': os.getenv('SSM_GOOGLE_OAUTH_REDIRECT_URI'),
+        'GMAIL_TOKEN_ENCRYPTION_KEY': os.getenv('SSM_GMAIL_TOKEN_ENCRYPTION_KEY'),
     }
     
     # Filter out empty values
@@ -211,6 +215,22 @@ class SSMConfig:
     @property
     def GITHUB_PAT(self) -> Optional[str]:
         return self._get('GITHUB_PAT', 'GITHUB_PAT')
+
+    @property
+    def GOOGLE_OAUTH_CLIENT_ID(self) -> Optional[str]:
+        return self._get('GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_ID')
+
+    @property
+    def GOOGLE_OAUTH_CLIENT_SECRET(self) -> Optional[str]:
+        return self._get('GOOGLE_OAUTH_CLIENT_SECRET', 'GOOGLE_OAUTH_CLIENT_SECRET')
+
+    @property
+    def GOOGLE_OAUTH_REDIRECT_URI(self) -> Optional[str]:
+        return self._get('GOOGLE_OAUTH_REDIRECT_URI', 'GOOGLE_OAUTH_REDIRECT_URI')
+
+    @property
+    def GMAIL_TOKEN_ENCRYPTION_KEY(self) -> Optional[str]:
+        return self._get('GMAIL_TOKEN_ENCRYPTION_KEY', 'GMAIL_TOKEN_ENCRYPTION_KEY')
 
     @property
     def ALLOWED_ORIGINS(self) -> str:

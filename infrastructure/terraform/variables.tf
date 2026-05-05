@@ -132,6 +132,37 @@ variable "github_pat" {
   default     = ""
 }
 
+# =============================================================================
+# Gmail Integration (Applications-tab auto-status from inbox)
+# =============================================================================
+
+variable "google_oauth_client_id" {
+  description = "Google Cloud OAuth 2.0 Web client ID (for Gmail readonly scope)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_oauth_client_secret" {
+  description = "Google Cloud OAuth 2.0 client secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "google_oauth_redirect_uri" {
+  description = "OAuth redirect URI registered in the Google Cloud client. Must match exactly. Defaults to https://<domain_name>/oauth/gmail/callback when left empty."
+  type        = string
+  default     = ""
+}
+
+variable "gmail_token_encryption_key" {
+  description = "Fernet key (or any string; hashed to 32 bytes) used to encrypt Gmail refresh tokens at rest. Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'. ROTATING THIS KEY INVALIDATES ALL EXISTING GMAIL LINKS."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 # Lambda memory/timeout are configured per-service in lambda.tf locals.services
 
 # =============================================================================

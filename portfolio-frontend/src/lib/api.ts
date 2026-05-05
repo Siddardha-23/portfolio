@@ -1977,14 +1977,15 @@ class ApiService {
     });
   }
 
-  async syncGmail(): Promise<ApiResponse<{
+  async syncGmail(opts?: { force?: boolean }): Promise<ApiResponse<{
     ok: boolean;
     messages_scanned: number;
     auto_applied: number;
     suggested: number;
     ignored: number;
   }>> {
-    return this.request("/resume/gmail/sync", { method: "POST" }, 60000);
+    const qs = opts?.force ? "?force=true" : "";
+    return this.request(`/resume/gmail/sync${qs}`, { method: "POST" }, 60000);
   }
 
   async listGmailSuggestions(includeResolved = false): Promise<ApiResponse<{

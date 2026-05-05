@@ -285,7 +285,15 @@ def _get_access_token(user_email: str) -> Tuple[str, Dict[str, Any]]:
 # Gmail API helpers
 # ---------------------------------------------------------------------------
 
-def _gmail_get(path: str, access_token: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+class GmailAPIError(RuntimeError):
+    """Raised when a Gmail API call returns a non-200 we don't want to swallow."""
+    def __init__(self, status: int, body: str):
+        self.status = status
+        self.body = body
+        super().__init__(f"Gmail API returned {status}: {body[:200]}")
+
+
+def _gmail_get(path: str, access_token: str, params: Optional[Dict[str, Any]] = None, raise_on_error: bool = False) -> Dict[str, Any]:
     resp = requests.get(
         f"{GMAIL_API_BASE}{path}",
         headers={"Authorization": f"Bearer {access_token}"},
@@ -301,7 +309,9 @@ def _gmail_get(path: str, access_token: str, params: Optional[Dict[str, Any]] = 
             timeout=15,
         )
     if resp.status_code != 200:
-        logger.warning("Gmail API %s failed: %s %s", path, resp.status_code, resp.text[:200])
+        logger.warning("Gmail API %s failed: %s %s", path, resp.status_code, resp.text[:300])
+        if raise_on_error:
+            raise GmailAPIError(resp.status_code, resp.text)
         return {}
     return resp.json()
 
@@ -313,7 +323,9 @@ def _list_message_ids(access_token: str, query: str, max_results: int) -> List[s
         params: Dict[str, Any] = {"q": query, "maxResults": min(100, max_results - len(ids))}
         if page_token:
             params["pageToken"] = page_token
-        body = _gmail_get("/users/me/messages", access_token, params=params)
+        # raise_on_error=True so a transient 4xx/5xx surfaces as an exception in
+        # sync_user — otherwise we'd swallow the failure and poison last_synced_at.
+        body = _gmail_get("/users/me/messages", access_token, params=params, raise_on_error=True)
         for m in body.get("messages") or []:
             if m.get("id"):
                 ids.append(m["id"])
@@ -641,8 +653,15 @@ def _apply_status(user_email: str, record_id: str, status: str) -> bool:
     return bool(res.matched_count)
 
 
-def sync_user(user_email: str) -> Dict[str, Any]:
+def sync_user(user_email: str, force: bool = False) -> Dict[str, Any]:
     """Pull recent Gmail, match to records, classify, and write applies/suggestions.
+
+    Args:
+        user_email: identity of the linked user.
+        force: when True, ignore last_synced_at and re-scan the full
+               INITIAL_LOOKBACK_DAYS window. Used by the UI's "rescan" path
+               to recover after a misconfiguration window or bring older
+               applications up to date.
 
     Returns a summary dict for the API response.
     """
@@ -659,10 +678,16 @@ def sync_user(user_email: str) -> Dict[str, Any]:
         )
         return {"messages_scanned": 0, "auto_applied": 0, "suggested": 0, "ignored": 0}
 
-    since = conn.get("last_synced_at")
+    since = None if force else conn.get("last_synced_at")
     if isinstance(since, datetime) and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
-    messages = fetch_recent_messages(user_email, since)
+    try:
+        messages = fetch_recent_messages(user_email, since)
+    except GmailAPIError as e:
+        # Don't poison last_synced_at — caller (route) can show a user-facing
+        # error and the next sync will retry the same window.
+        logger.warning("[gmail-sync] fetch_failed user=%s status=%s", user_email, e.status)
+        raise RuntimeError(f"Gmail API error ({e.status}). Check that the Gmail API is enabled and the OAuth scope is granted.") from e
 
     auto_applied = 0
     suggested = 0

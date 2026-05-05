@@ -369,18 +369,38 @@ export default function ApplicationsTab() {
               <div key={s.record_id} className="rounded-lg border border-rose-500/15 bg-white/70 p-2 dark:bg-gray-900/50">
                 <div className="flex flex-wrap items-center gap-2 justify-between">
                   <p className="text-xs font-semibold text-gray-900 dark:text-white">{s.job_title} {s.company ? `· ${s.company}` : ""}</p>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const r = await apiService.generateIntelligenceFollowup({ record_id: s.record_id, channel: "email" });
-                      if (r.data?.followup) {
-                        setFollowups((prev) => ({ ...prev, [s.record_id]: { subject: r.data!.followup.subject, message: r.data!.followup.message } }));
-                      }
-                    }}
-                    className="rounded bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300"
-                  >
-                    Draft follow-up
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const r = await apiService.generateIntelligenceFollowup({ record_id: s.record_id, channel: "email" });
+                        if (r.data?.followup) {
+                          setFollowups((prev) => ({ ...prev, [s.record_id]: { subject: r.data!.followup.subject, message: r.data!.followup.message } }));
+                        }
+                      }}
+                      className="rounded bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-700 dark:text-rose-300"
+                    >
+                      Draft follow-up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const r = await apiService.dismissIntelligenceFollowup(s.record_id);
+                        if (r.error) { toast.error(r.error); return; }
+                        // Optimistic local removal — server will already not return it next time.
+                        setStaleApps(prev => prev.filter(x => x.record_id !== s.record_id));
+                        setFollowups(prev => {
+                          const next = { ...prev };
+                          delete next[s.record_id];
+                          return next;
+                        });
+                      }}
+                      className="rounded border border-rose-500/20 px-2 py-1 text-[11px] font-medium text-rose-700/80 dark:text-rose-300/80 hover:bg-rose-500/5"
+                      title="Hide this follow-up nudge until the application status changes again"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
                 </div>
                 {followups[s.record_id] && (
                   <div className="mt-2 rounded border border-gray-200/80 p-2 text-xs dark:border-white/10">

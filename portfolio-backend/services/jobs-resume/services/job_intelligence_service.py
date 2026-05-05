@@ -88,13 +88,42 @@ def get_stale_applications(user_email: str, stale_days: int = 5) -> Dict[str, An
         # Mongo timestamps are stored naive (datetime.utcnow); align with the tz-aware "now".
         if anchor.tzinfo is None:
             anchor = anchor.replace(tzinfo=timezone.utc)
-        if anchor <= stale_cutoff:
-            days_stale = max(1, (now - anchor).days)
-            row = _record_summary(record)
-            row["days_stale"] = days_stale
-            rows.append(row)
+        if anchor > stale_cutoff:
+            continue
+
+        # If the user dismissed the follow-up nudge after the last status touch,
+        # don't keep nagging them. A subsequent status update (anchor moves
+        # forward) re-surfaces the record, since dismissed_at stays put.
+        dismissed_at = app.get("followup_dismissed_at")
+        if isinstance(dismissed_at, datetime):
+            if dismissed_at.tzinfo is None:
+                dismissed_at = dismissed_at.replace(tzinfo=timezone.utc)
+            if dismissed_at >= anchor:
+                continue
+
+        days_stale = max(1, (now - anchor).days)
+        row = _record_summary(record)
+        row["days_stale"] = days_stale
+        rows.append(row)
     rows.sort(key=lambda x: x.get("days_stale", 0), reverse=True)
     return {"ok": True, "count": len(rows), "stale_applications": rows}
+
+
+def dismiss_followup(user_email: str, record_id: str) -> Dict[str, Any]:
+    """Mark this application's follow-up nudge as dismissed.
+
+    The dismissal is anchored to "now" and the get_stale_applications query
+    skips records where dismissed_at >= updated_at, so any subsequent status
+    change naturally re-arms the nudge.
+    """
+    now = datetime.now(timezone.utc)
+    res = _tailoring_collection().update_one(
+        {"user_email": user_email, "record_id": record_id},
+        {"$set": {"application.followup_dismissed_at": now}},
+    )
+    if not res.matched_count:
+        return {"ok": False, "error": "Record not found"}
+    return {"ok": True, "dismissed_at": now.isoformat()}
 
 
 def generate_followup_message(user_email: str, record_id: str, channel: str = "email") -> Dict[str, Any]:

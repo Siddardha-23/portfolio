@@ -2384,6 +2384,21 @@ def career_copilot_intelligence_followup():
         return jsonify({"error": str(e)[:200]}), 500
 
 
+@resume_bp.route("/career-copilot/intelligence/followup/<record_id>/dismiss", methods=["POST"])
+@jwt_required()
+def career_copilot_intelligence_followup_dismiss(record_id):
+    user_email = get_jwt_identity()
+    try:
+        from services.job_intelligence_service import dismiss_followup
+        out = dismiss_followup(user_email, record_id)
+        if not out.get("ok"):
+            return jsonify(out), 404
+        return jsonify(out), 200
+    except Exception as e:
+        logger.exception("intelligence followup dismiss: %s", e)
+        return jsonify({"error": "Failed to dismiss follow-up"}), 500
+
+
 @resume_bp.route("/career-copilot/intelligence/funnel", methods=["GET"])
 @jwt_required()
 def career_copilot_intelligence_funnel():

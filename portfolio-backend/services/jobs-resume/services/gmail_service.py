@@ -51,7 +51,12 @@ GMAIL_SCOPES = [
 ]
 
 # Confidence at/above which we auto-apply a status change vs. surface a suggestion.
-AUTO_APPLY_CONFIDENCE = 0.85
+# Tuned to favor decisiveness: real recruiting mail (rejection notes, interview
+# invites, application confirmations) reads unambiguously to a strong LLM, so
+# punting to the user on every borderline case made the suggestions panel noisy.
+# Anything Gemini emits at >=0.70 is good enough — heuristic+LLM agreement
+# bumps the effective floor a bit higher in practice.
+AUTO_APPLY_CONFIDENCE = 0.70
 
 # Cap how many messages we look at per sync. Bumped along with the 60-day
 # lookback so a freshly-linked inbox gets enough headroom to scan two months
@@ -558,7 +563,10 @@ def classify_message(msg: Dict[str, Any], record_meta: Dict[str, Any]) -> Option
     """
     heur_status, heur_conf = _heuristic_status(msg)
 
-    prompt = f"""You are classifying a recruiting email to update a job application tracker.
+    prompt = f"""You are an experienced recruiter's assistant classifying an email so a job
+application tracker can update itself automatically. Be decisive — the user has explicitly
+asked you to make the call rather than punting back to them. Hedge only when the email is
+genuinely ambiguous.
 
 The user is tracking this application:
 - Company: {record_meta.get('company') or 'unknown'}
@@ -572,15 +580,28 @@ Snippet: {msg.get('snippet', '')}
 Body (truncated):
 {(msg.get('body') or '')[:1500]}
 
-Decide which application status best fits this email. Statuses:
-- applied        → confirmation that the user's application was received
-- interviewing   → recruiter wants to schedule, confirms a time, sends prep, advances to next round
-- offer          → an offer is being extended
-- rejected       → the user is no longer being considered
-- ignore         → the email is unrelated, marketing, a job alert, an automated digest, etc.
+Pick the best status:
+- applied        → confirmation that the user's application was received / is under review
+- interviewing   → any signal of progression: recruiter wants to schedule, confirmed a time,
+                   sent prep material, asked for availability, moved to next round, sent a
+                   take-home, scheduled an onsite, hiring manager intro, etc.
+- offer          → an offer of employment is being extended (or compensation is being discussed)
+- rejected       → the user is no longer being considered, even if framed politely
+                   ("we've decided to move forward with other candidates", "not at this time",
+                   "we'll keep your resume on file")
+- ignore         → marketing, automated job alert, recruiter outreach for a *different* role,
+                   newsletter, calendar invite from an unrelated meeting
+
+Confidence guidance:
+- 0.90+  unambiguous: explicit phrasing for that status
+- 0.70-0.89  clear from context even without an explicit phrase
+- 0.50-0.69  leaning that way but could be misread
+- below 0.50  truly uncertain — only use this when you genuinely can't tell
+
+Default to a definite status when the email is *about* this application and you can read its
+intent. Only fall back to "ignore" if the email is unrelated or noise.
 
 Output strict JSON: {{"status": "...", "confidence": 0.0-1.0, "reason": "one short sentence"}}.
-Confidence should reflect how unambiguous the email is. If status is "ignore", confidence reflects how sure you are it should be ignored.
 """
 
     try:

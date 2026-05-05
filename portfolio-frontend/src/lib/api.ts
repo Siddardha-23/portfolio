@@ -1740,6 +1740,15 @@ class ApiService {
     );
   }
 
+  async dismissIntelligenceFollowup(
+    recordId: string,
+  ): Promise<ApiResponse<{ ok: boolean; dismissed_at?: string }>> {
+    return this.request(
+      `/resume/career-copilot/intelligence/followup/${recordId}/dismiss`,
+      { method: "POST" },
+    );
+  }
+
   async getFunnelAnalytics(): Promise<ApiResponse<{
     ok: boolean;
     counts: Record<string, number>;

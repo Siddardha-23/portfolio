@@ -2890,15 +2890,24 @@ def gmail_sync():
     if limiter.is_rate_limited(f"gmail_sync:{user_email}:{client_ip}", max_requests=6, window_seconds=300):
         return jsonify({"error": "Sync rate limit hit. Try again in a few minutes."}), 429
 
+    # Quick guard so we don't bother dispatching when the user isn't linked.
     from services import gmail_service
+    if not gmail_service.get_connection(user_email):
+        return jsonify({"error": "Gmail is not connected"}), 400
+
+    # Run the sync as an async job — Gmail listing + per-match classifier
+    # calls easily exceed API Gateway's 29s ceiling. The job_id flows back
+    # to the UI which polls /resume/job/<id> until complete.
     try:
-        summary = gmail_service.sync_user(user_email)
-        return jsonify({"ok": True, **summary}), 200
-    except RuntimeError as e:
-        return jsonify({"error": str(e)}), 400
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        payload = {"user_email": user_email}
+        job_id = svc.create_job("gmail_sync", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "gmail_sync", payload)
+        return jsonify({"ok": True, "job_id": job_id, "status": "started"}), 202
     except Exception as e:
-        logger.exception("gmail sync error: %s", e)
-        return jsonify({"error": "Gmail sync failed"}), 500
+        logger.exception("gmail sync dispatch error: %s", e)
+        return jsonify({"error": "Failed to start Gmail sync"}), 500
 
 
 @resume_bp.route("/gmail/suggestions", methods=["GET"])

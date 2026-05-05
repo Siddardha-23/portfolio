@@ -1979,12 +1979,26 @@ class ApiService {
 
   async syncGmail(): Promise<ApiResponse<{
     ok: boolean;
-    messages_scanned: number;
-    auto_applied: number;
-    suggested: number;
-    ignored: number;
+    job_id: string;
+    status: string;
   }>> {
-    return this.request("/resume/gmail/sync", { method: "POST" }, 60000);
+    return this.request("/resume/gmail/sync", { method: "POST" }, 30000);
+  }
+
+  async pollGmailSyncJob(jobId: string): Promise<ApiResponse<{
+    status: "processing" | "completed" | "failed";
+    result?: {
+      messages_scanned: number;
+      auto_applied: number;
+      suggested: number;
+      ignored: number;
+      skipped_already_seen?: number;
+      skipped_no_match?: number;
+      skipped_already_in_status?: number;
+    };
+    error?: string;
+  }>> {
+    return this.request(`/resume/job/${jobId}`);
   }
 
   async listGmailSuggestions(includeResolved = false): Promise<ApiResponse<{

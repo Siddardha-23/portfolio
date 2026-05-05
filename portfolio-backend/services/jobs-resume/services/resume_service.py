@@ -288,6 +288,16 @@ def _process_job(job_id: str, job_type: str, payload: dict):
     """Execute the appropriate pipeline step and store the result in MongoDB."""
     svc = get_resume_service()
     try:
+        if job_type == "gmail_sync":
+            # Gmail sync can scan dozens of messages and run a Gemini classifier
+            # per match — easily blows past API Gateway's 29s. Done async so the
+            # HTTP route can return 202 immediately and the UI polls /job/<id>.
+            from services.gmail_service import sync_user
+            user_email = payload["user_email"]
+            summary = sync_user(user_email)
+            svc.complete_job(job_id, summary)
+            return
+
         if job_type == "extract_jd":
             result = svc.extract_jd(payload["job_description"])
             svc.complete_job(job_id, {"jd_analysis": result})

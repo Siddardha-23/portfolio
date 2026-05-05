@@ -105,17 +105,53 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
   const handleSync = useCallback(async () => {
     setSyncing(true);
     const resp = await apiService.syncGmail();
-    setSyncing(false);
-    if (resp.error) {
-      toast.error(resp.error);
+    if (resp.error || !resp.data?.job_id) {
+      setSyncing(false);
+      toast.error(resp.error || "Failed to start sync");
       return;
     }
-    const d = resp.data!;
-    toast.success(
-      `Scanned ${d.messages_scanned} email${d.messages_scanned === 1 ? "" : "s"} · ${d.auto_applied} auto-applied · ${d.suggested} to review`,
-    );
-    await Promise.all([loadStatus(), loadSuggestions()]);
-    onSyncComplete?.();
+
+    const jobId = resp.data.job_id;
+    const toastId = toast.loading("Scanning your inbox… this can take ~30–90s");
+
+    // Poll up to ~3 minutes; first sync after a 60-day initial lookback
+    // can run long because of per-match classifier calls.
+    const deadline = Date.now() + 180_000;
+    let final: { messages_scanned: number; auto_applied: number; suggested: number; ignored: number } | null = null;
+    let lastError: string | null = null;
+
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 4000));
+      const poll = await apiService.pollGmailSyncJob(jobId);
+      if (poll.error) { lastError = poll.error; continue; }
+      const status = poll.data?.status;
+      if (status === "completed") {
+        final = poll.data!.result || null;
+        break;
+      }
+      if (status === "failed") {
+        lastError = poll.data?.error || "Sync failed";
+        break;
+      }
+    }
+
+    setSyncing(false);
+
+    if (final) {
+      toast.success(
+        `Scanned ${final.messages_scanned} email${final.messages_scanned === 1 ? "" : "s"} · ${final.auto_applied} auto-applied · ${final.suggested} to review`,
+        { id: toastId },
+      );
+      await Promise.all([loadStatus(), loadSuggestions()]);
+      onSyncComplete?.();
+      return;
+    }
+
+    if (lastError) {
+      toast.error(lastError, { id: toastId });
+    } else {
+      toast.message("Still working in the background — refresh in a minute to see updates.", { id: toastId });
+    }
   }, [loadStatus, loadSuggestions, onSyncComplete]);
 
   const handleApply = useCallback(async (id: string) => {

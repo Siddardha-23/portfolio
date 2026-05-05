@@ -53,12 +53,15 @@ GMAIL_SCOPES = [
 # Confidence at/above which we auto-apply a status change vs. surface a suggestion.
 AUTO_APPLY_CONFIDENCE = 0.85
 
-# Cap how many messages we look at per sync — covers typical inbox volume
-# without burning quota on infrequent users.
-MAX_MESSAGES_PER_SYNC = 75
+# Cap how many messages we look at per sync. Bumped along with the 60-day
+# lookback so a freshly-linked inbox gets enough headroom to scan two months
+# of recruiter mail in one pass.
+MAX_MESSAGES_PER_SYNC = 250
 
 # Connection age beyond which we ignore older messages on the very first sync.
-INITIAL_LOOKBACK_DAYS = 30
+# 60d covers the typical "applied → first-round → final-round → outcome" arc
+# so users see status backfill even on records they applied to weeks ago.
+INITIAL_LOOKBACK_DAYS = 60
 
 
 # ---------------------------------------------------------------------------
@@ -664,7 +667,15 @@ def sync_user(user_email: str) -> Dict[str, Any]:
     auto_applied = 0
     suggested = 0
     ignored = 0
+    skipped_already_seen = 0
+    skipped_no_match = 0
+    skipped_already_in_status = 0
     seen_message_ids = set()
+
+    logger.info(
+        "[gmail-sync] user=%s records=%d messages_fetched=%d since=%s",
+        user_email, len(index), len(messages), since.isoformat() if since else "initial",
+    )
 
     for msg in messages:
         mid = msg["message_id"]
@@ -674,26 +685,46 @@ def sync_user(user_email: str) -> Dict[str, Any]:
 
         # Skip messages we already classified for this user.
         if _suggestions().find_one({"user_email": user_email, "gmail_message_id": mid}, {"_id": 1}):
+            skipped_already_seen += 1
             continue
 
         match = _match_message_to_record(msg, index)
         if not match:
+            skipped_no_match += 1
             ignored += 1
+            logger.info(
+                "[gmail-sync] no_match subject=%r from=%s",
+                (msg.get("subject") or "")[:80], msg.get("from_address"),
+            )
             continue
-        record_meta, _match_score, _match_reason = match
+        record_meta, match_score, match_reason = match
+        logger.info(
+            "[gmail-sync] matched subject=%r → record=%s score=%.2f reason=%s",
+            (msg.get("subject") or "")[:80], record_meta.get("record_id"), match_score, match_reason,
+        )
 
         cls = classify_message(msg, record_meta)
         if not cls:
             ignored += 1
+            logger.info("[gmail-sync] classifier_failed message=%s", mid)
             continue
         if cls["status"] == "ignore":
             ignored += 1
+            logger.info(
+                "[gmail-sync] classified=ignore subject=%r reason=%s",
+                (msg.get("subject") or "")[:80], cls.get("reason"),
+            )
             continue
 
         new_status = cls["status"]
         confidence = cls["confidence"]
         # Skip if already in this status.
         if record_meta["current_status"] == new_status:
+            skipped_already_in_status += 1
+            logger.info(
+                "[gmail-sync] already_in_status record=%s status=%s",
+                record_meta.get("record_id"), new_status,
+            )
             continue
 
         suggestion = {
@@ -735,11 +766,21 @@ def sync_user(user_email: str) -> Dict[str, Any]:
         {"$set": {"last_synced_at": datetime.now(timezone.utc)}},
     )
 
+    logger.info(
+        "[gmail-sync] done user=%s scanned=%d auto=%d suggest=%d ignored=%d "
+        "skipped_seen=%d skipped_nomatch=%d skipped_same_status=%d",
+        user_email, len(messages), auto_applied, suggested, ignored,
+        skipped_already_seen, skipped_no_match, skipped_already_in_status,
+    )
+
     return {
         "messages_scanned": len(messages),
         "auto_applied": auto_applied,
         "suggested": suggested,
         "ignored": ignored,
+        "skipped_already_seen": skipped_already_seen,
+        "skipped_no_match": skipped_no_match,
+        "skipped_already_in_status": skipped_already_in_status,
     }
 
 

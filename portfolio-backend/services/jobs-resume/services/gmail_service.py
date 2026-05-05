@@ -653,15 +653,8 @@ def _apply_status(user_email: str, record_id: str, status: str) -> bool:
     return bool(res.matched_count)
 
 
-def sync_user(user_email: str, force: bool = False) -> Dict[str, Any]:
+def sync_user(user_email: str) -> Dict[str, Any]:
     """Pull recent Gmail, match to records, classify, and write applies/suggestions.
-
-    Args:
-        user_email: identity of the linked user.
-        force: when True, ignore last_synced_at and re-scan the full
-               INITIAL_LOOKBACK_DAYS window. Used by the UI's "rescan" path
-               to recover after a misconfiguration window or bring older
-               applications up to date.
 
     Returns a summary dict for the API response.
     """
@@ -678,7 +671,7 @@ def sync_user(user_email: str, force: bool = False) -> Dict[str, Any]:
         )
         return {"messages_scanned": 0, "auto_applied": 0, "suggested": 0, "ignored": 0}
 
-    since = None if force else conn.get("last_synced_at")
+    since = conn.get("last_synced_at")
     if isinstance(since, datetime) and since.tzinfo is None:
         since = since.replace(tzinfo=timezone.utc)
     try:

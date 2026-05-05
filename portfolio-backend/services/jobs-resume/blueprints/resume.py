@@ -2890,10 +2890,9 @@ def gmail_sync():
     if limiter.is_rate_limited(f"gmail_sync:{user_email}:{client_ip}", max_requests=6, window_seconds=300):
         return jsonify({"error": "Sync rate limit hit. Try again in a few minutes."}), 429
 
-    force = (request.args.get("force") or "").lower() == "true"
     from services import gmail_service
     try:
-        summary = gmail_service.sync_user(user_email, force=force)
+        summary = gmail_service.sync_user(user_email)
         return jsonify({"ok": True, **summary}), 200
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 400

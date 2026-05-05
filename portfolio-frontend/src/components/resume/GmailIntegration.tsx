@@ -102,9 +102,9 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
     window.location.href = resp.data.auth_url;
   }, []);
 
-  const runSync = useCallback(async (force: boolean) => {
+  const handleSync = useCallback(async () => {
     setSyncing(true);
-    const resp = await apiService.syncGmail(force ? { force: true } : undefined);
+    const resp = await apiService.syncGmail();
     setSyncing(false);
     if (resp.error) {
       toast.error(resp.error);
@@ -117,9 +117,6 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
     await Promise.all([loadStatus(), loadSuggestions()]);
     onSyncComplete?.();
   }, [loadStatus, loadSuggestions, onSyncComplete]);
-
-  const handleSync = useCallback(() => runSync(false), [runSync]);
-  const handleRescan = useCallback(() => runSync(true), [runSync]);
 
   const handleApply = useCallback(async (id: string) => {
     setBusyId(id);
@@ -184,17 +181,8 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
                   onClick={handleSync}
                   disabled={syncing}
                   className="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-60"
-                  title="Scan emails since the last successful sync"
                 >
                   {syncing ? "Syncing…" : "Sync now"}
-                </button>
-                <button
-                  onClick={handleRescan}
-                  disabled={syncing}
-                  className="text-[11px] font-medium px-2.5 py-1.5 rounded-lg border border-purple-300 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/20 disabled:opacity-60"
-                  title="Re-scan the full 60-day window — useful after first link or to backfill older applications"
-                >
-                  Rescan 60d
                 </button>
                 <button
                   onClick={handleDisconnect}

@@ -85,6 +85,9 @@ def get_stale_applications(user_email: str, stale_days: int = 5) -> Dict[str, An
         anchor = app.get("updated_at") or app.get("applied_at") or record.get("updated_at") or record.get("created_at")
         if not isinstance(anchor, datetime):
             continue
+        # Mongo timestamps are stored naive (datetime.utcnow); align with the tz-aware "now".
+        if anchor.tzinfo is None:
+            anchor = anchor.replace(tzinfo=timezone.utc)
         if anchor <= stale_cutoff:
             days_stale = max(1, (now - anchor).days)
             row = _record_summary(record)

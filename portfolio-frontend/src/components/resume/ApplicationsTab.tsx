@@ -96,8 +96,12 @@ export default function ApplicationsTab() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<ApplicationStatus | null>(null);
 
-  const fetch = useCallback(async () => {
-    setLoading(true);
+  // Silent mode: post-action refreshes (e.g. applying a Gmail suggestion)
+  // re-fetch in place without toggling the page-wide skeleton, so the user
+  // doesn't see a 1–2s blank flash. Only the very first load shows the
+  // skeleton.
+  const fetch = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
+    if (!silent) setLoading(true);
     const [resp, funnelResp, staleResp] = await Promise.all([
       apiService.listTailoringRecords(),
       apiService.getFunnelAnalytics(),
@@ -114,8 +118,9 @@ export default function ApplicationsTab() {
     if (staleResp.data?.stale_applications) {
       setStaleApps(staleResp.data.stale_applications as Array<{ record_id: string; job_title: string; company: string; days_stale: number }>);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
+  const fetchSilent = useCallback(() => fetch({ silent: true }), [fetch]);
   useEffect(() => { fetch(); }, [fetch]);
 
   const updateRecord = useCallback((id: string, patcher: (r: TailoringRecord) => TailoringRecord) => {
@@ -301,7 +306,7 @@ export default function ApplicationsTab() {
         </div>
       </div>
 
-      <GmailIntegration onSyncComplete={fetch} />
+      <GmailIntegration onSyncComplete={fetchSilent} />
 
       {/* Metric row */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">

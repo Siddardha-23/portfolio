@@ -589,53 +589,243 @@ VALID_STATUSES = {"applied", "interviewing", "offer", "rejected", "ghosted", "wi
 # real recruiter mail; we deliberately avoid loose patterns ("not a fit"
 # alone is too risky — it can appear in a "you'd be a great fit" rebuttal).
 
+# Pattern library curated from real recruiter mail across major ATS platforms
+# (Workday, Greenhouse, Lever, Ashby, iCIMS, SmartRecruiters, Taleo, Eightfold,
+# Phenom, Avature) and FAANG / unicorn careers teams. Patterns are quoted from
+# templates these platforms ship by default. Each was added in response to a
+# real false-negative or false-positive incident.
+
 _REJECTION_PATTERNS = [
+    # ── "moving forward with other candidates" family ────────────────────
     r"\bwe (?:have )?decided to (?:move|go) forward with other (?:candidates|applicants)\b",
-    r"\bmoving forward with (?:other|another) candidate",
-    r"\bwe (?:will|won['’]t|will not) be (?:moving|proceeding) (?:forward|further) (?:with|in)\b",
-    r"\bwe regret to inform\b",
-    r"\bunfortunately[,]? (?:we|after|at this time)\b",
-    r"\bafter careful (?:consideration|review)[,]? we\b.*\b(?:not|other)\b",
-    r"\byour application (?:was|has been) (?:not selected|unsuccessful|declined)\b",
-    r"\bwe (?:are|will be) unable to (?:move forward|proceed|offer)\b",
-    r"\bwe['’]ll keep your (?:resume|application|profile) on file\b",
-    r"\bno longer (?:under )?consideration\b",
+    r"\bmoving forward with (?:other|another|different) candidate",
+    r"\bgoing (?:to (?:move|go) )?forward with (?:other|another) candidate",
+    r"\b(?:we have )?selected (?:other|another) candidate",
+    r"\bwe['’]ve (?:chosen|selected) (?:to (?:move|go) forward with )?(?:another|other) candidate",
+    r"\bother candidates whose (?:experience|background|qualifications) (?:more closely|better) (?:match|align)",
+    r"\b(?:proceed|continue|advance) (?:with|in)\s+other (?:candidates|applicants)\b",
+
+    # ── "we will not be moving/proceeding forward" family ────────────────
+    r"\bwe (?:will|won['’]t|will not|are not|won['’]?t be) (?:moving|proceeding|progressing|going) (?:forward|further|ahead) (?:with|in)\b",
+    r"\bnot (?:be |going to be )?(?:moving|proceeding|progressing|advancing) (?:forward|further) (?:with your|in (?:our|the))",
+
+    # ── "decision not to" / "decision (was) made" family — Veeva, Workday ─
+    r"\b(?:made (?:the |a )?)?decision (?:not |against )?to (?:move|go|proceed|continue) forward\b",
+    r"\bwe['’]?ve (?:made the |come to a |reached a )?decision (?:not |against )?to\b",
+    r"\b(?:we have )?decided (?:not |against )?to (?:offer|proceed|continue|move forward)\b",
+    r"\bnot to (?:move|go|proceed) forward (?:at this time|with your|in (?:our|the))",
+    r"\bdecision has been made (?:not )?to\b",
+
+    # ── "regret / unfortunately" family ───────────────────────────────────
+    r"\bwe regret to (?:inform|let you know|share)\b",
+    r"\bunfortunately[,]?\s+(?:we|after|at this time|the (?:hiring|recruiting) team|your)\b",
+    r"\b(?:i|we)['’]?m sorry (?:to (?:inform|let you know|share)|but)\b",
+    r"\bregretfully\b",
+
+    # ── "after careful review" follow-up phrases ─────────────────────────
+    r"\bafter (?:careful |thorough |a careful |much )?(?:consideration|review|deliberation)[,]?\s+we\b.{0,80}\b(?:not|other|unable|unfortunately|cannot|won['’]?t|will not)\b",
+    r"\bafter (?:reviewing|evaluating) your (?:application|resume|profile)[,]? we\b.{0,80}\b(?:not|unable|other|won['’]?t|cannot)\b",
+
+    # ── "your application was not selected" family ───────────────────────
+    r"\byour application (?:was|has been) (?:not selected|unsuccessful|declined|rejected)\b",
+    r"\b(?:we are|we['’]?re|i am|i['’]?m) unable to (?:move forward|proceed|offer|continue|advance)\b",
+    r"\bwe['’]ll keep your (?:resume|application|profile|materials) on file\b",
+    r"\b(?:keep|hold) your (?:resume|application|profile) (?:on file )?for future\b",
+    r"\b(?:resume|application) (?:on file|in our (?:talent|candidate) (?:pool|community|database))\b",
+
+    # ── "no longer / not progressing" ────────────────────────────────────
+    r"\bno longer (?:under |being )?consider(?:ed|ation)\b",
+    r"\b(?:application|candidacy) (?:has been |is no longer )?(?:closed|withdrawn|inactive)\b",
     r"\bdid not select(?:ed)? (?:your|you for)\b",
-    r"\bnot (?:moving|proceeding|progressing) (?:forward|further) with your\b",
-    r"\bposition has been filled\b",
-    r"\bwe (?:have )?filled (?:the|this) (?:position|role)\b",
+    r"\bnot (?:moving|proceeding|progressing|advancing) (?:forward|further) with your\b",
+
+    # ── "position filled" family ─────────────────────────────────────────
+    r"\b(?:the |this |that )?position (?:has been |was )?(?:already )?filled\b",
+    r"\bwe (?:have )?filled (?:the|this|that) (?:position|role|opening|vacancy)\b",
+    r"\b(?:the |this )?role (?:has been |is now )?(?:closed|filled|no longer (?:open|available))\b",
+    r"\b(?:requisition|req) (?:has been |is )?(?:closed|filled|cancelled)\b",
+
+    # ── well-wish closer (often the final sentence of a rejection) ───────
+    r"\bwish you (?:the best|all the best|success|continued success) (?:(?:in|with) (?:your|future)\s*)?(?:job\s+search|future endeavors|career|search|future)\b",
+    r"\bbest (?:of luck|wishes) (?:in|with) (?:your|the)\s*(?:job\s+search|future|search|endeavors)\b",
+
+    # ── "not a match / not a fit" with negative framing ──────────────────
+    r"\bnot (?:a (?:strong |good |the right |an ideal )?(?:match|fit)|the (?:right|best) fit)\b.{0,40}\b(?:for (?:the|this)|at this time)\b",
+    r"\b(?:experience|background|skills?|qualifications?) (?:does not|did not|do not) (?:closely )?(?:match|align|meet)\b.{0,40}\b(?:requirements|needs|criteria)\b",
+    r"\b(?:closer|stronger|better)(?:ly)? (?:match|aligned|aligned with) (?:to |with )?(?:our (?:current )?(?:requirements|needs))\b",
+
+    # ── ATS-specific rejection phrases ───────────────────────────────────
+    # Workday: "after careful consideration we are no longer considering your candidacy"
+    r"\bno longer (?:considering|pursuing) your (?:candidacy|application)\b",
+    # Greenhouse: "we've decided to pursue other candidates whose qualifications…"
+    r"\bdecided to pursue other (?:candidates|applicants)\b",
+    # Generic ATS bulk rejection: "Thank you for your interest. We have decided not to proceed."
+    r"\bthank you for your (?:interest|application|time)[\.\,]?\s+(?:we (?:have )?(?:decided|concluded)|after|unfortunately)\b",
+    # iCIMS: "we have determined that other candidates are better suited"
+    r"\b(?:determined|concluded) that (?:other|another) candidate",
+    # Lever: "we won't be progressing with your application"
+    r"\bwon['’]?t be (?:progressing|advancing) (?:with|in) your\b",
+    # Ashby: "After review, your application has not been selected"
+    r"\b(?:after review|upon review)[,]?\s+your (?:application|profile|candidacy)\s+(?:has |was )?not\b",
+    # SmartRecruiters: "we are pursuing other candidates"
+    r"\bwe (?:are|are currently) pursuing (?:other|another) candidate",
 ]
 
 _OFFER_PATTERNS = [
-    r"\bpleased to (?:offer|extend (?:an|the) offer)\b",
-    r"\bwe['’]re? excited to (?:offer|extend)\b",
-    r"\bwe['’]?d like to (?:formally )?offer\b",
-    r"\boffer letter (?:attached|enclosed|below)\b",
-    r"\bplease find (?:your |the )?offer (?:letter |of employment )?attached\b",
-    r"\bextending an offer of employment\b",
-    r"\bcongratulations[!.,].{0,80}\boffer\b",
+    # ── canonical offer phrasing ─────────────────────────────────────────
+    r"\b(?:we are |we['’]?re |i am |i['’]?m )?pleased to (?:offer|extend (?:an|the) (?:offer|opportunity))\b",
+    r"\bwe['’]re? (?:excited|thrilled|delighted|happy) to (?:offer|extend|present)\b",
+    r"\bwe['’]?d (?:love|like) to (?:formally )?(?:offer|extend (?:an|the) offer)\b",
+    r"\bextending (?:an |the |a formal |our )?offer (?:of |for )?(?:employment|the position|the role)\b",
+    r"\b(?:formal |verbal |written )?offer of employment\b",
+
+    # ── offer letter mechanics ───────────────────────────────────────────
+    r"\boffer letter (?:attached|enclosed|below|is ready|has been (?:sent|generated)|for your review)\b",
+    r"\bplease (?:find |review |see )?(?:your |the |attached )?offer (?:letter |of employment |package )?(?:attached|enclosed|below)\b",
+    r"\b(?:reviewing|signing|countersigning|accepting) (?:your |the )?offer (?:letter|package)\b",
+    r"\b(?:e[- ]?signature|docusign).{0,30}\boffer (?:letter|package)\b",
+    r"\boffer (?:package|letter|details) (?:include[ds]?|outlines?|contains?)\b",
+
+    # ── compensation / start-date discussion in offer context ────────────
+    r"\b(?:your |the )(?:base salary|annual salary|total compensation|comp package|starting salary|sign[- ]on bonus)\b.{0,60}\b(?:would be|will be|of \$|is \$)",
+    r"\bstart(?:ing)? (?:date|day) (?:would be|will be|of) (?:[A-Z][a-z]+\s+\d|the \d|on)\b",
+    r"\b(?:welcome (?:aboard|to the team)|welcome to (?:the )?(?:team|company|family))\b",
+    r"\bcongratulations[!.,]\s*[a-z\s]{0,80}\boffer\b",
+    r"\b(?:happy|thrilled|excited) to (?:welcome you|have you join)\b",
+
+    # ── ATS-specific offer phrasing ──────────────────────────────────────
+    # Greenhouse: "you've been extended an offer"
+    r"\byou(?:['’]ve)? been (?:extended|sent|presented) (?:an |the |our )?offer\b",
+    # Workday: "we are excited to extend a formal offer"
+    r"\b(?:formal|written|verbal) offer (?:has been |is being |for|of)\b",
 ]
 
 # Interview signals require *human-authored* progression — a scheduled time,
-# Calendly link, hiring-manager intro, or explicit availability ask.
+# Calendly link, hiring-manager intro, or explicit availability ask. We are
+# DELIBERATELY conservative here: any pattern that could match conditional
+# "if you're selected for an interview" boilerplate is excluded — the
+# receipt-only detector handles that case.
 _INTERVIEW_PATTERNS = [
+    # ── scheduling links (almost certainly interview-intent) ─────────────
     r"\bcalendly\.com/",
-    r"\b(?:zoom|google meet|teams|meet\.google\.com|us\d+web\.zoom\.us)/[A-Za-z0-9/_?=&\-]+",
-    r"\b(?:are|would) you (?:available|free) (?:on |for |to )",
-    r"\blet['’]s (?:schedule|set up|find a time)\b",
-    r"\bschedule (?:a|the|your) (?:call|interview|screen|chat|conversation)\b",
-    r"\b(?:phone|technical|behavioral|hiring manager|recruiter) (?:screen|interview|call)\s+(?:with|on|at|scheduled|confirmed)\b",
-    r"\binvit(?:e|ation) (?:to|for) (?:an? )?(?:interview|screen|onsite|loop)\b",
-    r"\b(?:onsite|virtual onsite|panel) (?:loop|interview|round)\s+(?:with|on|scheduled|confirmed)\b",
-    r"\btake[- ]home (?:assessment|assignment|exercise|challenge|project)\b",
-    r"\bhiring manager (?:would like to|wants to|will|intro)\b",
-    r"\binterview (?:scheduled|confirmed) for\b",
-    r"\bnext (?:round|step|stage) (?:of|in) (?:the|your) interview\b",
+    r"\bsavvycal\.com/",
+    r"\b(?:meetings|book)\.hubspot\.com/",
+    r"\bcal\.com/",
+    r"\b(?:lu\.ma|chronograph\.io|x\.ai)/",
+    r"\bgoodtime\.io/",
+    r"\b(?:zoom|google meet|teams|meet\.google\.com|us\d+web\.zoom\.us|teams\.microsoft\.com)/[A-Za-z0-9/_?=&\-]+",
+
+    # ── direct availability / scheduling asks ────────────────────────────
+    # Note: "are you available" must be followed by "on/for/to/this/next" so
+    # we don't catch "are you available for any of the listed roles" boilerplate.
+    r"\b(?:are|would|when (?:are|would)) you (?:available|free) (?:on |for |to |this |next |the |a (?:few|couple|brief))",
+    r"\bdo you have (?:any |some |a few )?(?:availability|time|times|slots) (?:on |this |next |for |to )",
+    r"\bplease (?:share|let me know|send) (?:your )?(?:availability|times|time slots)\b",
+    r"\b(?:share|provide|send) (?:me )?(?:a few |some )?(?:times?|slots?) (?:that work|when you|you['’]re)",
+    r"\blet['’]s (?:schedule|set up|find a time|coordinate|connect|chat|talk)\b",
+    r"\bschedule (?:a|the|your|our) (?:call|interview|screen|chat|conversation|time|meeting|sync)\b",
+    r"\b(?:I['’]?d|I would) (?:love|like) to (?:schedule|set up|chat|connect|hop on|jump on)\b",
+    r"\b(?:like|love) to (?:hop|jump|get) on a (?:quick )?(?:call|chat|video)\b",
+
+    # ── confirmed / scheduled interview events ──────────────────────────
+    # Crucially these require a confirmation verb, NOT just the word "interview"
+    r"\b(?:phone|technical|behavioral|hiring manager|recruiter|initial|introductory|first[- ]round|second[- ]round|final[- ]round|culture) (?:screen|interview|call|chat|conversation)\s+(?:with|on|at|scheduled|confirmed|is set|has been booked)\b",
+    r"\b(?:your |the )?(?:phone screen|technical screen|video interview|virtual interview|interview) (?:is |has been |will be )?(?:scheduled|confirmed|booked|set|happening|on)\b",
+    r"\binterview (?:scheduled|confirmed|booked|set up) (?:for|on|with|at)\b",
+    r"\b(?:confirming|to confirm) (?:your |our |the )?(?:interview|screen|call|chat|meeting)\b",
+    r"\bcalendar invite (?:for|to) (?:your |the |our )?(?:interview|screen|call|chat|meeting)\b",
+
+    # ── invitations to interviews / next rounds ──────────────────────────
+    # Must have a clear "we want to invite you" — not "if invited"
+    r"\b(?:we['’]?d like|we would like|i['’]?d like|i would like) to (?:invite|set up|schedule)\s+(?:you )?(?:for |to )?(?:an? |the )?(?:interview|screen|call|chat|conversation|next (?:round|step|stage))\b",
+    r"\b(?:we['’]?re|i['’]?m|we are) (?:inviting|extending an invitation to) you (?:to|for)\b",
+    r"\b(?:onsite|virtual onsite|panel|loop) (?:loop|interview|round)\s+(?:with|on|scheduled|confirmed|invitation)\b",
+    r"\bnext (?:round|step|stage) (?:of|in) (?:the|your|our) (?:interview|process)\b",
+    r"\bmove(?:d)? (?:you )?(?:forward|on|ahead) to (?:the next|our|a) (?:round|step|stage|interview)\b",
+
+    # ── take-home / coding assessments ───────────────────────────────────
+    # Only when actively assigned (link to it, deadline, etc.) — not
+    # mentioning that one exists in the process
+    r"\btake[- ]home (?:assessment|assignment|exercise|challenge|project|coding (?:test|assignment))\s+(?:link|attached|to complete|due|deadline|below|here|at)\b",
+    r"\b(?:please )?(?:complete|submit|return) (?:the |your |this |attached )?(?:take[- ]home|coding|technical) (?:assessment|assignment|exercise|challenge|task)\b",
+    r"\b(?:hackerrank|codility|coderpad|coderbyte|codesignal|leetcode|hackerearth)\.(?:com|io)/",
+    r"\b(?:assessment|coding test) (?:link|invitation) (?:below|above|attached|here)\b",
+
+    # ── hiring manager / recruiter intros ────────────────────────────────
+    r"\bhiring manager (?:would like|wants|will|is excited|reached out)\b.{0,40}\b(?:to (?:speak|chat|meet|connect|interview|talk)|with you|to set up)\b",
+    r"\b(?:i['’]?m|hi[,]?) (?:reaching out|writing) (?:about|regarding|to discuss|to chat about) your (?:application|interest|background)\b.{0,80}\b(?:next step|chat|call|interview|screen|connect)\b",
+    r"\bafter review(?:ing)? your (?:application|resume|profile)[,]? (?:we['’]?d like|i['’]?d like|we would like)\b",
+
+    # ── direct interview-platform links ──────────────────────────────────
+    r"\b(?:hirevue|sparkhire|willo|videoask|odro|interviewing\.io)\.(?:com|io)/",
+    r"\b(?:karat|byteboard|coderbyte interview|techscreen)\.(?:com|io)/",
 ]
 
 _REJECTION_REGEX = [re.compile(p, re.IGNORECASE) for p in _REJECTION_PATTERNS]
 _OFFER_REGEX = [re.compile(p, re.IGNORECASE) for p in _OFFER_PATTERNS]
 _INTERVIEW_REGEX = [re.compile(p, re.IGNORECASE) for p in _INTERVIEW_PATTERNS]
+
+
+# "Receipt-only" patterns: phrases that indicate this email is JUST an
+# application acknowledgement, not a progression signal. They look adjacent
+# to interview/decline language ("if you're selected for an interview",
+# "your application is being reviewed") and were the source of false-positive
+# "interviewing" classifications from the LLM (CDW, WorkWhile both used
+# conditional "should you be selected to interview" boilerplate).
+#
+# When a thread fires receipt-only signals AND has NO real interview/decline/
+# offer signal, we hard-force status=applied and override any LLM verdict
+# that disagrees.
+_RECEIPT_ONLY_PATTERNS = [
+    # ── direct receipt acknowledgements ──────────────────────────────────
+    r"\b(?:thanks|thank you|many thanks) for (?:applying|your application|your interest|submitting|taking the time to (?:apply|submit))\b",
+    r"\bwe (?:have |['’]ve )?(?:received|got) your application\b",
+    r"\byour application (?:has been |is currently |was )?(?:received|submitted|on file|in our system)\b",
+    r"\bapplication (?:successfully )?(?:received|submitted|completed)\b",
+    r"\bthis (?:email |message |note )?(?:is to )?confirm(?:s|ation)?\s+(?:we['’]?ve|that we have|the receipt of)\b",
+
+    # ── "is being / will be reviewed" boilerplate ────────────────────────
+    r"\byour application (?:is currently |will be |has been )?(?:being |under |in )?(?:evaluated|reviewed|considered|assessed|in review)\b",
+    r"\b(?:our |the )?(?:team|recruiting team|talent team|hiring team|recruitment team|HR team) (?:will|is going to|is currently) (?:review|evaluate|consider|assess|assessing|reviewing|going through)\b",
+    r"\b(?:reviewing|evaluating|assessing) (?:applications|candidates|profiles|submissions)\b",
+    r"\b(?:we|our team) (?:will|are) (?:carefully )?(?:reviewing|evaluating|going through) (?:all |your )?(?:application|applications|submission)\b",
+
+    # ── CONDITIONAL "if/should you be selected" — the killer false-positive
+    #    pattern. These phrases ALWAYS mean "this is a receipt, not an
+    #    interview" — they describe what would happen IF you were selected.
+    r"\bif (?:you['’]?re|you are) (?:selected|chosen|a (?:good |strong |great |the right )?(?:fit|match)|interested|invited)\b",
+    r"\bshould you be (?:selected|chosen|considered|a fit|a match|invited|moved forward)\b",
+    r"\bshould (?:we|the (?:team|hiring manager)) (?:wish|choose|decide|find)\b",
+    r"\bif (?:there['’]?s|there is) (?:an? |a strong |a good )?(?:match|fit|alignment|opportunity)\b",
+    r"\bif (?:we believe|we think|we feel|we determine|we find)\b.{0,40}\b(?:fit|match|qualified|appropriate)\b",
+    r"\b(?:assuming|provided that|in the event that) (?:you|your application)\b.{0,40}\b(?:selected|moves forward|qualifies|matches|advances)\b",
+
+    # ── "we'll reach out / contact you" futureconditional ───────────────
+    r"\b(?:a )?member of (?:our|the) (?:talent|recruiting|recruitment|hiring|HR) team will (?:reach out|contact|be in touch|follow up)\b",
+    r"\b(?:we|someone|a recruiter|a member of our team) (?:will|may) (?:reach out|contact you|be in touch|follow up) (?:in the coming|within|shortly|soon|if)\b",
+    r"\byou['’]?ll hear (?:back |from us )?(?:from us |back )?(?:as soon as|once|when|if|in the coming)\b",
+    r"\b(?:expect to hear|look forward to hearing) (?:back )?(?:from us )?(?:within|in the next|in the coming)\b",
+    r"\bwe['’]?ll (?:be in touch|follow up|reach out|let you know) (?:if|when|once|shortly|soon|in the coming)\b",
+
+    # ── "encourage you to" / "check back" ─────────────────────────────────
+    r"\bwe encourage you to (?:check back|continue (?:applying|exploring)|apply|browse|look)\b",
+    r"\b(?:check back|visit|browse|explore) (?:our|the) (?:careers? (?:site|page)|job board|opportunities)\b",
+    r"\bnew (?:jobs|roles|opportunities|positions) (?:are |being )?posted (?:regularly|frequently|often|daily|weekly)\b",
+    r"\bnext steps (?:will be|are going to be) (?:shared|communicated) (?:if|with you if|once|when)\b",
+
+    # ── application portal / account creation language ───────────────────
+    r"\b(?:create|set up) (?:an |your |a free )?account (?:on (?:our |the )?(?:career|careers|application|portal|candidate))\b",
+    r"\b(?:track|monitor|view) the (?:status|progress) of your application\b",
+    r"\baction on any potential (?:tasks|next steps)\b",
+    r"\b(?:log|sign) in(?:to)? (?:your |the )?(?:candidate|application) (?:portal|account|dashboard)\b",
+
+    # ── "evaluation in progress" boilerplate ─────────────────────────────
+    r"\b(?:once|when|after) (?:the |our |this )?(?:review|evaluation|assessment|process) is complete\b",
+    r"\b(?:please|kindly) (?:be patient|allow|note that)\b.{0,80}\b(?:review|evaluation|process|response)\b",
+    r"\b(?:due to|given) (?:the |our |a )?(?:high volume|large number) of (?:applications|applicants|candidates)\b",
+    r"\b(?:we (?:appreciate|thank you for) your patience)\b",
+]
+_RECEIPT_ONLY_REGEX = [re.compile(p, re.IGNORECASE) for p in _RECEIPT_ONLY_PATTERNS]
 
 
 def _scan_patterns(text: str, regexes: List[re.Pattern]) -> Optional[str]:
@@ -672,6 +862,7 @@ def extract_deterministic_signals(messages: List[Dict[str, Any]]) -> Dict[str, A
     found_rejection: Optional[Tuple[str, Dict[str, Any]]] = None
     found_offer: Optional[Tuple[str, Dict[str, Any]]] = None
     found_interview: Optional[Tuple[str, Dict[str, Any]]] = None
+    found_receipt: Optional[Tuple[str, Dict[str, Any]]] = None
 
     for msg in messages:
         text = " ".join([
@@ -691,6 +882,10 @@ def extract_deterministic_signals(messages: List[Dict[str, Any]]) -> Dict[str, A
             phrase = _scan_patterns(text, _INTERVIEW_REGEX)
             if phrase:
                 found_interview = (phrase, msg)
+        if found_receipt is None:
+            phrase = _scan_patterns(text, _RECEIPT_ONLY_REGEX)
+            if phrase:
+                found_receipt = (phrase, msg)
 
     out: Dict[str, Any] = {}
     if found_rejection:
@@ -699,6 +894,8 @@ def extract_deterministic_signals(messages: List[Dict[str, Any]]) -> Dict[str, A
         out["offer"] = {"phrase": found_offer[0], "message_id": found_offer[1].get("message_id")}
     if found_interview:
         out["interviewing"] = {"phrase": found_interview[0], "message_id": found_interview[1].get("message_id")}
+    if found_receipt:
+        out["receipt"] = {"phrase": found_receipt[0], "message_id": found_receipt[1].get("message_id")}
     return out
 
 
@@ -712,13 +909,18 @@ def reconcile_classification(
     produced anything actionable.
 
     Precedence (highest → lowest):
-      1. Deterministic REJECTION   → status=rejected, conf=0.97
-      2. Deterministic OFFER       → status=offer, conf=0.96
-      3. Deterministic INTERVIEW + LLM=interviewing/applied → status=interviewing, conf=0.95
-      4. LLM verdict alone         → trust at LLM's stated confidence (capped 0.90 without
+      1. Deterministic REJECTION   → status=rejected, conf=0.97 (overrides everything)
+      2. Deterministic OFFER       → status=offer, conf=0.96 (overrides everything but rejection)
+      3. RECEIPT-ONLY GUARD        → if the thread is just an application receipt (no real
+                                     interview/decline/offer signal) the status is "applied",
+                                     period. This is what blocks LLM false positives where
+                                     "if you're selected for an interview" boilerplate gets
+                                     misread as a real interview invite.
+      4. Deterministic INTERVIEW + LLM=interviewing/applied → status=interviewing, conf=0.95
+      5. LLM verdict alone         → trust at LLM's stated confidence (capped 0.90 without
                                      deterministic backing — never auto-apply on LLM-only
                                      unless the LLM is genuinely confident)
-      5. Deterministic INTERVIEW only (LLM disagreed) → status=interviewing, conf=0.80
+      6. Deterministic INTERVIEW only (LLM disagreed) → status=interviewing, conf=0.80
          (we trust the regex but flag for review since LLM saw something else)
     """
     # 1. Hard rejection — never overridden by anything else.
@@ -745,7 +947,22 @@ def reconcile_classification(
     llm_conf = float((llm or {}).get("confidence") or 0.0) if llm else 0.0
     llm_reason = (llm or {}).get("reason", "") if llm else ""
 
-    # 3. Deterministic interview + LLM agrees (or LLM still on applied — which
+    # 3. Receipt-only guard. If the thread is JUST an application receipt
+    #    (with conditional "if you're selected" boilerplate) and no real
+    #    interview/decline/offer signal fired, force status=applied. This is
+    #    the killer rule that prevents the CDW/WorkWhile false positives
+    #    where the LLM reads "Should you be selected to interview, a member
+    #    of our Talent team will reach out" and misclassifies as interviewing.
+    if "receipt" in deterministic and "interviewing" not in deterministic:
+        return {
+            "status": "applied",
+            "confidence": 0.95,
+            "reason": f'Receipt only: "{deterministic["receipt"]["phrase"]}"',
+            "source": "deterministic",
+            "evidence_message_id": deterministic["receipt"].get("message_id"),
+        }
+
+    # 4. Deterministic interview + LLM agrees (or LLM still on applied — which
     #    is fine, the regex caught a signal LLM may have under-weighted).
     if "interviewing" in deterministic:
         if llm_status in ("interviewing", "applied", None):

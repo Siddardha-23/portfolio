@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { apiService } from "@/lib/api";
 
@@ -102,6 +102,22 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
     window.location.href = resp.data.auth_url;
   }, []);
 
+  // Track the in-flight sync so we can keep polling across remounts (e.g.
+  // user switches tabs) and clean up on unmount without leaking timers.
+  const syncPollRef = useRef<{ jobId: string; cancelled: boolean } | null>(null);
+
+  // Progressive backoff: short waits up front (most syncs finish in <30s),
+  // longer waits as it drags on (avoids hammering the API for slow inboxes).
+  // Total horizon at index 60 ≈ 7 minutes, which covers the worst-case first
+  // sync after a 60-day backfill with per-record LLM calls.
+  const pollDelayMs = (attempt: number): number => {
+    if (attempt < 3) return 2000;        // 0–6s
+    if (attempt < 8) return 3000;        // 6–21s
+    if (attempt < 16) return 5000;       // 21–61s
+    if (attempt < 30) return 8000;       // 61–173s
+    return 12000;                        // 173s+
+  };
+
   const handleSync = useCallback(async () => {
     setSyncing(true);
     const resp = await apiService.syncGmail();
@@ -112,18 +128,36 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
     }
 
     const jobId = resp.data.job_id;
+    syncPollRef.current = { jobId, cancelled: false };
     const toastId = toast.loading("Scanning your inbox… this can take ~30–90s");
 
-    // Poll up to ~3 minutes; first sync after a 60-day initial lookback
-    // can run long because of per-match classifier calls.
-    const deadline = Date.now() + 180_000;
+    // Poll loop: progressive backoff, no fixed deadline. We keep going until
+    // the job either completes or fails — a slow first-time scan can take
+    // several minutes, and asking the user to refresh felt broken. To avoid
+    // lying to ourselves, we cap at attempt=80 (~12 minutes wall clock at the
+    // settled cadence) which is well past any legitimate sync time.
     let final: { messages_scanned: number; auto_applied: number; suggested: number; ignored: number } | null = null;
     let lastError: string | null = null;
+    let stalledToastShown = false;
 
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 4000));
+    for (let attempt = 0; attempt < 80; attempt++) {
+      // Bail early if a newer sync started or the component unmounted —
+      // syncPollRef.current is reset to null on unmount.
+      if (!syncPollRef.current || syncPollRef.current.cancelled || syncPollRef.current.jobId !== jobId) {
+        return;
+      }
+      await new Promise(r => setTimeout(r, pollDelayMs(attempt)));
+      if (!syncPollRef.current || syncPollRef.current.cancelled || syncPollRef.current.jobId !== jobId) {
+        return;
+      }
       const poll = await apiService.pollGmailSyncJob(jobId);
-      if (poll.error) { lastError = poll.error; continue; }
+      if (poll.error) {
+        // Transient errors (network blip, brief 5xx) are common during long
+        // jobs — don't break the loop, just remember the latest and continue.
+        lastError = poll.error;
+        continue;
+      }
+      lastError = null;
       const status = poll.data?.status;
       if (status === "completed") {
         final = poll.data!.result || null;
@@ -133,8 +167,15 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
         lastError = poll.data?.error || "Sync failed";
         break;
       }
+      // Update the toast text once we cross the "this is taking a while"
+      // threshold so the user sees we're still on it instead of stuck.
+      if (!stalledToastShown && attempt >= 16) {
+        toast.loading("Still scanning — large inboxes can take a couple of minutes…", { id: toastId });
+        stalledToastShown = true;
+      }
     }
 
+    syncPollRef.current = null;
     setSyncing(false);
 
     if (final) {
@@ -149,10 +190,22 @@ export default function GmailIntegration({ onSyncComplete }: { onSyncComplete?: 
 
     if (lastError) {
       toast.error(lastError, { id: toastId });
-    } else {
-      toast.message("Still working in the background — refresh in a minute to see updates.", { id: toastId });
+      return;
     }
+
+    // We ran out of attempts without a terminal status. Refresh the data
+    // anyway — the job is almost certainly done; we just stopped polling.
+    toast.success("Sync is taking longer than usual. Showing what's ready so far.", { id: toastId });
+    await Promise.all([loadStatus(), loadSuggestions()]);
+    onSyncComplete?.();
   }, [loadStatus, loadSuggestions, onSyncComplete]);
+
+  // Cancel any in-flight poll loop on unmount so we don't keep hitting the
+  // API after the user has navigated away.
+  useEffect(() => () => {
+    if (syncPollRef.current) syncPollRef.current.cancelled = true;
+    syncPollRef.current = null;
+  }, []);
 
   const handleApply = useCallback(async (id: string) => {
     setBusyId(id);

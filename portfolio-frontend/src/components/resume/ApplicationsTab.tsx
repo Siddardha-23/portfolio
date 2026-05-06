@@ -96,29 +96,47 @@ export default function ApplicationsTab() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<ApplicationStatus | null>(null);
 
+  // Track auxiliary loads separately from the primary records load so we can
+  // paint the kanban as soon as `listTailoringRecords` resolves and let the
+  // funnel/stale panels stream in once they're ready. Previously the whole
+  // tab waited on the slowest of three serial-blocking endpoints.
+  const [funnelLoading, setFunnelLoading] = useState(true);
+
   // Silent mode: post-action refreshes (e.g. applying a Gmail suggestion)
   // re-fetch in place without toggling the page-wide skeleton, so the user
   // doesn't see a 1–2s blank flash. Only the very first load shows the
   // skeleton.
   const fetch = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
     if (!silent) setLoading(true);
-    const [resp, funnelResp, staleResp] = await Promise.all([
-      apiService.listTailoringRecords(),
+    if (!silent) setFunnelLoading(true);
+
+    // Records are the only thing the kanban needs to render — fire it first
+    // and clear the page-level loading flag the moment it resolves.
+    const recordsPromise = apiService.listTailoringRecords().then((resp) => {
+      if (resp.data) setRecords((resp.data.records || []) as TailoringRecord[]);
+      if (!silent) setLoading(false);
+    });
+
+    // Funnel + stale-apps are auxiliary panels — let them resolve in the
+    // background; kanban is already visible.
+    const auxPromise = Promise.all([
       apiService.getFunnelAnalytics(),
       apiService.getStaleApplications(5),
-    ]);
-    if (resp.data) setRecords((resp.data.records || []) as TailoringRecord[]);
-    if (funnelResp.data?.ok) {
-      setFunnel({
-        counts: funnelResp.data.counts || {},
-        conversions: funnelResp.data.conversions || {},
-        insight: funnelResp.data.insight,
-      });
-    }
-    if (staleResp.data?.stale_applications) {
-      setStaleApps(staleResp.data.stale_applications as Array<{ record_id: string; job_title: string; company: string; days_stale: number }>);
-    }
-    if (!silent) setLoading(false);
+    ]).then(([funnelResp, staleResp]) => {
+      if (funnelResp.data?.ok) {
+        setFunnel({
+          counts: funnelResp.data.counts || {},
+          conversions: funnelResp.data.conversions || {},
+          insight: funnelResp.data.insight,
+        });
+      }
+      if (staleResp.data?.stale_applications) {
+        setStaleApps(staleResp.data.stale_applications as Array<{ record_id: string; job_title: string; company: string; days_stale: number }>);
+      }
+      if (!silent) setFunnelLoading(false);
+    });
+
+    await Promise.all([recordsPromise, auxPromise]);
   }, []);
   const fetchSilent = useCallback(() => fetch({ silent: true }), [fetch]);
   useEffect(() => { fetch(); }, [fetch]);
@@ -247,9 +265,32 @@ export default function ApplicationsTab() {
 
   if (loading) {
     return (
-      <div className="animate-pulse space-y-3">
-        <div className="h-24 rounded-xl bg-gray-100/40 dark:bg-gray-800/40" />
-        <div className="h-56 rounded-xl bg-gray-100/30 dark:bg-gray-800/30" />
+      <div className="space-y-4">
+        {/* Active loading indicator — spinner + descriptive text so users
+            understand the tab is working rather than frozen. */}
+        <div className="flex items-center gap-3 rounded-xl border border-purple-500/20 bg-gradient-to-r from-purple-500/[0.06] to-indigo-500/[0.04] px-4 py-3">
+          <span
+            className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-purple-500 border-t-transparent"
+            role="status"
+            aria-label="Loading"
+          />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-gray-800 dark:text-gray-100">Loading your applications…</p>
+            <p className="text-[11px] text-gray-500 dark:text-gray-400">Pulling tailored records, funnel analytics, and follow-up nudges.</p>
+          </div>
+        </div>
+        {/* Skeleton placeholders — sized to roughly match the real layout so
+            the layout doesn't jump when the data arrives. */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="h-[68px] rounded-xl bg-gray-100/50 dark:bg-gray-800/40 animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div key={i} className="h-56 rounded-xl bg-gray-100/40 dark:bg-gray-800/30 animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -321,6 +362,13 @@ export default function ApplicationsTab() {
           icon="📈"
         />
       </div>
+
+      {funnelLoading && !funnel && (
+        <div className="flex items-center gap-2 rounded-2xl border border-indigo-500/15 bg-indigo-500/[0.03] px-3 py-2 text-[11px] text-indigo-700 dark:text-indigo-300">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" aria-hidden />
+          <span>Crunching funnel intelligence and stale-application nudges…</span>
+        </div>
+      )}
 
       {funnel && (
         <div className="rounded-2xl border border-indigo-500/20 bg-indigo-500/[0.04] p-3">

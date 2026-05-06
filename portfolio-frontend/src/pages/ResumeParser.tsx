@@ -5770,9 +5770,34 @@ function SidebarAccount({
   );
 }
 
+// Whitelist used to validate ?tab= query params before trusting them as state.
+// Keeping this in sync with NavTab manually is fine since both lists are short
+// and live in this file.
+const VALID_NAV_TABS: readonly NavTab[] = [
+  "tailor",
+  "batch",
+  "jobs",
+  "my-resumes",
+  "tailored",
+  "applications",
+  "interview",
+  "copilot",
+  "profile",
+] as const;
+
+function readTabFromUrl(): NavTab | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URL(window.location.href).searchParams.get("tab");
+  if (!raw) return null;
+  return (VALID_NAV_TABS as readonly string[]).includes(raw) ? (raw as NavTab) : null;
+}
+
 export default function ResumeParser() {
   const { user } = useAuth();
-  const [activeNav, setActiveNav] = useState<NavTab>("tailor");
+  // Seed from ?tab= so refresh / OAuth-callback redirects (e.g.
+  // /resume-parser?tab=applications&gmail=linked) actually land on the
+  // expected tab instead of falling back to "tailor" with a stale URL.
+  const [activeNav, setActiveNav] = useState<NavTab>(() => readTabFromUrl() ?? "tailor");
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [sidebarHoverExpanded, setSidebarHoverExpanded] = useState(false);
@@ -5820,6 +5845,29 @@ export default function ResumeParser() {
 
   useEffect(() => {
     void apiService.recordCareerCopilotTab(activeNav).catch(() => {});
+  }, [activeNav]);
+
+  // Mirror activeNav in the URL so refresh / share / back-button restores the
+  // same tab. We use replaceState (not pushState) — tab switches shouldn't
+  // pollute browser history, and we want URL ↔ state to track 1:1.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("tab") === activeNav) return;
+    url.searchParams.set("tab", activeNav);
+    window.history.replaceState({}, "", url.toString());
+  }, [activeNav]);
+
+  // Honor browser back/forward — when the URL's ?tab= changes via popstate,
+  // pull state back into activeNav so the visible tab matches the URL.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onPop = () => {
+      const tab = readTabFromUrl();
+      if (tab && tab !== activeNav) setActiveNav(tab);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, [activeNav]);
 
   useEffect(() => {

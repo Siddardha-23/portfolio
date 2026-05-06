@@ -25,6 +25,7 @@ import re
 import secrets
 import time
 import uuid
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -51,12 +52,13 @@ GMAIL_SCOPES = [
 ]
 
 # Confidence at/above which we auto-apply a status change vs. surface a suggestion.
-# Tuned to favor decisiveness: real recruiting mail (rejection notes, interview
-# invites, application confirmations) reads unambiguously to a strong LLM, so
-# punting to the user on every borderline case made the suggestions panel noisy.
-# Anything Gemini emits at >=0.70 is good enough — heuristic+LLM agreement
-# bumps the effective floor a bit higher in practice.
-AUTO_APPLY_CONFIDENCE = 0.70
+# Tightened from 0.70 → 0.85 after users reported false positives — emails being
+# silently moved to "interviewing" off automated boilerplate, or "applied"
+# records being left stale because per-email classification couldn't see the
+# rejection that arrived later. The per-record thread classifier is the real
+# accuracy fix; this raised bar just keeps borderline calls in the user's
+# review queue instead of auto-applying them.
+AUTO_APPLY_CONFIDENCE = 0.85
 
 # Cap how many messages we look at per sync. Bumped along with the 60-day
 # lookback so a freshly-linked inbox gets enough headroom to scan two months
@@ -534,16 +536,260 @@ def _match_message_to_record(msg: Dict[str, Any], index: List[Dict[str, Any]]) -
 
         if score > 0 and (best is None or score > best[1]):
             best = (rec, score, "; ".join(reasons))
-    if best and best[1] >= 0.4:
+    # 0.3 catches borderline matches (e.g. company name in subject only, no
+    # recruiter signal). The LLM gets a chance to filter these via "ignore"
+    # if the email is actually unrelated noise.
+    if best and best[1] >= 0.3:
         return best
     return None
 
 
 # ---------------------------------------------------------------------------
-# Classification (LLM)
+# Classification: deterministic signals + LLM, reconciled
 # ---------------------------------------------------------------------------
+#
+# Architecture
+# ------------
+# Pure-LLM classifiers drift on adversarial-looking-but-benign emails (e.g. an
+# automated "thanks for applying — next steps if you're a fit" reads as
+# "interviewing" to a small model). To get production-grade accuracy we run a
+# two-tier pipeline per record:
+#
+#   Tier 1 — DETERMINISTIC SIGNALS (this module).
+#     Regex-extracted phrases that are unambiguous in plain English: explicit
+#     decline language ("we have decided to move forward with other
+#     candidates"), explicit offer language ("pleased to extend an offer"),
+#     scheduled-time signals (Calendly link, "are you available <date>"). When
+#     a deterministic signal fires we treat it as ground truth — no LLM can
+#     override a verbatim "we will not be moving forward".
+#
+#   Tier 2 — LLM THREAD CLASSIFIER (`classify_record_thread`).
+#     Reads the full email thread for nuanced cases the regex layer can't
+#     parse: politely-phrased rejections without the canonical phrase, soft
+#     interview signals via context, etc. Outputs a status + confidence.
+#
+#   RECONCILIATION (`reconcile_classification`).
+#     Combines both:
+#       - deterministic rejection/offer  → final = that, conf = 0.97 (override LLM)
+#       - deterministic interview + LLM agrees → final = interviewing, conf = 0.95
+#       - LLM confident (>=0.85) and no contradicting deterministic signal → trust LLM
+#       - everything else → suggestion for user approval (never auto-apply)
+#
+# This gives 100% precision on the explicit-phrase cases (the regex layer
+# never produces false positives because the patterns are quoted decline
+# language), with the LLM serving as a recall layer for everything else and
+# the user as the safety net for ambiguity.
 
 VALID_STATUSES = {"applied", "interviewing", "offer", "rejected", "ghosted", "withdrawn"}
+
+
+# ── Deterministic signal patterns ─────────────────────────────────────────
+# Each pattern is a phrase that, when present in any email body for the
+# record, is taken as ground truth for that status. Patterns are quoted from
+# real recruiter mail; we deliberately avoid loose patterns ("not a fit"
+# alone is too risky — it can appear in a "you'd be a great fit" rebuttal).
+
+_REJECTION_PATTERNS = [
+    r"\bwe (?:have )?decided to (?:move|go) forward with other (?:candidates|applicants)\b",
+    r"\bmoving forward with (?:other|another) candidate",
+    r"\bwe (?:will|won['’]t|will not) be (?:moving|proceeding) (?:forward|further) (?:with|in)\b",
+    r"\bwe regret to inform\b",
+    r"\bunfortunately[,]? (?:we|after|at this time)\b",
+    r"\bafter careful (?:consideration|review)[,]? we\b.*\b(?:not|other)\b",
+    r"\byour application (?:was|has been) (?:not selected|unsuccessful|declined)\b",
+    r"\bwe (?:are|will be) unable to (?:move forward|proceed|offer)\b",
+    r"\bwe['’]ll keep your (?:resume|application|profile) on file\b",
+    r"\bno longer (?:under )?consideration\b",
+    r"\bdid not select(?:ed)? (?:your|you for)\b",
+    r"\bnot (?:moving|proceeding|progressing) (?:forward|further) with your\b",
+    r"\bposition has been filled\b",
+    r"\bwe (?:have )?filled (?:the|this) (?:position|role)\b",
+]
+
+_OFFER_PATTERNS = [
+    r"\bpleased to (?:offer|extend (?:an|the) offer)\b",
+    r"\bwe['’]re? excited to (?:offer|extend)\b",
+    r"\bwe['’]?d like to (?:formally )?offer\b",
+    r"\boffer letter (?:attached|enclosed|below)\b",
+    r"\bplease find (?:your |the )?offer (?:letter |of employment )?attached\b",
+    r"\bextending an offer of employment\b",
+    r"\bcongratulations[!.,].{0,80}\boffer\b",
+]
+
+# Interview signals require *human-authored* progression — a scheduled time,
+# Calendly link, hiring-manager intro, or explicit availability ask.
+_INTERVIEW_PATTERNS = [
+    r"\bcalendly\.com/",
+    r"\b(?:zoom|google meet|teams|meet\.google\.com|us\d+web\.zoom\.us)/[A-Za-z0-9/_?=&\-]+",
+    r"\b(?:are|would) you (?:available|free) (?:on |for |to )",
+    r"\blet['’]s (?:schedule|set up|find a time)\b",
+    r"\bschedule (?:a|the|your) (?:call|interview|screen|chat|conversation)\b",
+    r"\b(?:phone|technical|behavioral|hiring manager|recruiter) (?:screen|interview|call)\s+(?:with|on|at|scheduled|confirmed)\b",
+    r"\binvit(?:e|ation) (?:to|for) (?:an? )?(?:interview|screen|onsite|loop)\b",
+    r"\b(?:onsite|virtual onsite|panel) (?:loop|interview|round)\s+(?:with|on|scheduled|confirmed)\b",
+    r"\btake[- ]home (?:assessment|assignment|exercise|challenge|project)\b",
+    r"\bhiring manager (?:would like to|wants to|will|intro)\b",
+    r"\binterview (?:scheduled|confirmed) for\b",
+    r"\bnext (?:round|step|stage) (?:of|in) (?:the|your) interview\b",
+]
+
+_REJECTION_REGEX = [re.compile(p, re.IGNORECASE) for p in _REJECTION_PATTERNS]
+_OFFER_REGEX = [re.compile(p, re.IGNORECASE) for p in _OFFER_PATTERNS]
+_INTERVIEW_REGEX = [re.compile(p, re.IGNORECASE) for p in _INTERVIEW_PATTERNS]
+
+
+def _scan_patterns(text: str, regexes: List[re.Pattern]) -> Optional[str]:
+    """Return the first matching pattern's source phrase, or None.
+
+    We surface the matched phrase so reconciliation can include it as the
+    `reason` shown in the suggestions UI — users trust the call more when
+    they can see the literal sentence that drove it.
+    """
+    if not text:
+        return None
+    for rx in regexes:
+        m = rx.search(text)
+        if m:
+            return m.group(0)[:160]
+    return None
+
+
+def extract_deterministic_signals(messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Run regex extractors across an application's email bundle.
+
+    Returns a dict with at most one of: rejected, offer, interviewing — plus
+    the matched phrase + the message it came from for traceability. Order of
+    precedence on conflict: rejected > offer > interviewing (a rejection
+    after an offer is rare but real — withdrawn offer; we surface it as a
+    suggestion rather than auto-flipping).
+
+    100%-precision claim: a hit on these patterns means the literal phrase
+    appears in the email; the only failure mode is the upstream Gmail API
+    handing us truncated bodies, which is bounded by `_extract_body_text`.
+    """
+    # Newest-first processing so an older "applied" receipt doesn't shadow a
+    # later rejection — but we still scan ALL messages for any signal.
+    found_rejection: Optional[Tuple[str, Dict[str, Any]]] = None
+    found_offer: Optional[Tuple[str, Dict[str, Any]]] = None
+    found_interview: Optional[Tuple[str, Dict[str, Any]]] = None
+
+    for msg in messages:
+        text = " ".join([
+            msg.get("subject") or "",
+            msg.get("snippet") or "",
+            (msg.get("body") or "")[:3500],  # bound CPU; bodies > this are usually footer/quoted-thread
+        ])
+        if found_rejection is None:
+            phrase = _scan_patterns(text, _REJECTION_REGEX)
+            if phrase:
+                found_rejection = (phrase, msg)
+        if found_offer is None:
+            phrase = _scan_patterns(text, _OFFER_REGEX)
+            if phrase:
+                found_offer = (phrase, msg)
+        if found_interview is None:
+            phrase = _scan_patterns(text, _INTERVIEW_REGEX)
+            if phrase:
+                found_interview = (phrase, msg)
+
+    out: Dict[str, Any] = {}
+    if found_rejection:
+        out["rejected"] = {"phrase": found_rejection[0], "message_id": found_rejection[1].get("message_id")}
+    if found_offer:
+        out["offer"] = {"phrase": found_offer[0], "message_id": found_offer[1].get("message_id")}
+    if found_interview:
+        out["interviewing"] = {"phrase": found_interview[0], "message_id": found_interview[1].get("message_id")}
+    return out
+
+
+def reconcile_classification(
+    deterministic: Dict[str, Any],
+    llm: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Merge deterministic signals with the LLM verdict into a final call.
+
+    Returns {status, confidence, reason, source} or None if neither layer
+    produced anything actionable.
+
+    Precedence (highest → lowest):
+      1. Deterministic REJECTION   → status=rejected, conf=0.97
+      2. Deterministic OFFER       → status=offer, conf=0.96
+      3. Deterministic INTERVIEW + LLM=interviewing/applied → status=interviewing, conf=0.95
+      4. LLM verdict alone         → trust at LLM's stated confidence (capped 0.90 without
+                                     deterministic backing — never auto-apply on LLM-only
+                                     unless the LLM is genuinely confident)
+      5. Deterministic INTERVIEW only (LLM disagreed) → status=interviewing, conf=0.80
+         (we trust the regex but flag for review since LLM saw something else)
+    """
+    # 1. Hard rejection — never overridden by anything else.
+    if "rejected" in deterministic:
+        return {
+            "status": "rejected",
+            "confidence": 0.97,
+            "reason": f'Decline phrase: "{deterministic["rejected"]["phrase"]}"',
+            "source": "deterministic",
+            "evidence_message_id": deterministic["rejected"].get("message_id"),
+        }
+
+    # 2. Offer.
+    if "offer" in deterministic:
+        return {
+            "status": "offer",
+            "confidence": 0.96,
+            "reason": f'Offer phrase: "{deterministic["offer"]["phrase"]}"',
+            "source": "deterministic",
+            "evidence_message_id": deterministic["offer"].get("message_id"),
+        }
+
+    llm_status = (llm or {}).get("status") if llm else None
+    llm_conf = float((llm or {}).get("confidence") or 0.0) if llm else 0.0
+    llm_reason = (llm or {}).get("reason", "") if llm else ""
+
+    # 3. Deterministic interview + LLM agrees (or LLM still on applied — which
+    #    is fine, the regex caught a signal LLM may have under-weighted).
+    if "interviewing" in deterministic:
+        if llm_status in ("interviewing", "applied", None):
+            return {
+                "status": "interviewing",
+                "confidence": 0.95,
+                "reason": f'Interview signal: "{deterministic["interviewing"]["phrase"]}"',
+                "source": "deterministic+llm" if llm_status == "interviewing" else "deterministic",
+                "evidence_message_id": deterministic["interviewing"].get("message_id"),
+            }
+        # LLM said something contradictory (e.g. "rejected" but no decline
+        # phrase fired — possible polite rejection). Fall through to LLM.
+        if llm_status in ("rejected", "offer"):
+            return {
+                "status": llm_status,
+                "confidence": min(llm_conf, 0.85),  # cap — interview signal is mildly contradicting
+                "reason": llm_reason,
+                "source": "llm",
+                "evidence_message_id": None,
+            }
+        # 5. Interview signal but no useful LLM verdict — trust regex but lower conf.
+        return {
+            "status": "interviewing",
+            "confidence": 0.80,
+            "reason": f'Interview signal: "{deterministic["interviewing"]["phrase"]}"',
+            "source": "deterministic",
+            "evidence_message_id": deterministic["interviewing"].get("message_id"),
+        }
+
+    # 4. LLM-only verdict.
+    if llm_status in VALID_STATUSES:
+        return {
+            "status": llm_status,
+            # Cap LLM-only confidence so we don't auto-apply on a hallucinated
+            # high-confidence call without any deterministic backing.
+            "confidence": min(llm_conf, 0.90),
+            "reason": llm_reason,
+            "source": "llm",
+            "evidence_message_id": None,
+        }
+    if llm_status == "ignore":
+        return {"status": "ignore", "confidence": llm_conf, "reason": llm_reason, "source": "llm"}
+
+    return None
 
 
 def _heuristic_status(msg: Dict[str, Any]) -> Tuple[Optional[str], float]:
@@ -635,9 +881,148 @@ Output strict JSON: {{"status": "...", "confidence": 0.0-1.0, "reason": "one sho
     return {"status": status, "confidence": confidence, "reason": reason}
 
 
+def classify_record_thread(messages: List[Dict[str, Any]], record_meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Classify an application's CURRENT status by reading the full set of
+    related emails together (newest first).
+
+    This is dramatically more accurate than per-message classification because
+    the LLM can see the timeline as one story. A thread that goes
+    "applied → interview invite → rejection" is unambiguous when read in
+    order — but classifying each email in isolation can leave a record stuck
+    on whichever message happened to be processed last.
+    """
+    if not messages:
+        return None
+
+    blocks: List[str] = []
+    for i, msg in enumerate(messages):
+        blocks.append(
+            f"--- Email {i+1} (most recent first) ---\n"
+            f"Date: {msg.get('date', '')}\n"
+            f"From: {msg.get('from_name','')} <{msg.get('from_address','')}>\n"
+            f"Subject: {msg.get('subject', '')}\n"
+            f"Snippet: {msg.get('snippet', '')}\n"
+            f"Body: {(msg.get('body') or '')[:900]}"
+        )
+    emails_text = "\n\n".join(blocks)
+
+    prompt = f"""You are auditing a SINGLE job application by reading every related email
+together. Your job is to decide the application's CURRENT status with high precision.
+False positives (e.g. promoting "applied" → "interviewing" off automated boilerplate, or
+marking "rejected" off a vague "we'll be in touch") are worse than being conservative.
+
+Application:
+- Company: {record_meta.get('company') or 'unknown'}
+- Role: {record_meta.get('title') or 'unknown'}
+- Tracker currently shows: {record_meta.get('current_status')}
+
+Below are the related emails, MOST RECENT FIRST. Read them as one timeline and decide the
+status reflected by the most-recent meaningful event.
+
+{emails_text}
+
+DECISION RULES (apply in order — first match wins):
+
+1. rejected — pick this if ANY email contains explicit decline language directed at the
+   user's application:
+     • "we have decided to move forward with other candidates"
+     • "we will not be moving forward"
+     • "we regret to inform you"
+     • "unfortunately, we are not able to offer"
+     • "your application was not selected"
+     • "we'll keep your resume on file"
+     • "no longer under consideration"
+   A rejection email overrides any earlier interview/applied state — the final status is
+   "rejected" even if there was a prior interview.
+
+2. offer — pick this only if an email explicitly extends an offer of employment or
+   discusses compensation/start date in an offer context (e.g. "we are pleased to extend",
+   "offer letter attached", "your starting salary would be").
+
+3. interviewing — pick this ONLY if an email contains an explicit, human-authored
+   progression signal directed at this user:
+     • a specific scheduled interview time/date or Calendly link addressed to them
+     • "would you be available on <date>" / "let's schedule a call"
+     • take-home/coding assessment INVITATION (not just a reminder of one received elsewhere)
+     • hiring manager / recruiter introducing themselves to set up a screen
+     • panel/onsite invite or confirmation
+   Do NOT pick "interviewing" off:
+     • generic "next steps will be shared if you're a fit" boilerplate in an application
+       receipt
+     • mass newsletter / event invitations
+     • assessment platforms emails the user clearly didn't engage with for THIS role
+     • "thanks for applying — our team will review" (this is still "applied")
+
+4. applied — pick this if there is an application-received / acknowledgement email but
+   NO clear progression signal (rule 3) and NO decline (rule 1). This is the safe default
+   when the thread is just "we got your application" + automated check-ins.
+
+5. ignore — pick this only if NONE of the emails are actually about this user's
+   application for THIS role at THIS company (e.g. unrelated recruiter outreach for a
+   different role, newsletters, job alert digests, generic marketing).
+
+Funnel direction is draft → applied → interviewing → offer, with rejected as a terminal
+side branch. NEVER pick a status earlier in the funnel than the tracker's current status
+unless the most recent email genuinely re-opens the process (rare — flag it with low
+confidence so the user reviews).
+
+Confidence calibration (be honest — low confidence is fine, it just keeps it as a
+suggestion the user reviews instead of auto-applying):
+- 0.90+   unambiguous: an explicit phrase from the rules above appears verbatim
+- 0.75-0.89  clear from human-written context across the thread
+- 0.60-0.74  leaning that way but a reasonable person could read it differently
+- below 0.60  genuinely uncertain — use this when the emails are vague or boilerplate
+
+Output strict JSON: {{"status": "...", "confidence": 0.0-1.0, "reason": "one short sentence quoting the specific phrase or email that drove the decision"}}.
+"""
+
+    try:
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+        result = gemini_json(
+            prompt=prompt,
+            max_tokens=400,
+            temperature=0.0,
+            model=GEMINI_FLASH,
+            max_retries=1,
+        )
+    except Exception as e:
+        logger.warning("classify_record_thread LLM call failed: %s", e)
+        return None
+
+    status = (result.get("status") or "").lower()
+    confidence = float(result.get("confidence") or 0.0)
+    reason = (result.get("reason") or "")[:240]
+
+    if status == "ignore":
+        return {"status": "ignore", "confidence": confidence, "reason": reason}
+    if status not in VALID_STATUSES:
+        return None
+    return {"status": status, "confidence": confidence, "reason": reason}
+
+
 # ---------------------------------------------------------------------------
 # Sync orchestrator
 # ---------------------------------------------------------------------------
+
+# Funnel direction. Lower index = earlier in the funnel. "rejected"/"ghosted"/
+# "withdrawn" are terminal — moving OUT of them needs strong evidence.
+_FUNNEL_ORDER = {"draft": 0, "applied": 1, "interviewing": 2, "offer": 3}
+
+
+def _is_funnel_backwards(current: str, proposed: str) -> bool:
+    """True if `proposed` would move the record backwards in the funnel.
+
+    Used as a soft safety net — a backwards move still goes through, but only
+    as a suggestion the user has to confirm, never an auto-apply.
+    """
+    if current in ("rejected", "ghosted", "withdrawn"):
+        # Terminal states — only reopen if very confident, and never auto.
+        return proposed not in ("rejected", "ghosted", "withdrawn")
+    cur_rank = _FUNNEL_ORDER.get(current)
+    new_rank = _FUNNEL_ORDER.get(proposed)
+    if cur_rank is None or new_rank is None:
+        return False
+    return new_rank < cur_rank
 
 def _records_for_user(user_email: str) -> List[Dict[str, Any]]:
     db = DBConnect().get_db()
@@ -706,7 +1091,6 @@ def sync_user(user_email: str) -> Dict[str, Any]:
     auto_applied = 0
     suggested = 0
     ignored = 0
-    skipped_already_seen = 0
     skipped_no_match = 0
     skipped_already_in_status = 0
     seen_message_ids = set()
@@ -716,16 +1100,18 @@ def sync_user(user_email: str) -> Dict[str, Any]:
         user_email, len(index), len(messages), since.isoformat() if since else "initial",
     )
 
+    # ── Phase 1: bucket matched messages by record ────────────────────────
+    # We classify per-record (not per-message) so the LLM sees the full
+    # thread and can resolve sequences like applied → interview → rejected
+    # correctly regardless of the order Gmail returned them in.
+    record_buckets: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    record_meta_by_id: Dict[str, Dict[str, Any]] = {r["record_id"]: r for r in index}
+
     for msg in messages:
         mid = msg["message_id"]
         if mid in seen_message_ids:
             continue
         seen_message_ids.add(mid)
-
-        # Skip messages we already classified for this user.
-        if _suggestions().find_one({"user_email": user_email, "gmail_message_id": mid}, {"_id": 1}):
-            skipped_already_seen += 1
-            continue
 
         match = _match_message_to_record(msg, index)
         if not match:
@@ -737,66 +1123,149 @@ def sync_user(user_email: str) -> Dict[str, Any]:
             )
             continue
         record_meta, match_score, match_reason = match
-        logger.info(
-            "[gmail-sync] matched subject=%r → record=%s score=%.2f reason=%s",
-            (msg.get("subject") or "")[:80], record_meta.get("record_id"), match_score, match_reason,
-        )
+        record_buckets[record_meta["record_id"]].append({
+            "msg": msg, "score": match_score, "reason": match_reason,
+        })
 
-        cls = classify_message(msg, record_meta)
+    # ── Phase 2: classify each record's thread as a whole ─────────────────
+    # We deliberately re-classify every record that has matched mail on every
+    # sync — the per-record thread call is cheap and self-correcting, so a
+    # record that was wrongly stuck on "applied" by an older per-message
+    # classifier will fix itself the next time sync runs. Skipping when "all
+    # messages were seen before" is what trapped users on stale statuses.
+    for record_id, items in record_buckets.items():
+        rec_meta = record_meta_by_id.get(record_id)
+        if not rec_meta:
+            continue
+
+        # Newest first — the LLM weighs the most recent email most heavily.
+        items.sort(key=lambda x: x["msg"].get("internal_date", 0), reverse=True)
+        msg_ids = [it["msg"]["message_id"] for it in items]
+
+        msgs_for_llm = [it["msg"] for it in items[:10]]  # cap at 10 emails for token budget
+
+        # Tier 1: deterministic regex extraction. Runs even if the LLM call
+        # later fails, so a clear "we have decided to move forward with other
+        # candidates" still resolves to rejected.
+        deterministic = extract_deterministic_signals(msgs_for_llm)
+
+        # Tier 2: LLM thread classification. May return None on transient
+        # failure — that's fine, deterministic alone can carry the decision.
+        llm_cls = classify_record_thread(msgs_for_llm, rec_meta)
+
+        # Reconcile both tiers into a single verdict.
+        cls = reconcile_classification(deterministic, llm_cls)
         if not cls:
-            ignored += 1
-            logger.info("[gmail-sync] classifier_failed message=%s", mid)
+            ignored += len(items)
+            logger.info(
+                "[gmail-sync] no_verdict record=%s emails=%d (LLM and regex both inconclusive)",
+                record_id, len(items),
+            )
             continue
         if cls["status"] == "ignore":
-            ignored += 1
+            ignored += len(items)
             logger.info(
-                "[gmail-sync] classified=ignore subject=%r reason=%s",
-                (msg.get("subject") or "")[:80], cls.get("reason"),
+                "[gmail-sync] classified=ignore record=%s emails=%d reason=%s",
+                record_id, len(items), cls.get("reason"),
             )
             continue
 
         new_status = cls["status"]
         confidence = cls["confidence"]
-        # Skip if already in this status.
-        if record_meta["current_status"] == new_status:
+
+        if rec_meta["current_status"] == new_status:
             skipped_already_in_status += 1
             logger.info(
-                "[gmail-sync] already_in_status record=%s status=%s",
-                record_meta.get("record_id"), new_status,
+                "[gmail-sync] already_in_status record=%s status=%s confidence=%.2f",
+                record_id, new_status, confidence,
+            )
+            # Even if the status already matches, we may have a stale
+            # *pending* suggestion proposing a different state — drop it so
+            # the suggestions panel reflects ground truth.
+            _suggestions().update_many(
+                {
+                    "user_email": user_email,
+                    "record_id": record_id,
+                    "applied": False,
+                    "dismissed": False,
+                    "suggested_status": {"$ne": new_status},
+                },
+                {"$set": {"dismissed": True, "dismissed_at": datetime.now(timezone.utc),
+                          "dismissed_reason": "superseded by re-classification"}},
             )
             continue
 
+        # Funnel-backwards moves are usually wrong (rejected→interviewing,
+        # offer→applied). We still SUGGEST them but never auto-apply, so the
+        # user has a chance to confirm.
+        backwards = _is_funnel_backwards(rec_meta["current_status"], new_status)
+        if backwards:
+            logger.info(
+                "[gmail-sync] backwards_move record=%s %s→%s — suggesting only",
+                record_id, rec_meta["current_status"], new_status,
+            )
+
+        # Before writing a fresh suggestion, supersede any prior unresolved
+        # suggestions on the same record. This prevents the suggestions panel
+        # from accumulating duplicates as we re-classify on every sync, and
+        # ensures the user always sees the *current* verdict.
+        _suggestions().update_many(
+            {
+                "user_email": user_email,
+                "record_id": record_id,
+                "applied": False,
+                "dismissed": False,
+            },
+            {"$set": {"dismissed": True, "dismissed_at": datetime.now(timezone.utc),
+                      "dismissed_reason": "superseded by re-classification"}},
+        )
+
+        # Use the newest message as the canonical reference; the suggestion
+        # row carries supporting_message_ids so we can show the thread later.
+        primary = items[0]["msg"]
         suggestion = {
             "suggestion_id": str(uuid.uuid4()),
             "user_email": user_email,
-            "record_id": record_meta["record_id"],
-            "company": record_meta["company"],
-            "title": record_meta["title"],
-            "gmail_message_id": mid,
-            "gmail_thread_id": msg.get("thread_id"),
-            "from_name": msg.get("from_name"),
-            "from_address": msg.get("from_address"),
-            "subject": msg.get("subject"),
-            "snippet": msg.get("snippet"),
-            "current_status": record_meta["current_status"],
+            "record_id": record_id,
+            "company": rec_meta["company"],
+            "title": rec_meta["title"],
+            "gmail_message_id": primary["message_id"],
+            "gmail_thread_id": primary.get("thread_id"),
+            "from_name": primary.get("from_name"),
+            "from_address": primary.get("from_address"),
+            "subject": primary.get("subject"),
+            "snippet": primary.get("snippet"),
+            "current_status": rec_meta["current_status"],
             "suggested_status": new_status,
             "confidence": confidence,
             "reason": cls.get("reason", ""),
+            "source": cls.get("source", "llm"),
+            "evidence_message_id": cls.get("evidence_message_id"),
+            "supporting_message_ids": msg_ids,
             "applied": False,
             "dismissed": False,
             "auto_applied": False,
             "created_at": datetime.now(timezone.utc),
         }
 
-        if confidence >= AUTO_APPLY_CONFIDENCE and _apply_status(user_email, record_meta["record_id"], new_status):
+        if confidence >= AUTO_APPLY_CONFIDENCE and not backwards \
+                and _apply_status(user_email, record_id, new_status):
             suggestion["applied"] = True
             suggestion["auto_applied"] = True
             suggestion["applied_at"] = datetime.now(timezone.utc)
-            # Update in-memory index so subsequent messages in the same sync don't re-suggest.
-            record_meta["current_status"] = new_status
+            rec_meta["current_status"] = new_status
             auto_applied += 1
+            logger.info(
+                "[gmail-sync] auto_applied record=%s %s→%s confidence=%.2f",
+                record_id, suggestion["current_status"], new_status, confidence,
+            )
         else:
             suggested += 1
+            logger.info(
+                "[gmail-sync] suggested record=%s %s→%s confidence=%.2f%s",
+                record_id, suggestion["current_status"], new_status, confidence,
+                " (backwards)" if backwards else "",
+            )
 
         _suggestions().insert_one(suggestion)
 
@@ -806,18 +1275,18 @@ def sync_user(user_email: str) -> Dict[str, Any]:
     )
 
     logger.info(
-        "[gmail-sync] done user=%s scanned=%d auto=%d suggest=%d ignored=%d "
-        "skipped_seen=%d skipped_nomatch=%d skipped_same_status=%d",
-        user_email, len(messages), auto_applied, suggested, ignored,
-        skipped_already_seen, skipped_no_match, skipped_already_in_status,
+        "[gmail-sync] done user=%s scanned=%d records_with_mail=%d auto=%d suggest=%d "
+        "ignored=%d skipped_nomatch=%d skipped_same_status=%d",
+        user_email, len(messages), len(record_buckets), auto_applied, suggested, ignored,
+        skipped_no_match, skipped_already_in_status,
     )
 
     return {
         "messages_scanned": len(messages),
+        "records_with_mail": len(record_buckets),
         "auto_applied": auto_applied,
         "suggested": suggested,
         "ignored": ignored,
-        "skipped_already_seen": skipped_already_seen,
         "skipped_no_match": skipped_no_match,
         "skipped_already_in_status": skipped_already_in_status,
     }

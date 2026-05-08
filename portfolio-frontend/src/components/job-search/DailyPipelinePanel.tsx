@@ -340,7 +340,9 @@ function PipelineRow({
     .filter((f) => f && f !== '—');
 
   // Surface "previously applied X days ago" so a row that's been in the
-  // funnel for a week doesn't get re-opened by mistake.
+  // funnel for a week doesn't get re-opened by mistake. We render different
+  // labels per status so a rejected role doesn't say "Already applied" and
+  // a withdrawn one doesn't pretend it's still in flight.
   const prevStatus = rec.previously_applied_status;
   const prevAt = rec.previously_applied_at;
   const prevAgo = (() => {
@@ -353,6 +355,41 @@ function PipelineRow({
     } catch { return ''; }
   })();
   const showPrevApplied = !!prevStatus && prevStatus !== 'interested' && !applied;
+  const prevPalette = (() => {
+    // Active in funnel → amber (still relevant). Closed-loop → muted gray
+    // (rejected/withdrawn — user can still re-apply but signal is weaker).
+    switch (prevStatus) {
+      case 'applied':
+      case 'interview':
+      case 'offer':
+        return {
+          ring: 'border-amber-500/40 bg-amber-500/5',
+          chip: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+          label:
+            prevStatus === 'offer' ? 'Offer'
+            : prevStatus === 'interview' ? 'In interview'
+            : 'Already applied',
+        };
+      case 'rejected':
+        return {
+          ring: 'border-rose-500/30 bg-rose-500/5',
+          chip: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
+          label: 'Rejected previously',
+        };
+      case 'withdrawn':
+        return {
+          ring: 'border-gray-400/40 bg-gray-500/5',
+          chip: 'bg-gray-500/15 text-gray-600 dark:text-gray-300',
+          label: 'Withdrawn',
+        };
+      default:
+        return {
+          ring: 'border-amber-500/40 bg-amber-500/5',
+          chip: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+          label: 'Already applied',
+        };
+    }
+  })();
 
   return (
     <Card
@@ -361,7 +398,7 @@ function PipelineRow({
         applied
           ? 'border-emerald-500/40 bg-emerald-500/5 opacity-60'
           : showPrevApplied
-          ? 'border-amber-500/40 bg-amber-500/5'
+          ? prevPalette.ring
           : tierStyle?.ring || 'border-gray-200/80 dark:border-white/[0.08]'
       } bg-white/90 dark:bg-gray-900/50 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
         focused ? 'ring-2 ring-purple-500/60 ring-offset-1 ring-offset-background' : ''
@@ -375,11 +412,11 @@ function PipelineRow({
       )}
       {showPrevApplied && (
         <div
-          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+          className={`absolute right-3 top-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${prevPalette.chip}`}
           title={`Status: ${prevStatus}${prevAt ? ` · last touched ${prevAt.slice(0, 10)}` : ''}`}
         >
           <CheckCircle2 className="h-3 w-3" />
-          {prevStatus === 'interview' ? 'In interview' : prevStatus === 'offer' ? 'Offer' : 'Already applied'}
+          {prevPalette.label}
           {prevAgo ? ` · ${prevAgo}` : ''}
         </div>
       )}
@@ -1032,8 +1069,13 @@ export function DailyPipelinePanel({
   // waiting today, instead of scrolling through three tier groups to count.
   const todayIso = new Date().toISOString().slice(0, 10);
   const _isFresh = (r: DailyPipelineRecord) => (r.posted || '').slice(0, 10) === todayIso;
+  // "Already applied" for digest purposes = active funnel state. Closed-loop
+  // statuses (rejected/withdrawn) and pre-confirm "interested" don't count
+  // because the user might still want to re-engage.
   const _alreadyApplied = (r: DailyPipelineRecord) =>
-    !!r.previously_applied_status && r.previously_applied_status !== 'interested';
+    r.previously_applied_status === 'applied' ||
+    r.previously_applied_status === 'interview' ||
+    r.previously_applied_status === 'offer';
   const digest = useMemo(() => {
     if (!result) return null;
     const all = [...(result.apply_now || []), ...(result.verify_dates || [])];

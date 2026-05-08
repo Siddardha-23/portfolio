@@ -90,6 +90,42 @@ def _ats_apify_actor_id() -> str:
     return _ATS_APIFY_ACTOR
 
 
+# ---------------------------------------------------------------------------
+# Curated-company-set matching
+# ---------------------------------------------------------------------------
+# Naive `sp in company` substring matching is fragile when curated tokens are
+# short or share fragments with unrelated names. A 2-3 char token like "ea "
+# is intentionally kept as a "word + trailing space" hack, but longer multi-
+# word entries should still be matched as whole words. This helper compiles
+# each set once into a single alternation regex with word boundaries so that
+# "ge" matches "ge healthcare" but not "agency" / "genesys", and "sap" doesn't
+# fire for "sapphire".
+_COMPANY_SET_REGEX_CACHE: Dict[int, Any] = {}
+
+
+def _company_set_regex(token_set: set):
+    cached = _COMPANY_SET_REGEX_CACHE.get(id(token_set))
+    if cached is not None:
+        return cached
+    parts: List[str] = []
+    for t in sorted(token_set, key=len, reverse=True):
+        t = (t or "").strip()
+        if not t:
+            continue
+        parts.append(re.escape(t))
+    pattern = r"(?<![a-z0-9])(?:" + "|".join(parts) + r")(?![a-z0-9])"
+    compiled = re.compile(pattern, re.IGNORECASE)
+    _COMPANY_SET_REGEX_CACHE[id(token_set)] = compiled
+    return compiled
+
+
+def _company_in_set(company: str, token_set: set) -> bool:
+    """Word-boundary aware company-name match against a curated token set."""
+    if not company:
+        return False
+    return bool(_company_set_regex(token_set).search(company))
+
+
 def _load_applied_index(user_email: str) -> Dict[Tuple[str, str], Dict[str, Any]]:
     """Build a (normalized_company, normalized_title) → {status, ts} map from saved_jobs.
 
@@ -337,38 +373,47 @@ CLEARANCE_TEXT = re.compile(
 )
 
 # Explicit "we don't sponsor" language — read from job descriptions for the
-# F1-student opt-in filter. Each pattern below is a phrase that companies use
-# to slam the door on F-1 / H-1B candidates. Matching ANY of these means the
-# job is wasted on someone who needs sponsorship.
+# F1-student opt-in filter. Each pattern below is a phrase companies use to
+# slam the door on F-1 / H-1B candidates. Matching ANY of these means the
+# job is wasted on someone who needs sponsorship. The patterns deliberately
+# require restrictive context (must / required / only) so inclusive language
+# like "we welcome citizens, permanent residents, and visa holders" doesn't
+# trigger a false positive.
 NO_SPONSORSHIP_TEXT = re.compile(
     r"("
-    r"no\s+(?:visa\s+)?sponsorship|"
-    r"sponsorship\s+(?:is\s+)?not\s+(?:available|offered|provided)|"
+    r"no\s+(?:visa\s+)?sponsorship\s+(?:is\s+)?(?:available|offered|provided)|"
+    r"sponsorship\s+(?:is\s+)?not\s+(?:available|offered|provided|provided\s+for\s+this\s+(?:role|position))|"
     r"unable\s+to\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?sponsorship|"
     r"do(?:es)?\s+not\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?sponsorship|"
-    r"will\s+not\s+sponsor|"
-    r"cannot\s+sponsor|"
-    r"must\s+be\s+(?:legally\s+)?authorized\s+to\s+work\s+in\s+the\s+(?:u\.?s\.?|united\s+states)\s+without\s+(?:current\s+or\s+future\s+)?(?:visa\s+)?sponsorship|"
-    r"without\s+(?:the\s+need\s+for\s+)?(?:visa\s+)?sponsorship\s+(?:now\s+or\s+in\s+the\s+future)|"
-    r"u\.?s\.?\s+citizen(?:ship)?\s+or\s+permanent\s+resident|"
-    r"(?:green\s*card|gc)\s+(?:or\s+u\.?s\.?\s+citizen|holder\s+only|required)|"
+    r"will\s+not\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?(?:sponsorship)?|"
+    r"cannot\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?(?:sponsorship)?|"
+    # "must be authorized to work in the US without [current or future] sponsorship"
+    r"must\s+be\s+(?:legally\s+)?(?:authorized|eligible)\s+to\s+work\s+in\s+the\s+(?:u\.?s\.?|united\s+states)\s+without\s+(?:current\s+or\s+future\s+)?(?:the\s+need\s+for\s+)?(?:visa\s+)?sponsorship|"
+    r"without\s+(?:the\s+need\s+for\s+)?(?:visa\s+|current\s+or\s+future\s+)?sponsorship\s+(?:now\s+or\s+in\s+the\s+future)?|"
+    # Citizen/PR-only language — REQUIRES restrictive phrasing nearby.
+    r"(?:must\s+be|required\s+to\s+be|applicants?\s+must\s+be)\s+(?:a\s+)?u\.?s\.?\s+citizen(?:ship)?(?:\s+or\s+(?:permanent\s+resident|green\s*card\s+holder))?|"
+    r"u\.?s\.?\s+citizens?(?:hip)?\s+(?:is\s+|are\s+)?required|"
+    r"u\.?s\.?\s+citizens?(?:hip)?\s+or\s+permanent\s+residents?\s+(?:only|required|status\s+required)|"
+    r"(?:green\s*card|gc)\s+(?:holder\s+only|required|or\s+u\.?s\.?\s+citizen\s+only)|"
     r"u\.?s\.?\s+persons?\s+only"
     r")",
     re.IGNORECASE,
 )
 
-# Affirmative sponsorship signals — for the inverse "yes, they sponsor" badge.
-# We only set sponsor_verified if either (a) company is in H1B_SPONSORS or
-# (b) the JD explicitly mentions sponsorship as available. Don't conflate
-# "H-1B" appearing in a no-sponsorship sentence — the regex requires positive
-# wording like "we sponsor", "sponsorship available", "H-1B sponsorship offered".
+# Affirmative sponsorship signals — only fire when "sponsor"/"sponsorship"
+# appears in a visa context. The earlier loose pattern matched "we sponsor
+# team events" / "open to sponsoring our community", which would falsely
+# light up the green badge. We now require a visa keyword (visa, H-1B,
+# work authorization, work permit, OPT, EAD) within ~30 chars.
 SPONSORSHIP_AFFIRM_TEXT = re.compile(
     r"("
-    r"(?:we|company)\s+(?:will\s+)?sponsor|"
-    r"sponsorship\s+(?:is\s+)?(?:available|provided|offered)|"
-    r"(?:offer|provide)\s+(?:visa\s+)?sponsorship|"
-    r"h[-\s]?1b\s+sponsorship\s+(?:available|offered|provided)|"
-    r"open\s+to\s+sponsoring"
+    r"(?:visa\s+|work\s+(?:authorization|permit)\s+|h[-\s]?1b\s+)sponsorship\s+(?:is\s+)?(?:available|provided|offered)|"
+    r"sponsorship\s+(?:is\s+)?(?:available|provided|offered)\s+for\s+(?:visa|h[-\s]?1b|work\s+authorization|qualified\s+candidates)|"
+    r"(?:we|company)\s+(?:will\s+|do\s+|are\s+(?:able|willing|happy)\s+to\s+)?(?:offer|provide|sponsor)\s+(?:[\w\s,]{0,30}?)?(?:visa|h[-\s]?1b|work\s+(?:authorization|permit)|opt|ead)(?:\s+sponsorship)?|"
+    r"open\s+to\s+(?:visa\s+|h[-\s]?1b\s+)?sponsorship|"
+    # "Open to sponsoring [up to 30 chars of stuff] visa/H-1B/qualified candidates/international"
+    r"open\s+to\s+sponsoring\s+(?:[\w\s,]{0,30}?)?(?:visa|h[-\s]?1b|qualified\s+candidates|international)|"
+    r"h[-\s]?1b\s+sponsorship\s+(?:is\s+)?(?:available|offered|provided)"
     r")",
     re.IGNORECASE,
 )
@@ -430,7 +475,18 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
         raise RuntimeError(f"APIFY_ERROR: {actor} request failed: {e}") from e
     if r.status_code >= 400:
         code = _classify_apify_error(r.status_code, r.text)
-        raise RuntimeError(f"{code}: {actor} returned {r.status_code} {r.reason}")
+        # Include a short slice of the actor's response body for 4xx errors
+        # so the diagnostic surfaces "field X is required" / "invalid value"
+        # to the logs and the UI errors panel. Strip newlines + cap to keep
+        # error messages compact in JSON responses.
+        body_snippet = ""
+        if 400 <= r.status_code < 500:
+            raw_body = (r.text or "").strip().replace("\n", " ")[:240]
+            if raw_body:
+                body_snippet = f": {raw_body}"
+        raise RuntimeError(
+            f"{code}: {actor} returned {r.status_code} {r.reason}{body_snippet}"
+        )
     items = r.json() if r.headers.get("content-type", "").startswith("application/json") else []
     if isinstance(items, dict) and items.get("error"):
         # Some actors return a JSON error body with HTTP 200 — sniff it.
@@ -780,18 +836,21 @@ def _scrape_in_parallel(
         "scrapeCompany": False,
     }
 
-    # Workday actor — only set the AI filter fields when the user explicitly
-    # picked a value. Empty / "any" means "no filter" so the actor returns
-    # the full set; the backend's existing role-family + dedupe + scoring
-    # still applies. Defaults below reproduce the original pipeline behavior:
-    #   experience=entry → "0-2", employment=FULLTIME → "FULL_TIME", US-only.
+    # Workday actor — its locationSearch field is strict about format
+    # (country / state names from a closed vocab), so we always pass the
+    # safe "United States" baseline that the original pipeline used and let
+    # the post-filter narrow by user location. Cap titleSearch to 50 — the
+    # actor rejects oversized payloads with 400 Bad Request, and stacking
+    # multiple Smart-Filter groups can easily push past that. Defaults
+    # below reproduce the original pipeline behavior exactly.
+    safe_workday_titles = (workday_titles or [])[:50]
     workday_input: Dict[str, Any] = {
         "descriptionType": "text",
         "includeAi": True,
         "limit": workday_limit,
-        "locationSearch": [location or "United States"],
+        "locationSearch": ["United States"],
         "removeAgency": True,
-        "titleSearch": workday_titles,
+        "titleSearch": safe_workday_titles,
     }
     exp_key = (experience_level or "").lower()
     if exp_key and exp_key != "any":
@@ -811,8 +870,32 @@ def _scrape_in_parallel(
         try:
             return _run_actor(actor, payload, token)
         except Exception as e:
-            errors.append(f"{actor}: {e}")
-            logger.warning("Apify actor %s failed: %s", actor, e)
+            msg = str(e)
+            # 400 Bad Request → retry once with a stripped-down payload that
+            # only carries the canonical fields the original pipeline used.
+            # Most 400s come from one of the AI filter fields rejecting an
+            # otherwise valid combination after Apify schema bumps.
+            if actor == WORKDAY_ACTOR and "400" in msg and isinstance(payload, dict):
+                logger.warning(
+                    "Workday 400 — retrying with minimal payload. Original error: %s", msg,
+                )
+                fallback = {
+                    "descriptionType": "text",
+                    "includeAi": True,
+                    "limit": payload.get("limit", workday_limit),
+                    "locationSearch": ["United States"],
+                    "removeAgency": True,
+                    "titleSearch": payload.get("titleSearch", []),
+                }
+                try:
+                    return _run_actor(actor, fallback, token)
+                except Exception as e2:
+                    msg2 = str(e2)
+                    errors.append(f"{actor}: {msg2}")
+                    logger.warning("Workday retry also failed: %s", msg2)
+                    return []
+            errors.append(f"{actor}: {msg}")
+            logger.warning("Apify actor %s failed: %s", actor, msg)
             return []
 
     with ThreadPoolExecutor(max_workers=2) as ex:
@@ -1082,9 +1165,9 @@ def _ghost_job_reason(rec: dict) -> Optional[str]:
 
 def _clearance_block(rec: dict) -> Optional[str]:
     c = _norm_company(rec.get("company"))
-    for cl in CLEARANCE_COMPANIES:
-        if cl in c:
-            return f"clearance-co:{cl}"
+    if _company_in_set(c, CLEARANCE_COMPANIES):
+        m = _company_set_regex(CLEARANCE_COMPANIES).search(c)
+        return f"clearance-co:{m.group(0) if m else 'match'}"
     title = _clean_str(rec.get("title"))
     desc = _clean_str(rec.get("description"))
     if CLEARANCE_TEXT.search(title) or CLEARANCE_TEXT.search(desc):
@@ -1110,7 +1193,7 @@ def _classify_visa_status(rec: dict) -> str:
     # cheap (single regex), and the patterns are deliberately conservative.
     if desc and NO_SPONSORSHIP_TEXT.search(desc):
         return "no_sponsorship"
-    if any(sp in company for sp in H1B_SPONSORS):
+    if _company_in_set(company, H1B_SPONSORS):
         return "sponsor_verified"
     if desc and SPONSORSHIP_AFFIRM_TEXT.search(desc):
         return "sponsor_verified"
@@ -1148,14 +1231,15 @@ def _score(rec: dict, today_iso: Optional[str] = None, profile: Optional[Dict[st
     company = _norm_company(rec.get("company"))
     location = _clean_str(rec.get("location"))
 
-    if any(sp in company for sp in H1B_SPONSORS): s += 30; flags.append("H1B-sponsor")
-    if any(ai in company for ai in AI_NATIVE):    s += 20; flags.append("AI-native")
+    is_known_sponsor = _company_in_set(company, H1B_SPONSORS)
+    if is_known_sponsor: s += 30; flags.append("H1B-sponsor")
+    if _company_in_set(company, AI_NATIVE): s += 20; flags.append("AI-native")
     # Visa signal — when JD explicitly says "we sponsor" but the company isn't
     # in the curated H1B_SPONSORS list, give a smaller boost. Conversely, when
     # the JD says "no sponsorship" and the user hasn't opted into the strict
     # exclude_no_sponsorship filter, drop the score so it can't crowd Tier 1.
     visa = rec.get("visa_status")
-    if visa == "sponsor_verified" and not any(sp in company for sp in H1B_SPONSORS):
+    if visa == "sponsor_verified" and not is_known_sponsor:
         s += 12; flags.append("Sponsor-verified (JD)")
     elif visa == "no_sponsorship":
         s -= 30; flags.append("No-sponsorship JD")
@@ -1296,8 +1380,13 @@ def _filter_and_score(
     deduped = list(seen.values())
 
     # Pre-compute domain-strict matchers ONCE if domain_strict is enabled,
-    # so per-record filtering is cheap regex .search() calls.
-    strict_patterns: List[Any] = []
+    # so per-record filtering is cheap regex .search() calls. We track the
+    # intent each pattern came from so when a row matches strict mode, we
+    # can synthesize a role-family label downstream — otherwise broad-but-
+    # in-domain titles like "Applied Scientist" or "MLOps Engineer" would
+    # pass strict mode but get dropped by the legacy _role_match regexes.
+    strict_patterns: List[Tuple[Any, str]] = []
+    strict_intent_labels: Dict[str, str] = {}
     if domain_strict and profile:
         try:
             from services.resume_profiler import INTENTS as _INTENTS_STRICT
@@ -1306,9 +1395,11 @@ def _filter_and_score(
             for intent_key in (primary_intent, secondary_intent):
                 if not intent_key or intent_key not in _INTENTS_STRICT:
                     continue
-                for pat in _INTENTS_STRICT[intent_key].get("title_terms", []):
+                spec = _INTENTS_STRICT[intent_key]
+                strict_intent_labels[intent_key] = spec.get("label", intent_key)
+                for pat in spec.get("title_terms", []):
                     try:
-                        strict_patterns.append(re.compile(pat, re.IGNORECASE))
+                        strict_patterns.append((re.compile(pat, re.IGNORECASE), intent_key))
                     except re.error:
                         continue
         except Exception:
@@ -1393,10 +1484,18 @@ def _filter_and_score(
         # Domain-strict post-filter — drop anything whose title doesn't match
         # the candidate's primary or secondary intent regex. The candidate
         # explicitly opted into "specialist mode" via the UI toggle; off-domain
-        # roles (even high-scoring ones) get cut before scoring.
+        # roles (even high-scoring ones) get cut before scoring. When we DO
+        # match, remember which intent matched so we can synthesize a role
+        # family below — otherwise titles like "Applied Scientist" pass strict
+        # mode but get killed by the narrower legacy _role_match regex.
+        strict_matched_intent: Optional[str] = None
         if strict_patterns:
             t_lower = (r.get("title") or "").lower()
-            if not any(rx.search(t_lower) for rx in strict_patterns):
+            for rx, intent_key in strict_patterns:
+                if rx.search(t_lower):
+                    strict_matched_intent = intent_key
+                    break
+            if not strict_matched_intent:
                 excluded.append({**r, "reason": "off-domain (strict mode)",
                                  "tier": "Skip", "score": 0, "flags": ""}); continue
 
@@ -1437,6 +1536,12 @@ def _filter_and_score(
         if (why := _opt_body_shop_reason(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         roles = _role_match(r, custom_role_terms=custom_role_terms)
+        # If domain-strict already matched, trust that match and synthesize
+        # a role family from the intent label so "Applied Scientist" etc.
+        # don't fall off the end — the strict regex IS the user's preferred
+        # role definition for this run.
+        if not roles and strict_matched_intent:
+            roles = [strict_intent_labels.get(strict_matched_intent, strict_matched_intent)]
         if not roles:
             excluded.append({**r, "reason": "no role-family match",
                              "tier": "Skip", "score": 0, "flags": ""}); continue

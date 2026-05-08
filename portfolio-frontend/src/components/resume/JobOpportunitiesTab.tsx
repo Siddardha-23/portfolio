@@ -35,7 +35,13 @@ export default function JobOpportunitiesTab() {
 
   const handleApplySuggestions = (s: SmartFilterSuggestions, mode: SmartFilterApplyMode = 'replace') => {
     setPendingSuggestions({ data: s, mode });
-    setActiveTab('pipeline');
+    // Replace = big "Apply to pipeline" button — switch tabs so the user sees
+    // the populated form. Append = per-group "+ Add" — DO NOT switch; the user
+    // is browsing groups and stacking selections, switching kicks them out of
+    // their browse flow on every click.
+    if (mode === 'replace') {
+      setActiveTab('pipeline');
+    }
   };
 
   return (

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Wand2, Sparkles, RefreshCw, ArrowRight, AlertCircle, Brain, Calendar,
-  Briefcase, Globe, Tag, Plus, Star, Layers,
+  Briefcase, Globe, Tag, Plus, Star, Layers, Check,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -128,8 +128,17 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
   // SmartFilterSuggestions payload and forwards it as an append. The pipeline
   // panel will merge these into existing chips rather than replace them, so a
   // user can stack e.g. "Primary: ML" + "Adjacent: Data Eng" into one search.
+  // We track which intents the user has already added during this session so
+  // the button morphs into a green "✓ Added" state instead of letting the
+  // user spam-click and trigger duplicate toasts (the actual append on the
+  // pipeline side is already dedup'd, this is just the UI feedback).
+  const [addedIntents, setAddedIntents] = useState<Set<string>>(new Set());
   const handleAddGroup = (group: SmartFilterGroup) => {
     if (!suggestions) return;
+    if (addedIntents.has(group.intent)) {
+      toast.info(`"${group.label}" is already in your pipeline.`);
+      return;
+    }
     const payload: SmartFilterSuggestions = {
       headline: suggestions.headline,
       rationale: suggestions.rationale,
@@ -141,7 +150,12 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
       intent: suggestions.intent,
     };
     onApply(payload, 'append');
-    toast.success(`Added "${group.label}" to pipeline`);
+    setAddedIntents((prev) => {
+      const next = new Set(prev);
+      next.add(group.intent);
+      return next;
+    });
+    toast.success(`Added "${group.label}" to pipeline — stays on this tab so you can keep stacking groups.`);
   };
 
   if (loading) {
@@ -270,7 +284,12 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
             </div>
             <div className="grid gap-2 lg:grid-cols-2">
               {suggestions.groups.map((g) => (
-                <GroupCard key={g.intent} group={g} onAdd={handleAddGroup} />
+                <GroupCard
+                  key={g.intent}
+                  group={g}
+                  added={addedIntents.has(g.intent)}
+                  onAdd={handleAddGroup}
+                />
               ))}
             </div>
           </CardContent>
@@ -328,9 +347,11 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
 
 function GroupCard({
   group,
+  added,
   onAdd,
 }: {
   group: SmartFilterGroup;
+  added: boolean;
   onAdd: (g: SmartFilterGroup) => void;
 }) {
   const grad =
@@ -364,14 +385,26 @@ function GroupCard({
             {group.workday_titles.length} titles · {group.linkedin_phrases.length} phrases · score {group.score}
           </p>
         </div>
-        <Button
-          size="sm"
-          onClick={() => onAdd(group)}
-          className="h-7 gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-[11px] text-white hover:opacity-90"
-        >
-          <Plus className="h-3 w-3" />
-          Add to pipeline
-        </Button>
+        {added ? (
+          <Button
+            size="sm"
+            disabled
+            className="h-7 gap-1 bg-emerald-600 text-[11px] text-white opacity-90"
+            title="Group already added — switch to Daily Pipeline tab to run."
+          >
+            <Check className="h-3 w-3" />
+            Added
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            onClick={() => onAdd(group)}
+            className="h-7 gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-[11px] text-white hover:opacity-90"
+          >
+            <Plus className="h-3 w-3" />
+            Add to pipeline
+          </Button>
+        )}
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
         {group.workday_titles.slice(0, 6).map((t) => (

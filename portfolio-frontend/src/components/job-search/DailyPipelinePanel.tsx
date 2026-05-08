@@ -232,7 +232,6 @@ function _slimForStorage(state: PersistedState): PersistedState {
       ...state.result,
       apply_now: state.result.apply_now.map(slim),
       verify_dates: state.result.verify_dates.map(slim),
-      phoenix: state.result.phoenix.map(slim),
       excluded_sample: state.result.excluded_sample.map(slim),
     },
   };
@@ -1097,8 +1096,8 @@ export function DailyPipelinePanel({
   const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
 
   // Daily-digest stats — surfaced at the top so an F-1 student can see in one
-  // glance how many fresh sponsors / on-domain matches / Phoenix rows are
-  // waiting today, instead of scrolling through three tier groups to count.
+  // glance how many fresh sponsors / on-domain matches are waiting today,
+  // instead of scrolling through three tier groups to count.
   const todayIso = new Date().toISOString().slice(0, 10);
   const _isFresh = (r: DailyPipelineRecord) => (r.posted || '').slice(0, 10) === todayIso;
   // "Already applied" for digest purposes = active funnel state. Closed-loop
@@ -1117,7 +1116,6 @@ export function DailyPipelinePanel({
       fresh: eligible.filter(_isFresh).length,
       sponsors: eligible.filter((r) => r.visa_status === 'sponsor_verified').length,
       noSponsor: all.filter((r) => r.visa_status === 'no_sponsorship').length,
-      phoenix: (result.phoenix || []).filter((r) => !appliedSet.has(_recordId(r))).length,
       tier1Open: tier1.filter((r) => !appliedSet.has(_recordId(r)) && !_alreadyApplied(r)).length,
       alreadyApplied: all.filter(_alreadyApplied).length,
     };
@@ -1884,12 +1882,6 @@ export function DailyPipelinePanel({
                       {digest.noSponsor} no-sponsor (demoted)
                     </span>
                   )}
-                  {digest.phoenix > 0 && (
-                    <span className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400">
-                      <MapPin className="h-3 w-3" />
-                      {digest.phoenix} Phoenix-area
-                    </span>
-                  )}
                 </div>
                 {digest.tier1Open > 0 && (
                   <div className="flex items-center gap-2">
@@ -1959,22 +1951,6 @@ export function DailyPipelinePanel({
               title={`⚠️ Verify dates (interns / co-ops) — ${result.verify_dates.length}`}
               items={result.verify_dates}
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              appliedIds={appliedSet}
-              openedIds={openedSet}
-              focusedId={focusedRowId}
-              showApplied={showApplied}
-              onOpen={handleOpenPosting}
-              onMarkApplied={handleMarkApplied}
-              onDismissOpened={handleDismissOpened}
-              onTailor={handleTailor}
-            />
-          )}
-
-          {result.phoenix.length > 0 && (
-            <TierGroup
-              title={`📍 Phoenix-area highlights (${result.phoenix.length})`}
-              items={result.phoenix}
-              accent="border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300"
               appliedIds={appliedSet}
               openedIds={openedSet}
               focusedId={focusedRowId}

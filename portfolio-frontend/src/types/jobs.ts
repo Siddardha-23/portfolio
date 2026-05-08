@@ -129,10 +129,9 @@ export interface DailyPipelineResult {
     indeed?: DailyPipelineSourceCounts;
     ats_direct?: DailyPipelineSourceCounts;
   };
-  totals: { apply_now: number; verify_dates: number; excluded: number; phoenix: number };
+  totals: { apply_now: number; verify_dates: number; excluded: number };
   apply_now: DailyPipelineRecord[];
   verify_dates: DailyPipelineRecord[];
-  phoenix: DailyPipelineRecord[];
   excluded_sample: DailyPipelineRecord[];
   excluded_total: number;
   errors: string[];

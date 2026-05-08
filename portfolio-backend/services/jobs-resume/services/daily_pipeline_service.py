@@ -419,10 +419,6 @@ SPONSORSHIP_AFFIRM_TEXT = re.compile(
 )
 
 INTERN_TITLE = re.compile(r"\b(intern|internship|summer 2026|co-?op)\b", re.IGNORECASE)
-PHOENIX_HINTS = re.compile(
-    r"\b(phoenix|chandler|scottsdale|tempe|mesa|gilbert|arizona|\baz\b)\b",
-    re.IGNORECASE,
-)
 
 
 # --------------------------------------------------------------------------
@@ -1391,7 +1387,6 @@ def _score(rec: dict, today_iso: Optional[str] = None, profile: Optional[Dict[st
         except Exception:
             pass
 
-    if PHOENIX_HINTS.search(location): s += 8; flags.append("Phoenix-area")
     try:
         apc = int(rec["applicants"]) if rec["applicants"] else None
         if apc is not None and apc < 30:
@@ -1771,7 +1766,6 @@ def run_pipeline(
         applied_index=applied_index,
     )
     duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
-    phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]
 
     tier_counts = {
         "tier_1": sum(1 for r in apply_now + verify if r["tier"] == "Tier 1"),
@@ -1839,11 +1833,9 @@ def run_pipeline(
             "apply_now": len(apply_now),
             "verify_dates": len(verify),
             "excluded": len(excluded),
-            "phoenix": len(phx),
         },
         "apply_now": apply_now,
         "verify_dates": verify,
-        "phoenix": phx,
         # Trim excluded to avoid huge payloads.
         "excluded_sample": excluded[:50],
         "excluded_total": len(excluded),

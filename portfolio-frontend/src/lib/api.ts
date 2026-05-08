@@ -670,6 +670,14 @@ class ApiService {
     );
   }
 
+  async fetchJobDescription(url: string) {
+    return this.request<{ ok: boolean; jd_text?: string; source_kind?: string; error?: string }>(
+      "/jobs/fetch-jd",
+      { method: "POST", body: JSON.stringify({ url }) },
+      20000,
+    );
+  }
+
   async listPipelinePresets() {
     return this.request<{ presets: import("../types/jobs").PipelinePreset[] }>(
       "/jobs/pipeline/presets",

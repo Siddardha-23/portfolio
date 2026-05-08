@@ -292,6 +292,43 @@ def delete_apify_key():
         return jsonify({"error": "Failed to remove key"}), 500
 
 
+@jobs_bp.route("/fetch-jd", methods=["POST"])
+@jwt_required()
+def fetch_jd_route():
+    """Best-effort fetch of a job description by URL.
+
+    Body: { "url": "https://..." }
+    Returns: { "jd_text": "...", "source_kind": "linkedin_guest|greenhouse_api|...|html_scrape", "ok": bool }
+
+    Used by the Tailor flow when the pipeline scrape didn't include a
+    description (LinkedIn/Workday/company pages) so the JD textarea opens
+    pre-filled instead of empty. Rate-limited per IP because each call hits
+    a third-party site.
+    """
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"jobs_fetch_jd:{client_ip}", max_requests=20, window_seconds=60):
+        return jsonify({"ok": False, "error": "Rate limit exceeded"}), 429
+
+    data = request.get_json(silent=True) or {}
+    url = InputSanitizer.sanitize_string(str(data.get("url") or ""), max_length=600)
+    if not url or not (url.startswith("http://") or url.startswith("https://")):
+        return jsonify({"ok": False, "error": "A http(s) job URL is required"}), 400
+    try:
+        from services.jd_fetcher import fetch_jd
+        text, kind = fetch_jd(url)
+        if not text:
+            return jsonify({
+                "ok": False,
+                "error": "Couldn't extract the JD from that URL. Paste the description manually.",
+                "source_kind": kind,
+            }), 200
+        return jsonify({"ok": True, "jd_text": text, "source_kind": kind}), 200
+    except Exception as e:
+        logger.error(f"fetch-jd error: {e}")
+        return jsonify({"ok": False, "error": "Failed to fetch JD"}), 500
+
+
 @jobs_bp.route("/pipeline/suggest-filters", methods=["GET"])
 @jwt_required()
 def suggest_pipeline_filters():

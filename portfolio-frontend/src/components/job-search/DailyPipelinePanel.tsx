@@ -962,7 +962,33 @@ export function DailyPipelinePanel({
     // Save (or no-op if already saved) so the application tracker picks it up.
     try { await apiService.saveJob(job as any); } catch { /* duplicate-ok */ }
 
-    const jdSeed = rec.description?.trim() ||
+    // Best-effort JD pre-fill. The pipeline scrape sometimes returns an
+    // empty description (LinkedIn snippet only, Workday actor missed it,
+    // ATS scrape pre-fix, etc.). When that happens AND we have a URL, hit
+    // /jobs/fetch-jd which classifies the URL by source (LinkedIn guest
+    // API, Greenhouse / Lever / Ashby APIs, or generic HTML strip) and
+    // returns the rendered JD text. Bounded to ~12s server-side; we show
+    // a brief toast while it works so the user knows what's happening.
+    let jdText = (rec.description || '').trim();
+    let fetchedKind: string | undefined;
+    if (!jdText && rec.url) {
+      const fetching = toast.loading('Fetching job description…', { duration: 15000 });
+      try {
+        const resp = await apiService.fetchJobDescription(rec.url);
+        toast.dismiss(fetching);
+        if (resp.data?.ok && resp.data.jd_text) {
+          jdText = resp.data.jd_text;
+          fetchedKind = resp.data.source_kind;
+        } else if (resp.data?.error) {
+          // Soft-fail — fall through to the placeholder so user can paste manually.
+          toast.message(resp.data.error);
+        }
+      } catch {
+        toast.dismiss(fetching);
+        /* ignore — fall through to placeholder */
+      }
+    }
+    const jdSeed = jdText ||
       `${rec.title} at ${rec.company}\n${rec.location || ''}\n${rec.url || ''}\n\n` +
       `(Paste the full job description here to tailor — applied status will be auto-set once tailoring is saved.)`;
 
@@ -977,7 +1003,13 @@ export function DailyPipelinePanel({
     } catch { /* quota */ }
 
     window.dispatchEvent(new CustomEvent('portfolio:navigate-to-tailor'));
-    toast.success('Opening Tailor — applied status will be set when tailoring saves.');
+    if (jdText) {
+      toast.success(
+        `Opening Tailor — JD pre-filled${fetchedKind ? ` (${fetchedKind.replace('_', ' ')})` : ''}.`,
+      );
+    } else {
+      toast.success("Opening Tailor — couldn't auto-fetch the JD; paste it from the posting.");
+    }
   };
 
   // Build the Job payload we save / update — shared between the open and

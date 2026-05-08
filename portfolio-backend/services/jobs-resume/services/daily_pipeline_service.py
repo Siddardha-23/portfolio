@@ -601,10 +601,51 @@ _ATS_TECH_TITLE = re.compile(
 )
 
 
+# ---------------------------------------------------------------------------
+# HTML → plain text helper
+# ---------------------------------------------------------------------------
+# Greenhouse content fields and Ashby descriptionHtml return raw HTML. We
+# strip tags and decode common entities so the Tailor JD textarea pre-fills
+# with readable text. Deliberately small + dependency-free — we don't need a
+# full HTML parser, just enough to remove tags and collapse whitespace.
+_HTML_BLOCK_RE = re.compile(r"</?(?:p|br|div|li|ul|ol|h[1-6]|tr|td|hr)\b[^>]*>", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"[ \t]+")
+_NL_RE = re.compile(r"\n{3,}")
+_HTML_ENTITIES = {
+    "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'",
+    "&apos;": "'", "&nbsp;": " ", "&rsquo;": "'", "&lsquo;": "'",
+    "&rdquo;": '"', "&ldquo;": '"', "&ndash;": "–", "&mdash;": "—",
+    "&bull;": "•", "&hellip;": "…",
+}
+
+
+def _html_to_text(html: str) -> str:
+    if not html:
+        return ""
+    s = str(html)
+    # Block elements → newlines so paragraphs / list items don't smash together.
+    s = _HTML_BLOCK_RE.sub("\n", s)
+    # Strip remaining inline tags.
+    s = _HTML_TAG_RE.sub("", s)
+    # Decode the common entities (no full entity table — these cover ~99% of JDs).
+    for entity, char in _HTML_ENTITIES.items():
+        s = s.replace(entity, char)
+    # Numeric entities like &#8217;
+    s = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))) if int(m.group(1)) < 0x10000 else "", s)
+    # Whitespace cleanup.
+    s = _WS_RE.sub(" ", s)
+    s = _NL_RE.sub("\n\n", s)
+    return s.strip()
+
+
 def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
-    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+    # ?content=true returns each job with a `content` field holding the
+    # full HTML description. Costs nothing extra (single API call) and
+    # Tailor pre-fills correctly without a per-job follow-up request.
+    url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs?content=true"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=12)
         if not r.ok:
             return []
         items = (r.json() or {}).get("jobs") or []
@@ -616,6 +657,7 @@ def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
         title = _clean_str(j.get("title"))
         if not _ATS_TECH_TITLE.search(title):
             continue
+        description = _html_to_text(_clean_str(j.get("content")))
         out.append({
             "source": "Greenhouse",
             "company": display,
@@ -625,7 +667,7 @@ def _fetch_greenhouse(slug: str, display: str) -> List[Dict[str, Any]]:
             "salary": "—",
             "applicants": "",
             "url": _clean_str(j.get("absolute_url")),
-            "description": "",
+            "description": description[:6000],
         })
     return out
 
@@ -653,6 +695,23 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
                 posted_iso = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
             except Exception:
                 pass
+        # Lever returns descriptionPlain (text) + descriptionBody (HTML) +
+        # `lists` array of {text, content} (e.g. responsibilities). Compose
+        # the most readable bundle we can: prefer descriptionPlain, fall back
+        # to stripped descriptionBody, then append list bullets so the user
+        # sees the role's responsibility / qualification sections.
+        plain = _clean_str(j.get("descriptionPlain"))
+        if not plain:
+            plain = _html_to_text(_clean_str(j.get("descriptionBody")))
+        list_chunks: List[str] = []
+        for sec in (j.get("lists") or []):
+            if not isinstance(sec, dict):
+                continue
+            heading = _clean_str(sec.get("text"))
+            content = _html_to_text(_clean_str(sec.get("content")))
+            if heading or content:
+                list_chunks.append(f"\n\n{heading}\n{content}".strip())
+        description = (plain + "".join(list_chunks)).strip()
         out.append({
             "source": "Lever",
             "company": display,
@@ -662,7 +721,7 @@ def _fetch_lever(slug: str, display: str) -> List[Dict[str, Any]]:
             "salary": "—",
             "applicants": "",
             "url": _clean_str(j.get("hostedUrl") or j.get("applyUrl")),
-            "description": "",
+            "description": description[:6000],
         })
     return out
 
@@ -682,6 +741,10 @@ def _fetch_ashby(slug: str, display: str) -> List[Dict[str, Any]]:
         title = _clean_str(j.get("title"))
         if not _ATS_TECH_TITLE.search(title):
             continue
+        # Ashby returns descriptionPlain (preferred) or descriptionHtml.
+        plain = _clean_str(j.get("descriptionPlain"))
+        if not plain:
+            plain = _html_to_text(_clean_str(j.get("descriptionHtml") or j.get("description")))
         out.append({
             "source": "Ashby",
             "company": display,
@@ -691,7 +754,7 @@ def _fetch_ashby(slug: str, display: str) -> List[Dict[str, Any]]:
             "salary": "—",
             "applicants": "",
             "url": _clean_str(j.get("jobUrl") or j.get("applyUrl")),
-            "description": "",
+            "description": plain[:6000],
         })
     return out
 

@@ -749,6 +749,11 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 include_indeed=bool(payload.get("include_indeed", False)),
                 apify_token=user_key,
                 user_email=user_email,
+                location=str(payload.get("location") or "United States"),
+                experience_level=str(payload.get("experience_level") or "entry"),
+                employment_type=str(payload.get("employment_type") or "FULLTIME"),
+                work_arrangement=str(payload.get("work_arrangement") or "any"),
+                domain_strict=bool(payload.get("domain_strict", False)),
             )
             # Surface which token tier was used so the UI can display it.
             result["used_user_apify_key"] = bool(user_key)

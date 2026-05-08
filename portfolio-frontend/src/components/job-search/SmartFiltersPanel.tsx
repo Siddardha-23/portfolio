@@ -2,18 +2,26 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Wand2, Sparkles, RefreshCw, ArrowRight, AlertCircle, Brain, Calendar,
-  Briefcase, Globe, Tag,
+  Briefcase, Globe, Tag, Plus, Star, Layers,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { apiService } from '@/lib/api';
-import type { SmartFilterSuggestions } from '@/types/jobs';
+import type { SmartFilterSuggestions, SmartFilterGroup } from '@/types/jobs';
+
+export type SmartFilterApplyMode = 'replace' | 'append';
 
 interface SmartFiltersPanelProps {
-  /** Called when user clicks "Apply to pipeline" — switches to Daily Pipeline tab with these filters preloaded. */
-  onApply: (s: SmartFilterSuggestions) => void;
+  /**
+   * Called when the user picks filters to push into the Daily Pipeline.
+   * `mode='replace'` overwrites the pipeline form (used by the big "Apply to pipeline" button).
+   * `mode='append'` adds the suggested items to whatever is already there
+   * (used by the per-group "+ Add to pipeline" buttons so users can build a
+   * pipeline form by stacking adjacent specialties).
+   */
+  onApply: (s: SmartFilterSuggestions, mode?: SmartFilterApplyMode) => void;
   /** Optional: render in compact mode for embedding inside other dashboards. */
   compact?: boolean;
 }
@@ -112,8 +120,28 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
 
   const handleApply = () => {
     if (!suggestions) return;
-    onApply(suggestions);
+    onApply(suggestions, 'replace');
     toast.success('Smart filters applied to Daily Pipeline');
+  };
+
+  // Per-group "+ Add to pipeline" — turns a single intent group into a slim
+  // SmartFilterSuggestions payload and forwards it as an append. The pipeline
+  // panel will merge these into existing chips rather than replace them, so a
+  // user can stack e.g. "Primary: ML" + "Adjacent: Data Eng" into one search.
+  const handleAddGroup = (group: SmartFilterGroup) => {
+    if (!suggestions) return;
+    const payload: SmartFilterSuggestions = {
+      headline: suggestions.headline,
+      rationale: suggestions.rationale,
+      linkedin_keyword_sets: group.linkedin_phrases,
+      workday_titles: group.workday_titles,
+      custom_role_terms: group.custom_role_terms,
+      past_days: suggestions.past_days,
+      preset_tags: [group.tag],
+      intent: suggestions.intent,
+    };
+    onApply(payload, 'append');
+    toast.success(`Added "${group.label}" to pipeline`);
   };
 
   if (loading) {
@@ -222,6 +250,33 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
         </CardContent>
       </Card>
 
+      {/* Per-domain breakdown — shows the resume's broader coverage and lets
+          the user "+ Add" each group selectively to the pipeline. Primary
+          intent leads, secondary follows, then any adjacent specialties that
+          scored above the soft floor (e.g. an ML candidate's Data Eng tail). */}
+      {!compact && Array.isArray(suggestions.groups) && suggestions.groups.length > 0 && (
+        <Card className="border-border/60 bg-card/60">
+          <CardContent className="space-y-3 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Layers className="h-3.5 w-3.5 text-purple-500" />
+                <p className="text-xs font-semibold uppercase tracking-wider">
+                  Per-domain breakdown
+                </p>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                "+ Add" stacks a domain on top of your current pipeline form
+              </p>
+            </div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {suggestions.groups.map((g) => (
+                <GroupCard key={g.intent} group={g} onAdd={handleAddGroup} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {!compact && (
         <div className="grid gap-4 lg:grid-cols-2">
           <SuggestionGroup
@@ -267,6 +322,72 @@ export function SmartFiltersPanel({ onApply, compact = false }: SmartFiltersPane
           </Card>
         </div>
       )}
+    </div>
+  );
+}
+
+function GroupCard({
+  group,
+  onAdd,
+}: {
+  group: SmartFilterGroup;
+  onAdd: (g: SmartFilterGroup) => void;
+}) {
+  const grad =
+    group.kind === 'primary'
+      ? PRESET_GRADIENTS[group.tag] || 'from-purple-500 to-indigo-500'
+      : group.kind === 'secondary'
+      ? 'from-slate-500 to-zinc-500'
+      : 'from-gray-400 to-gray-500';
+  const kindLabel =
+    group.kind === 'primary'
+      ? 'Primary'
+      : group.kind === 'secondary'
+      ? 'Secondary'
+      : 'Adjacent';
+  const kindIcon =
+    group.kind === 'primary' ? <Star className="h-3 w-3" /> : <Layers className="h-3 w-3" />;
+  return (
+    <div className="rounded-lg border border-border/60 bg-background/60 p-3 transition hover:border-purple-500/40">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 space-y-0.5">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full bg-gradient-to-r ${grad} px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white shadow-sm`}
+            >
+              {kindIcon}
+              {kindLabel}
+            </span>
+            <p className="truncate text-sm font-semibold leading-tight">{group.label}</p>
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            {group.workday_titles.length} titles · {group.linkedin_phrases.length} phrases · score {group.score}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => onAdd(group)}
+          className="h-7 gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-[11px] text-white hover:opacity-90"
+        >
+          <Plus className="h-3 w-3" />
+          Add to pipeline
+        </Button>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1">
+        {group.workday_titles.slice(0, 6).map((t) => (
+          <span
+            key={t}
+            className="inline-flex items-center rounded-full border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] text-emerald-700 dark:text-emerald-300"
+          >
+            {t}
+          </span>
+        ))}
+        {group.workday_titles.length > 6 && (
+          <span className="text-[10px] italic text-muted-foreground">
+            +{group.workday_titles.length - 6} more
+          </span>
+        )}
+      </div>
     </div>
   );
 }

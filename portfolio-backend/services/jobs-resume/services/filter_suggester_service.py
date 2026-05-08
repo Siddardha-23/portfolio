@@ -201,6 +201,43 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         "confidence": confidence,
         "is_generalist": is_generalist,
     }
+
+    # ------------------------------------------------------------------
+    # Per-domain "groups" breakdown — lets the Smart Filters UI render
+    # the resume's broader coverage (primary intent + secondary intent +
+    # all adjacent intents that scored above a soft floor) and let the
+    # user "+ Add to pipeline" each group selectively. The pipeline
+    # workday_titles list contains primary+secondary; groups also exposes
+    # adjacent specialties (e.g. an ML candidate's "Data Science" tail).
+    # ------------------------------------------------------------------
+    intent_scores = profile.get("intent_scores") or {}
+    soft_floor = max(3.0, profile.get("intent_scores", {}).get(primary, 0.0) * 0.15)
+    groups = []
+    for intent_key, spec in INTENTS.items():
+        score = float(intent_scores.get(intent_key, 0.0))
+        if intent_key == primary:
+            kind = "primary"
+        elif intent_key == secondary:
+            kind = "secondary"
+        elif score >= soft_floor:
+            kind = "adjacent"
+        else:
+            continue
+        groups.append({
+            "intent": intent_key,
+            "label": spec["label"],
+            "kind": kind,
+            "score": round(score, 2),
+            "tag": _preset_tag_for_intent(intent_key),
+            "workday_titles": list(spec["target_titles"]),
+            "linkedin_phrases": list(spec["keyword_phrases"]),
+            "custom_role_terms": sorted(spec["core_skills"])[:8],
+        })
+    # Order: primary, secondary, then adjacent by score desc.
+    kind_rank = {"primary": 0, "secondary": 1, "adjacent": 2}
+    groups.sort(key=lambda g: (kind_rank.get(g["kind"], 3), -g["score"]))
+    coerced["groups"] = groups
+
     return coerced
 
 

@@ -16,6 +16,10 @@ export interface DailyPipelineRecord {
   reason?: string;
 }
 
+export type PipelineExperienceLevel = 'any' | 'internship' | 'entry' | 'associate' | 'mid' | 'senior';
+export type PipelineEmploymentType = 'ANY' | 'FULLTIME' | 'PARTTIME' | 'INTERN' | 'CONTRACTOR';
+export type PipelineWorkArrangement = 'any' | 'remote' | 'hybrid' | 'onsite';
+
 export interface DailyPipelineParams {
   linkedin_keywords?: string[];
   workday_titles?: string[];
@@ -24,12 +28,48 @@ export interface DailyPipelineParams {
   linkedin_count?: number;
   workday_limit?: number;
   include_indeed?: boolean;
+  // Optional, actor-supported filters. Omit / leave default to keep the
+  // original pipeline behavior (entry-level, full-time, US, any arrangement).
+  location?: string;
+  experience_level?: PipelineExperienceLevel;
+  employment_type?: PipelineEmploymentType;
+  work_arrangement?: PipelineWorkArrangement;
+  domain_strict?: boolean;
+}
+
+export interface PipelinePreset {
+  _id?: string;
+  name: string;
+  filters: DailyPipelineParams;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface ApifyKeyStatus {
   has_key: boolean;
   masked?: string;
   updated_at?: string | null;
+}
+
+export interface SmartFilterIntent {
+  primary: string;
+  primary_label: string;
+  secondary?: string | null;
+  secondary_label?: string | null;
+  confidence: number;
+  is_generalist: boolean;
+}
+
+export interface SmartFilterGroup {
+  intent: string;
+  label: string;
+  /** "primary" | "secondary" | "adjacent" — visual styling hint. */
+  kind: 'primary' | 'secondary' | 'adjacent';
+  score: number;
+  tag: string;
+  workday_titles: string[];
+  linkedin_phrases: string[];
+  custom_role_terms: string[];
 }
 
 export interface SmartFilterSuggestions {
@@ -40,6 +80,8 @@ export interface SmartFilterSuggestions {
   custom_role_terms: string[];
   past_days: number;
   preset_tags: string[];
+  intent?: SmartFilterIntent;
+  groups?: SmartFilterGroup[];
 }
 
 export interface DailyPipelineSourceCounts {

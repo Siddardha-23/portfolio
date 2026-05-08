@@ -1856,6 +1856,69 @@ class JobService:
             result["updated_at"] = result["updated_at"].isoformat()
         return result
 
+    # ------------------------------------------------------------------
+    # Daily-pipeline named presets — separate collection from the single
+    # search-page filter prefs above. A preset bundles all the daily-pipeline
+    # form state (titles, keywords, filter knobs) under a user-given name so
+    # the candidate can keep e.g. "ML strict", "Cloud broad", "Internships"
+    # ready to load with one click.
+    # ------------------------------------------------------------------
+
+    def list_pipeline_presets(self, user_email: str) -> List[Dict[str, Any]]:
+        if not user_email:
+            return []
+        col = self.db.pipeline_filter_presets
+        try:
+            col.create_index([("user_email", 1), ("name", 1)], unique=True)
+        except Exception:
+            pass
+        rows = list(col.find({"user_email": user_email}).sort("updated_at", -1))
+        out: List[Dict[str, Any]] = []
+        for row in rows:
+            row["_id"] = str(row["_id"])
+            if hasattr(row.get("updated_at"), "isoformat"):
+                row["updated_at"] = row["updated_at"].isoformat()
+            if hasattr(row.get("created_at"), "isoformat"):
+                row["created_at"] = row["created_at"].isoformat()
+            out.append(row)
+        return out
+
+    def save_pipeline_preset(
+        self, user_email: str, name: str, filters: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        if not user_email:
+            return {"ok": False, "error": "Authentication required"}
+        clean_name = (name or "").strip()
+        if not clean_name or len(clean_name) > 60:
+            return {"ok": False, "error": "Preset name must be 1-60 chars"}
+        col = self.db.pipeline_filter_presets
+        try:
+            col.create_index([("user_email", 1), ("name", 1)], unique=True)
+        except Exception:
+            pass
+        now = datetime.now(timezone.utc)
+        col.update_one(
+            {"user_email": user_email, "name": clean_name},
+            {
+                "$set": {
+                    "user_email": user_email,
+                    "name": clean_name,
+                    "filters": filters or {},
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        return {"ok": True, "presets": self.list_pipeline_presets(user_email)}
+
+    def delete_pipeline_preset(self, user_email: str, name: str) -> Dict[str, Any]:
+        if not user_email or not name:
+            return {"ok": False, "error": "Bad request"}
+        col = self.db.pipeline_filter_presets
+        col.delete_one({"user_email": user_email, "name": name})
+        return {"ok": True, "presets": self.list_pipeline_presets(user_email)}
+
 
 # Singleton
 _job_service = None

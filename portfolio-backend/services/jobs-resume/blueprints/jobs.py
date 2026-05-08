@@ -363,6 +363,24 @@ def daily_pipeline():
 
     user_email = get_jwt_identity()
     include_indeed = bool(data.get("include_indeed", False))
+
+    # New filter knobs — ALL optional. When the request omits a key, the
+    # pipeline reproduces the original hardcoded behavior (entry-level,
+    # full-time, US-only, any work arrangement). When the user explicitly
+    # passes "any" / "" the corresponding actor filter is dropped entirely
+    # so the actor returns the full result set.
+    location = InputSanitizer.sanitize_string(str(data.get("location") or ""), max_length=80) or "United States"
+    raw_exp = (str(data.get("experience_level")).lower() if "experience_level" in data else "entry")
+    if raw_exp not in ("any", "internship", "entry", "associate", "mid", "senior"):
+        raw_exp = "entry"
+    raw_emp = (str(data.get("employment_type")).upper() if "employment_type" in data else "FULLTIME")
+    if raw_emp not in ("ANY", "FULLTIME", "PARTTIME", "INTERN", "CONTRACTOR"):
+        raw_emp = "FULLTIME"
+    raw_arr = (str(data.get("work_arrangement")).lower() if "work_arrangement" in data else "any")
+    if raw_arr not in ("any", "remote", "hybrid", "onsite"):
+        raw_arr = "any"
+    domain_strict = bool(data.get("domain_strict", False))
+
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
         "workday_titles": workday_titles or None,
@@ -372,6 +390,11 @@ def daily_pipeline():
         "workday_limit": workday_limit,
         "include_indeed": include_indeed,
         "user_email": user_email,
+        "location": location,
+        "experience_level": raw_exp,
+        "employment_type": raw_emp,
+        "work_arrangement": raw_arr,
+        "domain_strict": domain_strict,
     }
 
     try:
@@ -576,6 +599,66 @@ def save_filters():
     except Exception as e:
         logger.error(f"Save job filters error: {e}")
         return jsonify({"error": "Failed to save filters"}), 500
+
+
+# ------------------------------------------------------------------
+# Daily-pipeline named presets — list / save / delete
+# ------------------------------------------------------------------
+
+@jobs_bp.route("/pipeline/presets", methods=["GET"])
+@jwt_required()
+def list_pipeline_presets_route():
+    user_email = get_jwt_identity()
+    try:
+        from services.job_service import get_job_service
+        presets = get_job_service().list_pipeline_presets(user_email)
+        return jsonify({"presets": presets}), 200
+    except Exception as e:
+        logger.error(f"List pipeline presets error: {e}")
+        return jsonify({"error": "Failed to load presets"}), 500
+
+
+@jobs_bp.route("/pipeline/presets", methods=["POST"])
+@jwt_required()
+def save_pipeline_preset_route():
+    user_email = get_jwt_identity()
+    data = request.get_json(force=True) or {}
+    name = InputSanitizer.sanitize_string(str(data.get("name") or ""), max_length=60)
+    raw_filters = data.get("filters") if isinstance(data.get("filters"), dict) else {}
+    # Whitelist only fields we actually consume on the pipeline side so a
+    # malicious or malformed payload can't smuggle other state through.
+    allowed = {
+        "linkedin_keywords", "workday_titles", "custom_role_terms",
+        "past_days", "linkedin_count", "workday_limit", "include_indeed",
+        "location", "experience_level", "employment_type", "work_arrangement",
+        "domain_strict",
+    }
+    filters = {k: v for k, v in raw_filters.items() if k in allowed}
+    try:
+        from services.job_service import get_job_service
+        out = get_job_service().save_pipeline_preset(user_email, name, filters)
+        if not out.get("ok"):
+            return jsonify({"error": out.get("error", "Failed")}), 400
+        return jsonify(out), 200
+    except Exception as e:
+        logger.error(f"Save pipeline preset error: {e}")
+        return jsonify({"error": "Failed to save preset"}), 500
+
+
+@jobs_bp.route("/pipeline/presets/<path:name>", methods=["DELETE"])
+@jwt_required()
+def delete_pipeline_preset_route(name: str):
+    user_email = get_jwt_identity()
+    name = InputSanitizer.sanitize_string(name or "", max_length=60)
+    if not name:
+        return jsonify({"error": "Preset name is required"}), 400
+    try:
+        from services.job_service import get_job_service
+        out = get_job_service().delete_pipeline_preset(user_email, name)
+        return jsonify(out), 200
+    except Exception as e:
+        logger.error(f"Delete pipeline preset error: {e}")
+        return jsonify({"error": "Failed to delete preset"}), 500
 
 
 # ------------------------------------------------------------------

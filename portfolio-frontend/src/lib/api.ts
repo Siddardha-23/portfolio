@@ -670,6 +670,30 @@ class ApiService {
     );
   }
 
+  async listPipelinePresets() {
+    return this.request<{ presets: import("../types/jobs").PipelinePreset[] }>(
+      "/jobs/pipeline/presets",
+      { method: "GET" },
+    );
+  }
+
+  async savePipelinePreset(name: string, filters: import("../types/jobs").DailyPipelineParams) {
+    return this.request<{ ok: boolean; presets: import("../types/jobs").PipelinePreset[] }>(
+      "/jobs/pipeline/presets",
+      {
+        method: "POST",
+        body: JSON.stringify({ name, filters }),
+      },
+    );
+  }
+
+  async deletePipelinePreset(name: string) {
+    return this.request<{ ok: boolean; presets: import("../types/jobs").PipelinePreset[] }>(
+      `/jobs/pipeline/presets/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
+    );
+  }
+
   async runDailyPipeline(
     params: import("../types/jobs").DailyPipelineParams,
     onPartial?: (partial: import("../types/jobs").DailyPipelineResult) => void,

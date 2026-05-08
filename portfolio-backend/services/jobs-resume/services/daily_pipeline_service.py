@@ -361,16 +361,87 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
     return items
 
 
-def _build_linkedin_url(keywords: str, past_days: int) -> str:
-    # past_days <= 1 (incl. 0 / "today only") still uses LinkedIn's 24h
-    # window since LinkedIn doesn't expose a sub-day filter; we then tighten
-    # to today's date during _filter_and_score with our own cutoff.
+_LINKEDIN_EXPERIENCE_CODES = {
+    # LinkedIn's f_E parameter — multiple values are comma-separated.
+    "internship": "1",
+    "entry": "2",
+    "associate": "3",
+    "mid": "4",
+    "senior": "5",
+    "director": "6",
+    "executive": "7",
+}
+_LINKEDIN_JT_CODES = {
+    "FULLTIME": "F",
+    "PARTTIME": "P",
+    "CONTRACTOR": "C",
+    "TEMPORARY": "T",
+    "INTERN": "I",
+}
+_LINKEDIN_WT_CODES = {
+    "onsite": "1",
+    "remote": "2",
+    "hybrid": "3",
+}
+_WORKDAY_EMPLOYMENT_MAP = {
+    "FULLTIME": "FULL_TIME",
+    "PARTTIME": "PART_TIME",
+    "INTERN": "INTERN",
+    "CONTRACTOR": "CONTRACTOR",
+}
+_WORKDAY_EXPERIENCE_MAP = {
+    "internship": ["0-2"],
+    "entry": ["0-2"],
+    "associate": ["0-2", "3-5"],
+    "mid": ["3-5"],
+    "senior": ["5-10"],
+    "director": ["10+"],
+    "executive": ["10+"],
+}
+_WORKDAY_ARRANGEMENT_MAP = {
+    "remote": ["Remote OK", "Remote Solely"],
+    "hybrid": ["Hybrid"],
+    "onsite": ["In-Office"],
+}
+
+
+def _build_linkedin_url(
+    keywords: str,
+    past_days: int,
+    *,
+    location: str = "United States",
+    experience_level: str = "entry",
+    employment_type: str = "FULLTIME",
+    work_arrangement: str = "any",
+) -> str:
+    """Build a LinkedIn /jobs/search URL with the actor-supported filter params.
+
+    All filters are optional — passing the defaults reproduces the previous
+    24h/Entry-Level/US-only URL, so existing callers are unaffected.
+    """
     f_tpr = "r86400" if past_days <= 1 else f"r{86400 * max(1, past_days)}"
     base = "https://www.linkedin.com/jobs/search/?"
-    return (
-        f"{base}keywords={quote(keywords)}&location=United%20States"
-        f"&f_TPR={f_tpr}&f_E=2"
-    )
+    parts = [
+        f"keywords={quote(keywords)}",
+        f"location={quote(location or 'United States')}",
+        f"f_TPR={f_tpr}",
+    ]
+    f_e = _LINKEDIN_EXPERIENCE_CODES.get((experience_level or "").lower())
+    if f_e:
+        parts.append(f"f_E={f_e}")
+    # f_JT is only emitted for non-default employment types. The previous
+    # LinkedIn URL had no f_JT, so passing employment_type="FULLTIME" (the
+    # implicit baseline) reproduces that exactly. Explicit INTERN/CONTRACTOR/
+    # PARTTIME tighten the URL; "ANY" leaves it unrestricted.
+    emp_upper = (employment_type or "").upper()
+    if emp_upper in ("PARTTIME", "INTERN", "CONTRACTOR"):
+        f_jt = _LINKEDIN_JT_CODES.get(emp_upper)
+        if f_jt:
+            parts.append(f"f_JT={f_jt}")
+    f_wt = _LINKEDIN_WT_CODES.get((work_arrangement or "").lower())
+    if f_wt:
+        parts.append(f"f_WT={f_wt}")
+    return base + "&".join(parts)
 
 
 # Pre-filter for ATS direct fetchers: drop sales / PM / marketing / recruiter /
@@ -603,24 +674,55 @@ def _scrape_in_parallel(
     past_days: int,
     linkedin_count: int = 80,
     workday_limit: int = 200,
+    *,
+    location: str = "United States",
+    experience_level: str = "entry",
+    employment_type: str = "FULLTIME",
+    work_arrangement: str = "any",
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
     errors: List[str] = []
 
     linkedin_input = {
-        "urls": [_build_linkedin_url(k, past_days) for k in linkedin_keywords],
+        "urls": [
+            _build_linkedin_url(
+                k, past_days,
+                location=location,
+                experience_level=experience_level,
+                employment_type=employment_type,
+                work_arrangement=work_arrangement,
+            )
+            for k in linkedin_keywords
+        ],
         "count": linkedin_count,
         "scrapeCompany": False,
     }
-    workday_input = {
-        "aiEmploymentTypeFilter": ["FULL_TIME"],
-        "aiExperienceLevelFilter": ["0-2"],
+
+    # Workday actor — only set the AI filter fields when the user explicitly
+    # picked a value. Empty / "any" means "no filter" so the actor returns
+    # the full set; the backend's existing role-family + dedupe + scoring
+    # still applies. Defaults below reproduce the original pipeline behavior:
+    #   experience=entry → "0-2", employment=FULLTIME → "FULL_TIME", US-only.
+    workday_input: Dict[str, Any] = {
         "descriptionType": "text",
         "includeAi": True,
         "limit": workday_limit,
-        "locationSearch": ["United States"],
+        "locationSearch": [location or "United States"],
         "removeAgency": True,
         "titleSearch": workday_titles,
     }
+    exp_key = (experience_level or "").lower()
+    if exp_key and exp_key != "any":
+        wd_experience = _WORKDAY_EXPERIENCE_MAP.get(exp_key)
+        if wd_experience:
+            workday_input["aiExperienceLevelFilter"] = wd_experience
+    emp_key = (employment_type or "").upper()
+    if emp_key and emp_key != "ANY":
+        wd_employment = _WORKDAY_EMPLOYMENT_MAP.get(emp_key)
+        if wd_employment:
+            workday_input["aiEmploymentTypeFilter"] = [wd_employment]
+    wd_arrangement = _WORKDAY_ARRANGEMENT_MAP.get((work_arrangement or "").lower())
+    if wd_arrangement:
+        workday_input["aiWorkArrangementFilter"] = wd_arrangement
 
     def _safe_run(actor: str, payload: dict) -> List[Dict[str, Any]]:
         try:
@@ -1027,7 +1129,18 @@ def _tier(s: int) -> str:
     return "Skip"
 
 
-def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optional[List[str]] = None, profile: Optional[Dict[str, Any]] = None):
+def _filter_and_score(
+    records: List[dict],
+    cutoff: str,
+    custom_role_terms: Optional[List[str]] = None,
+    profile: Optional[Dict[str, Any]] = None,
+    *,
+    location_filter: str = "United States",
+    experience_level: str = "entry",
+    employment_type: str = "FULLTIME",
+    work_arrangement: str = "any",
+    domain_strict: bool = False,
+):
     apply_now: List[dict] = []
     verify: List[dict] = []
     excluded: List[dict] = []
@@ -1062,6 +1175,46 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
                 seen[key] = r
     deduped = list(seen.values())
 
+    # Pre-compute domain-strict matchers ONCE if domain_strict is enabled,
+    # so per-record filtering is cheap regex .search() calls.
+    strict_patterns: List[Any] = []
+    if domain_strict and profile:
+        try:
+            from services.resume_profiler import INTENTS as _INTENTS_STRICT
+            primary_intent = profile.get("primary_intent")
+            secondary_intent = profile.get("secondary_intent")
+            for intent_key in (primary_intent, secondary_intent):
+                if not intent_key or intent_key not in _INTENTS_STRICT:
+                    continue
+                for pat in _INTENTS_STRICT[intent_key].get("title_terms", []):
+                    try:
+                        strict_patterns.append(re.compile(pat, re.IGNORECASE))
+                    except re.error:
+                        continue
+        except Exception:
+            strict_patterns = []
+
+    # Location post-filter — when caller specified something narrower than
+    # "United States" (e.g. "New York", "Phoenix"), drop rows whose location
+    # doesn't mention any token from the filter. We split on commas/spaces
+    # and require at least one substring to match — Workday/LinkedIn return
+    # location as "City, State, Country" strings.
+    location_tokens: List[str] = []
+    if location_filter:
+        loc_lower = location_filter.strip().lower()
+        if loc_lower not in ("", "united states", "usa", "us", "remote"):
+            for token in re.split(r"[,/\s]+", loc_lower):
+                token = token.strip()
+                if len(token) >= 3:
+                    location_tokens.append(token)
+
+    # Work-arrangement post-filter — actors filter best-effort; we double-check
+    # so a "remote-only" pipeline run doesn't quietly include hybrid roles.
+    arrangement = (work_arrangement or "any").lower()
+
+    # Employment-type post-filter — same reason.
+    emp_type = (employment_type or "").upper()
+
     for r in deduped:
         # Only drop on date when we *know* it's older than the cutoff.
         # Workday entries often have no parseable date_posted; the actor
@@ -1074,6 +1227,58 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
         if not _is_us(r):
             excluded.append({**r, "reason": f"non-US ({r['location']})",
                              "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # User-specified location filter (post-filter — actors may return wider sets).
+        if location_tokens:
+            loc_text = (r.get("location") or "").lower()
+            if not any(tok in loc_text for tok in location_tokens) and "remote" not in loc_text:
+                excluded.append({**r, "reason": f"outside location filter ({location_filter})",
+                                 "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # Work-arrangement post-filter (only when user picked a specific mode).
+        if arrangement in ("remote", "hybrid", "onsite"):
+            loc_text = (r.get("location") or "").lower()
+            desc_text = (r.get("description") or "").lower()
+            blob = f"{loc_text} {desc_text}"
+            if arrangement == "remote":
+                if "remote" not in blob:
+                    excluded.append({**r, "reason": "not remote",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+            elif arrangement == "hybrid":
+                if "hybrid" not in blob:
+                    excluded.append({**r, "reason": "not hybrid",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+            elif arrangement == "onsite":
+                if "remote" in blob or "hybrid" in blob:
+                    excluded.append({**r, "reason": "not on-site",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # Employment-type post-filter — primarily catches Contract postings
+        # leaking through when user wants Full-Time only. "any" / empty skips.
+        if emp_type and emp_type != "ANY":
+            t_blob = f"{(r.get('title') or '').lower()} {(r.get('description') or '').lower()}"
+            if emp_type == "FULLTIME":
+                if any(k in t_blob for k in ["contract", "contractor", "1099", "c2c", "corp-to-corp"]):
+                    excluded.append({**r, "reason": "contract role (full-time filter)",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+            elif emp_type == "CONTRACTOR":
+                if not any(k in t_blob for k in ["contract", "contractor", "consultant", "1099"]):
+                    excluded.append({**r, "reason": "not a contract role",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+            elif emp_type == "INTERN":
+                if "intern" not in t_blob:
+                    excluded.append({**r, "reason": "not an internship",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # Domain-strict post-filter — drop anything whose title doesn't match
+        # the candidate's primary or secondary intent regex. The candidate
+        # explicitly opted into "specialist mode" via the UI toggle; off-domain
+        # roles (even high-scoring ones) get cut before scoring.
+        if strict_patterns:
+            t_lower = (r.get("title") or "").lower()
+            if not any(rx.search(t_lower) for rx in strict_patterns):
+                excluded.append({**r, "reason": "off-domain (strict mode)",
+                                 "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _healthcare_noise(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _blocked_company(r)):
@@ -1120,6 +1325,11 @@ def run_pipeline(
     apify_token: Optional[str] = None,
     include_indeed: bool = False,
     user_email: Optional[str] = None,
+    location: str = "United States",
+    experience_level: str = "entry",
+    employment_type: str = "FULLTIME",
+    work_arrangement: str = "any",
+    domain_strict: bool = False,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1153,6 +1363,10 @@ def run_pipeline(
             past_days=past_days,
             linkedin_count=linkedin_count,
             workday_limit=workday_limit,
+            location=location,
+            experience_level=experience_level,
+            employment_type=employment_type,
+            work_arrangement=work_arrangement,
         )
         f_indeed = pool.submit(_scrape_indeed, token) if include_indeed else None
         f_ats = pool.submit(_scrape_ats_direct)
@@ -1193,7 +1407,15 @@ def run_pipeline(
     profile = _load_user_profile(user_email) if user_email else None
 
     apply_now, verify, excluded = _filter_and_score(
-        all_raw, cutoff, custom_role_terms=custom_role_terms, profile=profile
+        all_raw,
+        cutoff,
+        custom_role_terms=custom_role_terms,
+        profile=profile,
+        location_filter=location,
+        experience_level=experience_level,
+        employment_type=employment_type,
+        work_arrangement=work_arrangement,
+        domain_strict=domain_strict,
     )
     duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
     phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]

@@ -4,14 +4,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useJobSearch } from '@/hooks/useJobSearch';
 import { SavedJobsPanel } from '@/components/job-search/SavedJobsPanel';
 import { DailyPipelinePanel } from '@/components/job-search/DailyPipelinePanel';
-import { SmartFiltersPanel } from '@/components/job-search/SmartFiltersPanel';
+import { SmartFiltersPanel, type SmartFilterApplyMode } from '@/components/job-search/SmartFiltersPanel';
 import type { SmartFilterSuggestions } from '@/types/jobs';
+
+export interface PendingFilterPayload {
+  data: SmartFilterSuggestions;
+  mode: SmartFilterApplyMode;
+}
 
 export default function JobOpportunitiesTab() {
   const jobSearch = useJobSearch();
   const [activeTab, setActiveTab] = useState<'pipeline' | 'smart' | 'saved'>('pipeline');
   const [pendingSuggestions, setPendingSuggestions] =
-    useState<SmartFilterSuggestions | null>(null);
+    useState<PendingFilterPayload | null>(null);
 
   // Pick up suggestions handed off from the inline component on the Tailor view.
   useEffect(() => {
@@ -20,7 +25,7 @@ export default function JobOpportunitiesTab() {
       if (raw) {
         sessionStorage.removeItem('pending_smart_filters');
         const parsed = JSON.parse(raw) as SmartFilterSuggestions;
-        setPendingSuggestions(parsed);
+        setPendingSuggestions({ data: parsed, mode: 'replace' });
         setActiveTab('pipeline');
       }
     } catch {
@@ -28,8 +33,8 @@ export default function JobOpportunitiesTab() {
     }
   }, []);
 
-  const handleApplySuggestions = (s: SmartFilterSuggestions) => {
-    setPendingSuggestions(s);
+  const handleApplySuggestions = (s: SmartFilterSuggestions, mode: SmartFilterApplyMode = 'replace') => {
+    setPendingSuggestions({ data: s, mode });
     setActiveTab('pipeline');
   };
 

@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
   Trophy, Medal, Award, Calendar, RotateCcw, Clock, Globe, Briefcase,
   Tag, CheckCircle2, Eye, EyeOff, Cloud, Server, Layers, Brain, Code2,
-  Wand2,
+  Wand2, Save, Trash2, Check, ChevronDown, BookmarkPlus, Filter, ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,10 @@ import type {
   DailyPipelineResult,
   DailyPipelineRecord,
   SmartFilterSuggestions,
+  PipelinePreset,
+  PipelineExperienceLevel,
+  PipelineEmploymentType,
+  PipelineWorkArrangement,
 } from '@/types/jobs';
 
 // --------------------------------------------------------------------------
@@ -197,6 +201,17 @@ interface PersistedState {
   workdayLimit?: number;
   linkedinCount?: number;
   includeIndeed?: boolean;
+  // New optional filter knobs — undefined preserves the original
+  // hardcoded defaults (entry-level, full-time, US-only, any arrangement).
+  location?: string;
+  experienceLevel?: PipelineExperienceLevel;
+  employmentType?: PipelineEmploymentType;
+  workArrangement?: PipelineWorkArrangement;
+  domainStrict?: boolean;
+  /** Tracks IDs the user has clicked "Open" on but not yet marked applied. */
+  openedIds?: string[];
+  /** Has the user been auto-prefilled from /suggest-filters at least once? */
+  prefilledFromResume?: boolean;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -257,12 +272,19 @@ function writePersisted(state: PersistedState) {
 function PipelineRow({
   rec,
   applied,
-  onApply,
+  opened,
+  onOpen,
+  onMarkApplied,
+  onDismissOpened,
   onTailor,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
-  onApply: () => void;
+  /** True when the user clicked "Open posting" but hasn't confirmed applied yet. */
+  opened: boolean;
+  onOpen: () => void;
+  onMarkApplied: () => void;
+  onDismissOpened: () => void;
   onTailor: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
@@ -344,42 +366,61 @@ function PipelineRow({
           )}
         </div>
 
-        <div className="flex flex-shrink-0 flex-col items-stretch gap-1.5 sm:w-28">
-          {rec.url ? (
+        <div className="flex flex-shrink-0 flex-col items-stretch gap-1.5 sm:w-32">
+          {applied ? (
             <Button
               size="sm"
-              onClick={onApply}
-              disabled={applied}
-              className={`gap-1 ${
-                applied
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90'
-              }`}
+              disabled
+              className="gap-1 bg-emerald-600 text-white"
             >
-              {applied ? (
-                <>
-                  <CheckCircle2 className="h-3 w-3" />
-                  Applied
-                </>
-              ) : (
-                <>
-                  Apply
-                  <ExternalLink className="h-3 w-3" />
-                </>
-              )}
+              <CheckCircle2 className="h-3 w-3" />
+              Applied
+            </Button>
+          ) : opened ? (
+            // Two-stage flow — user clicked "Open posting", now confirm.
+            <>
+              <Button
+                size="sm"
+                onClick={onMarkApplied}
+                className="gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90"
+                title="Confirm you submitted the application"
+              >
+                <Check className="h-3 w-3" />
+                I applied
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDismissOpened}
+                className="h-7 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                title="Didn't apply — dismiss this prompt"
+              >
+                Not yet
+              </Button>
+            </>
+          ) : rec.url ? (
+            <Button
+              size="sm"
+              onClick={onOpen}
+              className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
+              title="Open the posting in a new tab — saves it as Interested"
+            >
+              Open posting
+              <ExternalLink className="h-3 w-3" />
             </Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onTailor}
-            disabled={applied}
-            className="gap-1 border-purple-500/30 text-[11px] text-purple-700 hover:bg-purple-500/10 dark:text-purple-300"
-            title="Open this job in Tailor — auto-marks Applied once tailoring saves"
-          >
-            <Wand2 className="h-3 w-3" />
-            Tailor
-          </Button>
+          {!applied && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onTailor}
+              className="gap-1 border-purple-500/30 text-[11px] text-purple-700 hover:bg-purple-500/10 dark:text-purple-300"
+              title="Open this job in Tailor — auto-marks Applied once tailoring saves"
+            >
+              <Wand2 className="h-3 w-3" />
+              Tailor
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -391,16 +432,22 @@ function TierGroup({
   items,
   accent,
   appliedIds,
+  openedIds,
   showApplied,
-  onApply,
+  onOpen,
+  onMarkApplied,
+  onDismissOpened,
   onTailor,
 }: {
   title: string;
   items: DailyPipelineRecord[];
   accent: string;
   appliedIds: Set<string>;
+  openedIds: Set<string>;
   showApplied: boolean;
-  onApply: (rec: DailyPipelineRecord) => void;
+  onOpen: (rec: DailyPipelineRecord) => void;
+  onMarkApplied: (rec: DailyPipelineRecord) => void;
+  onDismissOpened: (rec: DailyPipelineRecord) => void;
   onTailor: (rec: DailyPipelineRecord) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
@@ -419,15 +466,21 @@ function TierGroup({
             All applied! Toggle "Show applied" to see them again.
           </p>
         ) : (
-          visible.map((rec) => (
-            <PipelineRow
-              key={_recordId(rec)}
-              rec={rec}
-              applied={appliedIds.has(_recordId(rec))}
-              onApply={() => onApply(rec)}
-              onTailor={() => onTailor(rec)}
-            />
-          ))
+          visible.map((rec) => {
+            const id = _recordId(rec);
+            return (
+              <PipelineRow
+                key={id}
+                rec={rec}
+                applied={appliedIds.has(id)}
+                opened={openedIds.has(id)}
+                onOpen={() => onOpen(rec)}
+                onMarkApplied={() => onMarkApplied(rec)}
+                onDismissOpened={() => onDismissOpened(rec)}
+                onTailor={() => onTailor(rec)}
+              />
+            );
+          })
         )}
       </div>
     </div>
@@ -437,9 +490,23 @@ function TierGroup({
 // --------------------------------------------------------------------------
 // Main panel
 // --------------------------------------------------------------------------
+export interface PendingPipelinePayload {
+  data: SmartFilterSuggestions;
+  /**
+   * 'replace' — overwrite the form (big "Apply to pipeline" button).
+   * 'append'  — merge into existing chips so the user can stack groups.
+   */
+  mode: 'replace' | 'append';
+}
+
 export interface DailyPipelinePanelProps {
-  /** Pending suggestions handed in from SmartFiltersPanel — consumed once. */
-  pendingSuggestions?: SmartFilterSuggestions | null;
+  /**
+   * Pending suggestions handed in from SmartFiltersPanel — consumed once.
+   * Accepts both the legacy bare-SmartFilterSuggestions shape (treated as
+   * replace) AND the new {data, mode} envelope so the parent can opt into
+   * append-mode for per-group stacking.
+   */
+  pendingSuggestions?: SmartFilterSuggestions | PendingPipelinePayload | null;
   onSuggestionsConsumed?: () => void;
   /** Optional refresh of saved-jobs in parent after Apply. */
   onJobApplied?: () => void;
@@ -461,16 +528,34 @@ export function DailyPipelinePanel({
   const [linkedinCount, setLinkedinCount] = useState<number>(persisted?.linkedinCount ?? 80);
   const [includeIndeed, setIncludeIndeed] = useState<boolean>(persisted?.includeIndeed ?? false);
 
+  // New filter knobs — defaults match the previous hardcoded behavior so a
+  // first-time visitor or a user who never opens the Filters drawer gets the
+  // exact same scrape they got before this change.
+  const [location, setLocation] = useState<string>(persisted?.location ?? 'United States');
+  const [experienceLevel, setExperienceLevel] = useState<PipelineExperienceLevel>(persisted?.experienceLevel ?? 'entry');
+  const [employmentType, setEmploymentType] = useState<PipelineEmploymentType>(persisted?.employmentType ?? 'FULLTIME');
+  const [workArrangement, setWorkArrangement] = useState<PipelineWorkArrangement>(persisted?.workArrangement ?? 'any');
+  const [domainStrict, setDomainStrict] = useState<boolean>(persisted?.domainStrict ?? false);
+
+  // Named presets — server-backed so they survive across browsers/devices.
+  const [presets, setPresets] = useState<PipelinePreset[]>([]);
+  const [presetMenuOpen, setPresetMenuOpen] = useState(false);
+  const [savePresetOpen, setSavePresetOpen] = useState(false);
+  const [presetNameInput, setPresetNameInput] = useState('');
+  const presetMenuRef = useRef<HTMLDivElement | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DailyPipelineResult | null>(persisted?.result ?? null);
   const [resultAt, setResultAt] = useState<number | null>(persisted?.resultAt ?? null);
   const [appliedIds, setAppliedIds] = useState<string[]>(persisted?.appliedIds ?? []);
+  const [openedIds, setOpenedIds] = useState<string[]>(persisted?.openedIds ?? []);
   const [showApplied, setShowApplied] = useState<boolean>(persisted?.showApplied ?? true);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // Bumped each time we want to pop the Apify key card open (e.g. after a
   // credit-exhausted run). The card only reacts when this value changes.
   const [apifyForceOpen, setApifyForceOpen] = useState<number | undefined>(undefined);
+  const prefilledRef = useRef<boolean>(persisted?.prefilledFromResume ?? false);
 
   // Persist
   useEffect(() => {
@@ -487,22 +572,106 @@ export function DailyPipelinePanel({
       workdayLimit,
       linkedinCount,
       includeIndeed,
+      location,
+      experienceLevel,
+      employmentType,
+      workArrangement,
+      domainStrict,
+      openedIds,
+      prefilledFromResume: prefilledRef.current,
     });
-  }, [linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced, result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed]);
+  }, [
+    linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
+    result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
+    location, experienceLevel, employmentType, workArrangement, domainStrict, openedIds,
+  ]);
+
+  // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
+  // user has a parsed resume but has never explicitly edited the form. We
+  // never overwrite a user's saved state — once they touch a chip, they own
+  // the form. Silent on failure (e.g. no resume uploaded yet).
+  useEffect(() => {
+    if (prefilledRef.current) return;
+    if (persisted) return; // user has a saved state already
+    let cancelled = false;
+    apiService.suggestPipelineFilters().then((resp) => {
+      if (cancelled || !resp.data?.suggestions) return;
+      const s = resp.data.suggestions;
+      if (s.linkedin_keyword_sets?.length) setLinkedinKws(s.linkedin_keyword_sets);
+      if (s.workday_titles?.length) setWorkdayTitles(s.workday_titles);
+      if (s.custom_role_terms?.length) setCustomRoles(s.custom_role_terms);
+      if (typeof s.past_days === 'number') setPastDays(s.past_days);
+      prefilledRef.current = true;
+      toast.success('Pipeline pre-filled from your resume — adjust before running.', {
+        duration: 3500,
+      });
+    }).catch(() => { /* no resume — user fills in manually */ });
+    return () => { cancelled = true; };
+  }, [persisted]);
+
+  // Load saved presets on mount.
+  useEffect(() => {
+    apiService.listPipelinePresets().then((resp) => {
+      if (resp.data?.presets) setPresets(resp.data.presets);
+    }).catch(() => { /* presets are best-effort */ });
+  }, []);
+
+  // Click-outside to close presets menu.
+  useEffect(() => {
+    if (!presetMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (presetMenuRef.current && !presetMenuRef.current.contains(e.target as Node)) {
+        setPresetMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [presetMenuOpen]);
 
   // Consume incoming smart-filter suggestions
   useEffect(() => {
     if (!pendingSuggestions) return;
-    setLinkedinKws(pendingSuggestions.linkedin_keyword_sets);
-    setWorkdayTitles(pendingSuggestions.workday_titles);
-    setCustomRoles(pendingSuggestions.custom_role_terms);
-    setPastDays(pendingSuggestions.past_days);
+    // Detect envelope vs bare-suggestions for backwards compat.
+    const isEnvelope = (val: any): val is PendingPipelinePayload =>
+      val && typeof val === 'object' && 'data' in val && 'mode' in val;
+    const data: SmartFilterSuggestions = isEnvelope(pendingSuggestions)
+      ? pendingSuggestions.data
+      : pendingSuggestions;
+    const mode: 'replace' | 'append' = isEnvelope(pendingSuggestions)
+      ? pendingSuggestions.mode
+      : 'replace';
+
+    if (mode === 'append') {
+      // Stack onto existing chips, dedup case-insensitively.
+      const merge = (current: string[], incoming: string[]) => {
+        const seen = new Set(current.map((s) => s.toLowerCase()));
+        const next = [...current];
+        for (const item of incoming || []) {
+          const trimmed = (item || '').trim();
+          if (!trimmed || seen.has(trimmed.toLowerCase())) continue;
+          seen.add(trimmed.toLowerCase());
+          next.push(trimmed);
+        }
+        return next;
+      };
+      setLinkedinKws((prev) => merge(prev, data.linkedin_keyword_sets || []));
+      setWorkdayTitles((prev) => merge(prev, data.workday_titles || []));
+      setCustomRoles((prev) => merge(prev, data.custom_role_terms || []));
+      // past_days is a single value; keep whatever the user already has.
+    } else {
+      setLinkedinKws(data.linkedin_keyword_sets);
+      setWorkdayTitles(data.workday_titles);
+      setCustomRoles(data.custom_role_terms);
+      if (typeof data.past_days === 'number') setPastDays(data.past_days);
+    }
     setShowAdvanced(true);
     setActivePreset(null);
+    prefilledRef.current = true;
     onSuggestionsConsumed?.();
   }, [pendingSuggestions, onSuggestionsConsumed]);
 
   const appliedSet = useMemo(() => new Set(appliedIds), [appliedIds]);
+  const openedSet = useMemo(() => new Set(openedIds), [openedIds]);
 
   const handleRun = async () => {
     setLoading(true);
@@ -518,6 +687,15 @@ export function DailyPipelinePanel({
       workday_limit: workdayLimit,
       linkedin_count: linkedinCount,
       include_indeed: includeIndeed,
+      // Only forward the new knobs when they differ from the original
+      // hardcoded behavior. Sending the defaults explicitly is fine — the
+      // backend treats "entry"/"FULLTIME"/"any"/"United States" as the
+      // pre-existing baseline. We always send so the request is explicit.
+      location,
+      experience_level: experienceLevel,
+      employment_type: employmentType,
+      work_arrangement: workArrangement,
+      domain_strict: domainStrict,
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -553,9 +731,74 @@ export function DailyPipelinePanel({
     setWorkdayTitles(DEFAULT_WORKDAY_TITLES);
     setCustomRoles([]);
     setPastDays(1);
+    setLocation('United States');
+    setExperienceLevel('entry');
+    setEmploymentType('FULLTIME');
+    setWorkArrangement('any');
+    setDomainStrict(false);
     setActivePreset(null);
     setResult(null);
     setResultAt(null);
+  };
+
+  // ----- Preset save / load / delete handlers ------------------------
+  const handleSavePreset = async () => {
+    const name = presetNameInput.trim();
+    if (!name) return;
+    const filters: DailyPipelineParams = {
+      linkedin_keywords: linkedinKws,
+      workday_titles: workdayTitles,
+      custom_role_terms: customRoles,
+      past_days: pastDays,
+      linkedin_count: linkedinCount,
+      workday_limit: workdayLimit,
+      include_indeed: includeIndeed,
+      location,
+      experience_level: experienceLevel,
+      employment_type: employmentType,
+      work_arrangement: workArrangement,
+      domain_strict: domainStrict,
+    };
+    const resp = await apiService.savePipelinePreset(name, filters);
+    if (resp.error) {
+      toast.error(resp.error);
+      return;
+    }
+    if (resp.data?.presets) setPresets(resp.data.presets);
+    setSavePresetOpen(false);
+    setPresetNameInput('');
+    toast.success(`Preset "${name}" saved`);
+  };
+
+  const handleLoadPreset = (preset: PipelinePreset) => {
+    const f = preset.filters || {};
+    if (Array.isArray(f.linkedin_keywords)) setLinkedinKws(f.linkedin_keywords);
+    if (Array.isArray(f.workday_titles)) setWorkdayTitles(f.workday_titles);
+    if (Array.isArray(f.custom_role_terms)) setCustomRoles(f.custom_role_terms);
+    if (typeof f.past_days === 'number') setPastDays(f.past_days);
+    if (typeof f.linkedin_count === 'number') setLinkedinCount(f.linkedin_count);
+    if (typeof f.workday_limit === 'number') setWorkdayLimit(f.workday_limit);
+    if (typeof f.include_indeed === 'boolean') setIncludeIndeed(f.include_indeed);
+    if (typeof f.location === 'string') setLocation(f.location);
+    if (f.experience_level) setExperienceLevel(f.experience_level);
+    if (f.employment_type) setEmploymentType(f.employment_type);
+    if (f.work_arrangement) setWorkArrangement(f.work_arrangement);
+    if (typeof f.domain_strict === 'boolean') setDomainStrict(f.domain_strict);
+    setActivePreset(null);
+    setPresetMenuOpen(false);
+    toast.success(`Loaded preset "${preset.name}"`);
+  };
+
+  const handleDeletePreset = async (preset: PipelinePreset, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm(`Delete preset "${preset.name}"?`)) return;
+    const resp = await apiService.deletePipelinePreset(preset.name);
+    if (resp.error) {
+      toast.error(resp.error);
+      return;
+    }
+    if (resp.data?.presets) setPresets(resp.data.presets);
+    toast.success(`Deleted "${preset.name}"`);
   };
 
   const applyPreset = (p: Preset) => {
@@ -607,39 +850,82 @@ export function DailyPipelinePanel({
     toast.success('Opening Tailor — applied status will be set when tailoring saves.');
   };
 
-  const handleApply = async (rec: DailyPipelineRecord) => {
+  // Build the Job payload we save / update — shared between the open and
+  // mark-applied paths.
+  const _jobPayload = (rec: DailyPipelineRecord) => ({
+    job_id: _recordId(rec),
+    title: rec.title,
+    company: rec.company,
+    logo: '',
+    location: rec.location || '',
+    apply_link: rec.url || '',
+    description: rec.description || '',
+    salary: rec.salary || '',
+    employment_type: 'FULLTIME',
+    posted_date: rec.posted || '',
+    h1b_sponsor: (rec.flags || '').toLowerCase().includes('h1b'),
+    remote: /remote/i.test(rec.location || ''),
+    match_score: rec.score ?? 0,
+    matching_skills: [],
+    missing_skills: [],
+    source: rec.source || 'LinkedIn',
+  });
+
+  // Open the posting in a new tab AND save it as "interested" (not applied).
+  // Tracks the click so the row can later prompt "Did you apply?". This is
+  // the new primary action — the previous "Apply" button silently marked the
+  // job applied even if the user didn't actually submit, which polluted the
+  // funnel analytics.
+  const handleOpenPosting = async (rec: DailyPipelineRecord) => {
     const id = _recordId(rec);
     if (rec.url) window.open(rec.url, '_blank', 'noopener,noreferrer');
-
-    const job = {
-      job_id: id,
-      title: rec.title,
-      company: rec.company,
-      logo: '',
-      location: rec.location || '',
-      apply_link: rec.url || '',
-      description: rec.description || '',
-      salary: rec.salary || '',
-      employment_type: 'FULLTIME',
-      posted_date: rec.posted || '',
-      h1b_sponsor: (rec.flags || '').toLowerCase().includes('h1b'),
-      remote: /remote/i.test(rec.location || ''),
-      match_score: rec.score ?? 0,
-      matching_skills: [],
-      missing_skills: [],
-      source: rec.source || 'LinkedIn',
-    };
-
+    setOpenedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     try {
-      await apiService.saveJob(job as any);
+      await apiService.saveJob(_jobPayload(rec) as any);
     } catch {
       /* tolerate duplicate save */
     }
-    await apiService.updateSavedJob(id, { status: 'applied' });
-
-    setAppliedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    // Best-effort activity event so the resume profiler picks up the click
+    // as a feedback signal toward this role family.
+    try {
+      await apiService.recordMomentumActivity('job_click', {
+        record_id: id,
+        job_title: rec.title,
+        company: rec.company,
+      });
+    } catch { /* best effort */ }
     onJobApplied?.();
-    toast.success('Saved as Applied — see the Saved tab.');
+  };
+
+  // Confirm the user actually submitted the application — flips the saved
+  // job's status from "interested" to "applied" and adds it to the local
+  // appliedIds. This is the only path that increments the funnel.
+  const handleMarkApplied = async (rec: DailyPipelineRecord) => {
+    const id = _recordId(rec);
+    try {
+      await apiService.saveJob(_jobPayload(rec) as any);
+    } catch {
+      /* duplicate-ok */
+    }
+    await apiService.updateSavedJob(id, { status: 'applied' });
+    setAppliedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    setOpenedIds((prev) => prev.filter((x) => x !== id));
+    try {
+      await apiService.recordMomentumActivity('job_applied', {
+        record_id: id,
+        job_title: rec.title,
+        company: rec.company,
+      });
+    } catch { /* best effort */ }
+    onJobApplied?.();
+    toast.success('Marked as applied — funnel updated.');
+  };
+
+  // User clicked "Open" but hasn't yet hit "Mark applied" — they can dismiss
+  // the prompt to remove the row from the "did-you-apply?" reminder list.
+  const handleDismissOpened = (rec: DailyPipelineRecord) => {
+    const id = _recordId(rec);
+    setOpenedIds((prev) => prev.filter((x) => x !== id));
   };
 
   const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1');
@@ -693,12 +979,91 @@ export function DailyPipelinePanel({
             </div>
           </div>
 
-          {/* Preset persona chips */}
-          <div className="space-y-1.5">
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-              <Tag className="mr-1 inline h-3 w-3" />
-              Quick presets
-            </p>
+          {/* Preset persona chips + Saved presets bar */}
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <Tag className="mr-1 inline h-3 w-3" />
+                Quick presets
+              </p>
+              <div className="relative flex items-center gap-1.5" ref={presetMenuRef}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setSavePresetOpen((v) => !v)}
+                  className="h-7 gap-1 text-[11px]"
+                  title="Save the current pipeline form as a named preset"
+                >
+                  <BookmarkPlus className="h-3 w-3" />
+                  Save preset
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPresetMenuOpen((v) => !v)}
+                  disabled={presets.length === 0}
+                  className="h-7 gap-1 text-[11px]"
+                  title={presets.length === 0 ? 'No saved presets yet' : 'Load a saved preset'}
+                >
+                  My presets {presets.length > 0 ? `(${presets.length})` : ''}
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+                {presetMenuOpen && presets.length > 0 && (
+                  <div className="absolute right-0 top-full z-20 mt-1 w-72 max-h-80 overflow-auto rounded-lg border border-border/80 bg-white shadow-lg dark:bg-gray-900">
+                    <ul className="py-1 text-xs">
+                      {presets.map((p) => (
+                        <li key={p.name}>
+                          <button
+                            type="button"
+                            onClick={() => handleLoadPreset(p)}
+                            className="flex w-full items-start justify-between gap-2 px-3 py-2 text-left hover:bg-purple-500/10"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{p.name}</p>
+                              <p className="truncate text-[10px] text-muted-foreground">
+                                {p.filters?.experience_level || 'entry'} · {p.filters?.employment_type || 'FULLTIME'}
+                                {p.filters?.location ? ` · ${p.filters.location}` : ''}
+                                {p.filters?.domain_strict ? ' · strict' : ''}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDeletePreset(p, e)}
+                              className="flex-shrink-0 rounded p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-600"
+                              title="Delete preset"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {savePresetOpen && (
+              <div className="flex items-center gap-2 rounded-lg border border-purple-500/30 bg-purple-500/5 p-2">
+                <Input
+                  value={presetNameInput}
+                  onChange={(e) => setPresetNameInput(e.target.value)}
+                  placeholder="Preset name (e.g. ML strict, Cloud broad)"
+                  maxLength={60}
+                  className="h-8 text-xs"
+                  autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSavePreset(); }}
+                />
+                <Button size="sm" onClick={handleSavePreset} disabled={!presetNameInput.trim()} className="gap-1 bg-purple-600 text-white hover:bg-purple-700">
+                  <Save className="h-3 w-3" />
+                  Save
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setSavePresetOpen(false); setPresetNameInput(''); }} className="text-[11px]">
+                  Cancel
+                </Button>
+              </div>
+            )}
+
             <div className="flex flex-wrap gap-2">
               {PRESETS.map((p) => {
                 const active = activePreset === p.id;
@@ -721,6 +1086,87 @@ export function DailyPipelinePanel({
                 );
               })}
             </div>
+          </div>
+
+          {/* Filter drawer — actor-supported filters. Defaults reproduce
+              the previous hardcoded behavior so leaving these untouched
+              gives the same scrape as before. */}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-5">
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                <MapPin className="mr-1 inline h-3 w-3" />
+                Location
+              </label>
+              <Input
+                value={location}
+                onChange={(e) => setLocation(e.target.value)}
+                placeholder="United States"
+                className="h-8 text-xs"
+                maxLength={80}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Experience
+              </label>
+              <Select value={experienceLevel} onValueChange={(v) => setExperienceLevel(v as PipelineExperienceLevel)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any level</SelectItem>
+                  <SelectItem value="internship">Internship</SelectItem>
+                  <SelectItem value="entry">Entry · 0-2y</SelectItem>
+                  <SelectItem value="associate">Associate · 0-5y</SelectItem>
+                  <SelectItem value="mid">Mid · 3-5y</SelectItem>
+                  <SelectItem value="senior">Senior · 5-10y</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Employment
+              </label>
+              <Select value={employmentType} onValueChange={(v) => setEmploymentType(v as PipelineEmploymentType)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ANY">Any</SelectItem>
+                  <SelectItem value="FULLTIME">Full-time</SelectItem>
+                  <SelectItem value="PARTTIME">Part-time</SelectItem>
+                  <SelectItem value="INTERN">Internship</SelectItem>
+                  <SelectItem value="CONTRACTOR">Contract</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Work mode
+              </label>
+              <Select value={workArrangement} onValueChange={(v) => setWorkArrangement(v as PipelineWorkArrangement)}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any</SelectItem>
+                  <SelectItem value="remote">Remote</SelectItem>
+                  <SelectItem value="hybrid">Hybrid</SelectItem>
+                  <SelectItem value="onsite">On-site</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="flex flex-col justify-between gap-1 rounded-lg border border-border/60 bg-muted/20 p-2 cursor-pointer hover:border-purple-500/40 sm:col-span-2 lg:col-span-1">
+              <span className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <ShieldCheck className="h-3 w-3" />
+                Domain strict
+              </span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={domainStrict}
+                  onChange={(e) => setDomainStrict(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-purple-600"
+                />
+                <span className="text-[11px] leading-tight text-muted-foreground">
+                  Drop off-domain titles entirely
+                </span>
+              </span>
+            </label>
           </div>
 
           {/* Quick controls */}
@@ -1016,8 +1462,11 @@ export function DailyPipelinePanel({
             items={tier1}
             accent="border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
             appliedIds={appliedSet}
+            openedIds={openedSet}
             showApplied={showApplied}
-            onApply={handleApply}
+            onOpen={handleOpenPosting}
+            onMarkApplied={handleMarkApplied}
+            onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
           />
           <TierGroup
@@ -1025,8 +1474,11 @@ export function DailyPipelinePanel({
             items={tier2}
             accent="border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"
             appliedIds={appliedSet}
+            openedIds={openedSet}
             showApplied={showApplied}
-            onApply={handleApply}
+            onOpen={handleOpenPosting}
+            onMarkApplied={handleMarkApplied}
+            onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
           />
           <TierGroup
@@ -1034,8 +1486,11 @@ export function DailyPipelinePanel({
             items={tier3}
             accent="border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300"
             appliedIds={appliedSet}
+            openedIds={openedSet}
             showApplied={showApplied}
-            onApply={handleApply}
+            onOpen={handleOpenPosting}
+            onMarkApplied={handleMarkApplied}
+            onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
           />
 
@@ -1045,8 +1500,11 @@ export function DailyPipelinePanel({
               items={result.verify_dates}
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               appliedIds={appliedSet}
+              openedIds={openedSet}
               showApplied={showApplied}
-              onApply={handleApply}
+              onOpen={handleOpenPosting}
+              onMarkApplied={handleMarkApplied}
+              onDismissOpened={handleDismissOpened}
               onTailor={handleTailor}
             />
           )}
@@ -1057,8 +1515,11 @@ export function DailyPipelinePanel({
               items={result.phoenix}
               accent="border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300"
               appliedIds={appliedSet}
+              openedIds={openedSet}
               showApplied={showApplied}
-              onApply={handleApply}
+              onOpen={handleOpenPosting}
+              onMarkApplied={handleMarkApplied}
+              onDismissOpened={handleDismissOpened}
               onTailor={handleTailor}
             />
           )}

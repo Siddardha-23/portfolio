@@ -208,6 +208,9 @@ interface PersistedState {
   employmentType?: PipelineEmploymentType;
   workArrangement?: PipelineWorkArrangement;
   domainStrict?: boolean;
+  /** F-1 / H-1B opt-ins. Both default off so non-visa users keep the original flow. */
+  h1bOnly?: boolean;
+  excludeNoSponsorship?: boolean;
   /** Tracks IDs the user has clicked "Open" on but not yet marked applied. */
   openedIds?: string[];
   /** Has the user been auto-prefilled from /suggest-filters at least once? */
@@ -269,6 +272,38 @@ function writePersisted(state: PersistedState) {
 // --------------------------------------------------------------------------
 // Job row
 // --------------------------------------------------------------------------
+function VisaBadge({ status }: { status?: string }) {
+  // Render a compact, color-coded badge so an F-1 / H-1B candidate can tell
+  // at a glance whether a posting will accept their visa status. We
+  // deliberately don't render anything for "unknown" — too noisy when most
+  // postings carry no signal.
+  if (status === 'sponsor_verified') {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-emerald-500/40 bg-emerald-500/10 text-[9px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300"
+        title="Verified H-1B sponsor — company is on the curated sponsor list or the JD says they sponsor."
+      >
+        <ShieldCheck className="h-2.5 w-2.5" />
+        Sponsors
+      </Badge>
+    );
+  }
+  if (status === 'no_sponsorship') {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-red-500/40 bg-red-500/10 text-[9px] font-semibold uppercase tracking-wider text-red-700 dark:text-red-300"
+        title="JD explicitly states no visa sponsorship is offered. Skip if you're on F-1 / H-1B."
+      >
+        <AlertCircle className="h-2.5 w-2.5" />
+        No sponsor
+      </Badge>
+    );
+  }
+  return null;
+}
+
 function PipelineRow({
   rec,
   applied,
@@ -325,6 +360,7 @@ function PipelineRow({
             <Badge variant="outline" className="border-border/60 text-[10px] uppercase tracking-wider">
               {rec.source}
             </Badge>
+            <VisaBadge status={rec.visa_status} />
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -536,6 +572,8 @@ export function DailyPipelinePanel({
   const [employmentType, setEmploymentType] = useState<PipelineEmploymentType>(persisted?.employmentType ?? 'FULLTIME');
   const [workArrangement, setWorkArrangement] = useState<PipelineWorkArrangement>(persisted?.workArrangement ?? 'any');
   const [domainStrict, setDomainStrict] = useState<boolean>(persisted?.domainStrict ?? false);
+  const [h1bOnly, setH1bOnly] = useState<boolean>(persisted?.h1bOnly ?? false);
+  const [excludeNoSponsorship, setExcludeNoSponsorship] = useState<boolean>(persisted?.excludeNoSponsorship ?? false);
 
   // Named presets — server-backed so they survive across browsers/devices.
   const [presets, setPresets] = useState<PipelinePreset[]>([]);
@@ -577,13 +615,16 @@ export function DailyPipelinePanel({
       employmentType,
       workArrangement,
       domainStrict,
+      h1bOnly,
+      excludeNoSponsorship,
       openedIds,
       prefilledFromResume: prefilledRef.current,
     });
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
-    location, experienceLevel, employmentType, workArrangement, domainStrict, openedIds,
+    location, experienceLevel, employmentType, workArrangement, domainStrict,
+    h1bOnly, excludeNoSponsorship, openedIds,
   ]);
 
   // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
@@ -696,6 +737,8 @@ export function DailyPipelinePanel({
       employment_type: employmentType,
       work_arrangement: workArrangement,
       domain_strict: domainStrict,
+      h1b_only: h1bOnly,
+      exclude_no_sponsorship: excludeNoSponsorship,
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -736,6 +779,8 @@ export function DailyPipelinePanel({
     setEmploymentType('FULLTIME');
     setWorkArrangement('any');
     setDomainStrict(false);
+    setH1bOnly(false);
+    setExcludeNoSponsorship(false);
     setActivePreset(null);
     setResult(null);
     setResultAt(null);
@@ -758,6 +803,8 @@ export function DailyPipelinePanel({
       employment_type: employmentType,
       work_arrangement: workArrangement,
       domain_strict: domainStrict,
+      h1b_only: h1bOnly,
+      exclude_no_sponsorship: excludeNoSponsorship,
     };
     const resp = await apiService.savePipelinePreset(name, filters);
     if (resp.error) {
@@ -784,6 +831,8 @@ export function DailyPipelinePanel({
     if (f.employment_type) setEmploymentType(f.employment_type);
     if (f.work_arrangement) setWorkArrangement(f.work_arrangement);
     if (typeof f.domain_strict === 'boolean') setDomainStrict(f.domain_strict);
+    if (typeof f.h1b_only === 'boolean') setH1bOnly(f.h1b_only);
+    if (typeof f.exclude_no_sponsorship === 'boolean') setExcludeNoSponsorship(f.exclude_no_sponsorship);
     setActivePreset(null);
     setPresetMenuOpen(false);
     toast.success(`Loaded preset "${preset.name}"`);
@@ -1167,6 +1216,70 @@ export function DailyPipelinePanel({
                 </span>
               </span>
             </label>
+          </div>
+
+          {/* F-1 / H-1B mode — opt-in for international students. Compact panel
+              that surfaces the two visa toggles together with a one-click
+              "F-1 friendly" combo and a short explainer. Off by default; the
+              entire panel collapses when both toggles are off (keeps non-visa
+              users from seeing visa-specific UI clutter). */}
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="space-y-0.5">
+                <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                  <ShieldCheck className="h-3 w-3" />
+                  F-1 / H-1B mode
+                </p>
+                <p className="text-[10px] leading-snug text-muted-foreground">
+                  Optional — for visa candidates. Drops postings that explicitly
+                  say "no sponsorship" or restrict to US citizens.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setExcludeNoSponsorship(true);
+                  setH1bOnly(false);
+                  toast.success('F-1 friendly mode on — postings that say "no sponsorship" will be dropped.');
+                }}
+                className="h-7 gap-1 text-[11px] border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-300"
+              >
+                <Sparkles className="h-3 w-3" />
+                F-1 friendly
+              </Button>
+            </div>
+            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <label className="flex items-start gap-2 rounded-md border border-border/60 bg-background/60 p-2 cursor-pointer hover:border-amber-500/40">
+                <input
+                  type="checkbox"
+                  checked={excludeNoSponsorship}
+                  onChange={(e) => setExcludeNoSponsorship(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-amber-600"
+                />
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-medium leading-tight">Hide "no sponsorship" postings</p>
+                  <p className="text-[10px] leading-tight text-muted-foreground">
+                    Scans the JD for "must be authorized to work without sponsorship", "GC required", etc.
+                  </p>
+                </div>
+              </label>
+              <label className="flex items-start gap-2 rounded-md border border-border/60 bg-background/60 p-2 cursor-pointer hover:border-amber-500/40">
+                <input
+                  type="checkbox"
+                  checked={h1bOnly}
+                  onChange={(e) => setH1bOnly(e.target.checked)}
+                  className="mt-0.5 h-3.5 w-3.5 accent-amber-600"
+                />
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-medium leading-tight">Verified sponsors only (strict)</p>
+                  <p className="text-[10px] leading-tight text-muted-foreground">
+                    Show only known H-1B sponsors or postings that affirmatively say "we sponsor".
+                    Trims recall — leave off for first pass.
+                  </p>
+                </div>
+              </label>
+            </div>
           </div>
 
           {/* Quick controls */}

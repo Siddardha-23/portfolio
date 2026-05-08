@@ -754,6 +754,8 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 employment_type=str(payload.get("employment_type") or "FULLTIME"),
                 work_arrangement=str(payload.get("work_arrangement") or "any"),
                 domain_strict=bool(payload.get("domain_strict", False)),
+                h1b_only=bool(payload.get("h1b_only", False)),
+                exclude_no_sponsorship=bool(payload.get("exclude_no_sponsorship", False)),
             )
             # Surface which token tier was used so the UI can display it.
             result["used_user_apify_key"] = bool(user_key)

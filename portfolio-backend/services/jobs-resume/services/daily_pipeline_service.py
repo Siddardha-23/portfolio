@@ -290,6 +290,44 @@ CLEARANCE_TEXT = re.compile(
     r"us citizens only|itar|polygraph|public trust|sci clearance)\b",
     re.IGNORECASE,
 )
+
+# Explicit "we don't sponsor" language — read from job descriptions for the
+# F1-student opt-in filter. Each pattern below is a phrase that companies use
+# to slam the door on F-1 / H-1B candidates. Matching ANY of these means the
+# job is wasted on someone who needs sponsorship.
+NO_SPONSORSHIP_TEXT = re.compile(
+    r"("
+    r"no\s+(?:visa\s+)?sponsorship|"
+    r"sponsorship\s+(?:is\s+)?not\s+(?:available|offered|provided)|"
+    r"unable\s+to\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?sponsorship|"
+    r"do(?:es)?\s+not\s+(?:offer|provide|sponsor)\s+(?:visa\s+)?sponsorship|"
+    r"will\s+not\s+sponsor|"
+    r"cannot\s+sponsor|"
+    r"must\s+be\s+(?:legally\s+)?authorized\s+to\s+work\s+in\s+the\s+(?:u\.?s\.?|united\s+states)\s+without\s+(?:current\s+or\s+future\s+)?(?:visa\s+)?sponsorship|"
+    r"without\s+(?:the\s+need\s+for\s+)?(?:visa\s+)?sponsorship\s+(?:now\s+or\s+in\s+the\s+future)|"
+    r"u\.?s\.?\s+citizen(?:ship)?\s+or\s+permanent\s+resident|"
+    r"(?:green\s*card|gc)\s+(?:or\s+u\.?s\.?\s+citizen|holder\s+only|required)|"
+    r"u\.?s\.?\s+persons?\s+only"
+    r")",
+    re.IGNORECASE,
+)
+
+# Affirmative sponsorship signals — for the inverse "yes, they sponsor" badge.
+# We only set sponsor_verified if either (a) company is in H1B_SPONSORS or
+# (b) the JD explicitly mentions sponsorship as available. Don't conflate
+# "H-1B" appearing in a no-sponsorship sentence — the regex requires positive
+# wording like "we sponsor", "sponsorship available", "H-1B sponsorship offered".
+SPONSORSHIP_AFFIRM_TEXT = re.compile(
+    r"("
+    r"(?:we|company)\s+(?:will\s+)?sponsor|"
+    r"sponsorship\s+(?:is\s+)?(?:available|provided|offered)|"
+    r"(?:offer|provide)\s+(?:visa\s+)?sponsorship|"
+    r"h[-\s]?1b\s+sponsorship\s+(?:available|offered|provided)|"
+    r"open\s+to\s+sponsoring"
+    r")",
+    re.IGNORECASE,
+)
+
 INTERN_TITLE = re.compile(r"\b(intern|internship|summer 2026|co-?op)\b", re.IGNORECASE)
 PHOENIX_HINTS = re.compile(
     r"\b(phoenix|chandler|scottsdale|tempe|mesa|gilbert|arizona|\baz\b)\b",
@@ -1009,6 +1047,31 @@ def _clearance_block(rec: dict) -> Optional[str]:
     return None
 
 
+def _classify_visa_status(rec: dict) -> str:
+    """Tag each row with its sponsorship signal: sponsor_verified / no_sponsorship / unknown.
+
+    "sponsor_verified" — company is on the H1B_SPONSORS list OR the JD has
+        affirmative sponsorship language like "we sponsor", "H-1B available".
+    "no_sponsorship"   — JD has explicit non-sponsorship language. The job
+        will reject an F-1 / H-1B candidate at the application stage.
+    "unknown"          — neither signal is present. Most postings land here;
+        candidate has to research the company before applying.
+
+    Used by both the F1-student exclusion filter and the per-row visa badge.
+    """
+    company = _norm_company(rec.get("company"))
+    desc = _clean_str(rec.get("description"))
+    # Only flag "no_sponsorship" when the JD is explicit. Matching here is
+    # cheap (single regex), and the patterns are deliberately conservative.
+    if desc and NO_SPONSORSHIP_TEXT.search(desc):
+        return "no_sponsorship"
+    if any(sp in company for sp in H1B_SPONSORS):
+        return "sponsor_verified"
+    if desc and SPONSORSHIP_AFFIRM_TEXT.search(desc):
+        return "sponsor_verified"
+    return "unknown"
+
+
 def _healthcare_noise(rec: dict) -> Optional[str]:
     return "off-domain (healthcare/non-tech)" if HEALTHCARE_NOISE_TITLE.search(_clean_str(rec.get("title"))) else None
 
@@ -1042,6 +1105,15 @@ def _score(rec: dict, today_iso: Optional[str] = None, profile: Optional[Dict[st
 
     if any(sp in company for sp in H1B_SPONSORS): s += 30; flags.append("H1B-sponsor")
     if any(ai in company for ai in AI_NATIVE):    s += 20; flags.append("AI-native")
+    # Visa signal — when JD explicitly says "we sponsor" but the company isn't
+    # in the curated H1B_SPONSORS list, give a smaller boost. Conversely, when
+    # the JD says "no sponsorship" and the user hasn't opted into the strict
+    # exclude_no_sponsorship filter, drop the score so it can't crowd Tier 1.
+    visa = rec.get("visa_status")
+    if visa == "sponsor_verified" and not any(sp in company for sp in H1B_SPONSORS):
+        s += 12; flags.append("Sponsor-verified (JD)")
+    elif visa == "no_sponsorship":
+        s -= 30; flags.append("No-sponsorship JD")
     if AGENTIC.search(title):       s += 25; flags.append("Agentic")
 
     # Title-family bonuses are now WEIGHTED by the candidate's primary intent.
@@ -1140,6 +1212,8 @@ def _filter_and_score(
     employment_type: str = "FULLTIME",
     work_arrangement: str = "any",
     domain_strict: bool = False,
+    h1b_only: bool = False,
+    exclude_no_sponsorship: bool = False,
 ):
     apply_now: List[dict] = []
     verify: List[dict] = []
@@ -1279,6 +1353,17 @@ def _filter_and_score(
             if not any(rx.search(t_lower) for rx in strict_patterns):
                 excluded.append({**r, "reason": "off-domain (strict mode)",
                                  "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # F-1 / H-1B sponsorship filters — opt-in. Off by default so first-time
+        # users (and anyone not on a visa) keep the existing flow unchanged.
+        visa_status = _classify_visa_status(r)
+        r["visa_status"] = visa_status
+        if exclude_no_sponsorship and visa_status == "no_sponsorship":
+            excluded.append({**r, "reason": "JD says no visa sponsorship",
+                             "tier": "Skip", "score": 0, "flags": ""}); continue
+        if h1b_only and visa_status != "sponsor_verified":
+            excluded.append({**r, "reason": "not a verified H-1B sponsor",
+                             "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _healthcare_noise(r)):
             excluded.append({**r, "reason": why, "tier": "Skip", "score": 0, "flags": ""}); continue
         if (why := _blocked_company(r)):
@@ -1330,6 +1415,8 @@ def run_pipeline(
     employment_type: str = "FULLTIME",
     work_arrangement: str = "any",
     domain_strict: bool = False,
+    h1b_only: bool = False,
+    exclude_no_sponsorship: bool = False,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1416,6 +1503,8 @@ def run_pipeline(
         employment_type=employment_type,
         work_arrangement=work_arrangement,
         domain_strict=domain_strict,
+        h1b_only=h1b_only,
+        exclude_no_sponsorship=exclude_no_sponsorship,
     )
     duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
     phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]

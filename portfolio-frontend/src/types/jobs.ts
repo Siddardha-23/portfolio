@@ -1,3 +1,5 @@
+export type VisaStatus = 'sponsor_verified' | 'no_sponsorship' | 'unknown';
+
 export interface DailyPipelineRecord {
   source: string;
   company: string;
@@ -14,6 +16,8 @@ export interface DailyPipelineRecord {
   roles?: string;
   opt?: string;
   reason?: string;
+  /** Visa-sponsorship signal. Useful for F-1 / H-1B candidates. */
+  visa_status?: VisaStatus;
 }
 
 export type PipelineExperienceLevel = 'any' | 'internship' | 'entry' | 'associate' | 'mid' | 'senior';
@@ -35,6 +39,9 @@ export interface DailyPipelineParams {
   employment_type?: PipelineEmploymentType;
   work_arrangement?: PipelineWorkArrangement;
   domain_strict?: boolean;
+  // F-1 / H-1B opt-ins (default false → no behavior change).
+  h1b_only?: boolean;
+  exclude_no_sponsorship?: boolean;
 }
 
 export interface PipelinePreset {

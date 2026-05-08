@@ -380,6 +380,9 @@ def daily_pipeline():
     if raw_arr not in ("any", "remote", "hybrid", "onsite"):
         raw_arr = "any"
     domain_strict = bool(data.get("domain_strict", False))
+    # F-1 / H-1B opt-ins — both default OFF so non-visa users keep current flow.
+    h1b_only = bool(data.get("h1b_only", False))
+    exclude_no_sponsorship = bool(data.get("exclude_no_sponsorship", False))
 
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
@@ -395,6 +398,8 @@ def daily_pipeline():
         "employment_type": raw_emp,
         "work_arrangement": raw_arr,
         "domain_strict": domain_strict,
+        "h1b_only": h1b_only,
+        "exclude_no_sponsorship": exclude_no_sponsorship,
     }
 
     try:

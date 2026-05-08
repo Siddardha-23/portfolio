@@ -157,6 +157,15 @@ class ResumeRenderer:
 
         pdf = FPDF(format="A4")
         pdf.set_auto_page_break(auto=False)
+        # ATS hint: enterprise screeners (Workday, iCIMS) sometimes flag
+        # PDFs with empty Document Information as low-confidence — populating
+        # Title/Author/Subject also makes the file readable when recruiters
+        # save it locally and sort by metadata.
+        target_role = sanitize(str(tailored.get("target_role") or "")).strip()
+        pdf.set_title(f"Resume - {name}")
+        pdf.set_author(name)
+        pdf.set_subject(target_role or "Resume")
+        pdf.set_creator("Portfolio Resume Builder")
         pdf.add_page()
         pdf.set_margins(ml, mt, ml)
         pdf.set_y(mt)

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { toast } from 'sonner';
 import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
@@ -215,6 +215,22 @@ interface PersistedState {
   openedIds?: string[];
   /** Has the user been auto-prefilled from /suggest-filters at least once? */
   prefilledFromResume?: boolean;
+  /**
+   * IDs the user has acknowledged seeing — anything in the current result
+   * that is NOT in this set gets a "NEW" badge. Capped at 1500 entries to
+   * keep localStorage payload tiny. Updated on "Mark all seen" or after the
+   * result has been on-screen for a while.
+   */
+  seenIds?: string[];
+  /**
+   * Per-row snooze map: id → ISO date string until which the row is hidden.
+   * Anything in the past is implicitly cleared at next result render.
+   */
+  snoozedUntil?: Record<string, string>;
+  /** Daily application quota goal — student-tunable, defaults to 5. */
+  dailyGoal?: number;
+  /** Per-day application counter — { date: 'YYYY-MM-DD', count: N }. */
+  dailyApplied?: { date: string; count: number };
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -308,10 +324,13 @@ function PipelineRow({
   applied,
   opened,
   focused,
+  isNew,
+  tailorLoading,
   onOpen,
   onMarkApplied,
   onDismissOpened,
   onTailor,
+  onSnooze,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
@@ -319,10 +338,15 @@ function PipelineRow({
   opened: boolean;
   /** True when the keyboard cursor (j/k) is on this row. */
   focused: boolean;
+  /** True when this posting wasn't in the user's last "seen" snapshot. */
+  isNew: boolean;
+  /** True while the JD prefetch for this row is in flight. */
+  tailorLoading: boolean;
   onOpen: () => void;
   onMarkApplied: () => void;
   onDismissOpened: () => void;
   onTailor: () => void;
+  onSnooze: (days: number) => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -418,6 +442,14 @@ function PipelineRow({
           {prevPalette.label}
           {prevAgo ? ` · ${prevAgo}` : ''}
         </div>
+      )}
+      {isNew && !applied && !showPrevApplied && (
+        <span
+          className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white shadow-sm"
+          title="New since your last visit"
+        >
+          NEW
+        </span>
       )}
       <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
         <div className="flex flex-shrink-0 flex-col items-center gap-1.5 sm:w-20">
@@ -527,12 +559,27 @@ function PipelineRow({
               size="sm"
               variant="outline"
               onClick={onTailor}
-              className="gap-1 border-purple-500/30 text-[11px] text-purple-700 hover:bg-purple-500/10 dark:text-purple-300"
-              title="Open this job in Tailor — auto-marks Applied once tailoring saves"
+              disabled={tailorLoading}
+              className="gap-1 border-purple-500/30 text-[11px] text-purple-700 hover:bg-purple-500/10 dark:text-purple-300 disabled:opacity-70"
+              title={tailorLoading ? 'Fetching JD — opening Tailor in a moment…' : 'Open this job in Tailor — auto-marks Applied once tailoring saves'}
             >
-              <Wand2 className="h-3 w-3" />
-              Tailor
+              {tailorLoading ? (
+                <span className="inline-block h-3 w-3 rounded-full border border-purple-500/60 border-t-transparent animate-spin" />
+              ) : (
+                <Wand2 className="h-3 w-3" />
+              )}
+              {tailorLoading ? 'Fetching JD…' : 'Tailor'}
             </Button>
+          )}
+          {!applied && (
+            <button
+              type="button"
+              onClick={() => onSnooze(2)}
+              className="text-[10px] text-muted-foreground/80 hover:text-purple-600 dark:hover:text-purple-300 transition-colors self-end opacity-0 group-hover:opacity-100"
+              title="Hide for 2 days — re-surfaces on its own"
+            >
+              💤 Snooze 2d
+            </button>
           )}
         </div>
       </CardContent>
@@ -546,24 +593,30 @@ function TierGroup({
   accent,
   appliedIds,
   openedIds,
+  newIds,
+  tailorLoadingId,
   focusedId,
   showApplied,
   onOpen,
   onMarkApplied,
   onDismissOpened,
   onTailor,
+  onSnooze,
 }: {
   title: string;
   items: DailyPipelineRecord[];
   accent: string;
   appliedIds: Set<string>;
   openedIds: Set<string>;
+  newIds: Set<string>;
+  tailorLoadingId: string | null;
   focusedId: string | null;
   showApplied: boolean;
   onOpen: (rec: DailyPipelineRecord) => void;
   onMarkApplied: (rec: DailyPipelineRecord) => void;
   onDismissOpened: (rec: DailyPipelineRecord) => void;
   onTailor: (rec: DailyPipelineRecord) => void;
+  onSnooze: (rec: DailyPipelineRecord, days: number) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
@@ -590,10 +643,13 @@ function TierGroup({
                 applied={appliedIds.has(id)}
                 opened={openedIds.has(id)}
                 focused={focusedId === id}
+                isNew={newIds.has(id)}
+                tailorLoading={tailorLoadingId === id}
                 onOpen={() => onOpen(rec)}
                 onMarkApplied={() => onMarkApplied(rec)}
                 onDismissOpened={() => onDismissOpened(rec)}
                 onTailor={() => onTailor(rec)}
+                onSnooze={(days) => onSnooze(rec, days)}
               />
             );
           })
@@ -653,7 +709,10 @@ export function DailyPipelinePanel({
   const [workArrangement, setWorkArrangement] = useState<PipelineWorkArrangement>(persisted?.workArrangement ?? 'any');
   const [domainStrict, setDomainStrict] = useState<boolean>(persisted?.domainStrict ?? false);
   const [h1bOnly, setH1bOnly] = useState<boolean>(persisted?.h1bOnly ?? false);
-  const [excludeNoSponsorship, setExcludeNoSponsorship] = useState<boolean>(persisted?.excludeNoSponsorship ?? false);
+  // Default ON: an F-1 student has zero use for "US citizens only / GC required"
+  // postings. Tagging alone wasn't enough — they still cluttered Tier 2/3 rows.
+  // Users can disable via the F-1 panel if they're on a different visa path.
+  const [excludeNoSponsorship, setExcludeNoSponsorship] = useState<boolean>(persisted?.excludeNoSponsorship ?? true);
 
   // Named presets — server-backed so they survive across browsers/devices.
   const [presets, setPresets] = useState<PipelinePreset[]>([]);
@@ -669,6 +728,21 @@ export function DailyPipelinePanel({
   const [appliedIds, setAppliedIds] = useState<string[]>(persisted?.appliedIds ?? []);
   const [openedIds, setOpenedIds] = useState<string[]>(persisted?.openedIds ?? []);
   const [showApplied, setShowApplied] = useState<boolean>(persisted?.showApplied ?? true);
+  // Tracks which row is currently in JD-prefetch — only one at a time. Used
+  // so the row's Tailor button shows a spinner + disables itself instead of
+  // looking idle while a 12s fetch is in flight.
+  const [tailorLoadingId, setTailorLoadingId] = useState<string | null>(null);
+  const [seenIds, setSeenIds] = useState<string[]>(persisted?.seenIds ?? []);
+  const [snoozedUntil, setSnoozedUntil] = useState<Record<string, string>>(persisted?.snoozedUntil ?? {});
+  const [dailyGoal, setDailyGoal] = useState<number>(persisted?.dailyGoal ?? 5);
+  // Per-day applied counter — reset to 0 whenever the local date rolls over
+  // so a fresh morning shows "0/5" instead of last night's tally.
+  const _todayDate = new Date().toISOString().slice(0, 10);
+  const [dailyApplied, setDailyApplied] = useState<{ date: string; count: number }>(() => {
+    const p = persisted?.dailyApplied;
+    if (p && p.date === _todayDate) return p;
+    return { date: _todayDate, count: 0 };
+  });
   const [activePreset, setActivePreset] = useState<string | null>(null);
   // Bumped each time we want to pop the Apify key card open (e.g. after a
   // credit-exhausted run). The card only reacts when this value changes.
@@ -699,12 +773,16 @@ export function DailyPipelinePanel({
       excludeNoSponsorship,
       openedIds,
       prefilledFromResume: prefilledRef.current,
+      seenIds: seenIds.slice(-1500),
+      snoozedUntil,
+      dailyGoal,
+      dailyApplied,
     });
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
-    h1bOnly, excludeNoSponsorship, openedIds,
+    h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
   ]);
 
   // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
@@ -940,6 +1018,11 @@ export function DailyPipelinePanel({
 
   const handleTailor = async (rec: DailyPipelineRecord) => {
     const id = _recordId(rec);
+    // Prevent double-click during the up-to-12s JD prefetch. Cleared in the
+    // finally-equivalent at the bottom (we navigate away immediately after,
+    // so it's set-then-clear on error too via the catch path).
+    if (tailorLoadingId) return;
+    setTailorLoadingId(id);
     const job = {
       job_id: id,
       title: rec.title,
@@ -987,14 +1070,18 @@ export function DailyPipelinePanel({
         /* ignore — fall through to placeholder */
       }
     }
+    // When fetch fails, hand off an EMPTY jd_text and a fail flag so the
+    // Tailor view can render a clean empty textarea + a prominent paste
+    // prompt instead of stuffing instructions into the textarea body.
+    const fetchFailed = !jdText && !!rec.url;
     const jdSeed = jdText ||
-      `${rec.title} at ${rec.company}\n${rec.location || ''}\n${rec.url || ''}\n\n` +
-      `(Paste the full job description here to tailor — applied status will be auto-set once tailoring is saved.)`;
+      `${rec.title} at ${rec.company}\n${rec.location || ''}\n${rec.url || ''}`;
 
     try {
       sessionStorage.setItem('pending_tailor_job', JSON.stringify({
         job_id: id,
-        jd_text: jdSeed,
+        jd_text: fetchFailed ? '' : jdSeed,
+        jd_fetch_failed: fetchFailed,
         title: rec.title,
         company: rec.company,
         url: rec.url || '',
@@ -1006,9 +1093,14 @@ export function DailyPipelinePanel({
       toast.success(
         `Opening Tailor — JD pre-filled${fetchedKind ? ` (${fetchedKind.replace('_', ' ')})` : ''}.`,
       );
+    } else if (fetchFailed) {
+      toast.warning("Couldn't auto-fetch the JD — please copy-paste it from the posting.", {
+        duration: 6000,
+      });
     } else {
-      toast.success("Opening Tailor — couldn't auto-fetch the JD; paste it from the posting.");
+      toast.message('Opening Tailor — paste the JD to begin.');
     }
+    setTailorLoadingId(null);
   };
 
   // Build the Job payload we save / update — shared between the open and
@@ -1071,6 +1163,12 @@ export function DailyPipelinePanel({
     await apiService.updateSavedJob(id, { status: 'applied' });
     setAppliedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
     setOpenedIds((prev) => prev.filter((x) => x !== id));
+    setDailyApplied((prev) => {
+      const today = new Date().toISOString().slice(0, 10);
+      return prev.date === today
+        ? { date: today, count: prev.count + 1 }
+        : { date: today, count: 1 };
+    });
     try {
       await apiService.recordMomentumActivity('job_applied', {
         record_id: id,
@@ -1089,11 +1187,46 @@ export function DailyPipelinePanel({
     setOpenedIds((prev) => prev.filter((x) => x !== id));
   };
 
-  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1');
-  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2');
-  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3');
-  const allApplyNow = result?.apply_now || [];
+  // Snooze: drop rows whose snoozedUntil is in the future. We don't garbage-
+  // collect the map here — entries naturally fall off when filtered out, and
+  // localStorage stays small (<1500 entries via persist slice).
+  const _nowIso = new Date().toISOString();
+  const snoozedSet = useMemo(
+    () => new Set(Object.entries(snoozedUntil).filter(([, until]) => until > _nowIso).map(([id]) => id)),
+    [snoozedUntil, _nowIso],
+  );
+  const _notSnoozed = (r: DailyPipelineRecord) => !snoozedSet.has(_recordId(r));
+
+  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1' && _notSnoozed(r));
+  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2' && _notSnoozed(r));
+  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3' && _notSnoozed(r));
+  const allApplyNow = (result?.apply_now || []).filter(_notSnoozed);
   const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
+
+  // "New since last check" — anything in the current result that the user
+  // hasn't acknowledged with "Mark all seen". We derive it once here and pass
+  // a Set down to PipelineRow as a prop so badges render consistently.
+  const seenSet = useMemo(() => new Set(seenIds), [seenIds]);
+  const currentRowIds = useMemo(() => {
+    const ids = new Set<string>();
+    [...(result?.apply_now || []), ...(result?.verify_dates || [])].forEach((r) => ids.add(_recordId(r)));
+    return ids;
+  }, [result]);
+  const newIds = useMemo(() => {
+    const out = new Set<string>();
+    currentRowIds.forEach((id) => { if (!seenSet.has(id)) out.add(id); });
+    return out;
+  }, [currentRowIds, seenSet]);
+  const handleMarkAllSeen = useCallback(() => {
+    setSeenIds(Array.from(currentRowIds));
+    toast.success('Caught up — all visible postings marked seen.');
+  }, [currentRowIds]);
+  const handleSnooze = useCallback((rec: DailyPipelineRecord, days: number) => {
+    const id = _recordId(rec);
+    const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+    setSnoozedUntil((prev) => ({ ...prev, [id]: until }));
+    toast.success(`Snoozed for ${days} day${days === 1 ? '' : 's'} — back on ${until.slice(0, 10)}.`);
+  }, []);
 
   // Daily-digest stats — surfaced at the top so an F-1 student can see in one
   // glance how many fresh sponsors / on-domain matches are waiting today,
@@ -1109,18 +1242,19 @@ export function DailyPipelinePanel({
     r.previously_applied_status === 'offer';
   const digest = useMemo(() => {
     if (!result) return null;
-    const all = [...(result.apply_now || []), ...(result.verify_dates || [])];
+    const all = [...(result.apply_now || []), ...(result.verify_dates || [])].filter(_notSnoozed);
     const eligible = all.filter((r) => !appliedSet.has(_recordId(r)) && !_alreadyApplied(r));
     return {
       total: eligible.length,
       fresh: eligible.filter(_isFresh).length,
+      newSinceLastCheck: eligible.filter((r) => newIds.has(_recordId(r))).length,
       sponsors: eligible.filter((r) => r.visa_status === 'sponsor_verified').length,
       noSponsor: all.filter((r) => r.visa_status === 'no_sponsorship').length,
       tier1Open: tier1.filter((r) => !appliedSet.has(_recordId(r)) && !_alreadyApplied(r)).length,
       alreadyApplied: all.filter(_alreadyApplied).length,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, appliedSet]);
+  }, [result, appliedSet, newIds, snoozedSet]);
 
   // Bulk-open Tier 1 — opens the top N postings in new tabs and saves each as
   // Interested. Browsers throttle multi-window.open, but every modern
@@ -1847,6 +1981,44 @@ export function DailyPipelinePanel({
             </Card>
           )}
 
+          {/* Daily quota strip — student motivation lever. Shows today's
+              applied count vs goal as a thin progress bar. The goal is
+              user-tunable (click to edit). Hides when there's no result yet. */}
+          {result && (
+            <div className="rounded-lg border border-emerald-500/25 bg-gradient-to-r from-emerald-500/[0.04] to-teal-500/[0.04] px-3 py-2">
+              <div className="mb-1 flex items-center justify-between text-[11px]">
+                <span className="font-medium text-foreground/90">
+                  Today's goal
+                  <span className="ml-2 tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {dailyApplied.count}/{dailyGoal}
+                  </span>
+                  {dailyApplied.count >= dailyGoal && (
+                    <span className="ml-2 text-emerald-600 dark:text-emerald-400">✓ hit</span>
+                  )}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = window.prompt('Daily application goal (1–50):', String(dailyGoal));
+                    if (!next) return;
+                    const n = Math.max(1, Math.min(50, Number(next)));
+                    if (Number.isFinite(n)) setDailyGoal(n);
+                  }}
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  title="Change your daily application goal"
+                >
+                  edit
+                </button>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-500/15">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
+                  style={{ width: `${Math.min(100, (dailyApplied.count / Math.max(1, dailyGoal)) * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Daily digest — sticky one-liner so the user sees today's volume,
               sponsor count, freshness, and already-applied dedup count
               without scrolling through three tier groups to count by hand. */}
@@ -1863,6 +2035,17 @@ export function DailyPipelinePanel({
                       <Clock className="h-3 w-3" />
                       {digest.fresh} posted today
                     </span>
+                  )}
+                  {digest.newSinceLastCheck > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleMarkAllSeen}
+                      className="inline-flex items-center gap-1 rounded-full border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-purple-700 transition-colors hover:bg-purple-500/20 dark:text-purple-300"
+                      title="Click to mark all visible postings as seen"
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {digest.newSinceLastCheck} new since last visit
+                    </button>
                   )}
                   {digest.sponsors > 0 && (
                     <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
@@ -1912,12 +2095,15 @@ export function DailyPipelinePanel({
             accent="border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            newIds={newIds}
+            tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
+            onSnooze={handleSnooze}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
@@ -1925,12 +2111,15 @@ export function DailyPipelinePanel({
             accent="border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            newIds={newIds}
+            tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
+            onSnooze={handleSnooze}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
@@ -1938,12 +2127,15 @@ export function DailyPipelinePanel({
             accent="border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            newIds={newIds}
+            tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
+            onSnooze={handleSnooze}
           />
 
           {result.verify_dates.length > 0 && (
@@ -1953,12 +2145,15 @@ export function DailyPipelinePanel({
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               appliedIds={appliedSet}
               openedIds={openedSet}
+              newIds={newIds}
+              tailorLoadingId={tailorLoadingId}
               focusedId={focusedRowId}
               showApplied={showApplied}
               onOpen={handleOpenPosting}
               onMarkApplied={handleMarkApplied}
               onDismissOpened={handleDismissOpened}
               onTailor={handleTailor}
+              onSnooze={handleSnooze}
             />
           )}
 

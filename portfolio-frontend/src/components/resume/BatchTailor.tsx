@@ -253,6 +253,16 @@ export default function BatchTailor() {
                     </div>
                   )}
                 </div>
+                {job.status === 'completed' && job.result?.tailored_resume?.ats_keyword_audit?.required_missing?.length ? (
+                  <p className="mt-2 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
+                    ⚠ {job.result.tailored_resume.ats_keyword_audit.required_missing.length} required JD keyword
+                    {job.result.tailored_resume.ats_keyword_audit.required_missing.length === 1 ? '' : 's'} not in resume:{' '}
+                    <span className="font-mono text-[10.5px]">
+                      {job.result.tailored_resume.ats_keyword_audit.required_missing.slice(0, 6).join(', ')}
+                      {job.result.tailored_resume.ats_keyword_audit.required_missing.length > 6 ? '…' : ''}
+                    </span>
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>

@@ -3174,11 +3174,30 @@ function TailorTab() {
       const raw = sessionStorage.getItem('pending_tailor_job');
       if (!raw) return;
       sessionStorage.removeItem('pending_tailor_job');
-      const parsed = JSON.parse(raw) as { job_id: string; jd_text: string; title?: string; company?: string };
+      const parsed = JSON.parse(raw) as {
+        job_id: string;
+        jd_text: string;
+        jd_fetch_failed?: boolean;
+        title?: string;
+        company?: string;
+        url?: string;
+      };
       if (parsed?.job_id) pendingJobIdRef.current = parsed.job_id;
       if (parsed?.jd_text) setJdText(parsed.jd_text);
       if (parsed?.title || parsed?.company) {
         toast.info(`Tailoring for ${parsed.title || ''}${parsed.company ? ' @ ' + parsed.company : ''} — apply status auto-tracks`);
+      }
+      // When the pipeline couldn't auto-fetch the JD (LinkedIn cookie wall,
+      // ATS that needed a real browser, JS-rendered Workday, etc.), give the
+      // user a clear prompt to paste it instead of leaving them staring at
+      // an empty textarea wondering what went wrong.
+      if (parsed?.jd_fetch_failed) {
+        toast.warning(
+          parsed?.url
+            ? `Couldn't auto-fetch this JD — open the posting (${new URL(parsed.url).hostname}) in a new tab and paste the description into the box below.`
+            : "Couldn't auto-fetch this JD — please copy-paste it from the posting into the box below.",
+          { duration: 8000 },
+        );
       }
     } catch {
       /* ignore */

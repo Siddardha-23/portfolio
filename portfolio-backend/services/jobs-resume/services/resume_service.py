@@ -284,6 +284,37 @@ class ResumeService:
 # ---------------------------------------------------------------------------
 
 
+def _attach_ats_keyword_audit(result: Dict[str, Any], jd_analysis: Dict[str, Any]) -> None:
+    """Re-run the deterministic keyword gap engine on the FINAL tailored
+    resume so the UI can warn about JD keywords that didn't make it in.
+
+    Gemini occasionally paraphrases tokens (e.g. "Amazon Web Services" in
+    place of the literal "AWS" the JD asked for); enterprise ATS screeners
+    match exact strings. We attach the result as `ats_keyword_audit` so the
+    tailor modal can show a "X keywords missed" badge — passive, not
+    blocking. Failure here must not break the tailor pipeline.
+    """
+    try:
+        from services.keyword_gap_engine import KeywordGapEngine
+        audit = KeywordGapEngine().analyze(result, jd_analysis or {})
+        result["ats_keyword_audit"] = {
+            "matched": audit.get("matched_keywords", []),
+            "missing": audit.get("missing_keywords", []),
+            "partial": audit.get("partial_matches", []),
+            "coverage_percentage": audit.get("coverage_percentage", 0),
+            "required_missing": audit.get("required_missing", []),
+            "required_coverage": audit.get("required_coverage", 0),
+        }
+        missed = result["ats_keyword_audit"]["required_missing"]
+        if missed:
+            logger.warning(
+                "ATS audit: %d required JD keyword(s) NOT in tailored resume — %s",
+                len(missed), missed[:8],
+            )
+    except Exception as e:
+        logger.warning("ATS audit skipped: %s", e)
+
+
 def _process_job(job_id: str, job_type: str, payload: dict):
     """Execute the appropriate pipeline step and store the result in MongoDB."""
     svc = get_resume_service()
@@ -398,6 +429,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = normalize_dates(result)
             result = normalize_titles(result)
 
+            _attach_ats_keyword_audit(result, payload["jd_analysis"])
             svc.complete_job(job_id, {"tailored_resume": result})
 
         elif job_type == "regenerate":
@@ -434,6 +466,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = normalize_dates(result)
             result = normalize_titles(result)
 
+            _attach_ats_keyword_audit(result, payload["jd_analysis"])
             svc.complete_job(job_id, {"tailored_resume": result})
 
         elif job_type == "cover_letter":
@@ -631,6 +664,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = normalize_dates(result)
             result = normalize_titles(result)
 
+            _attach_ats_keyword_audit(result, jd_analysis)
             svc.complete_job(
                 job_id,
                 {
@@ -669,6 +703,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = normalize_dates(result)
             result = normalize_titles(result)
 
+            _attach_ats_keyword_audit(result, jd_analysis)
             svc.complete_job(
                 job_id,
                 {

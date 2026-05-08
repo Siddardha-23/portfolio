@@ -65,6 +65,17 @@ class ResumeTailor:
         # Smart truncation preserves all sections
         resume_payload = self._smart_truncate(resume_json)
 
+        # Attach the JD job title onto the final tailored dict so downstream
+        # renderers can populate PDF metadata (Subject) and the post-tailor
+        # keyword audit can compare against the right role.
+        target_role = (jd_analysis.get("job_title") or "").strip()
+
+        def _finalize(t: Dict[str, Any]) -> Dict[str, Any]:
+            t = self._restore_contact(t, structured_resume)
+            if target_role:
+                t["target_role"] = target_role
+            return t
+
         prompt = self._build_tailor_prompt(
             keyword_list, gap_context, role_context, resume_payload, jd_json
         )
@@ -83,7 +94,7 @@ class ResumeTailor:
 
         if report.severity == "clean":
             logger.info("Integrity check: clean — no violations detected")
-            return self._restore_contact(corrected, structured_resume)
+            return _finalize(corrected)
 
         if report.severity == "auto_fixed":
             logger.warning(
@@ -93,7 +104,7 @@ class ResumeTailor:
                 len(report.hallucinated_projects),
                 len(report.missing_experience_reinjected),
             )
-            return self._restore_contact(corrected, structured_resume)
+            return _finalize(corrected)
 
         # severity == "needs_retry": hallucinated experience detected
         logger.warning(
@@ -122,7 +133,7 @@ class ResumeTailor:
                 len(retry_report.hallucinated_experience),
             )
 
-        return self._restore_contact(final, structured_resume)
+        return _finalize(final)
 
     def regenerate(
         self,

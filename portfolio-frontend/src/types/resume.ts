@@ -31,6 +31,15 @@ export interface ResumeProject {
   tech: string;
 }
 
+export interface ATSKeywordAudit {
+  matched: string[];
+  missing: string[];
+  partial: string[];
+  coverage_percentage: number;
+  required_missing: string[];
+  required_coverage: number;
+}
+
 export interface TailoredFullResume {
   contact: ResumeContact;
   summary: string;
@@ -39,6 +48,8 @@ export interface TailoredFullResume {
   education: ResumeEducation[];
   certifications: string[];
   projects: ResumeProject[];
+  target_role?: string;
+  ats_keyword_audit?: ATSKeywordAudit;
 }
 
 export interface JDAnalysis {

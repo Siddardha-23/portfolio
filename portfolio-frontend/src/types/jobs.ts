@@ -141,6 +141,23 @@ export interface DailyPipelineResult {
     workday_titles: string[];
     custom_role_terms: string[];
   };
+  /**
+   * Per-actor debug info. Helps differentiate "actor returned empty for valid
+   * reasons" (narrow filters) from "actor errored / rate-limited" cases.
+   */
+  actor_diagnostics?: {
+    linkedin_urls: string[];
+    linkedin_silent_zero: boolean;
+    workday_silent_zero: boolean;
+    linkedin_input_summary?: { urls?: number; count_per_url?: number };
+    workday_input_summary?: {
+      titles?: number;
+      limit?: number;
+      experience?: string[];
+      employment?: string[];
+      arrangement?: string[];
+    };
+  };
 }
 
 export interface Job {

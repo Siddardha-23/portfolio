@@ -1718,11 +1718,70 @@ export function DailyPipelinePanel({
             </CardContent>
           </Card>
 
-          {/* Heads-up if Workday returned 0 raw */}
-          {result.source_breakdown && result.source_breakdown.workday.raw === 0 && (
-            <p className="text-[11px] italic text-amber-600 dark:text-amber-400">
-              Workday returned 0 results this run. Check Apify actor status or token rental.
-            </p>
+          {/* Per-actor zero-result diagnostics. We render this whenever
+              an actor came back silently empty (no items + no error) so
+              the user can tell whether their filters were too tight or
+              the actor itself is misbehaving. The LinkedIn URL we sent
+              is exposed inline so the user can click and verify in
+              LinkedIn's own UI. */}
+          {(result.actor_diagnostics?.linkedin_silent_zero ||
+            result.actor_diagnostics?.workday_silent_zero ||
+            (result.source_breakdown && result.source_breakdown.linkedin.raw === 0) ||
+            (result.source_breakdown && result.source_breakdown.workday.raw === 0)) && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardContent className="space-y-2 p-3 text-xs">
+                <div className="flex items-center gap-1.5">
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="font-semibold text-amber-700 dark:text-amber-300">
+                    A source returned 0 — here's what we sent
+                  </span>
+                </div>
+                {result.source_breakdown && result.source_breakdown.linkedin.raw === 0 && (
+                  <div className="space-y-1">
+                    <p className="text-amber-700/80 dark:text-amber-300/80">
+                      <strong>LinkedIn (0/{linkedinCount}):</strong>{' '}
+                      {result.actor_diagnostics?.linkedin_silent_zero
+                        ? 'actor responded successfully but returned no rows. Most common cause: filters too narrow. Try widening past_days, switching experience to "any", or removing very specific keyword phrases.'
+                        : 'actor errored — see the Partial Results panel above for the cause.'}
+                    </p>
+                    {result.actor_diagnostics?.linkedin_urls && result.actor_diagnostics.linkedin_urls.length > 0 && (
+                      <details className="ml-2 cursor-pointer">
+                        <summary className="select-none text-[10px] text-muted-foreground hover:text-foreground">
+                          Show {result.actor_diagnostics.linkedin_urls.length} LinkedIn URL{result.actor_diagnostics.linkedin_urls.length === 1 ? '' : 's'} we sent — click to verify in LinkedIn directly
+                        </summary>
+                        <ul className="mt-1 space-y-0.5">
+                          {result.actor_diagnostics.linkedin_urls.slice(0, 8).map((u, i) => (
+                            <li key={i}>
+                              <a
+                                href={u}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="break-all text-[10px] text-blue-600 hover:underline dark:text-blue-300"
+                              >
+                                {u}
+                              </a>
+                            </li>
+                          ))}
+                          {result.actor_diagnostics.linkedin_urls.length > 8 && (
+                            <li className="text-[10px] italic text-muted-foreground">
+                              + {result.actor_diagnostics.linkedin_urls.length - 8} more
+                            </li>
+                          )}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                )}
+                {result.source_breakdown && result.source_breakdown.workday.raw === 0 && (
+                  <p className="text-amber-700/80 dark:text-amber-300/80">
+                    <strong>Workday (0/{workdayLimit}):</strong>{' '}
+                    {result.actor_diagnostics?.workday_silent_zero
+                      ? `actor responded but returned no rows. Sent ${result.actor_diagnostics?.workday_input_summary?.titles ?? '?'} titles. Try fewer / broader title chips, "any" experience, or check the Partial Results panel for actor errors.`
+                      : 'actor errored — see the Partial Results panel above for the cause.'}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* Show applied toggle */}

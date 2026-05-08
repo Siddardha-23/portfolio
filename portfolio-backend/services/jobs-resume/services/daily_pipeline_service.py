@@ -502,13 +502,19 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
 
 _LINKEDIN_EXPERIENCE_CODES = {
     # LinkedIn's f_E parameter — multiple values are comma-separated.
+    # We send a RANGE rather than a single bucket so filtering doesn't drop
+    # postings that LinkedIn tagged with an adjacent label. Without ranges,
+    # picking "Associate (0-5y)" would only match LinkedIn-tagged Associate
+    # roles and miss every entry-level grad posting that LinkedIn tagged
+    # f_E=2 (Entry). Mirrors the Workday _WORKDAY_EXPERIENCE_MAP behavior.
+    #   1=Internship  2=Entry  3=Associate  4=Mid-Senior  5=Director  6=Executive
     "internship": "1",
     "entry": "2",
-    "associate": "3",
-    "mid": "4",
-    "senior": "5",
-    "director": "6",
-    "executive": "7",
+    "associate": "2,3",   # entry + associate (0-5y)
+    "mid": "3,4",         # associate + mid-senior (3-5y → covers some senior)
+    "senior": "4,5",      # mid-senior + director (5-10y)
+    "director": "5,6",
+    "executive": "6",
 }
 _LINKEDIN_JT_CODES = {
     "FULLTIME": "F",
@@ -904,7 +910,31 @@ def _scrape_in_parallel(
         linkedin = f_li.result()
         workday = f_wd.result()
 
-    return linkedin, workday, errors
+    # Silent-zero detection — when an actor returns [] with HTTP 200 and no
+    # entry was added to the errors list, we can't tell from the result
+    # whether the search was genuinely empty (narrow filters / stale time
+    # window) or the actor was rate-limited / returned empty silently. Tag
+    # both cases so the UI can hint at the cause.
+    li_errored = any(LINKEDIN_ACTOR in e for e in errors)
+    wd_errored = any(WORKDAY_ACTOR in e for e in errors)
+    diagnostics = {
+        "linkedin_urls": list(linkedin_input.get("urls", [])),
+        "linkedin_silent_zero": (len(linkedin) == 0) and not li_errored,
+        "workday_silent_zero": (len(workday) == 0) and not wd_errored,
+        "linkedin_input_summary": {
+            "urls": len(linkedin_input.get("urls", [])),
+            "count_per_url": linkedin_input.get("count"),
+        },
+        "workday_input_summary": {
+            "titles": len(workday_input.get("titleSearch") or []),
+            "limit": workday_input.get("limit"),
+            "experience": workday_input.get("aiExperienceLevelFilter"),
+            "employment": workday_input.get("aiEmploymentTypeFilter"),
+            "arrangement": workday_input.get("aiWorkArrangementFilter"),
+        },
+    }
+
+    return linkedin, workday, errors, diagnostics
 
 
 # --------------------------------------------------------------------------
@@ -1622,7 +1652,7 @@ def run_pipeline(
         )
         f_indeed = pool.submit(_scrape_indeed, token) if include_indeed else None
         f_ats = pool.submit(_scrape_ats_direct)
-        linkedin_items, workday_items, errors = f_apify.result()
+        linkedin_items, workday_items, errors, actor_diagnostics = f_apify.result()
         indeed_items = f_indeed.result() if f_indeed is not None else []
         ats_items = f_ats.result()
 
@@ -1760,4 +1790,9 @@ def run_pipeline(
             "workday_titles": wd_titles[:20] + (["..."] if len(wd_titles) > 20 else []),
             "custom_role_terms": custom_role_terms or [],
         },
+        # Actor-level diagnostics — surface the URLs we sent to LinkedIn and
+        # whether each actor came back silently empty (no items + no error)
+        # so the UI can render hints like "0 results — try widening past
+        # days or unchecking strict filters".
+        "actor_diagnostics": actor_diagnostics,
     }

@@ -1540,6 +1540,96 @@ class JobService:
     # ------------------------------------------------------------------
 
     def match_jobs(self, jobs: List[Dict], user_email: str = "") -> List[Dict]:
+        """Score and rank jobs against the user's resume profile.
+
+        The score blends four signals (each 0..1, then weighted):
+          - title_relevance:   does the job title fall in the candidate's intent family?
+          - skill_overlap:     weighted resume-skill hits in the JD (core skills count more)
+          - domain_relevance:  does the JD mention the candidate's domain at all?
+          - experience_alignment: seniority bracket match
+
+        On top of the blended base we still apply small bonuses (H1B, remote,
+        new-grad keywords) so users with a hard preference still see them
+        bubble up. The previous flat skill-overlap heuristic is preserved as
+        a fallback when no resume / structured profile is available.
+        """
+        from services.resume_profiler import (
+            domain_relevance,
+            experience_alignment,
+            feedback_signal_for_user,
+            title_relevance,
+            weighted_skill_overlap,
+        )
+
+        profile = self._get_resume_profile(user_email=user_email)
+
+        # No resume yet → fall back to the original flat scorer (legacy path)
+        # so first-time users still get useful results before they upload.
+        if not profile:
+            return self._legacy_match_jobs(jobs, user_email=user_email)
+
+        weights = {
+            "title": 35.0,
+            "skill": 30.0,
+            "domain": 20.0,
+            "experience": 15.0,
+        }
+
+        for job in jobs:
+            title = job.get("title", "") or ""
+            desc = job.get("description", "") or ""
+            text = f"{title} {desc}"
+
+            title_score = title_relevance(profile, title)
+            matched, raw_overlap, norm_overlap = weighted_skill_overlap(profile, text)
+            domain_score = domain_relevance(profile, text)
+            exp_score = experience_alignment(profile, text)
+
+            base = (
+                title_score * weights["title"]
+                + norm_overlap * weights["skill"]
+                + domain_score * weights["domain"]
+                + exp_score * weights["experience"]
+            )
+
+            # Small qualitative bonuses (capped so they can't replace fit).
+            bonus = 0
+            if job.get("h1b_sponsor"):
+                bonus += 8
+            title_desc = text.lower()
+            if any(kw in title_desc for kw in NEW_GRAD_KEYWORDS) and profile.get("experience_years", 0) <= 3:
+                bonus += 5
+            if job.get("is_remote"):
+                bonus += 2
+
+            score = int(min(100, max(0, round(base + bonus))))
+
+            job["match_score"] = score
+            job["matched_skills"] = sorted(set(matched))
+            # Surface the signal breakdown so the UI can explain *why* a job
+            # ranks where it does (and so we can tune weights from real data).
+            job["match_breakdown"] = {
+                "title_relevance": round(title_score, 2),
+                "skill_overlap": round(norm_overlap, 3),
+                "domain_relevance": round(domain_score, 2),
+                "experience_alignment": round(exp_score, 2),
+                "weighted_skill_score": raw_overlap,
+                "primary_intent": profile.get("primary_intent"),
+                "secondary_intent": profile.get("secondary_intent"),
+            }
+            # Keep `missing_skills` as the previous shape for the analyze flow:
+            # everything in the candidate's weighted-skill list that the job
+            # didn't mention. We report the highest-weight ones first.
+            weighted = profile.get("weighted_skills") or {}
+            missing = [s for s in weighted if s not in matched]
+            missing.sort(key=lambda s: weighted.get(s, 0.0), reverse=True)
+            job["missing_skills"] = missing[:30]
+
+        jobs.sort(key=lambda j: j["match_score"], reverse=True)
+        return jobs
+
+    def _legacy_match_jobs(self, jobs: List[Dict], user_email: str = "") -> List[Dict]:
+        """Pre-profile flat scorer — kept as a fallback for users without a resume."""
         resume_skills = self._get_resume_skills(user_email=user_email)
         all_skills = set(s.lower() for s in PORTFOLIO_SKILLS)
         all_skills.update(s.lower() for s in resume_skills)
@@ -1583,6 +1673,38 @@ class JobService:
         except Exception as e:
             logger.warning(f"Failed to load resume skills for {user_email}: {e}")
         return []
+
+    def _get_resume_profile(self, user_email: str = "") -> Optional[Dict[str, Any]]:
+        """Build (or load) a resume_profiler profile for the user.
+
+        Profiles are derived deterministically from the structured resume on
+        every call — they're cheap (no LLM, ~milliseconds) so we don't bother
+        caching across requests. We DO incorporate the user's recent activity
+        as a feedback signal so clicks/applies bias future ranking.
+        """
+        if not user_email:
+            return None
+        try:
+            resume = self.user_resumes.find_one(
+                {"user_email": user_email, "structured": {"$exists": True}},
+                sort=[("parsed_at", -1)],
+            )
+            if not resume:
+                return None
+            structured = resume.get("structured") or {}
+            # Mirror experience_years from the flat field if structured lacks it.
+            if "experience_years" not in structured and "experience_years" in resume:
+                structured = dict(structured)
+                structured["experience_years"] = resume.get("experience_years")
+            from services.resume_profiler import build_profile, feedback_signal_for_user
+            try:
+                feedback = feedback_signal_for_user(self.db.job_activity_log, user_email)
+            except Exception:
+                feedback = None
+            return build_profile(structured, feedback_signal=feedback)
+        except Exception as e:
+            logger.warning(f"Failed to build resume profile for {user_email}: {e}")
+            return None
 
     def get_resume(self, user_email: str = "") -> Optional[Dict[str, Any]]:
         """Retrieve the latest stored resume for this user (used by analyze_job)."""

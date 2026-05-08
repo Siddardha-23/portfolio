@@ -60,17 +60,47 @@ def _load_record(user_email: str, record_id: str) -> Optional[Dict[str, Any]]:
 def record_activity(user_email: str, activity_type: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if not activity_type:
         return {"ok": False, "error": "activity_type is required"}
+    metadata = dict(metadata or {})
+    # Enrich with role_family at write-time so the resume_profiler feedback
+    # aggregator can attribute clicks/applies/skips to a domain without
+    # re-classifying every event on read. Only adds when we can confidently
+    # match the title to one of the known intent regexes.
+    if activity_type in ("job_click", "job_applied", "job_saved", "job_skipped", "job_dismissed"):
+        if "role_family" not in metadata:
+            family = _classify_role_family(metadata.get("job_title") or "")
+            if family:
+                metadata["role_family"] = family
     doc = {
         "event_id": uuid.uuid4().hex[:12],
         "user_email": user_email,
         "type": activity_type,
-        "metadata": metadata or {},
+        "metadata": metadata,
         "timestamp": datetime.now(timezone.utc),
     }
     _activity_collection().insert_one(doc)
     doc.pop("_id", None)
     doc["timestamp"] = _to_iso(doc["timestamp"])
     return {"ok": True, "event": doc}
+
+
+def _classify_role_family(title: str) -> Optional[str]:
+    """Classify a job title into one of the intent taxonomy keys, or None."""
+    if not title:
+        return None
+    try:
+        import re as _re
+        from services.resume_profiler import INTENTS
+    except Exception:
+        return None
+    title_lower = title.lower()
+    for key, spec in INTENTS.items():
+        for pattern in spec.get("title_terms", []):
+            try:
+                if _re.search(pattern, title_lower, _re.IGNORECASE):
+                    return key
+            except _re.error:
+                continue
+    return None
 
 
 def get_stale_applications(user_email: str, stale_days: int = 5) -> Dict[str, Any]:

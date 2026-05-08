@@ -748,6 +748,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 workday_limit=int(payload.get("workday_limit", 200) or 200),
                 include_indeed=bool(payload.get("include_indeed", False)),
                 apify_token=user_key,
+                user_email=user_email,
             )
             # Surface which token tier was used so the UI can display it.
             result["used_user_apify_key"] = bool(user_key)

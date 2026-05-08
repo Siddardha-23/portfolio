@@ -89,6 +89,37 @@ _ATS_APIFY_ACTOR = "enosgb~ats-job-scraper"
 def _ats_apify_actor_id() -> str:
     return _ATS_APIFY_ACTOR
 
+
+def _load_user_profile(user_email: str) -> Optional[Dict[str, Any]]:
+    """Load (and cache for one pipeline run) the user's resume profile.
+
+    Returns None when no parsed resume exists for the user — the scorer then
+    falls back to legacy flat title bonuses, preserving existing behavior for
+    users who haven't uploaded a resume yet.
+    """
+    try:
+        from services.resume_profiler import build_profile, feedback_signal_for_user
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_db()
+        resume = db.user_resumes.find_one(
+            {"user_email": user_email, "structured": {"$exists": True}},
+            sort=[("parsed_at", -1)],
+        )
+        if not resume:
+            return None
+        structured = resume.get("structured") or {}
+        if "experience_years" not in structured and "experience_years" in resume:
+            structured = dict(structured)
+            structured["experience_years"] = resume.get("experience_years")
+        try:
+            feedback = feedback_signal_for_user(db.job_activity_log, user_email)
+        except Exception:
+            feedback = None
+        return build_profile(structured, feedback_signal=feedback)
+    except Exception as e:
+        logger.warning(f"Failed to load resume profile for {user_email}: {e}")
+        return None
+
 DEFAULT_LINKEDIN_KEYWORD_SETS = [
     "Cloud Engineer DevOps",
     "Site Reliability Platform Engineer",
@@ -899,21 +930,71 @@ def _role_match(rec: dict, custom_role_terms: Optional[List[str]] = None) -> Lis
     return out
 
 
-def _score(rec: dict, today_iso: Optional[str] = None) -> Tuple[int, List[str]]:
+def _score(rec: dict, today_iso: Optional[str] = None, profile: Optional[Dict[str, Any]] = None) -> Tuple[int, List[str]]:
     s = 50
     flags: List[str] = []
     title = _clean_str(rec.get("title"))
+    description = _clean_str(rec.get("description"))
     company = _norm_company(rec.get("company"))
     location = _clean_str(rec.get("location"))
 
     if any(sp in company for sp in H1B_SPONSORS): s += 30; flags.append("H1B-sponsor")
     if any(ai in company for ai in AI_NATIVE):    s += 20; flags.append("AI-native")
     if AGENTIC.search(title):       s += 25; flags.append("Agentic")
-    if CLOUD_TITLE.search(title):   s += 15; flags.append("Cloud/DevOps")
-    if GOOD_TITLE.search(title):    s += 15; flags.append("Early-career")
+
+    # Title-family bonuses are now WEIGHTED by the candidate's primary intent.
+    # An ML-focused candidate's Cloud-titled job stays neutral; their ML-titled
+    # job gets the larger boost. A generalist (no profile) still gets the
+    # legacy flat bonuses so first-time users see the same behavior as before.
+    primary = (profile or {}).get("primary_intent")
+    secondary = (profile or {}).get("secondary_intent")
+
+    def _title_bonus(family_match: bool, family_key: str, base: int) -> int:
+        if not profile:
+            return base
+        if family_key == primary:
+            return base + 8           # primary domain → premium
+        if family_key == secondary:
+            return base                # secondary domain → unchanged
+        return max(2, base // 3)       # off-domain → heavily damped
+
+    if CLOUD_TITLE.search(title):
+        bump = _title_bonus(True, "cloud_devops", 15); s += bump; flags.append(f"Cloud/DevOps (+{bump})")
+    if GOOD_TITLE.search(title):
+        s += 15; flags.append("Early-career")
     if BACKEND_TITLE.search(title) or FULLSTACK_TITLE.search(title):
-        s += 12; flags.append("Backend/FS")
-    if FRONTEND_TITLE.search(title): s += 8; flags.append("Frontend")
+        family = "fullstack" if FULLSTACK_TITLE.search(title) else "backend"
+        bump = _title_bonus(True, family, 12); s += bump; flags.append(f"Backend/FS (+{bump})")
+    if FRONTEND_TITLE.search(title):
+        bump = _title_bonus(True, "frontend", 8); s += bump; flags.append(f"Frontend (+{bump})")
+
+    # AI/ML title family — when the candidate's primary intent is ai_ml this
+    # becomes the dominant signal; for a Cloud-focused candidate it stays
+    # modest so AWS-only ML platform roles don't crowd out infra roles.
+    from services.resume_profiler import INTENTS as _INTENTS
+    ml_match = any(re.compile(p, re.IGNORECASE).search(title)
+                   for p in _INTENTS["ai_ml"]["title_terms"])
+    if ml_match:
+        bump = _title_bonus(True, "ai_ml", 18); s += bump; flags.append(f"AI/ML title (+{bump})")
+
+    # Domain mention in description (catch jobs with vague titles like
+    # "Software Engineer" but ML-heavy descriptions for an ML candidate).
+    if profile:
+        try:
+            from services.resume_profiler import domain_relevance as _domain_relevance
+            dr = _domain_relevance(profile, f"{title} {description}")
+            if dr >= 0.5:
+                s += 10; flags.append(f"On-domain JD ({dr:.2f})")
+            elif dr <= 0.1 and not (CLOUD_TITLE.search(title) or BACKEND_TITLE.search(title)
+                                    or FULLSTACK_TITLE.search(title) or FRONTEND_TITLE.search(title)
+                                    or ml_match or GOOD_TITLE.search(title)):
+                # Title doesn't match any family AND description has no domain
+                # signal — likely off-domain noise (e.g. a generic "Engineer"
+                # at a hospital). Drop hard to push it below the Tier-3 floor.
+                s -= 18; flags.append("off-domain")
+        except Exception:
+            pass
+
     if PHOENIX_HINTS.search(location): s += 8; flags.append("Phoenix-area")
     try:
         apc = int(rec["applicants"]) if rec["applicants"] else None
@@ -946,7 +1027,7 @@ def _tier(s: int) -> str:
     return "Skip"
 
 
-def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optional[List[str]] = None):
+def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optional[List[str]] = None, profile: Optional[Dict[str, Any]] = None):
     apply_now: List[dict] = []
     verify: List[dict] = []
     excluded: List[dict] = []
@@ -1010,7 +1091,7 @@ def _filter_and_score(records: List[dict], cutoff: str, custom_role_terms: Optio
             excluded.append({**r, "reason": "no role-family match",
                              "tier": "Skip", "score": 0, "flags": ""}); continue
 
-        sc, flags = _score(r, today_iso=today_iso)
+        sc, flags = _score(r, today_iso=today_iso, profile=profile)
         rec = {**r, "score": sc, "tier": _tier(sc),
                "flags": ", ".join(flags) or "—",
                "roles": ", ".join(roles), "opt": _opt_status(r)}
@@ -1038,6 +1119,7 @@ def run_pipeline(
     workday_limit: int = 200,
     apify_token: Optional[str] = None,
     include_indeed: bool = False,
+    user_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1105,8 +1187,13 @@ def run_pipeline(
     raw_ats = ats_items     # already normalized by the ATS fetchers
     all_raw = raw_li + raw_wd + raw_in + raw_ats
 
+    # Resume profile (intent + weighted skills) — pulled from the user's
+    # stored resume + recent feedback signals. None for anonymous runs;
+    # _score falls back to its legacy flat bonuses when profile is None.
+    profile = _load_user_profile(user_email) if user_email else None
+
     apply_now, verify, excluded = _filter_and_score(
-        all_raw, cutoff, custom_role_terms=custom_role_terms
+        all_raw, cutoff, custom_role_terms=custom_role_terms, profile=profile
     )
     duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
     phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]

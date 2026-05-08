@@ -18,6 +18,15 @@ export interface DailyPipelineRecord {
   reason?: string;
   /** Visa-sponsorship signal. Useful for F-1 / H-1B candidates. */
   visa_status?: VisaStatus;
+  /**
+   * Set when the user already engaged with this exact (company, title) via
+   * the saved-jobs flow. `interested` = clicked Open but didn't confirm
+   * Applied. `applied` / `interview` / `offer` = actively in funnel.
+   * `rejected` / `withdrawn` = closed loop. UI uses this to render an
+   * "Already applied" badge and to demote in the bulk-open shortlist.
+   */
+  previously_applied_status?: 'interested' | 'applied' | 'interview' | 'offer' | 'rejected' | 'withdrawn';
+  previously_applied_at?: string;
 }
 
 export type PipelineExperienceLevel = 'any' | 'internship' | 'entry' | 'associate' | 'mid' | 'senior';

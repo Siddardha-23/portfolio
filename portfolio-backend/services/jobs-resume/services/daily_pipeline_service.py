@@ -90,6 +90,51 @@ def _ats_apify_actor_id() -> str:
     return _ATS_APIFY_ACTOR
 
 
+def _load_applied_index(user_email: str) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """Build a (normalized_company, normalized_title) → {status, ts} map from saved_jobs.
+
+    Used to tag pipeline rows the user has already engaged with, so the UI
+    can show "Already applied 3d ago" instead of presenting the same row as
+    fresh. We only consider statuses that mean "I've moved on this" — e.g.
+    interested means they clicked Open but never confirmed; applied / interview
+    / offer mean they actually submitted. "rejected" and "withdrawn" still
+    count as "engaged" so the user doesn't waste another click.
+    """
+    out: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    if not user_email:
+        return out
+    try:
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_db()
+        rows = db.saved_jobs.find(
+            {"user_email": user_email},
+            {"job_data": 1, "status": 1, "saved_at": 1, "applied_at": 1, "updated_at": 1},
+        )
+    except Exception as e:
+        logger.warning(f"_load_applied_index: {e}")
+        return out
+    for row in rows:
+        jd = (row.get("job_data") or {})
+        company = _norm_company(jd.get("company") or "").strip()
+        title = (jd.get("title") or "").strip().lower()
+        if not company or not title:
+            continue
+        ts = row.get("applied_at") or row.get("updated_at") or row.get("saved_at")
+        if hasattr(ts, "isoformat"):
+            ts_iso = ts.isoformat()
+        else:
+            ts_iso = ""
+        key = (company, title)
+        existing = out.get(key)
+        # Prefer the most-engaged status. Order: applied/interview/offer >
+        # rejected > interested > withdrawn.
+        rank = {"offer": 4, "interview": 3, "applied": 2, "rejected": 1, "interested": 0, "withdrawn": -1}
+        new_status = str(row.get("status") or "interested")
+        if not existing or rank.get(new_status, 0) > rank.get(existing.get("status", ""), 0):
+            out[key] = {"status": new_status, "ts": ts_iso}
+    return out
+
+
 def _load_user_profile(user_email: str) -> Optional[Dict[str, Any]]:
     """Load (and cache for one pipeline run) the user's resume profile.
 
@@ -1214,6 +1259,7 @@ def _filter_and_score(
     domain_strict: bool = False,
     h1b_only: bool = False,
     exclude_no_sponsorship: bool = False,
+    applied_index: Optional[Dict[Tuple[str, str], Dict[str, Any]]] = None,
 ):
     apply_now: List[dict] = []
     verify: List[dict] = []
@@ -1358,6 +1404,20 @@ def _filter_and_score(
         # users (and anyone not on a visa) keep the existing flow unchanged.
         visa_status = _classify_visa_status(r)
         r["visa_status"] = visa_status
+
+        # Tag rows the user already engaged with (saved/applied/interviewing).
+        # We don't drop these — the user might want to escalate ("apply again
+        # to the SRE role at the same company") — but we do mark them so the
+        # UI can show an "Already applied" badge.
+        if applied_index:
+            ai_key = (
+                _norm_company(r.get("company") or "").strip(),
+                (r.get("title") or "").strip().lower(),
+            )
+            ai_hit = applied_index.get(ai_key)
+            if ai_hit:
+                r["previously_applied_status"] = ai_hit.get("status")
+                r["previously_applied_at"] = ai_hit.get("ts") or ""
         if exclude_no_sponsorship and visa_status == "no_sponsorship":
             excluded.append({**r, "reason": "JD says no visa sponsorship",
                              "tier": "Skip", "score": 0, "flags": ""}); continue
@@ -1493,6 +1553,11 @@ def run_pipeline(
     # _score falls back to its legacy flat bonuses when profile is None.
     profile = _load_user_profile(user_email) if user_email else None
 
+    # Already-applied index — lets the row tagger mark rows the user has
+    # already engaged with so we don't surface the same Microsoft SWE
+    # posting fresh every day after the user opened it.
+    applied_index = _load_applied_index(user_email) if user_email else {}
+
     apply_now, verify, excluded = _filter_and_score(
         all_raw,
         cutoff,
@@ -1505,6 +1570,7 @@ def run_pipeline(
         domain_strict=domain_strict,
         h1b_only=h1b_only,
         exclude_no_sponsorship=exclude_no_sponsorship,
+        applied_index=applied_index,
     )
     duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
     phx = [r for r in apply_now + verify if PHOENIX_HINTS.search(r["location"] or "")]

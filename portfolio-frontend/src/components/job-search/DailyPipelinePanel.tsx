@@ -308,6 +308,7 @@ function PipelineRow({
   rec,
   applied,
   opened,
+  focused,
   onOpen,
   onMarkApplied,
   onDismissOpened,
@@ -317,29 +318,69 @@ function PipelineRow({
   applied: boolean;
   /** True when the user clicked "Open posting" but hasn't confirmed applied yet. */
   opened: boolean;
+  /** True when the keyboard cursor (j/k) is on this row. */
+  focused: boolean;
   onOpen: () => void;
   onMarkApplied: () => void;
   onDismissOpened: () => void;
   onTailor: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  // Auto-scroll the focused row into view when it changes — keeps j/k
+  // navigation usable on long tier lists.
+  useEffect(() => {
+    if (focused && cardRef.current) {
+      cardRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [focused]);
   const flagList = (rec.flags || '')
     .split(',')
     .map((f) => f.trim())
     .filter((f) => f && f !== '—');
 
+  // Surface "previously applied X days ago" so a row that's been in the
+  // funnel for a week doesn't get re-opened by mistake.
+  const prevStatus = rec.previously_applied_status;
+  const prevAt = rec.previously_applied_at;
+  const prevAgo = (() => {
+    if (!prevAt) return '';
+    try {
+      const days = Math.max(0, Math.floor((Date.now() - new Date(prevAt).getTime()) / 86400000));
+      if (days === 0) return 'today';
+      if (days === 1) return '1d ago';
+      return `${days}d ago`;
+    } catch { return ''; }
+  })();
+  const showPrevApplied = !!prevStatus && prevStatus !== 'interested' && !applied;
+
   return (
     <Card
+      ref={cardRef}
       className={`group relative rounded-xl border ${
         applied
           ? 'border-emerald-500/40 bg-emerald-500/5 opacity-60'
+          : showPrevApplied
+          ? 'border-amber-500/40 bg-amber-500/5'
           : tierStyle?.ring || 'border-gray-200/80 dark:border-white/[0.08]'
-      } bg-white/90 dark:bg-gray-900/50 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md`}
+      } bg-white/90 dark:bg-gray-900/50 backdrop-blur-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${
+        focused ? 'ring-2 ring-purple-500/60 ring-offset-1 ring-offset-background' : ''
+      }`}
     >
       {applied && (
         <div className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
           <CheckCircle2 className="h-3 w-3" />
           Applied · in Saved
+        </div>
+      )}
+      {showPrevApplied && (
+        <div
+          className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300"
+          title={`Status: ${prevStatus}${prevAt ? ` · last touched ${prevAt.slice(0, 10)}` : ''}`}
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          {prevStatus === 'interview' ? 'In interview' : prevStatus === 'offer' ? 'Offer' : 'Already applied'}
+          {prevAgo ? ` · ${prevAgo}` : ''}
         </div>
       )}
       <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
@@ -469,6 +510,7 @@ function TierGroup({
   accent,
   appliedIds,
   openedIds,
+  focusedId,
   showApplied,
   onOpen,
   onMarkApplied,
@@ -480,6 +522,7 @@ function TierGroup({
   accent: string;
   appliedIds: Set<string>;
   openedIds: Set<string>;
+  focusedId: string | null;
   showApplied: boolean;
   onOpen: (rec: DailyPipelineRecord) => void;
   onMarkApplied: (rec: DailyPipelineRecord) => void;
@@ -510,6 +553,7 @@ function TierGroup({
                 rec={rec}
                 applied={appliedIds.has(id)}
                 opened={openedIds.has(id)}
+                focused={focusedId === id}
                 onOpen={() => onOpen(rec)}
                 onMarkApplied={() => onMarkApplied(rec)}
                 onDismissOpened={() => onDismissOpened(rec)}
@@ -982,6 +1026,108 @@ export function DailyPipelinePanel({
   const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3');
   const allApplyNow = result?.apply_now || [];
   const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
+
+  // Daily-digest stats — surfaced at the top so an F-1 student can see in one
+  // glance how many fresh sponsors / on-domain matches / Phoenix rows are
+  // waiting today, instead of scrolling through three tier groups to count.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const _isFresh = (r: DailyPipelineRecord) => (r.posted || '').slice(0, 10) === todayIso;
+  const _alreadyApplied = (r: DailyPipelineRecord) =>
+    !!r.previously_applied_status && r.previously_applied_status !== 'interested';
+  const digest = useMemo(() => {
+    if (!result) return null;
+    const all = [...(result.apply_now || []), ...(result.verify_dates || [])];
+    const eligible = all.filter((r) => !appliedSet.has(_recordId(r)) && !_alreadyApplied(r));
+    return {
+      total: eligible.length,
+      fresh: eligible.filter(_isFresh).length,
+      sponsors: eligible.filter((r) => r.visa_status === 'sponsor_verified').length,
+      noSponsor: all.filter((r) => r.visa_status === 'no_sponsorship').length,
+      phoenix: (result.phoenix || []).filter((r) => !appliedSet.has(_recordId(r))).length,
+      tier1Open: tier1.filter((r) => !appliedSet.has(_recordId(r)) && !_alreadyApplied(r)).length,
+      alreadyApplied: all.filter(_alreadyApplied).length,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result, appliedSet]);
+
+  // Bulk-open Tier 1 — opens the top N postings in new tabs and saves each as
+  // Interested. Browsers throttle multi-window.open, but every modern
+  // browser allows it within a single user-gesture handler. Skips any row
+  // already applied or marked previously-applied.
+  const handleBulkOpen = async (rows: DailyPipelineRecord[], n: number) => {
+    const candidates = rows.filter(
+      (r) => !!r.url && !appliedSet.has(_recordId(r)) && !_alreadyApplied(r),
+    ).slice(0, n);
+    if (!candidates.length) {
+      toast.info('Nothing fresh to open in this batch.');
+      return;
+    }
+    for (const rec of candidates) {
+      window.open(rec.url, '_blank', 'noopener,noreferrer');
+    }
+    // Background: save as Interested + log click for each. Don't await — we
+    // want the tabs to open immediately within the user-gesture window.
+    candidates.forEach((rec) => {
+      const id = _recordId(rec);
+      setOpenedIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      apiService.saveJob(_jobPayload(rec) as any).catch(() => { /* dup-ok */ });
+      apiService.recordMomentumActivity('job_click', {
+        record_id: id,
+        job_title: rec.title,
+        company: rec.company,
+        bulk: true,
+      }).catch(() => { /* best-effort */ });
+    });
+    toast.success(`Opened ${candidates.length} postings — confirm "I applied" on each row after submitting.`);
+  };
+
+  // Keyboard shortcuts — j/k navigate, o open, a mark applied, t tailor.
+  // Only active when the pipeline tab is mounted with results AND no input/
+  // textarea is focused (so chip/preset typing isn't intercepted).
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
+  useEffect(() => {
+    const visibleRows = (showApplied
+      ? allApplyNow
+      : allApplyNow.filter((r) => !appliedSet.has(_recordId(r)))
+    );
+    if (!visibleRows.length) return;
+    const handler = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || (t && t.isContentEditable)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const ids = visibleRows.map(_recordId);
+      const idx = focusedRowId ? ids.indexOf(focusedRowId) : -1;
+      if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const next = ids[Math.min(ids.length - 1, idx + 1)] ?? ids[0];
+        setFocusedRowId(next);
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        const next = ids[Math.max(0, idx - 1)] ?? ids[0];
+        setFocusedRowId(next);
+      } else if (e.key === 'o' && idx >= 0) {
+        e.preventDefault();
+        const rec = visibleRows[idx];
+        if (rec) handleOpenPosting(rec);
+      } else if (e.key === 'a' && idx >= 0) {
+        e.preventDefault();
+        const rec = visibleRows[idx];
+        if (rec) handleMarkApplied(rec);
+      } else if (e.key === 't' && idx >= 0) {
+        e.preventDefault();
+        const rec = visibleRows[idx];
+        if (rec) handleTailor(rec);
+      } else if (e.key === '?') {
+        e.preventDefault();
+        toast.info('Shortcuts: j/k navigate · o open · a mark applied · t tailor', { duration: 4000 });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allApplyNow, appliedSet, showApplied, focusedRowId]);
 
   return (
     <div className="space-y-6">
@@ -1570,12 +1716,78 @@ export function DailyPipelinePanel({
             </Card>
           )}
 
+          {/* Daily digest — sticky one-liner so the user sees today's volume,
+              sponsor count, freshness, and already-applied dedup count
+              without scrolling through three tier groups to count by hand. */}
+          {digest && digest.total > 0 && (
+            <Card className="border-purple-500/30 bg-gradient-to-br from-purple-500/5 to-indigo-500/5">
+              <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                  <span className="inline-flex items-center gap-1.5 font-semibold">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-500" />
+                    {digest.total} fresh to triage
+                  </span>
+                  {digest.fresh > 0 && (
+                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <Clock className="h-3 w-3" />
+                      {digest.fresh} posted today
+                    </span>
+                  )}
+                  {digest.sponsors > 0 && (
+                    <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                      <ShieldCheck className="h-3 w-3" />
+                      {digest.sponsors} sponsor-verified
+                    </span>
+                  )}
+                  {digest.alreadyApplied > 0 && (
+                    <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                      <CheckCircle2 className="h-3 w-3" />
+                      {digest.alreadyApplied} you already applied to
+                    </span>
+                  )}
+                  {digest.noSponsor > 0 && (
+                    <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                      <AlertCircle className="h-3 w-3" />
+                      {digest.noSponsor} no-sponsor (demoted)
+                    </span>
+                  )}
+                  {digest.phoenix > 0 && (
+                    <span className="inline-flex items-center gap-1 text-purple-600 dark:text-purple-400">
+                      <MapPin className="h-3 w-3" />
+                      {digest.phoenix} Phoenix-area
+                    </span>
+                  )}
+                </div>
+                {digest.tier1Open > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => handleBulkOpen(tier1, Math.min(5, digest.tier1Open))}
+                      className="h-7 gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-[11px] text-white hover:opacity-90"
+                      title="Open the top 5 Tier-1 postings in new tabs at once"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open top {Math.min(5, digest.tier1Open)} in tabs
+                    </Button>
+                    <span
+                      className="hidden text-[10px] text-muted-foreground sm:inline"
+                      title="Press ? on this page for keyboard shortcuts"
+                    >
+                      ⌨ <kbd className="rounded border border-border/60 px-1 font-mono text-[9px]">?</kbd>
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <TierGroup
             title={`🥇 Tier 1 — apply first (${tier1.length})`}
             items={tier1}
             accent="border-yellow-500/30 bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
@@ -1588,6 +1800,7 @@ export function DailyPipelinePanel({
             accent="border-slate-500/30 bg-slate-500/10 text-slate-700 dark:text-slate-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
@@ -1600,6 +1813,7 @@ export function DailyPipelinePanel({
             accent="border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300"
             appliedIds={appliedSet}
             openedIds={openedSet}
+            focusedId={focusedRowId}
             showApplied={showApplied}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
@@ -1614,6 +1828,7 @@ export function DailyPipelinePanel({
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               appliedIds={appliedSet}
               openedIds={openedSet}
+              focusedId={focusedRowId}
               showApplied={showApplied}
               onOpen={handleOpenPosting}
               onMarkApplied={handleMarkApplied}
@@ -1629,6 +1844,7 @@ export function DailyPipelinePanel({
               accent="border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-300"
               appliedIds={appliedSet}
               openedIds={openedSet}
+              focusedId={focusedRowId}
               showApplied={showApplied}
               onOpen={handleOpenPosting}
               onMarkApplied={handleMarkApplied}

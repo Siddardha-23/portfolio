@@ -5854,11 +5854,14 @@ export default function ResumeParser() {
   useEffect(() => {
     const toJobs = () => selectNav('jobs');
     const toTailor = () => selectNav('tailor');
+    const toBatchTailor = () => selectNav('batch');
     window.addEventListener('portfolio:navigate-to-jobs', toJobs);
     window.addEventListener('portfolio:navigate-to-tailor', toTailor);
+    window.addEventListener('portfolio:navigate-to-batch-tailor', toBatchTailor);
     return () => {
       window.removeEventListener('portfolio:navigate-to-jobs', toJobs);
       window.removeEventListener('portfolio:navigate-to-tailor', toTailor);
+      window.removeEventListener('portfolio:navigate-to-batch-tailor', toBatchTailor);
     };
   }, [selectNav]);
 

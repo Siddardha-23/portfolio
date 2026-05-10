@@ -75,6 +75,11 @@ def fetch_jd(url: str) -> Tuple[str, str]:
     `source_kind` lets the caller log which strategy was tried — useful in
     the UI's Tailor toast so the user can tell whether they got the rich
     Greenhouse JD or a generic HTML strip.
+
+    Fallback chain: each direct strategy runs first (fast, free). If it
+    returns empty AND an Apify token is configured, we retry once via a
+    browser-rendered Apify actor — this rescues LinkedIn 403s and Workday
+    SPA pages that don't expose the JD in their initial HTML.
     """
     if not url or not isinstance(url, str):
         return "", "invalid_url"
@@ -88,7 +93,15 @@ def fetch_jd(url: str) -> Tuple[str, str]:
     m = _LINKEDIN_VIEW_RE.search(url)
     if m:
         job_id = m.group(1)
-        return _fetch_linkedin_guest(job_id), "linkedin_guest"
+        text = _fetch_linkedin_guest(job_id)
+        if text:
+            return text, "linkedin_guest"
+        # Guest endpoint has been gating more aggressively (403/429 without
+        # auth). Try the Apify browser scrape before giving up.
+        text = _fetch_apify_fallback(url)
+        if text:
+            return text, "apify_browser"
+        return "", "linkedin_guest"
 
     # ---- Greenhouse hosted board ----------------------------------------
     m = _GREENHOUSE_RE.search(url)
@@ -111,9 +124,15 @@ def fetch_jd(url: str) -> Tuple[str, str]:
     # ---- Generic HTML scrape (Workday, company careers, etc.) -----------
     # Workday URLs vary per tenant (myworkdayjobs.com, careers.<co>.com).
     # A vanilla GET works for server-rendered Workday pages; it won't help
-    # for the client-rendered single-page versions but those are rare among
-    # entry-level postings.
-    return _fetch_generic_html(url), "html_scrape"
+    # for the client-rendered single-page versions — fall back to a
+    # browser-rendered Apify scrape when the static fetch returns nothing.
+    text = _fetch_generic_html(url)
+    if text:
+        return text, "html_scrape"
+    text = _fetch_apify_fallback(url)
+    if text:
+        return text, "apify_browser"
+    return "", "html_scrape"
 
 
 # ---------------------------------------------------------------------------
@@ -187,6 +206,70 @@ def _fetch_ashby_detail(slug: str, posting_id: str) -> str:
     except Exception as e:
         logger.warning("Ashby JD %s/%s failed: %s", slug, posting_id, e)
         return ""
+
+
+def _fetch_apify_fallback(url: str) -> str:
+    """Last-resort browser-rendered scrape via Apify.
+
+    Triggered only when the direct strategies returned empty (LinkedIn guest
+    API 403'd, Workday SPA hid the JD behind hydration, etc.). Uses Apify's
+    official ``apify/website-content-crawler`` actor — it renders the page
+    in a real browser, strips navigation/cookie banners, and returns clean
+    article text.
+
+    No-ops if no Apify token is configured. Bounded to ~60s; on any error
+    (timeout, credits exhausted, actor failure) returns "" and the caller
+    surfaces the same "couldn't fetch — paste manually" UX as before. This
+    is purely additive — never invoked when the direct path succeeded.
+    """
+    from urllib.parse import quote
+    try:
+        from services.daily_pipeline_service import _get_apify_token
+    except Exception:
+        return ""
+    token = _get_apify_token()
+    if not token:
+        return ""
+
+    actor = "apify~website-content-crawler"
+    api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items?token={quote(token)}"
+    payload = {
+        "startUrls": [{"url": url}],
+        "maxCrawlPages": 1,
+        "maxCrawlDepth": 0,
+        "crawlerType": "playwright:chrome",
+        "removeCookieWarnings": True,
+        "removeElementsCssSelector": (
+            "nav, footer, header, aside, "
+            "[class*='cookie'], [class*='banner'], [class*='consent'], "
+            "[class*='nav'], [class*='footer'], [class*='sidebar']"
+        ),
+        "saveMarkdown": False,
+        "saveHtml": False,
+        # Keep payload small — we only need plain text for the JD textarea.
+        "maxResults": 1,
+    }
+    try:
+        r = requests.post(api_url, json=payload, timeout=60)
+    except requests.RequestException as e:
+        logger.info("Apify JD fallback request failed: %s", e)
+        return ""
+    if r.status_code >= 400:
+        logger.info("Apify JD fallback %s -> HTTP %s", url, r.status_code)
+        return ""
+    try:
+        items = r.json() or []
+    except Exception:
+        return ""
+    if not items:
+        return ""
+    first = items[0] if isinstance(items, list) else {}
+    if not isinstance(first, dict):
+        return ""
+    text = (first.get("text") or first.get("markdown") or "").strip()
+    if not text and isinstance(first.get("html"), str):
+        text = _html_to_text(first["html"])
+    return text[:_MAX_JD_CHARS] if text else ""
 
 
 def _fetch_generic_html(url: str) -> str:

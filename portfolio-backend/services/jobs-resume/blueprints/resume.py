@@ -483,8 +483,11 @@ def batch_tailor():
 
     if not isinstance(jd_list, list) or len(jd_list) == 0:
         return jsonify({"error": "jd_list is required (array of JD objects)"}), 400
-    if len(jd_list) > 5:
-        return jsonify({"error": "Maximum 5 job descriptions per batch"}), 400
+    # Cap lifted from 5 → 25 to support the Daily Pipeline → Batch Tailor
+    # handoff flow (a student often wants to tailor 10-20 roles per morning).
+    # The 3-per-10-min rate limiter above still protects against abuse.
+    if len(jd_list) > 25:
+        return jsonify({"error": "Maximum 25 job descriptions per batch"}), 400
 
     for i, jd in enumerate(jd_list):
         if not isinstance(jd, dict) or not jd.get("text", "").strip():

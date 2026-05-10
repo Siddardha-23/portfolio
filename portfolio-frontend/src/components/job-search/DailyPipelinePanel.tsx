@@ -231,6 +231,12 @@ interface PersistedState {
   dailyGoal?: number;
   /** Per-day application counter — { date: 'YYYY-MM-DD', count: N }. */
   dailyApplied?: { date: string; count: number };
+  /**
+   * Rows the user has checked for the "Run batch tailor" flow. Purely
+   * additive — single-row Tailor still works exactly as before. Persisted
+   * so a refresh during selection doesn't lose progress.
+   */
+  batchSelectedIds?: string[];
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -326,11 +332,13 @@ function PipelineRow({
   focused,
   isNew,
   tailorLoading,
+  batchChecked,
   onOpen,
   onMarkApplied,
   onDismissOpened,
   onTailor,
   onSnooze,
+  onToggleBatch,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
@@ -342,11 +350,14 @@ function PipelineRow({
   isNew: boolean;
   /** True while the JD prefetch for this row is in flight. */
   tailorLoading: boolean;
+  /** True when this row is ticked for the batch-tailor handoff. */
+  batchChecked: boolean;
   onOpen: () => void;
   onMarkApplied: () => void;
   onDismissOpened: () => void;
   onTailor: () => void;
   onSnooze: (days: number) => void;
+  onToggleBatch: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -452,6 +463,21 @@ function PipelineRow({
         </span>
       )}
       <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
+        {!applied && (
+          <label
+            className="flex flex-shrink-0 items-center self-start sm:self-center pt-0.5 cursor-pointer select-none"
+            title={batchChecked ? 'Remove from batch tailor' : 'Add to batch tailor'}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <input
+              type="checkbox"
+              checked={batchChecked}
+              onChange={onToggleBatch}
+              className="h-4 w-4 cursor-pointer rounded border-border accent-purple-600"
+              aria-label="Add to batch tailor"
+            />
+          </label>
+        )}
         <div className="flex flex-shrink-0 flex-col items-center gap-1.5 sm:w-20">
           {tierStyle && (
             <Badge className={`gap-1 border ${tierStyle.chip} font-semibold`} variant="outline">
@@ -594,6 +620,7 @@ function TierGroup({
   appliedIds,
   openedIds,
   newIds,
+  batchSelectedIds,
   tailorLoadingId,
   focusedId,
   showApplied,
@@ -602,6 +629,7 @@ function TierGroup({
   onDismissOpened,
   onTailor,
   onSnooze,
+  onToggleBatch,
 }: {
   title: string;
   items: DailyPipelineRecord[];
@@ -609,6 +637,7 @@ function TierGroup({
   appliedIds: Set<string>;
   openedIds: Set<string>;
   newIds: Set<string>;
+  batchSelectedIds: Set<string>;
   tailorLoadingId: string | null;
   focusedId: string | null;
   showApplied: boolean;
@@ -617,6 +646,7 @@ function TierGroup({
   onDismissOpened: (rec: DailyPipelineRecord) => void;
   onTailor: (rec: DailyPipelineRecord) => void;
   onSnooze: (rec: DailyPipelineRecord, days: number) => void;
+  onToggleBatch: (rec: DailyPipelineRecord) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
@@ -645,11 +675,13 @@ function TierGroup({
                 focused={focusedId === id}
                 isNew={newIds.has(id)}
                 tailorLoading={tailorLoadingId === id}
+                batchChecked={batchSelectedIds.has(id)}
                 onOpen={() => onOpen(rec)}
                 onMarkApplied={() => onMarkApplied(rec)}
                 onDismissOpened={() => onDismissOpened(rec)}
                 onTailor={() => onTailor(rec)}
                 onSnooze={(days) => onSnooze(rec, days)}
+                onToggleBatch={() => onToggleBatch(rec)}
               />
             );
           })
@@ -732,6 +764,13 @@ export function DailyPipelinePanel({
   // so the row's Tailor button shows a spinner + disables itself instead of
   // looking idle while a 12s fetch is in flight.
   const [tailorLoadingId, setTailorLoadingId] = useState<string | null>(null);
+  // Batch-tailor selection — multiple rows the user wants to send to the
+  // Batch Tailor tab in one shot. Persisted so a refresh mid-pick doesn't
+  // lose the selection. Single-row Tailor is untouched.
+  const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>(persisted?.batchSelectedIds ?? []);
+  // Tracks whether the user is mid-batch-run so we can disable the Run
+  // button + show a spinner while we pre-fetch all the JDs in parallel.
+  const [batchRunning, setBatchRunning] = useState(false);
   const [seenIds, setSeenIds] = useState<string[]>(persisted?.seenIds ?? []);
   const [snoozedUntil, setSnoozedUntil] = useState<Record<string, string>>(persisted?.snoozedUntil ?? {});
   const [dailyGoal, setDailyGoal] = useState<number>(persisted?.dailyGoal ?? 5);
@@ -777,12 +816,14 @@ export function DailyPipelinePanel({
       snoozedUntil,
       dailyGoal,
       dailyApplied,
+      batchSelectedIds,
     });
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
+    batchSelectedIds,
   ]);
 
   // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
@@ -1103,6 +1144,100 @@ export function DailyPipelinePanel({
     setTailorLoadingId(null);
   };
 
+  // Batch handoff: pre-fetch JDs (parallel, capped) for every selected row
+  // and hand them to the Batch Tailor tab via sessionStorage. Single-row
+  // Tailor is unchanged — this is a separate code path.
+  const handleRunBatch = async () => {
+    if (batchRunning) return;
+    const recs = batchSelectedIds
+      .map((id) => allRowsById.get(id))
+      .filter((r): r is DailyPipelineRecord => !!r);
+    if (recs.length === 0) {
+      toast.info('Nothing in the batch yet — tick rows to add them.');
+      return;
+    }
+    setBatchRunning(true);
+    const fetching = toast.loading(`Pre-fetching ${recs.length} job descriptions…`, {
+      duration: 60000,
+    });
+
+    // Save each selected job up-front so the application tracker picks them
+    // up (mirrors single-row Tailor behavior). Duplicate-saves are tolerated.
+    await Promise.all(
+      recs.map((rec) =>
+        apiService
+          .saveJob(_jobPayload(rec) as any)
+          .catch(() => { /* duplicate-ok */ }),
+      ),
+    );
+
+    // Parallel JD prefetch — capped concurrency so we don't hammer the
+    // backend rate limiter (20/min on /jobs/fetch-jd). 3 in flight covers
+    // ~20 jobs in ~25–40s typical; the per-call timeout is server-side ~60s.
+    type Prefetched = {
+      rec: DailyPipelineRecord;
+      jdText: string;
+      fetchFailed: boolean;
+    };
+    const out: Prefetched[] = [];
+    const concurrency = 3;
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < recs.length) {
+        const i = cursor++;
+        const rec = recs[i];
+        let jdText = (rec.description || '').trim();
+        if (!jdText && rec.url) {
+          try {
+            const resp = await apiService.fetchJobDescription(rec.url);
+            if (resp.data?.ok && resp.data.jd_text) jdText = resp.data.jd_text;
+          } catch { /* fall through to fail flag */ }
+        }
+        out.push({
+          rec,
+          jdText,
+          fetchFailed: !jdText,
+        });
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, recs.length) }, worker));
+    toast.dismiss(fetching);
+
+    // Hand off to BatchTailor — entries marked fetchFailed render an inline
+    // "paste JD" prompt. The BatchTailor mount-effect reads this key.
+    const handoff = out.map(({ rec, jdText, fetchFailed }) => ({
+      job_id: _recordId(rec),
+      title: rec.title,
+      company: rec.company,
+      url: rec.url || '',
+      jd_text: jdText,
+      jd_fetch_failed: fetchFailed,
+    }));
+    try {
+      sessionStorage.setItem('pending_batch_tailor_jobs', JSON.stringify(handoff));
+    } catch (e) {
+      toast.error('Browser storage full — try clearing some history.');
+      setBatchRunning(false);
+      return;
+    }
+
+    const failedCount = handoff.filter((h) => h.jd_fetch_failed).length;
+    if (failedCount > 0) {
+      toast.warning(
+        `Sent ${handoff.length} to Batch Tailor — ${failedCount} need a manual JD paste before they'll run.`,
+        { duration: 8000 },
+      );
+    } else {
+      toast.success(`Sent ${handoff.length} to Batch Tailor — opening now.`);
+    }
+
+    // Clear selection so the user can keep browsing fresh rows after the
+    // handoff. The Batch Tailor tab owns the run from here.
+    setBatchSelectedIds([]);
+    setBatchRunning(false);
+    window.dispatchEvent(new CustomEvent('portfolio:navigate-to-batch-tailor'));
+  };
+
   // Build the Job payload we save / update — shared between the open and
   // mark-applied paths.
   const _jobPayload = (rec: DailyPipelineRecord) => ({
@@ -1227,6 +1362,25 @@ export function DailyPipelinePanel({
     setSnoozedUntil((prev) => ({ ...prev, [id]: until }));
     toast.success(`Snoozed for ${days} day${days === 1 ? '' : 's'} — back on ${until.slice(0, 10)}.`);
   }, []);
+
+  const batchSelectedSet = useMemo(() => new Set(batchSelectedIds), [batchSelectedIds]);
+  const handleToggleBatch = useCallback((rec: DailyPipelineRecord) => {
+    const id = _recordId(rec);
+    setBatchSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }, []);
+  const handleClearBatch = useCallback(() => setBatchSelectedIds([]), []);
+
+  // Index from id → full record across every tier + verify list so the Run
+  // handler can resolve a selected id to its full payload without re-walking.
+  const allRowsById = useMemo(() => {
+    const map = new Map<string, DailyPipelineRecord>();
+    [...(result?.apply_now || []), ...(result?.verify_dates || [])].forEach((r) => {
+      map.set(_recordId(r), r);
+    });
+    return map;
+  }, [result]);
 
   // Daily-digest stats — surfaced at the top so an F-1 student can see in one
   // glance how many fresh sponsors / on-domain matches are waiting today,
@@ -2096,6 +2250,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             openedIds={openedSet}
             newIds={newIds}
+            batchSelectedIds={batchSelectedSet}
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
@@ -2104,6 +2259,7 @@ export function DailyPipelinePanel({
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
             onSnooze={handleSnooze}
+            onToggleBatch={handleToggleBatch}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
@@ -2112,6 +2268,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             openedIds={openedSet}
             newIds={newIds}
+            batchSelectedIds={batchSelectedSet}
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
@@ -2120,6 +2277,7 @@ export function DailyPipelinePanel({
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
             onSnooze={handleSnooze}
+            onToggleBatch={handleToggleBatch}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
@@ -2128,6 +2286,7 @@ export function DailyPipelinePanel({
             appliedIds={appliedSet}
             openedIds={openedSet}
             newIds={newIds}
+            batchSelectedIds={batchSelectedSet}
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
@@ -2136,6 +2295,7 @@ export function DailyPipelinePanel({
             onDismissOpened={handleDismissOpened}
             onTailor={handleTailor}
             onSnooze={handleSnooze}
+            onToggleBatch={handleToggleBatch}
           />
 
           {result.verify_dates.length > 0 && (
@@ -2146,6 +2306,7 @@ export function DailyPipelinePanel({
               appliedIds={appliedSet}
               openedIds={openedSet}
               newIds={newIds}
+              batchSelectedIds={batchSelectedSet}
               tailorLoadingId={tailorLoadingId}
               focusedId={focusedRowId}
               showApplied={showApplied}
@@ -2154,6 +2315,7 @@ export function DailyPipelinePanel({
               onDismissOpened={handleDismissOpened}
               onTailor={handleTailor}
               onSnooze={handleSnooze}
+              onToggleBatch={handleToggleBatch}
             />
           )}
 
@@ -2167,6 +2329,64 @@ export function DailyPipelinePanel({
               </CardContent>
             </Card>
           )}
+        </div>
+      )}
+
+      {/* Sticky batch bar — appears only when the user has ticked ≥1 row.
+          Fixed to viewport bottom so it survives scrolling through long tier
+          lists. Single-row Tailor / Open / Apply are untouched. */}
+      {batchSelectedIds.length > 0 && (
+        <div
+          className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-3 pointer-events-none"
+          role="region"
+          aria-label="Batch tailor selection"
+        >
+          <div className="pointer-events-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-600/95 to-indigo-600/95 px-4 py-2.5 shadow-2xl shadow-purple-900/40 backdrop-blur-md">
+            <div className="flex items-center gap-2 text-white">
+              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-xs font-bold tabular-nums">
+                {batchSelectedIds.length}
+              </span>
+              <div className="flex flex-col leading-tight">
+                <span className="text-sm font-semibold">
+                  selected for batch tailor
+                </span>
+                <span className="text-[10px] text-white/80">
+                  Pre-fetches each JD, then hands off to Batch Tailor
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={handleClearBatch}
+                disabled={batchRunning}
+                className="h-8 px-2 text-white hover:bg-white/15 hover:text-white"
+                title="Clear all selected"
+              >
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleRunBatch}
+                disabled={batchRunning}
+                className="h-8 gap-1.5 bg-white text-purple-700 hover:bg-white/90 disabled:opacity-70"
+                title="Pre-fetch every JD and open in Batch Tailor"
+              >
+                {batchRunning ? (
+                  <>
+                    <span className="inline-block h-3 w-3 rounded-full border-2 border-purple-600/60 border-t-transparent animate-spin" />
+                    Prefetching…
+                  </>
+                ) : (
+                  <>
+                    <Wand2 className="h-3.5 w-3.5" />
+                    Run batch ({batchSelectedIds.length})
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

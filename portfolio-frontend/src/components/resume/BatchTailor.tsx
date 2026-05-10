@@ -1,13 +1,24 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { apiService } from '@/lib/api';
 import { toast } from 'sonner';
-import type { TailoredFullResume, JDAnalysis } from '@/types/resume';
+import type { TailoredFullResume, JDAnalysis, ATSScores } from '@/types/resume';
 
 interface JDEntry {
   id: string;
   title: string;
   text: string;
+  /** Set when handed off from Daily Pipeline with a failed JD scrape so the
+   * UI can render a clear "paste below" prompt instead of a generic empty
+   * textarea. Purely informational — submission validation is text-length. */
+  fetchFailed?: boolean;
+  /** Original posting URL when handed off from the pipeline — surfaced so
+   * the user can click through and copy the JD from the source. */
+  sourceUrl?: string;
 }
+
+const BATCH_TAILOR_MAX = 25;
+
+type ExtraStatus = 'idle' | 'generating' | 'done' | 'failed';
 
 interface BatchJob {
   id: string;
@@ -16,6 +27,12 @@ interface BatchJob {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   result?: { tailored_resume: TailoredFullResume; jd_analysis: JDAnalysis };
   error?: string;
+  /** Original posting URL when handed off from the Daily Pipeline. */
+  sourceUrl?: string;
+  /** Lazy-generated cover letter — only kicks off on user click. */
+  coverLetter?: { status: ExtraStatus; text?: string; error?: string };
+  /** Lazy-generated ATS scores — same pattern. */
+  atsScores?: { status: ExtraStatus; data?: ATSScores; error?: string };
 }
 
 function PlusIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -44,9 +61,49 @@ export default function BatchTailor() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const addEntry = useCallback(() => {
-    if (jdEntries.length >= 5) return;
+    if (jdEntries.length >= BATCH_TAILOR_MAX) return;
     setJdEntries(prev => [...prev, { id: nextId(), title: '', text: '' }]);
   }, [jdEntries.length]);
+
+  // Receive a batch handoff from the Daily Pipeline. The pipeline pre-fetches
+  // every selected job's JD (parallel, capped) and writes the result here.
+  // Entries with fetchFailed=true land empty so the user can paste manually
+  // before submitting the whole batch.
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('pending_batch_tailor_jobs');
+      if (!raw) return;
+      sessionStorage.removeItem('pending_batch_tailor_jobs');
+      const parsed = JSON.parse(raw) as Array<{
+        job_id: string;
+        title: string;
+        company: string;
+        url: string;
+        jd_text: string;
+        jd_fetch_failed?: boolean;
+      }>;
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
+      const incoming: JDEntry[] = parsed.slice(0, BATCH_TAILOR_MAX).map((j) => ({
+        id: nextId(),
+        title: [j.title, j.company].filter(Boolean).join(' @ ') || 'Job from pipeline',
+        text: j.jd_text || '',
+        fetchFailed: !!j.jd_fetch_failed,
+        sourceUrl: j.url || undefined,
+      }));
+      setJdEntries(incoming);
+      const failedN = incoming.filter((e) => e.fetchFailed).length;
+      if (failedN > 0) {
+        toast.warning(
+          `${incoming.length} jobs loaded — ${failedN} JD${failedN > 1 ? 's' : ''} need a manual paste before "Submit" enables them.`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success(`${incoming.length} jobs loaded from Daily Pipeline — click Submit to tailor all.`);
+      }
+    } catch (e) {
+      // Bad JSON or storage error — ignore, the empty default form still works.
+    }
+  }, []);
 
   const removeEntry = useCallback((id: string) => {
     setJdEntries(prev => prev.length > 1 ? prev.filter(e => e.id !== id) : prev);
@@ -76,10 +133,75 @@ export default function BatchTailor() {
       jobId: j.job_id,
       title: j.title || validEntries[i].title || `Job ${i + 1}`,
       status: 'processing' as const,
+      sourceUrl: validEntries[i].sourceUrl,
     }));
     setBatchJobs(jobs);
     toast.success(`${jobs.length} job${jobs.length > 1 ? 's' : ''} submitted`);
   }, [jdEntries]);
+
+  const handleGenerateCoverLetter = useCallback(async (job: BatchJob) => {
+    if (!job.result || job.coverLetter?.status === 'generating') return;
+    setBatchJobs(prev => prev.map(j =>
+      j.jobId === job.jobId ? { ...j, coverLetter: { status: 'generating' } } : j,
+    ));
+    const resp = await apiService.generateCoverLetter(
+      job.result.tailored_resume,
+      job.result.jd_analysis,
+    );
+    if (resp.error || !resp.data?.cover_letter) {
+      setBatchJobs(prev => prev.map(j =>
+        j.jobId === job.jobId
+          ? { ...j, coverLetter: { status: 'failed', error: resp.error || 'Generation failed' } }
+          : j,
+      ));
+      toast.error(`Cover letter failed for "${job.title}"`);
+      return;
+    }
+    setBatchJobs(prev => prev.map(j =>
+      j.jobId === job.jobId
+        ? { ...j, coverLetter: { status: 'done', text: resp.data!.cover_letter } }
+        : j,
+    ));
+    toast.success(`Cover letter ready for "${job.title}"`);
+  }, []);
+
+  const handleDownloadCoverLetter = useCallback((job: BatchJob) => {
+    const txt = job.coverLetter?.text;
+    if (!txt) return;
+    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
+    const u = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safe = (job.title || 'cover-letter').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 64);
+    a.href = u;
+    a.download = `cover_letter_${safe}.txt`;
+    a.click();
+    URL.revokeObjectURL(u);
+  }, []);
+
+  const handleGenerateAts = useCallback(async (job: BatchJob) => {
+    if (!job.result || job.atsScores?.status === 'generating') return;
+    setBatchJobs(prev => prev.map(j =>
+      j.jobId === job.jobId ? { ...j, atsScores: { status: 'generating' } } : j,
+    ));
+    const resp = await apiService.fetchATSScores(
+      job.result.tailored_resume,
+      job.result.jd_analysis,
+    );
+    if (resp.error || !resp.data?.ats_scores) {
+      setBatchJobs(prev => prev.map(j =>
+        j.jobId === job.jobId
+          ? { ...j, atsScores: { status: 'failed', error: resp.error || 'Scoring failed' } }
+          : j,
+      ));
+      toast.error(`ATS score failed for "${job.title}"`);
+      return;
+    }
+    setBatchJobs(prev => prev.map(j =>
+      j.jobId === job.jobId
+        ? { ...j, atsScores: { status: 'done', data: resp.data!.ats_scores } }
+        : j,
+    ));
+  }, []);
 
   // Poll all active jobs
   useEffect(() => {
@@ -140,21 +262,46 @@ export default function BatchTailor() {
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Batch Tailor</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">Add up to 5 job descriptions and tailor your resume to all of them at once</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">Add up to {BATCH_TAILOR_MAX} job descriptions and tailor your resume to all of them at once. You can also tick rows on the Daily Pipeline and send them here in one shot.</p>
             </div>
           </div>
 
           <div className="space-y-3">
             {jdEntries.map((entry, i) => (
-              <div key={entry.id} className="rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80 overflow-hidden">
+              <div
+                key={entry.id}
+                className={`rounded-xl border overflow-hidden ${
+                  entry.fetchFailed && !entry.text.trim()
+                    ? 'border-amber-400/60 bg-amber-50/60 dark:border-amber-500/40 dark:bg-amber-500/[0.06]'
+                    : 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80'
+                }`}
+              >
                 <div className="px-4 py-2.5 flex items-center justify-between border-b border-gray-200 dark:border-gray-800/60">
                   <span className="text-xs font-semibold text-gray-400 dark:text-gray-500">Job Description {i + 1}</span>
-                  {jdEntries.length > 1 && (
-                    <button type="button" onClick={() => removeEntry(entry.id)}
-                      className="p-1 text-gray-400 dark:text-gray-600 hover:text-red-400 rounded transition-colors">
-                      <TrashIcon className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {entry.fetchFailed && !entry.text.trim() && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                        ⚠ JD not auto-fetched — paste below
+                      </span>
+                    )}
+                    {entry.sourceUrl && (
+                      <a
+                        href={entry.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10px] text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 underline"
+                        title="Open the source posting in a new tab"
+                      >
+                        open posting ↗
+                      </a>
+                    )}
+                    {jdEntries.length > 1 && (
+                      <button type="button" onClick={() => removeEntry(entry.id)}
+                        className="p-1 text-gray-400 dark:text-gray-600 hover:text-red-400 rounded transition-colors">
+                        <TrashIcon className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div className="p-4 space-y-2">
                   <input
@@ -164,9 +311,17 @@ export default function BatchTailor() {
                     onChange={e => updateEntry(entry.id, 'title', e.target.value)}
                   />
                   <textarea
-                    className="w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border border-gray-300 dark:border-gray-700/60 text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition-all"
+                    className={`w-full px-3 py-2 rounded-lg bg-white dark:bg-gray-800/60 border text-sm text-gray-800 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-600 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-purple-500/30 transition-all ${
+                      entry.fetchFailed && !entry.text.trim()
+                        ? 'border-amber-400/70 dark:border-amber-500/50'
+                        : 'border-gray-300 dark:border-gray-700/60'
+                    }`}
                     rows={4}
-                    placeholder="Paste the complete job description here..."
+                    placeholder={
+                      entry.fetchFailed && !entry.text.trim()
+                        ? "Couldn't auto-fetch this posting — open the source link above, copy the full JD, and paste it here."
+                        : 'Paste the complete job description here...'
+                    }
                     maxLength={15000}
                     value={entry.text}
                     onChange={e => updateEntry(entry.id, 'text', e.target.value)}
@@ -177,7 +332,7 @@ export default function BatchTailor() {
           </div>
 
           <div className="flex items-center gap-3">
-            {jdEntries.length < 5 && (
+            {jdEntries.length < BATCH_TAILOR_MAX && (
               <button type="button" onClick={addEntry}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-purple-600 dark:text-purple-400 border border-purple-500/30 hover:bg-purple-500/10 hover:text-purple-700 hover:border-purple-400 dark:hover:bg-purple-500/20 dark:hover:text-purple-300 dark:hover:border-purple-400/50 transition-all duration-200">
                 <PlusIcon className="w-4 h-4" />Add Job Description
@@ -242,6 +397,17 @@ export default function BatchTailor() {
                   </div>
                   {job.status === 'completed' && (
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {job.sourceUrl && (
+                        <a
+                          href={job.sourceUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 transition-all"
+                          title="Open the original posting to apply"
+                        >
+                          Apply ↗
+                        </a>
+                      )}
                       <button onClick={() => handleDownload(job, 'pdf')}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 transition-all">
                         <DownloadIcon className="w-3.5 h-3.5" />PDF
@@ -253,6 +419,85 @@ export default function BatchTailor() {
                     </div>
                   )}
                 </div>
+
+                {/* Secondary actions: cover letter + ATS score (lazy — Gemini
+                    calls are expensive, so we only generate on click). Each
+                    button stays compact until clicked, then expands inline. */}
+                {job.status === 'completed' && (
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2 border-t border-emerald-500/15 pt-2.5">
+                    {/* Cover letter */}
+                    {(!job.coverLetter || job.coverLetter.status === 'idle') && (
+                      <button
+                        onClick={() => handleGenerateCoverLetter(job)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 transition-all"
+                      >
+                        ✍ Cover letter
+                      </button>
+                    )}
+                    {job.coverLetter?.status === 'generating' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-500/5 border border-indigo-500/20">
+                        <span className="inline-block h-3 w-3 rounded-full border-2 border-indigo-500/60 border-t-transparent animate-spin" />
+                        Writing cover letter…
+                      </span>
+                    )}
+                    {job.coverLetter?.status === 'done' && (
+                      <button
+                        onClick={() => handleDownloadCoverLetter(job)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 hover:bg-emerald-500/25 transition-all"
+                        title="Download cover letter as .txt"
+                      >
+                        <DownloadIcon className="w-3 h-3" /> Cover letter ready
+                      </button>
+                    )}
+                    {job.coverLetter?.status === 'failed' && (
+                      <button
+                        onClick={() => handleGenerateCoverLetter(job)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-rose-700 dark:text-rose-300 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 transition-all"
+                      >
+                        ✗ Retry cover letter
+                      </button>
+                    )}
+
+                    {/* ATS score */}
+                    {(!job.atsScores || job.atsScores.status === 'idle') && (
+                      <button
+                        onClick={() => handleGenerateAts(job)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-purple-700 dark:text-purple-300 bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition-all"
+                      >
+                        ⓘ ATS score
+                      </button>
+                    )}
+                    {job.atsScores?.status === 'generating' && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-purple-700 dark:text-purple-300 bg-purple-500/5 border border-purple-500/20">
+                        <span className="inline-block h-3 w-3 rounded-full border-2 border-purple-500/60 border-t-transparent animate-spin" />
+                        Scoring…
+                      </span>
+                    )}
+                    {job.atsScores?.status === 'done' && job.atsScores.data && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-semibold border ${
+                          (job.atsScores.data.overall ?? 0) >= 80
+                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border-emerald-500/30'
+                            : (job.atsScores.data.overall ?? 0) >= 60
+                            ? 'text-amber-700 dark:text-amber-300 bg-amber-500/15 border-amber-500/30'
+                            : 'text-rose-700 dark:text-rose-300 bg-rose-500/15 border-rose-500/30'
+                        }`}
+                        title={`ATS overall · keyword ${job.atsScores.data.keyword_match ?? '?'}% · format ${job.atsScores.data.format_score ?? '?'}%`}
+                      >
+                        ATS {Math.round(job.atsScores.data.overall ?? 0)}%
+                      </span>
+                    )}
+                    {job.atsScores?.status === 'failed' && (
+                      <button
+                        onClick={() => handleGenerateAts(job)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium text-rose-700 dark:text-rose-300 bg-rose-500/10 border border-rose-500/30 hover:bg-rose-500/20 transition-all"
+                      >
+                        ✗ Retry ATS
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 {job.status === 'completed' && job.result?.tailored_resume?.ats_keyword_audit?.required_missing?.length ? (
                   <p className="mt-2 text-[11px] leading-snug text-amber-700 dark:text-amber-400">
                     ⚠ {job.result.tailored_resume.ats_keyword_audit.required_missing.length} required JD keyword

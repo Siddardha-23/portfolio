@@ -186,6 +186,12 @@ const TIER_STYLES: Record<string, { label: string; ring: string; chip: string; i
 // Persistence
 // --------------------------------------------------------------------------
 const STORAGE_KEY = 'daily_pipeline_state_v2';
+
+// Bump when the resume-driven filter-suggester taxonomy changes so we drop
+// stale linkedinKws / workdayTitles / customRoles that were derived from an
+// older profiler. We preserve everything else (snoozes, mutes, counters,
+// applied ids) — only the resume-derived filters get invalidated.
+const FILTERS_DERIVED_VERSION = 2;
 const RESULT_TTL_MS = 30 * 60 * 1000;
 
 interface PersistedState {
@@ -244,6 +250,10 @@ interface PersistedState {
   hideCompanies?: string[];
   /** Max apply_now rows per company before extras get demoted to verify. */
   maxPerCompany?: number;
+  /** Version of the filter-suggester taxonomy that produced linkedinKws /
+   *  workdayTitles / customRoles. When this lags FILTERS_DERIVED_VERSION we
+   *  drop those fields so the next mount re-fetches from /suggest-filters. */
+  filtersDerivedVersion?: number;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -280,6 +290,17 @@ function readPersisted(): PersistedState | null {
     if (parsed.result && parsed.resultAt && Date.now() - parsed.resultAt > RESULT_TTL_MS) {
       parsed.result = null;
       parsed.resultAt = null;
+    }
+    // Surgical cache-bust: when the profiler taxonomy bumps, drop stale
+    // resume-derived filters and the prefilled flag so the next mount
+    // re-fetches accurate titles. Everything else (snoozes, mutes, counters)
+    // is preserved.
+    if ((parsed.filtersDerivedVersion ?? 0) < FILTERS_DERIVED_VERSION) {
+      parsed.linkedinKws = undefined as unknown as string[];
+      parsed.workdayTitles = undefined as unknown as string[];
+      parsed.customRoles = undefined as unknown as string[];
+      parsed.prefilledFromResume = false;
+      parsed.filtersDerivedVersion = FILTERS_DERIVED_VERSION;
     }
     _memoryCache = parsed;
     return parsed;
@@ -850,6 +871,7 @@ export function DailyPipelinePanel({
       batchSelectedIds,
       hideCompanies,
       maxPerCompany,
+      filtersDerivedVersion: FILTERS_DERIVED_VERSION,
     });
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
@@ -858,6 +880,34 @@ export function DailyPipelinePanel({
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
     batchSelectedIds, hideCompanies, maxPerCompany,
   ]);
+
+  // Manual "↻ Re-suggest from resume" trigger — bypasses prefilledRef so the
+  // user can force a fresh suggestion run any time (after updating their
+  // resume, after a profiler upgrade, etc). Replaces linkedinKws / titles /
+  // customRoles wholesale; everything else (snoozes, mutes) is preserved.
+  const [refreshingFilters, setRefreshingFilters] = useState(false);
+  const handleRefreshFromResume = useCallback(async () => {
+    if (refreshingFilters) return;
+    setRefreshingFilters(true);
+    try {
+      const resp = await apiService.suggestPipelineFilters();
+      const s = resp.data;
+      if (!s) {
+        toast.error("Couldn't fetch resume-based filters — make sure your resume is uploaded.");
+        return;
+      }
+      if (s.linkedin_keyword_sets?.length) setLinkedinKws(s.linkedin_keyword_sets);
+      if (s.workday_titles?.length) setWorkdayTitles(s.workday_titles);
+      if (s.custom_role_terms?.length) setCustomRoles(s.custom_role_terms);
+      if (typeof s.past_days === 'number') setPastDays(s.past_days);
+      prefilledRef.current = true;
+      toast.success('Filters refreshed from your resume — review and run pipeline.');
+    } catch {
+      toast.error('Filter refresh failed.');
+    } finally {
+      setRefreshingFilters(false);
+    }
+  }, [refreshingFilters]);
 
   // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
   // user has a parsed resume but has never explicitly edited the form. We
@@ -1885,15 +1935,34 @@ export function DailyPipelinePanel({
             </div>
           </div>
 
-          {/* Advanced toggle */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowAdvanced((v) => !v)}
-            className="gap-1 text-xs border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-500/30"
-          >
-            {showAdvanced ? '▾' : '▸'} Advanced — edit LinkedIn searches & Workday titles
-          </Button>
+          {/* Advanced toggle + manual resume-refresh */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="gap-1 text-xs border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 hover:border-purple-500/30"
+            >
+              {showAdvanced ? '▾' : '▸'} Advanced — edit LinkedIn searches & Workday titles
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefreshFromResume}
+              disabled={refreshingFilters}
+              className="gap-1 text-xs text-purple-600 dark:text-purple-300 hover:bg-purple-500/10"
+              title="Re-run the filter suggester against your latest resume — replaces LinkedIn keywords + Workday titles"
+            >
+              {refreshingFilters ? (
+                <>
+                  <span className="inline-block h-3 w-3 rounded-full border-2 border-purple-500/60 border-t-transparent animate-spin" />
+                  Refreshing…
+                </>
+              ) : (
+                <>↻ Re-suggest from resume</>
+              )}
+            </Button>
+          </div>
 
           {showAdvanced && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">

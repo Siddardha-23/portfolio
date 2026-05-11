@@ -54,11 +54,54 @@ function DownloadIcon({ className = 'w-4 h-4' }: { className?: string }) {
 let idCounter = 0;
 const nextId = () => `jd-${++idCounter}`;
 
+// Persistence — keyed so a refresh in the middle of a 5-minute batch
+// re-hydrates the result cards and resumes polling for any active jobs.
+// We persist a slimmed copy (results can be ~30KB each; we keep them as-is
+// since the user expects them downloadable from the same row).
+const BATCH_STORAGE_KEY = 'batch_tailor_jobs_v1';
+const BATCH_TTL_MS = 6 * 60 * 60 * 1000; // 6h — after that, results are stale
+
+function readPersistedBatch(): BatchJob[] | null {
+  try {
+    const raw = localStorage.getItem(BATCH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { jobs: BatchJob[]; savedAt: number };
+    if (!parsed?.jobs || !Array.isArray(parsed.jobs)) return null;
+    if (Date.now() - (parsed.savedAt || 0) > BATCH_TTL_MS) {
+      localStorage.removeItem(BATCH_STORAGE_KEY);
+      return null;
+    }
+    return parsed.jobs;
+  } catch {
+    return null;
+  }
+}
+
+function writePersistedBatch(jobs: BatchJob[]): void {
+  try {
+    if (!jobs.length) {
+      localStorage.removeItem(BATCH_STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(
+      BATCH_STORAGE_KEY,
+      JSON.stringify({ jobs, savedAt: Date.now() }),
+    );
+  } catch {
+    /* quota / private mode — ignore */
+  }
+}
+
 export default function BatchTailor() {
   const [jdEntries, setJdEntries] = useState<JDEntry[]>([{ id: nextId(), title: '', text: '' }]);
-  const [batchJobs, setBatchJobs] = useState<BatchJob[]>([]);
+  const [batchJobs, setBatchJobs] = useState<BatchJob[]>(() => readPersistedBatch() ?? []);
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Persist on every batchJobs change so refresh / tab close survive.
+  useEffect(() => {
+    writePersistedBatch(batchJobs);
+  }, [batchJobs]);
 
   const addEntry = useCallback(() => {
     if (jdEntries.length >= BATCH_TAILOR_MAX) return;
@@ -176,6 +219,30 @@ export default function BatchTailor() {
     a.download = `cover_letter_${safe}.txt`;
     a.click();
     URL.revokeObjectURL(u);
+  }, []);
+
+  const handleOpenInEditor = useCallback((job: BatchJob) => {
+    if (!job.result) return;
+    // Cross-tab handoff via localStorage (sessionStorage is per-tab so we
+    // can't read it from the new window). Key is the batch job_id so a user
+    // can open multiple results in parallel windows without collisions.
+    try {
+      localStorage.setItem(
+        `batch_handoff_${job.jobId}`,
+        JSON.stringify({
+          tailored_resume: job.result.tailored_resume,
+          jd_analysis: job.result.jd_analysis,
+          title: job.title,
+          source_url: job.sourceUrl || '',
+          saved_at: Date.now(),
+        }),
+      );
+    } catch {
+      toast.error('Browser storage full — close some tabs and try again.');
+      return;
+    }
+    const url = `${window.location.origin}/?tab=tailor&load_batch=${encodeURIComponent(job.jobId)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
   }, []);
 
   const handleGenerateAts = useCallback(async (job: BatchJob) => {
@@ -415,6 +482,13 @@ export default function BatchTailor() {
                       <button onClick={() => handleDownload(job, 'docx')}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600 transition-all">
                         <DownloadIcon className="w-3.5 h-3.5" />DOCX
+                      </button>
+                      <button
+                        onClick={() => handleOpenInEditor(job)}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-700 dark:text-purple-300 bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition-all"
+                        title="Open the tailored resume in a new tab — edit / regenerate without leaving this batch"
+                      >
+                        Edit ↗
                       </button>
                     </div>
                   )}

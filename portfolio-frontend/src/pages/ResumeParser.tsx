@@ -3168,6 +3168,44 @@ function TailorTab() {
   const [resumeLoadError, setResumeLoadError] = useState("");
   const [editing, setEditing] = useState(false);
 
+  // Cross-tab handoff from Batch Tailor: when the user clicks "Edit ↗" on
+  // a batch result, we open a new tab with ?load_batch=<jobId>. The new tab
+  // reads the tailored_resume + jd_analysis from localStorage and drops the
+  // user straight into the editor. localStorage (not session) because each
+  // tab gets its own sessionStorage.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const batchId = params.get('load_batch');
+      if (!batchId) return;
+      const key = `batch_handoff_${batchId}`;
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      localStorage.removeItem(key);
+      const parsed = JSON.parse(raw) as {
+        tailored_resume: TailorPipelineResult['tailored_resume'];
+        jd_analysis: TailorPipelineResult['jd_analysis'];
+        title?: string;
+        source_url?: string;
+      };
+      if (!parsed?.tailored_resume || !parsed?.jd_analysis) return;
+      setResult({
+        tailored_resume: parsed.tailored_resume,
+        jd_analysis: parsed.jd_analysis,
+      } as TailorPipelineResult);
+      setEditing(true);
+      if (parsed.title) {
+        toast.success(`Loaded ${parsed.title} from Batch Tailor — edit and re-download.`);
+      }
+      // Clear the query param so a refresh in this tab doesn't try to reload.
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('load_batch');
+      window.history.replaceState({}, '', cleanUrl.toString());
+    } catch {
+      /* malformed or removed — ignore */
+    }
+  }, []);
+
   // Consume any "tailor this job" handoff from the Daily Pipeline.
   useEffect(() => {
     try {
@@ -6157,14 +6195,19 @@ export default function ResumeParser() {
                   <TailorTab />
                 </div>
               )}
-              {activeNav === "batch" && (
-                <Suspense
-                  fallback={
-                    <div className="animate-pulse h-48 rounded-2xl bg-gray-100 dark:bg-gray-800/40" />
-                  }
-                >
-                  <BatchTailor />
-                </Suspense>
+              {/* BatchTailor stays mounted once visited so an in-flight batch
+                  (poll loop + lazy-fetched cover letters + downloaded resumes)
+                  survives the user switching to Jobs/Applications and back. */}
+              {wasVisited("batch") && (
+                <div style={{ display: isVisible("batch") ? undefined : "none" }}>
+                  <Suspense
+                    fallback={
+                      <div className="animate-pulse h-48 rounded-2xl bg-gray-100 dark:bg-gray-800/40" />
+                    }
+                  >
+                    <BatchTailor />
+                  </Suspense>
+                </div>
               )}
               {wasVisited("jobs") && (
                 <div style={{ display: isVisible("jobs") ? undefined : "none" }}>

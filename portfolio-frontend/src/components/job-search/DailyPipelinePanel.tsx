@@ -557,32 +557,42 @@ function PipelineRow({
               <CheckCircle2 className="h-3 w-3" />
               Applied
             </Button>
-          ) : (
+          ) : opened ? (
+            // Two-stage flow — user clicked "Open posting" in this run. Now
+            // confirm whether they actually submitted, or dismiss to go back.
+            // This only triggers AFTER an explicit click; openedIds is GC'd
+            // against every fresh result so it never lingers across runs.
             <>
-              {rec.url && (
-                <Button
-                  size="sm"
-                  onClick={onOpen}
-                  className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
-                  title={opened ? 'Opened earlier — click to re-open in a new tab' : 'Open the posting in a new tab'}
-                >
-                  {opened ? 'Re-open' : 'Open posting'}
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              )}
-              {/* Lightweight "Mark applied" — replaces the old two-stage prompt
-                  that was overriding every row's primary action. Now the user
-                  always sees "Open posting" first and confirms apply secondarily. */}
-              <button
-                type="button"
+              <Button
+                size="sm"
                 onClick={onMarkApplied}
-                className="text-[10px] text-emerald-700 dark:text-emerald-400 hover:underline self-end"
-                title="Mark as applied — moves to your Applications board"
+                className="gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90"
+                title="Confirm you submitted the application"
               >
-                ✓ Mark applied
-              </button>
+                <Check className="h-3 w-3" />
+                I applied
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDismissOpened}
+                className="h-7 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+                title="Didn't apply — dismiss this prompt and restore the Open button"
+              >
+                Not yet
+              </Button>
             </>
-          )}
+          ) : rec.url ? (
+            <Button
+              size="sm"
+              onClick={onOpen}
+              className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
+              title="Open the posting in a new tab — saves it as Interested"
+            >
+              Open posting
+              <ExternalLink className="h-3 w-3" />
+            </Button>
+          ) : null}
           {!applied && (
             <Button
               size="sm"
@@ -604,7 +614,7 @@ function PipelineRow({
             <button
               type="button"
               onClick={() => onSnooze(2)}
-              className="text-[10px] text-muted-foreground/80 hover:text-purple-600 dark:hover:text-purple-300 transition-colors self-end opacity-0 group-hover:opacity-100"
+              className="text-[10px] text-muted-foreground/80 hover:text-purple-600 dark:hover:text-purple-300 transition-colors self-end opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
               title="Hide for 2 days — re-surfaces on its own"
             >
               💤 Snooze 2d
@@ -614,7 +624,7 @@ function PipelineRow({
             <button
               type="button"
               onClick={onHideCompany}
-              className="text-[10px] text-muted-foreground/70 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-0 group-hover:opacity-100"
+              className="text-[10px] text-muted-foreground/70 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
               title={`Stop showing ${rec.company} rows in future runs`}
             >
               🚫 Hide {rec.company.slice(0, 14)}{rec.company.length > 14 ? '…' : ''}

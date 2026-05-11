@@ -250,6 +250,27 @@ class ApiService {
     });
   }
 
+  async getVisaProfile() {
+    return this.request<{ profile: import("../types/visa").VisaProfile }>(
+      "/resume/visa/profile",
+      { method: "GET" },
+    );
+  }
+
+  async saveVisaProfile(profile: import("../types/visa").VisaProfile) {
+    return this.request<{ ok: boolean; profile: import("../types/visa").VisaProfile }>(
+      "/resume/visa/profile",
+      { method: "PUT", body: JSON.stringify(profile) },
+    );
+  }
+
+  async getVisaTimeline() {
+    return this.request<{
+      profile: import("../types/visa").VisaProfile;
+      milestones: import("../types/visa").VisaMilestone[];
+    }>("/resume/visa/timeline", { method: "GET" });
+  }
+
   async checkEmail(email: string) {
     return this.request<{ exists: boolean }>("/auth/check-email", {
       method: "POST",

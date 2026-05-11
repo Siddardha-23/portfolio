@@ -30,6 +30,7 @@ const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab")
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
 const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
+const VisaTimelineTab = lazy(() => import("@/components/visa/VisaTimelineTab"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -109,6 +110,24 @@ function MagnifyingGlassIcon({
     </svg>
   );
 }
+function ShieldIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      fill="none"
+      viewBox="0 0 24 24"
+      strokeWidth={1.5}
+      stroke="currentColor"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M9 12.75L11.25 15 15 9.75M21 12c0 4.55-3.47 8.27-7.875 8.71a.75.75 0 01-.75 0C7.97 20.27 4.5 16.55 4.5 12V6.74a.75.75 0 01.41-.67l6.84-2.81a.75.75 0 01.5 0l6.84 2.81a.75.75 0 01.41.67V12z"
+      />
+    </svg>
+  );
+}
+
 function ClipboardIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
     <svg
@@ -277,6 +296,7 @@ type NavTab =
   | "tailored"
   | "applications"
   | "interview"
+  | "visa"
   | "copilot"
   | "profile";
 
@@ -5647,6 +5667,13 @@ const NAV_ITEMS: ResumeNavItem[] = [
     hint: "Practice + AI coach",
   },
   {
+    key: "visa",
+    label: "Visa Timeline",
+    icon: <ShieldIcon className="w-4 h-4" />,
+    badge: "Beta",
+    hint: "F-1 / OPT / H-1B clocks",
+  },
+  {
     key: "copilot",
     label: "Career Copilot",
     icon: <Bot className="w-4 h-4" />,
@@ -5838,6 +5865,7 @@ const VALID_NAV_TABS: readonly NavTab[] = [
   "tailored",
   "applications",
   "interview",
+  "visa",
   "copilot",
   "profile",
 ] as const;
@@ -6244,6 +6272,17 @@ export default function ResumeParser() {
                   }
                 >
                   <InterviewPrepTab />
+                </Suspense>
+              )}
+              {activeNav === "visa" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
+                    </div>
+                  }
+                >
+                  <VisaTimelineTab />
                 </Suspense>
               )}
               {activeNav === "copilot" && (

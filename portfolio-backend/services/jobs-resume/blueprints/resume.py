@@ -2983,3 +2983,62 @@ def gmail_disconnect():
     except Exception as e:
         logger.exception("gmail disconnect error: %s", e)
         return jsonify({"error": "Failed to disconnect"}), 500
+
+
+# ------------------------------------------------------------------
+# Visa Timeline Copilot — F-1 / OPT / STEM / H-1B clock dashboard.
+# Persists a small per-user profile and computes a milestone timeline.
+# ------------------------------------------------------------------
+@resume_bp.route("/visa/profile", methods=["GET"])
+@jwt_required()
+def get_visa_profile():
+    user_email = get_jwt_identity()
+    try:
+        from services.visa_timeline_service import normalize_profile
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_db()
+        doc = db.visa_profiles.find_one({"user_email": user_email}) or {}
+        profile = normalize_profile(doc)
+        return jsonify({"profile": profile}), 200
+    except Exception as e:
+        logger.exception("visa profile GET error: %s", e)
+        return jsonify({"error": "Failed to load profile"}), 500
+
+
+@resume_bp.route("/visa/profile", methods=["PUT"])
+@jwt_required()
+def update_visa_profile():
+    user_email = get_jwt_identity()
+    try:
+        from services.visa_timeline_service import normalize_profile
+        from utils.db_connect import DBConnect
+        body = request.get_json(silent=True) or {}
+        profile = normalize_profile(body)
+        db = DBConnect().get_db()
+        db.visa_profiles.update_one(
+            {"user_email": user_email},
+            {"$set": {**profile, "user_email": user_email, "updated_at": datetime.utcnow()}},
+            upsert=True,
+        )
+        return jsonify({"ok": True, "profile": profile}), 200
+    except Exception as e:
+        logger.exception("visa profile PUT error: %s", e)
+        return jsonify({"error": "Failed to save profile"}), 500
+
+
+@resume_bp.route("/visa/timeline", methods=["GET"])
+@jwt_required()
+def get_visa_timeline():
+    user_email = get_jwt_identity()
+    try:
+        from services.visa_timeline_service import normalize_profile, compute_timeline, serialize_timeline
+        from utils.db_connect import DBConnect
+        db = DBConnect().get_db()
+        doc = db.visa_profiles.find_one({"user_email": user_email}) or {}
+        profile = normalize_profile(doc)
+        milestones = compute_timeline(profile)
+        return jsonify({"profile": profile, "milestones": serialize_timeline(milestones)}), 200
+    except Exception as e:
+        logger.exception("visa timeline error: %s", e)
+        return jsonify({"error": "Failed to compute timeline"}), 500
+

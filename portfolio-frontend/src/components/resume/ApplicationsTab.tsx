@@ -95,6 +95,8 @@ export default function ApplicationsTab() {
   const [reframe, setReframe] = useState<{ acknowledgement: string; what_went_right: string; next_actions: string[]; silver_lining: string } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<ApplicationStatus | null>(null);
+  // Show-all toggle for stale-apps list (defaults to top 4).
+  const [staleShowAll, setStaleShowAll] = useState(false);
 
   // Track auxiliary loads separately from the primary records load so we can
   // paint the kanban as soon as `listTailoringRecords` resolves and let the
@@ -414,14 +416,30 @@ export default function ApplicationsTab() {
 
       {staleApps.length > 0 && (
         <div className="rounded-2xl border border-rose-500/25 bg-rose-500/[0.04] p-3">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300 mb-2">
-            Needs follow-up · {staleApps.length}
-          </p>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">
+              Needs follow-up · {staleApps.length}
+            </p>
+            {staleApps.length > 4 && (
+              <button
+                type="button"
+                onClick={() => setStaleShowAll((v) => !v)}
+                className="text-[11px] text-rose-700 dark:text-rose-300 underline-offset-2 hover:underline"
+              >
+                {staleShowAll ? 'Show fewer' : `Show all ${staleApps.length}`}
+              </button>
+            )}
+          </div>
           <div className="space-y-2">
-            {staleApps.slice(0, 4).map((s) => (
+            {(staleShowAll ? staleApps : staleApps.slice(0, 4)).map((s) => (
               <div key={s.record_id} className="rounded-lg border border-rose-500/15 bg-white/70 p-2 dark:bg-gray-900/50">
                 <div className="flex flex-wrap items-center gap-2 justify-between">
-                  <p className="text-xs font-semibold text-gray-900 dark:text-white">{s.job_title} {s.company ? `· ${s.company}` : ""}</p>
+                  <p className="text-xs font-semibold text-gray-900 dark:text-white">
+                    {s.job_title} {s.company ? `· ${s.company}` : ""}
+                    <span className="ml-2 inline-flex items-center rounded-full bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 dark:text-rose-300">
+                      {s.days_stale}d silent
+                    </span>
+                  </p>
                   <div className="flex items-center gap-1.5">
                     <button
                       type="button"
@@ -456,9 +474,39 @@ export default function ApplicationsTab() {
                   </div>
                 </div>
                 {followups[s.record_id] && (
-                  <div className="mt-2 rounded border border-gray-200/80 p-2 text-xs dark:border-white/10">
+                  <div className="mt-2 space-y-2 rounded border border-gray-200/80 p-2 text-xs dark:border-white/10">
                     <p className="font-semibold text-gray-800 dark:text-gray-200">{followups[s.record_id].subject}</p>
-                    <p className="mt-1 whitespace-pre-wrap text-gray-600 dark:text-gray-300">{followups[s.record_id].message}</p>
+                    <p className="whitespace-pre-wrap text-gray-600 dark:text-gray-300">{followups[s.record_id].message}</p>
+                    <div className="flex flex-wrap items-center justify-end gap-1.5 border-t border-gray-200/60 dark:border-white/[0.06] pt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const f = followups[s.record_id];
+                          navigator.clipboard
+                            .writeText(`Subject: ${f.subject}\n\n${f.message}`)
+                            .then(() => toast.success('Copied — paste into your email'))
+                            .catch(() => toast.error('Clipboard blocked'));
+                        }}
+                        className="rounded border border-gray-300 dark:border-white/15 bg-white dark:bg-gray-800 px-2 py-1 text-[11px] text-gray-700 dark:text-gray-200 hover:border-gray-400 transition-colors"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const f = followups[s.record_id];
+                          const params = new URLSearchParams();
+                          params.set('view', 'cm');
+                          params.set('fs', '1');
+                          params.set('su', f.subject);
+                          params.set('body', f.message);
+                          window.open(`https://mail.google.com/mail/?${params.toString()}`, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="rounded bg-gradient-to-r from-rose-600 to-pink-600 px-2 py-1 text-[11px] font-semibold text-white hover:opacity-90"
+                      >
+                        Open in Gmail ↗
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

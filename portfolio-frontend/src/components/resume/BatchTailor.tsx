@@ -379,7 +379,7 @@ export default function BatchTailor() {
                 job.status === 'failed' ? 'border-red-500/20 bg-red-500/5' :
                 'border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/80'
               }`}>
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     {job.status === 'completed' && <CheckIcon className="w-5 h-5 text-emerald-400 shrink-0" />}
                     {job.status === 'failed' && <XIcon className="w-5 h-5 text-red-400 shrink-0" />}

@@ -475,7 +475,7 @@ function PipelineRow({
       <CardContent className="flex flex-col gap-2 p-4 sm:flex-row sm:items-start sm:gap-4">
         {!applied && (
           <label
-            className="flex flex-shrink-0 items-center self-start sm:self-center pt-0.5 cursor-pointer select-none"
+            className="-m-2 flex flex-shrink-0 items-center self-start p-2 sm:self-center cursor-pointer select-none"
             title={batchChecked ? 'Remove from batch tailor' : 'Add to batch tailor'}
             onClick={(e) => e.stopPropagation()}
           >
@@ -614,7 +614,7 @@ function PipelineRow({
             <button
               type="button"
               onClick={() => onSnooze(2)}
-              className="text-[10px] text-muted-foreground/80 hover:text-purple-600 dark:hover:text-purple-300 transition-colors self-end opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
+              className="rounded px-2 py-1 text-[11px] text-muted-foreground/80 hover:bg-purple-500/10 hover:text-purple-600 dark:hover:text-purple-300 transition-colors self-end opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
               title="Hide for 2 days — re-surfaces on its own"
             >
               💤 Snooze 2d
@@ -624,7 +624,7 @@ function PipelineRow({
             <button
               type="button"
               onClick={onHideCompany}
-              className="text-[10px] text-muted-foreground/70 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-70 sm:opacity-0 sm:group-hover:opacity-100"
+              className="rounded px-2 py-1 text-[11px] text-muted-foreground/70 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
               title={`Stop showing ${rec.company} rows in future runs`}
             >
               🚫 Hide {rec.company.slice(0, 14)}{rec.company.length > 14 ? '…' : ''}
@@ -2426,15 +2426,16 @@ export function DailyPipelinePanel({
           aria-label="Batch tailor selection"
         >
           <div className="pointer-events-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-600/95 to-indigo-600/95 px-4 py-2.5 shadow-2xl shadow-purple-900/40 backdrop-blur-md">
-            <div className="flex items-center gap-2 text-white">
-              <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/20 text-xs font-bold tabular-nums">
+            <div className="flex min-w-0 items-center gap-2 text-white">
+              <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/20 text-xs font-bold tabular-nums">
                 {batchSelectedIds.length}
               </span>
-              <div className="flex flex-col leading-tight">
-                <span className="text-sm font-semibold">
-                  selected for batch tailor
+              <div className="flex min-w-0 flex-col leading-tight">
+                <span className="truncate text-sm font-semibold">
+                  selected
+                  <span className="hidden sm:inline"> for batch tailor</span>
                 </span>
-                <span className="text-[10px] text-white/80">
+                <span className="hidden text-[10px] text-white/80 sm:inline">
                   Pre-fetches each JD, then hands off to Batch Tailor
                 </span>
               </div>

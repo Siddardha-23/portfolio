@@ -348,6 +348,135 @@ def validate_password():
         return jsonify({'valid': False}), 200
 
 
+@auth_bp.route('/request-password-reset', methods=['POST'])
+def request_password_reset():
+    """Issue a password-reset token for an email (no-op for unknown emails).
+
+    Always returns 200 with the same message regardless of whether the email
+    exists — prevents account enumeration. Internally:
+      1. Generates a 32-char URL-safe token
+      2. Stores a record in `password_resets` with email + expiry (30 min)
+      3. Logs the full reset URL so an admin can manually relay it until the
+         email delivery integration lands.
+
+    Frontend uses this to drive the "we sent you a link" UX. The actual
+    /reset-password POST verifies the token and updates the hash.
+    """
+    import secrets
+    from datetime import timedelta
+    try:
+        client_ip = get_client_ip(request)
+        rate_limiter = get_rate_limiter()
+        # Stricter rate limit than check-email — defends against using this
+        # endpoint as a side-channel oracle.
+        if rate_limiter.is_rate_limited(
+            f"request_pw_reset:{client_ip}", max_requests=5, window_seconds=900
+        ):
+            return jsonify({'error': 'Too many attempts. Please try again in 15 minutes.'}), 429
+
+        data = request.get_json(silent=True) or {}
+        email = InputSanitizer.sanitize_email(data.get('email', ''))
+        if not email:
+            # Same body as the success path — never leak validity.
+            return jsonify({'ok': True, 'message': 'If that email is registered, a reset link has been sent.'}), 200
+        if InputSanitizer.check_nosql_injection(data.get('email', '')):
+            return jsonify({'ok': True, 'message': 'If that email is registered, a reset link has been sent.'}), 200
+
+        db = DBConnect().get_db()
+        user = db.users.find_one({'email': email})
+        if user:
+            token = secrets.token_urlsafe(32)
+            expires_at = datetime.utcnow() + timedelta(minutes=30)
+            db.password_resets.insert_one({
+                'email': email,
+                'token': token,
+                'created_at': datetime.utcnow(),
+                'expires_at': expires_at,
+                'used': False,
+                'ip': client_ip,
+            })
+            # Log the URL so an admin/dev can manually relay it. When email
+            # delivery is wired up, replace this with a queued SES/SendGrid
+            # call — schema does not need to change.
+            reset_url = f"/reset-password?token={token}"
+            logger.info(
+                "Password reset issued for %s (token expires %s): %s",
+                mask_email(email), expires_at.isoformat(), reset_url,
+            )
+
+        return jsonify({
+            'ok': True,
+            'message': 'If that email is registered, a reset link has been sent.',
+        }), 200
+    except Exception as e:
+        logger.error(f"request-password-reset error: {e}")
+        # Same generic response — don't leak failure mode.
+        return jsonify({
+            'ok': True,
+            'message': 'If that email is registered, a reset link has been sent.',
+        }), 200
+
+
+@auth_bp.route('/reset-password', methods=['POST'])
+def reset_password():
+    """Consume a reset token and update the user's password hash.
+
+    Body: { token: str, new_password: str }
+    Validates: token exists, not expired, not previously used. On success,
+    updates user.password_hash, clears login_attempts, marks token used.
+    """
+    try:
+        client_ip = get_client_ip(request)
+        rate_limiter = get_rate_limiter()
+        if rate_limiter.is_rate_limited(
+            f"reset_pw:{client_ip}", max_requests=10, window_seconds=900
+        ):
+            return jsonify({'error': 'Too many attempts. Please try again later.'}), 429
+
+        data = request.get_json(silent=True) or {}
+        token = str(data.get('token') or '').strip()
+        new_password = str(data.get('new_password') or '')
+        if not token or not new_password:
+            return jsonify({'error': 'Token and new password are required'}), 400
+        if len(token) < 16 or len(token) > 100:
+            return jsonify({'error': 'Invalid token'}), 400
+        if InputSanitizer.check_nosql_injection(token):
+            return jsonify({'error': 'Invalid token'}), 400
+
+        valid, msg = User.validate_password(new_password)
+        if not valid:
+            return jsonify({'error': msg}), 400
+
+        db = DBConnect().get_db()
+        record = db.password_resets.find_one({'token': token})
+        if not record or record.get('used'):
+            return jsonify({'error': 'Reset link is invalid or already used.'}), 400
+        expires_at = record.get('expires_at')
+        if not expires_at or expires_at < datetime.utcnow():
+            return jsonify({'error': 'Reset link has expired. Request a new one.'}), 400
+
+        email = record['email']
+        password_hash = User.hash_password(new_password)
+        db.users.update_one(
+            {'email': email},
+            {'$set': {
+                'password_hash': password_hash,
+                'login_attempts': 0,
+                'last_password_reset': datetime.utcnow(),
+            }},
+        )
+        # Mark token used so it can't be replayed.
+        db.password_resets.update_one(
+            {'_id': record['_id']},
+            {'$set': {'used': True, 'used_at': datetime.utcnow()}},
+        )
+        logger.info("Password reset completed for %s", mask_email(email))
+        return jsonify({'ok': True, 'message': 'Password updated. You can now sign in.'}), 200
+    except Exception as e:
+        logger.error(f"reset-password error: {e}")
+        return jsonify({'error': 'Could not reset password'}), 500
+
+
 @auth_bp.route('/check-email', methods=['POST'])
 def check_email():
     """Check if an email is already registered — used by the unified auth flow

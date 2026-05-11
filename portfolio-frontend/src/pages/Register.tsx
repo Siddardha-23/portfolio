@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { UserPlus, AlertCircle } from 'lucide-react';
+import { UserPlus, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function Register() {
@@ -17,6 +17,12 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const handleCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLockOn(e.getModifierState('CapsLock'));
+  };
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -137,38 +143,70 @@ export default function Register() {
                 <Label htmlFor="password" className="text-pink-200">
                   Password <span className="text-red-400">*</span>
                 </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password (min 6 characters)"
-                  className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500"
-                  required
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handleCapsLock}
+                    onKeyUp={handleCapsLock}
+                    placeholder="Enter password (min 6 characters)"
+                    className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500 pr-10"
+                    autoComplete="new-password"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-pink-300/70 hover:text-pink-200 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {capsLockOn && (
+                  <p className="text-[11px] text-amber-400 inline-flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Caps Lock is on
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword" className="text-pink-200">
                   Confirm Password <span className="text-red-400">*</span>
                 </Label>
-                <Input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder="Confirm your password"
-                  className={`bg-black/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500 ${
-                    confirmPassword && password !== confirmPassword 
-                      ? 'border-red-500' 
-                      : confirmPassword && password === confirmPassword
-                      ? 'border-green-500'
-                      : 'border-pink-800/50'
-                  }`}
-                  required
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm your password"
+                    className={`bg-black/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500 pr-10 ${
+                      confirmPassword && password !== confirmPassword
+                        ? 'border-red-500'
+                        : confirmPassword && password === confirmPassword
+                        ? 'border-green-500'
+                        : 'border-pink-800/50'
+                    }`}
+                    autoComplete="new-password"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword((v) => !v)}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-pink-300/70 hover:text-pink-200 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
                 {confirmPassword && password !== confirmPassword && (
                   <p className="text-xs text-red-400">Passwords do not match</p>
                 )}

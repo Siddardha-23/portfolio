@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import type { TechChronicleItem, TechNewsItem, CareerIntelItem } from '@/types/techChronicle';
 import { isCareerItem } from '@/types/techChronicle';
+import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
 
 interface AuthGateProps {
   children: ReactNode;
@@ -711,6 +712,8 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [fadeIn, setFadeIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   // Password feedback + dodging button (after failed submit)
   const [passwordValid, setPasswordValid] = useState<boolean | null>(null);
@@ -719,6 +722,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
   const [shaking, setShaking] = useState(false);
   const maxDodges = 5;
   const passwordInputRef = useRef<HTMLInputElement>(null);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   // News feed
   const chronicle = useTechChronicleFeed();
@@ -741,6 +745,16 @@ export default function AuthGate({ children, title, description }: AuthGateProps
     const id = requestAnimationFrame(() => setFadeIn(true));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // Focus email input on initial mount AFTER animations settle. React's
+  // `autoFocus` attribute used to fire during the first render which raced
+  // with the slide-in animation + browser autofill and occasionally
+  // duplicated the first keystroke ("the extra letter at end" bug).
+  useEffect(() => {
+    if (step !== 'email') return;
+    const id = window.setTimeout(() => emailInputRef.current?.focus(), 150);
+    return () => window.clearTimeout(id);
+  }, [step]);
 
   // Focus password input when transitioning to login step
   useEffect(() => {
@@ -1092,6 +1106,7 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                       <div className={inputWrapperClasses}>
                         <span className="absolute left-3 z-10"><EnvelopeIcon /></span>
                         <input
+                          ref={emailInputRef}
                           id="auth-email"
                           type="email"
                           value={email}
@@ -1099,7 +1114,10 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           placeholder="you@example.com"
                           className={inputClasses}
                           autoComplete="email"
-                          autoFocus
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          inputMode="email"
                         />
                       </div>
                     </div>
@@ -1135,7 +1153,16 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                       </div>
                     </div>
                     <div>
-                      <label htmlFor="login-password" className={labelClasses}>Password</label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label htmlFor="login-password" className={labelClasses}>Password</label>
+                        <button
+                          type="button"
+                          onClick={() => setForgotOpen(true)}
+                          className="text-[11px] text-pink-300/80 hover:text-pink-200 underline-offset-2 hover:underline transition-colors"
+                        >
+                          Forgot password?
+                        </button>
+                      </div>
                       <div className={inputWrapperClasses}>
                         <span className="absolute left-3 z-10"><LockIcon /></span>
                         <input
@@ -1144,6 +1171,8 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           type={showPassword ? 'text' : 'password'}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
+                          onKeyDown={(e) => setCapsLockOn(e.getModifierState('CapsLock'))}
+                          onKeyUp={(e) => setCapsLockOn(e.getModifierState('CapsLock'))}
                           placeholder="Enter your password"
                           className={inputWithToggleClasses}
                           autoComplete="current-password"
@@ -1153,6 +1182,11 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                           {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
                         </button>
                       </div>
+                      {capsLockOn && (
+                        <p className="text-[11px] text-amber-400 mt-1 inline-flex items-center gap-1">
+                          ⚠ Caps Lock is on
+                        </p>
+                      )}
                       {password.length > 0 && !submitting && (
                         <div className="flex items-center gap-1.5 mt-1.5">
                           {passwordValid === false ? (
@@ -1364,6 +1398,11 @@ export default function AuthGate({ children, title, description }: AuthGateProps
           </div>
         </div>
       </div>
+      <ForgotPasswordDialog
+        open={forgotOpen}
+        onClose={() => setForgotOpen(false)}
+        initialEmail={email}
+      />
     </div>
   );
 }

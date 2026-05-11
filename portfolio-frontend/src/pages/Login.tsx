@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,16 +7,30 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAuth } from '@/contexts/AuthContext';
 import { motion } from 'framer-motion';
-import { LogIn, AlertCircle } from 'lucide-react';
+import { LogIn, AlertCircle, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { ForgotPasswordDialog } from '@/components/auth/ForgotPasswordDialog';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
+  const usernameRef = useRef<HTMLInputElement | null>(null);
   const { login } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const id = window.setTimeout(() => usernameRef.current?.focus(), 120);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  const handleCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setCapsLockOn(e.getModifierState('CapsLock'));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,34 +93,69 @@ export default function Login() {
 
               <div className="space-y-2">
                 <Label htmlFor="username" className="text-pink-200">
-                  Username
+                  Email or Username
                 </Label>
                 <Input
+                  ref={usernameRef}
                   id="username"
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
+                  placeholder="you@example.com"
                   className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500"
+                  autoComplete="username"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  inputMode="email"
                   required
                   disabled={isLoading}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-pink-200">
-                  Password
-                </Label>
-                <Input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500"
-                  required
-                  disabled={isLoading}
-                />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-pink-200">
+                    Password
+                  </Label>
+                  <button
+                    type="button"
+                    onClick={() => setForgotOpen(true)}
+                    className="text-[11px] text-pink-300 hover:text-pink-200 underline-offset-2 hover:underline transition-colors"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onKeyDown={handleCapsLock}
+                    onKeyUp={handleCapsLock}
+                    placeholder="Enter your password"
+                    className="bg-black/50 border-pink-800/50 text-pink-100 placeholder:text-pink-300/30 focus:border-pink-500 pr-10"
+                    autoComplete="current-password"
+                    required
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-pink-300/70 hover:text-pink-200 transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {capsLockOn && (
+                  <p className="text-[11px] text-amber-400 inline-flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    Caps Lock is on
+                  </p>
+                )}
               </div>
             </CardContent>
 
@@ -140,6 +189,11 @@ export default function Login() {
             </CardFooter>
           </form>
         </Card>
+        <ForgotPasswordDialog
+          open={forgotOpen}
+          onClose={() => setForgotOpen(false)}
+          initialEmail={username}
+        />
       </motion.div>
     </div>
   );

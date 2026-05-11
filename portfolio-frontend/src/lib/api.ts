@@ -236,6 +236,20 @@ class ApiService {
     );
   }
 
+  async requestPasswordReset(email: string) {
+    return this.request<{ ok: boolean; message: string }>("/auth/request-password-reset", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    return this.request<{ ok: boolean; message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  }
+
   async checkEmail(email: string) {
     return this.request<{ exists: boolean }>("/auth/check-email", {
       method: "POST",

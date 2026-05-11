@@ -5706,7 +5706,8 @@ const NAV_ITEMS: ResumeNavItem[] = [
 const NAV_SECTIONS: ResumeNavSection[] = [
   { label: "Create", items: ["tailor", "batch"] },
   { label: "Library", items: ["my-resumes", "tailored", "applications"] },
-  { label: "Career", items: ["interview", "copilot", "jobs"] },
+  { label: "Career", items: ["interview", "visa", "copilot", "jobs"] },
+  { label: "Experimental", items: ["beta"] },
   { label: "Account", items: ["profile"] },
 ];
 

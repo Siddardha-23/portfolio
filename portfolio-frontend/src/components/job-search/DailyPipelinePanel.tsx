@@ -237,6 +237,13 @@ interface PersistedState {
    * so a refresh during selection doesn't lose progress.
    */
   batchSelectedIds?: string[];
+  /**
+   * Companies the user dismissed (e.g. repeated Stripe rows that don't
+   * sponsor). Dropped entirely from the next pipeline run.
+   */
+  hideCompanies?: string[];
+  /** Max apply_now rows per company before extras get demoted to verify. */
+  maxPerCompany?: number;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -339,6 +346,7 @@ function PipelineRow({
   onTailor,
   onSnooze,
   onToggleBatch,
+  onHideCompany,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
@@ -358,6 +366,8 @@ function PipelineRow({
   onTailor: () => void;
   onSnooze: (days: number) => void;
   onToggleBatch: () => void;
+  /** Drop this row's company from future pipeline runs. */
+  onHideCompany: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -547,39 +557,32 @@ function PipelineRow({
               <CheckCircle2 className="h-3 w-3" />
               Applied
             </Button>
-          ) : opened ? (
-            // Two-stage flow — user clicked "Open posting", now confirm.
+          ) : (
             <>
-              <Button
-                size="sm"
+              {rec.url && (
+                <Button
+                  size="sm"
+                  onClick={onOpen}
+                  className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
+                  title={opened ? 'Opened earlier — click to re-open in a new tab' : 'Open the posting in a new tab'}
+                >
+                  {opened ? 'Re-open' : 'Open posting'}
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              )}
+              {/* Lightweight "Mark applied" — replaces the old two-stage prompt
+                  that was overriding every row's primary action. Now the user
+                  always sees "Open posting" first and confirms apply secondarily. */}
+              <button
+                type="button"
                 onClick={onMarkApplied}
-                className="gap-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:opacity-90"
-                title="Confirm you submitted the application"
+                className="text-[10px] text-emerald-700 dark:text-emerald-400 hover:underline self-end"
+                title="Mark as applied — moves to your Applications board"
               >
-                <Check className="h-3 w-3" />
-                I applied
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onDismissOpened}
-                className="h-7 gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                title="Didn't apply — dismiss this prompt"
-              >
-                Not yet
-              </Button>
+                ✓ Mark applied
+              </button>
             </>
-          ) : rec.url ? (
-            <Button
-              size="sm"
-              onClick={onOpen}
-              className="gap-1 bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:opacity-90"
-              title="Open the posting in a new tab — saves it as Interested"
-            >
-              Open posting
-              <ExternalLink className="h-3 w-3" />
-            </Button>
-          ) : null}
+          )}
           {!applied && (
             <Button
               size="sm"
@@ -607,6 +610,16 @@ function PipelineRow({
               💤 Snooze 2d
             </button>
           )}
+          {!applied && rec.company && (
+            <button
+              type="button"
+              onClick={onHideCompany}
+              className="text-[10px] text-muted-foreground/70 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-0 group-hover:opacity-100"
+              title={`Stop showing ${rec.company} rows in future runs`}
+            >
+              🚫 Hide {rec.company.slice(0, 14)}{rec.company.length > 14 ? '…' : ''}
+            </button>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -630,6 +643,7 @@ function TierGroup({
   onTailor,
   onSnooze,
   onToggleBatch,
+  onHideCompany,
 }: {
   title: string;
   items: DailyPipelineRecord[];
@@ -647,6 +661,7 @@ function TierGroup({
   onTailor: (rec: DailyPipelineRecord) => void;
   onSnooze: (rec: DailyPipelineRecord, days: number) => void;
   onToggleBatch: (rec: DailyPipelineRecord) => void;
+  onHideCompany: (rec: DailyPipelineRecord) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
@@ -682,6 +697,7 @@ function TierGroup({
                 onTailor={() => onTailor(rec)}
                 onSnooze={(days) => onSnooze(rec, days)}
                 onToggleBatch={() => onToggleBatch(rec)}
+                onHideCompany={() => onHideCompany(rec)}
               />
             );
           })
@@ -768,6 +784,11 @@ export function DailyPipelinePanel({
   // Batch Tailor tab in one shot. Persisted so a refresh mid-pick doesn't
   // lose the selection. Single-row Tailor is untouched.
   const [batchSelectedIds, setBatchSelectedIds] = useState<string[]>(persisted?.batchSelectedIds ?? []);
+  // Companies the user dismissed — anything in this list is dropped on the
+  // server side before scoring on the NEXT pipeline run. Persists across
+  // sessions so Stripe-flood etc. stays muted until the user un-hides.
+  const [hideCompanies, setHideCompanies] = useState<string[]>(persisted?.hideCompanies ?? []);
+  const [maxPerCompany, setMaxPerCompany] = useState<number>(persisted?.maxPerCompany ?? 4);
   // Tracks whether the user is mid-batch-run so we can disable the Run
   // button + show a spinner while we pre-fetch all the JDs in parallel.
   const [batchRunning, setBatchRunning] = useState(false);
@@ -817,13 +838,15 @@ export function DailyPipelinePanel({
       dailyGoal,
       dailyApplied,
       batchSelectedIds,
+      hideCompanies,
+      maxPerCompany,
     });
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
-    batchSelectedIds,
+    batchSelectedIds, hideCompanies, maxPerCompany,
   ]);
 
   // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
@@ -938,6 +961,8 @@ export function DailyPipelinePanel({
       domain_strict: domainStrict,
       h1b_only: h1bOnly,
       exclude_no_sponsorship: excludeNoSponsorship,
+      hide_companies: hideCompanies,
+      max_per_company: maxPerCompany,
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -954,6 +979,17 @@ export function DailyPipelinePanel({
     }
     setResult(resp.data);
     setResultAt(Date.now());
+    // GC openedIds against the new result: anything you opened in a previous
+    // run that isn't in the fresh result is dropped. Without this, openedIds
+    // accumulated across runs and every row eventually showed the legacy
+    // "have you applied?" prompt instead of Open Posting.
+    try {
+      const liveIds = new Set<string>();
+      [...(resp.data.apply_now || []), ...(resp.data.verify_dates || [])].forEach((r) => {
+        liveIds.add(_recordId(r));
+      });
+      setOpenedIds((prev) => prev.filter((id) => liveIds.has(id)));
+    } catch { /* best effort */ }
     if (resp.data.credits_exhausted) {
       setApifyForceOpen(Date.now());
       toast.error(
@@ -1004,6 +1040,8 @@ export function DailyPipelinePanel({
       domain_strict: domainStrict,
       h1b_only: h1bOnly,
       exclude_no_sponsorship: excludeNoSponsorship,
+      hide_companies: hideCompanies,
+      max_per_company: maxPerCompany,
     };
     const resp = await apiService.savePipelinePreset(name, filters);
     if (resp.error) {
@@ -1361,6 +1399,16 @@ export function DailyPipelinePanel({
     const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
     setSnoozedUntil((prev) => ({ ...prev, [id]: until }));
     toast.success(`Snoozed for ${days} day${days === 1 ? '' : 's'} — back on ${until.slice(0, 10)}.`);
+  }, []);
+
+  const handleHideCompany = useCallback((rec: DailyPipelineRecord) => {
+    const name = (rec.company || '').trim();
+    if (!name) return;
+    setHideCompanies((prev) => (prev.includes(name) ? prev : [...prev, name].slice(-50)));
+    toast.success(`${name} muted — won't appear in future pipeline runs. Manage in Advanced.`);
+  }, []);
+  const handleUnhideCompany = useCallback((name: string) => {
+    setHideCompanies((prev) => prev.filter((c) => c !== name));
   }, []);
 
   const batchSelectedSet = useMemo(() => new Set(batchSelectedIds), [batchSelectedIds]);
@@ -2135,6 +2183,28 @@ export function DailyPipelinePanel({
             </Card>
           )}
 
+          {/* Hidden-companies bar — surfaces what's currently muted so the
+              user can un-mute easily. Quiet by default; only renders when
+              there's at least one hidden company. */}
+          {hideCompanies.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Muted companies
+              </span>
+              {hideCompanies.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => handleUnhideCompany(c)}
+                  className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10px] text-rose-700 hover:bg-rose-500/20 dark:text-rose-300 transition-colors"
+                  title={`Click to un-mute ${c}`}
+                >
+                  {c} <span className="text-rose-500/60">×</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Daily quota strip — student motivation lever. Shows today's
               applied count vs goal as a thin progress bar. The goal is
               user-tunable (click to edit). Hides when there's no result yet. */}
@@ -2260,6 +2330,7 @@ export function DailyPipelinePanel({
             onTailor={handleTailor}
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
+            onHideCompany={handleHideCompany}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
@@ -2278,6 +2349,7 @@ export function DailyPipelinePanel({
             onTailor={handleTailor}
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
+            onHideCompany={handleHideCompany}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
@@ -2296,6 +2368,7 @@ export function DailyPipelinePanel({
             onTailor={handleTailor}
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
+            onHideCompany={handleHideCompany}
           />
 
           {result.verify_dates.length > 0 && (
@@ -2316,6 +2389,7 @@ export function DailyPipelinePanel({
               onTailor={handleTailor}
               onSnooze={handleSnooze}
               onToggleBatch={handleToggleBatch}
+              onHideCompany={handleHideCompany}
             />
           )}
 

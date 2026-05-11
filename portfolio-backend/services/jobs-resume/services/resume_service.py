@@ -791,6 +791,8 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 domain_strict=bool(payload.get("domain_strict", False)),
                 h1b_only=bool(payload.get("h1b_only", False)),
                 exclude_no_sponsorship=bool(payload.get("exclude_no_sponsorship", False)),
+                hide_companies=payload.get("hide_companies") or [],
+                max_per_company=int(payload.get("max_per_company", 4) or 4),
             )
             # Surface which token tier was used so the UI can display it.
             result["used_user_apify_key"] = bool(user_key)

@@ -420,6 +420,15 @@ def daily_pipeline():
     # F-1 / H-1B opt-ins — both default OFF so non-visa users keep current flow.
     h1b_only = bool(data.get("h1b_only", False))
     exclude_no_sponsorship = bool(data.get("exclude_no_sponsorship", False))
+    raw_hide = data.get("hide_companies") or []
+    hide_companies: list = []
+    if isinstance(raw_hide, list):
+        hide_companies = [str(h).strip() for h in raw_hide if str(h or "").strip()][:50]
+    try:
+        max_per_company = int(data.get("max_per_company", 4))
+    except (TypeError, ValueError):
+        max_per_company = 4
+    max_per_company = max(1, min(max_per_company, 20))
 
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
@@ -437,6 +446,8 @@ def daily_pipeline():
         "domain_strict": domain_strict,
         "h1b_only": h1b_only,
         "exclude_no_sponsorship": exclude_no_sponsorship,
+        "hide_companies": hide_companies,
+        "max_per_company": max_per_company,
     }
 
     try:

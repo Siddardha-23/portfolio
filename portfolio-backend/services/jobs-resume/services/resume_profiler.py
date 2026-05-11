@@ -362,12 +362,19 @@ def _intent_scores(structured: Dict[str, Any]) -> Dict[str, float]:
     titles = _experience_titles(structured)
     free_text = " ".join([summary, exp_text, proj_text])
 
+    # An explicit "full stack" / "back-end" / "front-end" mention in the resume's
+    # summary or recent titles is the single highest-signal classifier — much
+    # more reliable than skill inventory, which is contaminated by the universal
+    # "I list AWS + Docker on every resume" effect.
+    summary_full_stack = bool(re.search(r"\bfull[- ]?stack\b", summary + " " + exp_text[:1000]))
+
     scores: Dict[str, float] = {}
+    title_hits_map: Dict[str, float] = {}
     for intent_key, spec in INTENTS.items():
         core_hits = _skill_hits(spec["core_skills"], skills_flat, free_text)
         support_hits = _skill_hits(spec["support_skills"], skills_flat, free_text)
 
-        title_hits = 0
+        title_hits: float = 0.0
         for pattern in spec["title_terms"]:
             rx = re.compile(pattern, re.IGNORECASE)
             for t in titles:
@@ -375,6 +382,7 @@ def _intent_scores(structured: Dict[str, Any]) -> Dict[str, float]:
                     title_hits += 1
             if rx.search(summary):
                 title_hits += 0.5
+        title_hits_map[intent_key] = title_hits
 
         # Project tech mentions (e.g., "PyTorch model training") count strongly
         # for ML profiles — proj_text is the high-signal place for current focus.
@@ -384,6 +392,28 @@ def _intent_scores(structured: Dict[str, Any]) -> Dict[str, float]:
         # Weighting: core skills dominate, titles confirm, projects boost recent focus.
         score = (core_hits * 3.0) + (support_hits * 1.0) + (title_hits * 4.0) + (project_mentions * 1.5)
         scores[intent_key] = score
+
+    # ------------------------------------------------------------------
+    # Title-anchor penalty — fixes the most common misclassification:
+    # a full-stack / backend engineer's resume lists AWS, Docker, Kubernetes,
+    # CI/CD as table-stakes tooling, which used to dominate the cloud_devops
+    # score even though zero of their job titles say "Cloud" / "DevOps" / "SRE".
+    # If an intent's title-pattern never matched the candidate's actual work
+    # history OR summary, halve its score. Titles are ground truth — skills
+    # are aspirational. This single change correctly down-ranks "Cloud
+    # Engineer" suggestions for an engineer whose resume says "Software Engineer"
+    # at every step.
+    # ------------------------------------------------------------------
+    for intent_key in list(scores.keys()):
+        if title_hits_map.get(intent_key, 0.0) <= 0:
+            scores[intent_key] = scores[intent_key] * 0.5
+
+    # Explicit "full stack" in summary/titles bumps the fullstack intent so
+    # candidates who self-identify as full-stack don't get classified as
+    # backend-only or frontend-only based on a slight skill imbalance.
+    if summary_full_stack and "fullstack" in scores:
+        scores["fullstack"] = scores["fullstack"] + 8.0
+
     return scores
 
 
@@ -465,11 +495,35 @@ def build_profile(
     # Hybrid detection: secondary only kicks in if it scores above floor AND
     # within 70% of primary — otherwise we treat it as a single-focus profile
     # to avoid recommending two unrelated domains.
+    #
+    # Complementarity guard: a backend/fullstack candidate listing AWS+Docker
+    # used to surface cloud_devops as "secondary" — bleeding cloud-eng roles
+    # into the daily pipeline. We now require the secondary to be in a curated
+    # "complementary" set per primary, so the suggestions stay coherent.
+    _COMPLEMENTARY = {
+        "backend":      {"fullstack", "data_eng", "backend"},
+        "fullstack":    {"backend", "frontend", "fullstack"},
+        "frontend":     {"fullstack", "mobile", "frontend"},
+        "ai_ml":        {"data_science", "data_eng", "ai_ml"},
+        "data_science": {"ai_ml", "data_eng", "data_science"},
+        "data_eng":     {"backend", "ai_ml", "data_eng"},
+        "cloud_devops": {"backend", "security", "cloud_devops"},
+        "security":     {"cloud_devops", "backend", "security"},
+        "mobile":       {"frontend", "fullstack", "mobile"},
+    }
     secondary: Optional[str] = None
     if len(ordered) >= 2:
-        sec_key, sec_score = ordered[1]
-        if sec_score >= 4.0 and sec_score >= 0.55 * max(primary_score, 1.0):
-            secondary = sec_key
+        allowed = _COMPLEMENTARY.get(primary, set(INTENTS.keys()))
+        for sec_key, sec_score in ordered[1:]:
+            if sec_key == primary:
+                continue
+            if sec_key not in allowed:
+                # Skip non-complementary intents (e.g. cloud_devops for a
+                # backend primary) even if their skill score looks high.
+                continue
+            if sec_score >= 4.0 and sec_score >= 0.55 * max(primary_score, 1.0):
+                secondary = sec_key
+            break
 
     # If everything scores near-zero we fall back to a generalist SWE/backend
     # profile rather than picking the alphabetically-first intent.

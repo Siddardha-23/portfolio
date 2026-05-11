@@ -1030,8 +1030,26 @@ def _norm_company(s: Any) -> str:
     return _clean_str(s).lower()
 
 
+# Broader than the prior version so we catch every shape Apify / LinkedIn /
+# Workday surface:
+#   "2 days ago", "2d ago", "2h ago"
+#   "Posted 2 days ago", "Reposted 5 days ago"
+#   "Posted just now", "Active 3 hours ago"
+# Anything that doesn't match still falls back to "unknown date" which the
+# new strict-mode below routes to verify_dates when past_days <= 3.
 _RELATIVE_TIME_RE = re.compile(
-    r"^\s*(\d+)\s*(minute|min|hour|hr|day|week|month)s?\s*ago\s*$",
+    r"^\s*(?:posted|reposted|listed|active|updated)?\s*"
+    r"(\d+)\s*"
+    r"(minute|min|m|hour|hr|h|day|d|week|w|month|mo)s?\s*"
+    r"ago\s*$",
+    re.IGNORECASE,
+)
+_JUST_NOW_RE = re.compile(
+    r"^\s*(?:posted\s*)?(today|just\s*now|just\s*posted|now)\s*$",
+    re.IGNORECASE,
+)
+_YESTERDAY_RE = re.compile(
+    r"^\s*(?:posted\s*)?yesterday\s*$",
     re.IGNORECASE,
 )
 
@@ -1055,16 +1073,17 @@ def _normalize_posted(raw: Any, now: Optional[datetime] = None) -> str:
         unit = m.group(2).lower()
         ref = now or datetime.now(timezone.utc)
         delta = {
-            "minute": timedelta(minutes=n), "min": timedelta(minutes=n),
-            "hour": timedelta(hours=n),     "hr": timedelta(hours=n),
-            "day": timedelta(days=n),
-            "week": timedelta(weeks=n),
-            "month": timedelta(days=30 * n),
+            "minute": timedelta(minutes=n), "min": timedelta(minutes=n), "m": timedelta(minutes=n),
+            "hour":   timedelta(hours=n),   "hr":  timedelta(hours=n),   "h": timedelta(hours=n),
+            "day":    timedelta(days=n),    "d":   timedelta(days=n),
+            "week":   timedelta(weeks=n),   "w":   timedelta(weeks=n),
+            "month":  timedelta(days=30 * n),
+            "mo":     timedelta(days=30 * n),
         }.get(unit, timedelta())
         return (ref - delta).strftime("%Y-%m-%d")
-    if s.lower() in ("today", "just now"):
+    if _JUST_NOW_RE.match(s):
         return (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
-    if s.lower() == "yesterday":
+    if _YESTERDAY_RE.match(s):
         return ((now or datetime.now(timezone.utc)) - timedelta(days=1)).strftime("%Y-%m-%d")
     return ""
 
@@ -1432,6 +1451,7 @@ def _filter_and_score(
     h1b_only: bool = False,
     exclude_no_sponsorship: bool = False,
     applied_index: Optional[Dict[Tuple[str, str], Dict[str, Any]]] = None,
+    past_days: int = 1,
 ):
     apply_now: List[dict] = []
     verify: List[dict] = []
@@ -1643,11 +1663,91 @@ def _filter_and_score(
         elif "intern" in r["title"].lower():
             verify.append(rec)
         else:
-            apply_now.append(rec)
+            # Past-N-days strict mode: when the user asked for a narrow window
+            # (≤3 days), rows whose date we couldn't parse get demoted to
+            # verify_dates instead of trusted as apply_now. Previously they
+            # silently passed through, which is why "past 3 days" sometimes
+            # surfaced 2-week-old postings from sources without dates.
+            posted = (r.get("posted") or "").strip()
+            if past_days <= 3 and not re.match(r"^\d{4}-\d{2}-\d{2}$", posted):
+                rec_no_date = {**rec, "flags": ((rec.get("flags") or "—") + ", no-date").strip(", ")}
+                verify.append(rec_no_date)
+            else:
+                apply_now.append(rec)
 
     apply_now.sort(key=lambda x: -x["score"])
     verify.sort(key=lambda x: -x["score"])
     return apply_now, verify, excluded
+
+
+def _cap_per_company(
+    apply_now: List[dict],
+    verify: List[dict],
+    excluded: List[dict],
+    max_per_company: int,
+) -> Tuple[List[dict], List[dict], List[dict]]:
+    """Cap the number of apply_now rows per company.
+
+    A single sponsor like Stripe was flooding the daily feed (10-15 of 40
+    rows). After scoring, we keep the top-N highest-scoring rows per company
+    in apply_now; the rest are demoted to verify_dates with a "company-cap"
+    reason so the user can still see them on demand but they don't crowd
+    the primary triage list.
+
+    Implemented after _filter_and_score so the cap operates on the FINAL
+    scored list — we always keep a company's best matches, never random ones.
+    """
+    if max_per_company <= 0 or not apply_now:
+        return apply_now, verify, excluded
+    seen: Dict[str, int] = {}
+    kept: List[dict] = []
+    demoted: List[dict] = []
+    # apply_now is already sorted by descending score
+    for rec in apply_now:
+        company_key = _norm_company(rec.get("company") or "").strip()
+        if not company_key:
+            kept.append(rec)
+            continue
+        count = seen.get(company_key, 0)
+        if count < max_per_company:
+            seen[company_key] = count + 1
+            kept.append(rec)
+        else:
+            demoted.append({
+                **rec,
+                "tier": rec.get("tier", "Tier 2"),
+                "flags": (rec.get("flags") or "").strip(),
+                "reason": f"company-cap (>{max_per_company} {rec.get('company') or 'this company'})",
+            })
+    if demoted:
+        # Insert before existing verify rows but after the highest-score
+        # apply_now demotions so the user sees them first when expanding.
+        verify = demoted + verify
+        logger.info("[company-cap] demoted %d rows beyond cap=%d", len(demoted), max_per_company)
+    return kept, verify, excluded
+
+
+def _drop_hidden_companies(
+    rows: List[dict],
+    hide_companies: List[str],
+) -> Tuple[List[dict], List[dict]]:
+    """Split rows into (kept, hidden) by exact-or-substring company match."""
+    if not hide_companies:
+        return rows, []
+    norms = [(_norm_company(h) or "").strip().lower() for h in hide_companies if h and h.strip()]
+    norms = [n for n in norms if n]
+    if not norms:
+        return rows, []
+    kept: List[dict] = []
+    hidden: List[dict] = []
+    for r in rows:
+        c = (_norm_company(r.get("company") or "") or "").strip().lower()
+        if any(n == c or (n and n in c) for n in norms):
+            hidden.append({**r, "reason": f"hidden by user ({r.get('company') or 'company'})",
+                           "tier": "Skip", "score": 0, "flags": ""})
+        else:
+            kept.append(r)
+    return kept, hidden
 
 
 # --------------------------------------------------------------------------
@@ -1670,6 +1770,8 @@ def run_pipeline(
     domain_strict: bool = False,
     h1b_only: bool = False,
     exclude_no_sponsorship: bool = False,
+    hide_companies: Optional[List[str]] = None,
+    max_per_company: int = 4,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1751,6 +1853,11 @@ def run_pipeline(
     # posting fresh every day after the user opened it.
     applied_index = _load_applied_index(user_email) if user_email else {}
 
+    # User-controlled hide list — drop entire companies the user dismissed
+    # (e.g. repeated Stripe rows that don't sponsor). Applied BEFORE scoring
+    # so they don't waste compute on the heavy filter pipeline.
+    all_raw, user_hidden = _drop_hidden_companies(all_raw, hide_companies or [])
+
     apply_now, verify, excluded = _filter_and_score(
         all_raw,
         cutoff,
@@ -1764,8 +1871,16 @@ def run_pipeline(
         h1b_only=h1b_only,
         exclude_no_sponsorship=exclude_no_sponsorship,
         applied_index=applied_index,
+        past_days=past_days,
     )
-    duplicates_dropped = max(0, len(all_raw) - (len(apply_now) + len(verify) + len(excluded)))
+    # Per-company cap — prevents single sponsors (Stripe was the worst
+    # offender) from flooding the daily triage list with 10+ rows. Extras
+    # get demoted to verify_dates so the user can still see them on demand.
+    apply_now, verify, excluded = _cap_per_company(
+        apply_now, verify, excluded, max_per_company=max_per_company,
+    )
+    excluded.extend(user_hidden)
+    duplicates_dropped = max(0, len(all_raw) + len(user_hidden) - (len(apply_now) + len(verify) + len(excluded)))
 
     tier_counts = {
         "tier_1": sum(1 for r in apply_now + verify if r["tier"] == "Tier 1"),

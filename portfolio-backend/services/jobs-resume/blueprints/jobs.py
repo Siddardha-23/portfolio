@@ -329,6 +329,113 @@ def fetch_jd_route():
         return jsonify({"ok": False, "error": "Failed to fetch JD"}), 500
 
 
+@jobs_bp.route("/draft-outreach", methods=["POST"])
+@jwt_required()
+def draft_outreach_route():
+    """Draft a short cold-outreach email for a specific job + company.
+
+    Body: {
+      "company": "Stripe",
+      "title": "Backend Engineer",
+      "location": "Seattle, WA",
+      "jd_text": "...optional...",
+      "tone": "warm" | "direct"   (optional, defaults to "warm")
+    }
+    Returns: { "subject": "...", "body": "..." }
+
+    Synchronous (single Gemini Flash call, ~2-3s). Rate-limited per IP at
+    20/min so a user can run through their Tier 1 list without manual delay
+    but a misuse can't burn the Gemini quota. The user can edit either
+    field before sending.
+    """
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"draft_outreach:{client_ip}", max_requests=20, window_seconds=60):
+        return jsonify({"error": "Rate limit exceeded — try again in a minute"}), 429
+
+    data = request.get_json(silent=True) or {}
+    company = InputSanitizer.sanitize_string(str(data.get("company") or ""), max_length=200).strip()
+    title = InputSanitizer.sanitize_string(str(data.get("title") or ""), max_length=200).strip()
+    location = InputSanitizer.sanitize_string(str(data.get("location") or ""), max_length=200).strip()
+    jd_text = InputSanitizer.sanitize_string(str(data.get("jd_text") or ""), max_length=15000).strip()
+    tone = (str(data.get("tone") or "warm").lower())
+    if tone not in ("warm", "direct"):
+        tone = "warm"
+
+    if not company or not title:
+        return jsonify({"error": "company and title are required"}), 400
+
+    user_email = get_jwt_identity()
+    try:
+        from services.resume_parser import ResumeParser
+        from services.gemini_client import gemini_json, GEMINI_FLASH
+        # Pull the candidate's parsed resume so the draft references real
+        # bullets / projects instead of generic platitudes. If they haven't
+        # uploaded a resume yet the endpoint still works — falls back to a
+        # generic "I'm interested" template.
+        parser = ResumeParser()
+        resume = parser.ensure_structured_resume(user_email=user_email) if user_email else None
+        structured = (resume or {}).get("structured") or {}
+        contact = structured.get("contact") or {}
+        candidate_name = (contact.get("name") or "").strip() or "Candidate"
+        summary = (structured.get("summary") or "")[:600]
+        # Pick top 2 most recent experience bullets to ground the message.
+        bullets: list = []
+        for exp in (structured.get("experience") or [])[:2]:
+            for b in (exp.get("bullets") or [])[:2]:
+                if b and str(b).strip():
+                    bullets.append(str(b).strip())
+        skills = []
+        sk_raw = structured.get("skills") or {}
+        if isinstance(sk_raw, dict):
+            for cat in sk_raw.values():
+                if isinstance(cat, list):
+                    skills.extend(str(s) for s in cat[:5])
+        skills = skills[:15]
+
+        prompt = (
+            "You are a senior career coach helping an international graduate "
+            "student write a short, high-signal cold outreach email to a "
+            "recruiter or hiring manager.\n\n"
+            f"CANDIDATE: {candidate_name}\n"
+            f"CANDIDATE SUMMARY: {summary or '(no summary)'}\n"
+            f"RECENT WORK BULLETS:\n- " + "\n- ".join(bullets[:4] or ["(none provided)"]) + "\n"
+            f"TOP SKILLS: {', '.join(skills) or '(none)'}\n\n"
+            f"TARGET ROLE: {title} at {company}"
+            + (f" ({location})" if location else "") + "\n"
+            + (f"JOB DESCRIPTION EXCERPT (first 2000 chars):\n{jd_text[:2000]}\n\n" if jd_text else "\n")
+            + "Rules:\n"
+            f"  - Tone: {tone}. {'Conversational, warm, optimistic.' if tone == 'warm' else 'Direct, no fluff, professional.'}\n"
+            "  - 3-4 sentences MAX in the body. Hiring managers skim — write to be skimmed.\n"
+            "  - Sentence 1: One specific reason this role fits (reference a concrete JD requirement OR the team's mission).\n"
+            "  - Sentence 2: ONE specific candidate accomplishment from the bullets above that backs it.\n"
+            "  - Sentence 3: Ask for a 15-minute conversation.\n"
+            "  - Optional sentence 4: Brief mention of attaching tailored resume.\n"
+            "  - Do NOT use phrases like 'I am writing to express my interest' or 'I came across this position'.\n"
+            "  - Do NOT mention visa / sponsorship — the candidate handles that signal separately.\n"
+            "  - Subject line must be short (≤60 chars), specific, and not start with 'Re:' or 'Fwd:'.\n\n"
+            'Return JSON: { "subject": "...", "body": "..." }. No markdown, no commentary.'
+        )
+
+        result = gemini_json(
+            prompt=prompt,
+            model=GEMINI_FLASH,
+            temperature=0.5,
+            schema={"subject": str, "body": str},
+            max_tokens=800,
+        )
+        subject = str((result or {}).get("subject") or "").strip()
+        body = str((result or {}).get("body") or "").strip()
+        if not subject:
+            subject = f"{candidate_name} — interest in {title} at {company}"
+        if not body:
+            return jsonify({"error": "Draft generation failed — retry"}), 500
+        return jsonify({"subject": subject[:120], "body": body[:1800]}), 200
+    except Exception as e:
+        logger.error(f"draft-outreach error: {e}")
+        return jsonify({"error": "Failed to draft outreach message"}), 500
+
+
 @jobs_bp.route("/pipeline/suggest-filters", methods=["GET"])
 @jwt_required()
 def suggest_pipeline_filters():
@@ -424,6 +531,10 @@ def daily_pipeline():
     hide_companies: list = []
     if isinstance(raw_hide, list):
         hide_companies = [str(h).strip() for h in raw_hide if str(h or "").strip()][:50]
+    raw_hide_titles = data.get("hide_title_patterns") or []
+    hide_title_patterns: list = []
+    if isinstance(raw_hide_titles, list):
+        hide_title_patterns = [str(p).strip() for p in raw_hide_titles if str(p or "").strip()][:30]
     try:
         max_per_company = int(data.get("max_per_company", 4))
     except (TypeError, ValueError):
@@ -447,6 +558,7 @@ def daily_pipeline():
         "h1b_only": h1b_only,
         "exclude_no_sponsorship": exclude_no_sponsorship,
         "hide_companies": hide_companies,
+        "hide_title_patterns": hide_title_patterns,
         "max_per_company": max_per_company,
     }
 

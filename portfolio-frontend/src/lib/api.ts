@@ -678,6 +678,20 @@ class ApiService {
     );
   }
 
+  async draftOutreach(input: {
+    company: string;
+    title: string;
+    location?: string;
+    jd_text?: string;
+    tone?: 'warm' | 'direct';
+  }) {
+    return this.request<{ subject: string; body: string }>(
+      "/jobs/draft-outreach",
+      { method: "POST", body: JSON.stringify(input) },
+      30000,
+    );
+  }
+
   async listPipelinePresets() {
     return this.request<{ presets: import("../types/jobs").PipelinePreset[] }>(
       "/jobs/pipeline/presets",

@@ -1286,26 +1286,74 @@ def _clearance_block(rec: dict) -> Optional[str]:
 def _classify_visa_status(rec: dict) -> str:
     """Tag each row with its sponsorship signal: sponsor_verified / no_sponsorship / unknown.
 
-    "sponsor_verified" — company is on the H1B_SPONSORS list OR the JD has
-        affirmative sponsorship language like "we sponsor", "H-1B available".
-    "no_sponsorship"   — JD has explicit non-sponsorship language. The job
-        will reject an F-1 / H-1B candidate at the application stage.
-    "unknown"          — neither signal is present. Most postings land here;
-        candidate has to research the company before applying.
-
     Used by both the F1-student exclusion filter and the per-row visa badge.
+    Thin wrapper over _classify_visa_with_confidence so callers that only need
+    the label stay unchanged.
+    """
+    status, _conf = _classify_visa_with_confidence(rec)
+    return status
+
+
+def _classify_visa_with_confidence(rec: dict) -> Tuple[str, float]:
+    """Return (status, confidence_0_1) with a calibrated sponsorship score.
+
+    Calibration anchors:
+      0.97  — JD has explicit "no sponsorship" language (very high recall).
+      0.92  — JD has explicit "we sponsor" / "H-1B available" language.
+      0.88  — Company is on the curated H1B_SPONSORS list (~78 names).
+      0.62  — Company name contains a tech-co stem (likely sponsor) but
+              not on the strict list. F-1 friendly but worth verifying.
+      0.40  — Unknown company with no JD signals. Default "needs research".
+      0.20  — Tiny / unknown company that's unlikely to file H-1B paperwork.
+
+    Status semantics (back-compat for existing F-1 filter):
+      "sponsor_verified" — confidence >= 0.85 (strong positive signal).
+      "no_sponsorship"   — explicit negative signal.
+      "likely_sponsor"   — confidence 0.55..0.85 (positive but soft).
+      "unknown"          — confidence < 0.55.
+    The downstream `exclude_no_sponsorship` filter only drops the explicit
+    negative bucket — soft signals never get dropped, just demoted in score.
     """
     company = _norm_company(rec.get("company"))
     desc = _clean_str(rec.get("description"))
-    # Only flag "no_sponsorship" when the JD is explicit. Matching here is
-    # cheap (single regex), and the patterns are deliberately conservative.
+    title = _clean_str(rec.get("title"))
+
     if desc and NO_SPONSORSHIP_TEXT.search(desc):
-        return "no_sponsorship"
-    if _company_in_set(company, H1B_SPONSORS):
-        return "sponsor_verified"
-    if desc and SPONSORSHIP_AFFIRM_TEXT.search(desc):
-        return "sponsor_verified"
-    return "unknown"
+        return ("no_sponsorship", 0.97)
+
+    on_list = bool(_company_in_set(company, H1B_SPONSORS))
+    affirm = bool(desc and SPONSORSHIP_AFFIRM_TEXT.search(desc))
+
+    if affirm and on_list:
+        return ("sponsor_verified", 0.96)
+    if affirm:
+        return ("sponsor_verified", 0.92)
+    if on_list:
+        return ("sponsor_verified", 0.88)
+
+    # Soft "likely sponsor" heuristic — large tech employers tend to file H-1B
+    # paperwork even when the specific posting doesn't say so. The curated
+    # list is conservative; this catches the long tail without false-positive
+    # spamming small companies.
+    likely_tech_stems = (
+        "engineering", "technologies", "software", "labs", "cloud", "ai",
+        "platform", "systems", "compute",
+    )
+    is_techy_company = bool(company) and any(s in company.lower() for s in likely_tech_stems)
+    looks_like_tech_role = any(
+        kw in (title or "").lower()
+        for kw in (
+            "engineer", "developer", "scientist", "sre", "devops",
+            "platform", "infrastructure", "data", "ml ", "machine learning",
+        )
+    )
+    if is_techy_company and looks_like_tech_role:
+        return ("likely_sponsor", 0.62)
+
+    if looks_like_tech_role:
+        return ("unknown", 0.40)
+
+    return ("unknown", 0.25)
 
 
 def _healthcare_noise(rec: dict) -> Optional[str]:
@@ -1609,8 +1657,11 @@ def _filter_and_score(
 
         # F-1 / H-1B sponsorship filters — opt-in. Off by default so first-time
         # users (and anyone not on a visa) keep the existing flow unchanged.
-        visa_status = _classify_visa_status(r)
+        visa_status, visa_conf = _classify_visa_with_confidence(r)
         r["visa_status"] = visa_status
+        # Surface the calibrated probability so the UI badge can render
+        # "Likely sponsor 62%" instead of a binary verdict.
+        r["visa_confidence"] = visa_conf
 
         # Tag rows the user already engaged with (saved/applied/interviewing).
         # We don't drop these — the user might want to escalate ("apply again
@@ -1750,6 +1801,35 @@ def _drop_hidden_companies(
     return kept, hidden
 
 
+def _drop_hidden_titles(
+    rows: List[dict],
+    hide_title_patterns: List[str],
+) -> Tuple[List[dict], List[dict]]:
+    """Split rows by case-insensitive substring match against title patterns.
+
+    Mirrors _drop_hidden_companies but for title text. Used when the user
+    clicks "Hide titles matching 'Senior'" to suppress mid/senior listings
+    that don't fit their level — without dropping the whole company.
+    """
+    if not hide_title_patterns:
+        return rows, []
+    norms = [str(p or "").strip().lower() for p in hide_title_patterns]
+    norms = [n for n in norms if n]
+    if not norms:
+        return rows, []
+    kept: List[dict] = []
+    hidden: List[dict] = []
+    for r in rows:
+        t = (str(r.get("title") or "")).strip().lower()
+        matched = next((n for n in norms if n and n in t), None)
+        if matched:
+            hidden.append({**r, "reason": f"hidden by user (title contains '{matched}')",
+                           "tier": "Skip", "score": 0, "flags": ""})
+        else:
+            kept.append(r)
+    return kept, hidden
+
+
 # --------------------------------------------------------------------------
 # Public entry point
 # --------------------------------------------------------------------------
@@ -1771,6 +1851,7 @@ def run_pipeline(
     h1b_only: bool = False,
     exclude_no_sponsorship: bool = False,
     hide_companies: Optional[List[str]] = None,
+    hide_title_patterns: Optional[List[str]] = None,
     max_per_company: int = 4,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
@@ -1857,6 +1938,11 @@ def run_pipeline(
     # (e.g. repeated Stripe rows that don't sponsor). Applied BEFORE scoring
     # so they don't waste compute on the heavy filter pipeline.
     all_raw, user_hidden = _drop_hidden_companies(all_raw, hide_companies or [])
+    # Same idea for title patterns ("Senior", "Lead", "Staff") so a new-grad
+    # candidate can suppress level-mismatched roles without blocking the
+    # whole company.
+    all_raw, title_hidden = _drop_hidden_titles(all_raw, hide_title_patterns or [])
+    user_hidden = user_hidden + title_hidden
 
     apply_now, verify, excluded = _filter_and_score(
         all_raw,

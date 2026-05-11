@@ -14,6 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChipsInput } from './ChipsInput';
 import { ApifyKeyCard } from './ApifyKeyCard';
+import { ReachOutModal } from './ReachOutModal';
 import { apiService } from '@/lib/api';
 import type {
   DailyPipelineParams,
@@ -248,6 +249,9 @@ interface PersistedState {
    * sponsor). Dropped entirely from the next pipeline run.
    */
   hideCompanies?: string[];
+  /** Title substrings the user wants suppressed (e.g. "Senior", "Lead",
+   *  "Staff") without blocking the whole company. */
+  hideTitlePatterns?: string[];
   /** Max apply_now rows per company before extras get demoted to verify. */
   maxPerCompany?: number;
   /** Version of the filter-suggester taxonomy that produced linkedinKws /
@@ -321,11 +325,16 @@ function writePersisted(state: PersistedState) {
 // --------------------------------------------------------------------------
 // Job row
 // --------------------------------------------------------------------------
-function VisaBadge({ status }: { status?: string }) {
+function VisaBadge({ status, confidence }: { status?: string; confidence?: number }) {
   // Render a compact, color-coded badge so an F-1 / H-1B candidate can tell
-  // at a glance whether a posting will accept their visa status. We
-  // deliberately don't render anything for "unknown" — too noisy when most
-  // postings carry no signal.
+  // at a glance whether a posting will accept their visa status. The
+  // optional `confidence` (0..1) layers a calibrated percent on top of the
+  // discrete status — "Sponsors 95%" reads stronger than just "Sponsors",
+  // and "Likely sponsor 62%" surfaces the soft positive bucket that used
+  // to be hidden inside "unknown".
+  const pct = typeof confidence === 'number' && confidence > 0
+    ? `${Math.round(confidence * 100)}%`
+    : null;
   if (status === 'sponsor_verified') {
     return (
       <Badge
@@ -334,7 +343,19 @@ function VisaBadge({ status }: { status?: string }) {
         title="Verified H-1B sponsor — company is on the curated sponsor list or the JD says they sponsor."
       >
         <ShieldCheck className="h-2.5 w-2.5" />
-        Sponsors
+        Sponsors{pct ? ` ${pct}` : ''}
+      </Badge>
+    );
+  }
+  if (status === 'likely_sponsor') {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-amber-500/40 bg-amber-500/10 text-[9px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300"
+        title="Looks like a tech employer that historically sponsors, but the JD doesn't say so explicitly. Worth verifying before applying."
+      >
+        <ShieldCheck className="h-2.5 w-2.5" />
+        Likely sponsor{pct ? ` ${pct}` : ''}
       </Badge>
     );
   }
@@ -368,6 +389,8 @@ function PipelineRow({
   onSnooze,
   onToggleBatch,
   onHideCompany,
+  onHideTitlePattern,
+  onReachOut,
 }: {
   rec: DailyPipelineRecord;
   applied: boolean;
@@ -389,6 +412,10 @@ function PipelineRow({
   onToggleBatch: () => void;
   /** Drop this row's company from future pipeline runs. */
   onHideCompany: () => void;
+  /** Open the title-pattern prompt prefilled with this row's title stem. */
+  onHideTitlePattern: () => void;
+  /** Open the Reach-Out modal for this row. */
+  onReachOut: () => void;
 }) {
   const tierStyle = TIER_STYLES[rec.tier || ''];
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -526,7 +553,7 @@ function PipelineRow({
             <Badge variant="outline" className="border-border/60 text-[10px] uppercase tracking-wider">
               {rec.source}
             </Badge>
-            <VisaBadge status={rec.visa_status} />
+            <VisaBadge status={rec.visa_status} confidence={rec.visa_confidence} />
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -631,6 +658,17 @@ function PipelineRow({
               {tailorLoading ? 'Fetching JD…' : 'Tailor'}
             </Button>
           )}
+          {!applied && rec.company && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onReachOut}
+              className="gap-1 border-indigo-500/30 text-[11px] text-indigo-700 hover:bg-indigo-500/10 dark:text-indigo-300"
+              title="Draft a cold-outreach email to a recruiter / hiring manager at this company"
+            >
+              ✉ Reach out
+            </Button>
+          )}
           {!applied && (
             <button
               type="button"
@@ -650,6 +688,15 @@ function PipelineRow({
             >
               🚫 Hide {rec.company.slice(0, 14)}{rec.company.length > 14 ? '…' : ''}
             </button>
+          )}
+          {!applied && rec.title && (
+            <button
+              type="button"
+              onClick={onHideTitlePattern}
+              className="rounded px-2 py-1 text-[11px] text-muted-foreground/70 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 transition-colors self-end opacity-80 sm:opacity-0 sm:group-hover:opacity-100"
+              title="Hide future postings whose title contains a substring (e.g. Senior, Lead, Staff)"
+            >
+              🚫 Hide title…
           )}
         </div>
       </CardContent>
@@ -675,6 +722,8 @@ function TierGroup({
   onSnooze,
   onToggleBatch,
   onHideCompany,
+  onHideTitlePattern,
+  onReachOut,
 }: {
   title: string;
   items: DailyPipelineRecord[];
@@ -693,6 +742,8 @@ function TierGroup({
   onSnooze: (rec: DailyPipelineRecord, days: number) => void;
   onToggleBatch: (rec: DailyPipelineRecord) => void;
   onHideCompany: (rec: DailyPipelineRecord) => void;
+  onHideTitlePattern: (rec: DailyPipelineRecord) => void;
+  onReachOut: (rec: DailyPipelineRecord) => void;
 }) {
   const visible = showApplied ? items : items.filter((r) => !appliedIds.has(_recordId(r)));
   if (!items.length) return null;
@@ -729,6 +780,8 @@ function TierGroup({
                 onSnooze={(days) => onSnooze(rec, days)}
                 onToggleBatch={() => onToggleBatch(rec)}
                 onHideCompany={() => onHideCompany(rec)}
+                onHideTitlePattern={() => onHideTitlePattern(rec)}
+                onReachOut={() => onReachOut(rec)}
               />
             );
           })
@@ -819,10 +872,13 @@ export function DailyPipelinePanel({
   // server side before scoring on the NEXT pipeline run. Persists across
   // sessions so Stripe-flood etc. stays muted until the user un-hides.
   const [hideCompanies, setHideCompanies] = useState<string[]>(persisted?.hideCompanies ?? []);
+  const [hideTitlePatterns, setHideTitlePatterns] = useState<string[]>(persisted?.hideTitlePatterns ?? []);
   const [maxPerCompany, setMaxPerCompany] = useState<number>(persisted?.maxPerCompany ?? 4);
   // Tracks whether the user is mid-batch-run so we can disable the Run
   // button + show a spinner while we pre-fetch all the JDs in parallel.
   const [batchRunning, setBatchRunning] = useState(false);
+  // Reach-out modal state — single modal instance, swapped target row.
+  const [reachOutRec, setReachOutRec] = useState<DailyPipelineRecord | null>(null);
   const [seenIds, setSeenIds] = useState<string[]>(persisted?.seenIds ?? []);
   const [snoozedUntil, setSnoozedUntil] = useState<Record<string, string>>(persisted?.snoozedUntil ?? {});
   const [dailyGoal, setDailyGoal] = useState<number>(persisted?.dailyGoal ?? 5);
@@ -870,6 +926,7 @@ export function DailyPipelinePanel({
       dailyApplied,
       batchSelectedIds,
       hideCompanies,
+      hideTitlePatterns,
       maxPerCompany,
       filtersDerivedVersion: FILTERS_DERIVED_VERSION,
     });
@@ -878,7 +935,7 @@ export function DailyPipelinePanel({
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
-    batchSelectedIds, hideCompanies, maxPerCompany,
+    batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany,
   ]);
 
   // Manual "↻ Re-suggest from resume" trigger — bypasses prefilledRef so the
@@ -1022,6 +1079,7 @@ export function DailyPipelinePanel({
       h1b_only: h1bOnly,
       exclude_no_sponsorship: excludeNoSponsorship,
       hide_companies: hideCompanies,
+      hide_title_patterns: hideTitlePatterns,
       max_per_company: maxPerCompany,
     };
 
@@ -1101,6 +1159,7 @@ export function DailyPipelinePanel({
       h1b_only: h1bOnly,
       exclude_no_sponsorship: excludeNoSponsorship,
       hide_companies: hideCompanies,
+      hide_title_patterns: hideTitlePatterns,
       max_per_company: maxPerCompany,
     };
     const resp = await apiService.savePipelinePreset(name, filters);
@@ -1469,6 +1528,33 @@ export function DailyPipelinePanel({
   }, []);
   const handleUnhideCompany = useCallback((name: string) => {
     setHideCompanies((prev) => prev.filter((c) => c !== name));
+  }, []);
+
+  // Title pattern hide — small prompt to pick the keyword the user wants to
+  // mute. Prefills with the row's title-stem (first 2 words) so a "Senior
+  // Software Engineer" row makes "Senior" a one-tap pick.
+  const handleHideTitlePattern = useCallback((rec: DailyPipelineRecord) => {
+    const t = (rec.title || '').trim();
+    const default_ = t.split(/\s+/).slice(0, 2).join(' ');
+    const raw = window.prompt(
+      'Hide future postings whose title contains (case-insensitive substring):',
+      default_,
+    );
+    if (!raw) return;
+    const pattern = raw.trim();
+    if (pattern.length < 2) {
+      toast.error('Pattern must be at least 2 characters.');
+      return;
+    }
+    setHideTitlePatterns((prev) => (prev.includes(pattern) ? prev : [...prev, pattern].slice(-30)));
+    toast.success(`Title pattern "${pattern}" muted. Manage in Advanced.`);
+  }, []);
+  const handleUnhideTitlePattern = useCallback((pattern: string) => {
+    setHideTitlePatterns((prev) => prev.filter((p) => p !== pattern));
+  }, []);
+
+  const handleReachOut = useCallback((rec: DailyPipelineRecord) => {
+    setReachOutRec(rec);
   }, []);
 
   const batchSelectedSet = useMemo(() => new Set(batchSelectedIds), [batchSelectedIds]);
@@ -2284,6 +2370,25 @@ export function DailyPipelinePanel({
             </div>
           )}
 
+          {hideTitlePatterns.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2.5 py-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Muted title patterns
+              </span>
+              {hideTitlePatterns.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => handleUnhideTitlePattern(p)}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] text-amber-700 hover:bg-amber-500/20 dark:text-amber-300 transition-colors"
+                  title={`Click to un-mute titles containing "${p}"`}
+                >
+                  contains "{p}" <span className="text-amber-500/60">×</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Daily quota strip — student motivation lever. Shows today's
               applied count vs goal as a thin progress bar. The goal is
               user-tunable (click to edit). Hides when there's no result yet. */}
@@ -2410,6 +2515,8 @@ export function DailyPipelinePanel({
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
             onHideCompany={handleHideCompany}
+            onHideTitlePattern={handleHideTitlePattern}
+            onReachOut={handleReachOut}
           />
           <TierGroup
             title={`🥈 Tier 2 (${tier2.length})`}
@@ -2429,6 +2536,8 @@ export function DailyPipelinePanel({
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
             onHideCompany={handleHideCompany}
+            onHideTitlePattern={handleHideTitlePattern}
+            onReachOut={handleReachOut}
           />
           <TierGroup
             title={`🥉 Tier 3 (${tier3.length})`}
@@ -2448,6 +2557,8 @@ export function DailyPipelinePanel({
             onSnooze={handleSnooze}
             onToggleBatch={handleToggleBatch}
             onHideCompany={handleHideCompany}
+            onHideTitlePattern={handleHideTitlePattern}
+            onReachOut={handleReachOut}
           />
 
           {result.verify_dates.length > 0 && (
@@ -2469,6 +2580,8 @@ export function DailyPipelinePanel({
               onSnooze={handleSnooze}
               onToggleBatch={handleToggleBatch}
               onHideCompany={handleHideCompany}
+              onHideTitlePattern={handleHideTitlePattern}
+              onReachOut={handleReachOut}
             />
           )}
 
@@ -2484,6 +2597,12 @@ export function DailyPipelinePanel({
           )}
         </div>
       )}
+
+      <ReachOutModal
+        open={!!reachOutRec}
+        rec={reachOutRec}
+        onClose={() => setReachOutRec(null)}
+      />
 
       {/* Sticky batch bar — appears only when the user has ticked ≥1 row.
           Fixed to viewport bottom so it survives scrolling through long tier

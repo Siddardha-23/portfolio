@@ -792,6 +792,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 h1b_only=bool(payload.get("h1b_only", False)),
                 exclude_no_sponsorship=bool(payload.get("exclude_no_sponsorship", False)),
                 hide_companies=payload.get("hide_companies") or [],
+                hide_title_patterns=payload.get("hide_title_patterns") or [],
                 max_per_company=int(payload.get("max_per_company", 4) or 4),
             )
             # Surface which token tier was used so the UI can display it.

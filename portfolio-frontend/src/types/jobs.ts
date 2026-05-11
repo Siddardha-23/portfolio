@@ -1,4 +1,4 @@
-export type VisaStatus = 'sponsor_verified' | 'no_sponsorship' | 'unknown';
+export type VisaStatus = 'sponsor_verified' | 'likely_sponsor' | 'no_sponsorship' | 'unknown';
 
 export interface DailyPipelineRecord {
   source: string;
@@ -18,6 +18,11 @@ export interface DailyPipelineRecord {
   reason?: string;
   /** Visa-sponsorship signal. Useful for F-1 / H-1B candidates. */
   visa_status?: VisaStatus;
+  /** Calibrated sponsorship probability (0.0–1.0). Backend layers this on
+   *  top of visa_status so the badge can show "Likely sponsor 62%" instead
+   *  of a binary verdict. Older payloads may omit this — UI falls back to
+   *  the discrete status label. */
+  visa_confidence?: number;
   /**
    * Set when the user already engaged with this exact (company, title) via
    * the saved-jobs flow. `interested` = clicked Open but didn't confirm

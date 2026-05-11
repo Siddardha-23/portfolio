@@ -697,6 +697,7 @@ function PipelineRow({
               title="Hide future postings whose title contains a substring (e.g. Senior, Lead, Staff)"
             >
               🚫 Hide title…
+            </button>
           )}
         </div>
       </CardContent>

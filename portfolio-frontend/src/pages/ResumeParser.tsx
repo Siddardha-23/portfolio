@@ -31,6 +31,7 @@ const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffView
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
 const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
 const VisaTimelineTab = lazy(() => import("@/components/visa/VisaTimelineTab"));
+const BetaLabTab = lazy(() => import("@/components/beta/BetaLabTab"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -297,6 +298,7 @@ type NavTab =
   | "applications"
   | "interview"
   | "visa"
+  | "beta"
   | "copilot"
   | "profile";
 
@@ -5674,6 +5676,13 @@ const NAV_ITEMS: ResumeNavItem[] = [
     hint: "F-1 / OPT / H-1B clocks",
   },
   {
+    key: "beta",
+    label: "Beta Lab",
+    icon: <SparklesIcon className="w-4 h-4" />,
+    badge: "Beta",
+    hint: "Experimental features",
+  },
+  {
     key: "copilot",
     label: "Career Copilot",
     icon: <Bot className="w-4 h-4" />,
@@ -5866,6 +5875,7 @@ const VALID_NAV_TABS: readonly NavTab[] = [
   "applications",
   "interview",
   "visa",
+  "beta",
   "copilot",
   "profile",
 ] as const;
@@ -6283,6 +6293,17 @@ export default function ResumeParser() {
                   }
                 >
                   <VisaTimelineTab />
+                </Suspense>
+              )}
+              {activeNav === "beta" && (
+                <Suspense
+                  fallback={
+                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
+                    </div>
+                  }
+                >
+                  <BetaLabTab />
                 </Suspense>
               )}
               {activeNav === "copilot" && (

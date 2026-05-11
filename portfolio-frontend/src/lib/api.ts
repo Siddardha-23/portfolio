@@ -268,7 +268,57 @@ class ApiService {
     return this.request<{
       profile: import("../types/visa").VisaProfile;
       milestones: import("../types/visa").VisaMilestone[];
+      recommendation?: string;
     }>("/resume/visa/timeline", { method: "GET" });
+  }
+
+  async getMorningBrief() {
+    return this.request<{
+      ok: boolean;
+      briefing: {
+        headline: string;
+        lines: string[];
+        counts: Record<string, number>;
+        generated_at: string;
+      };
+    }>("/resume/beta/morning-brief", { method: "GET" });
+  }
+
+  async findSimilarRoles(jdText: string, limit = 10) {
+    return this.request<{
+      ok: boolean;
+      seed_tokens?: string[];
+      results?: Array<{
+        source: string;
+        title: string;
+        company: string;
+        location?: string;
+        url?: string;
+        score_overlap: number;
+        status?: string;
+      }>;
+      error?: string;
+    }>(
+      "/resume/beta/similar-roles",
+      { method: "POST", body: JSON.stringify({ jd_text: jdText, limit }) },
+      30000,
+    );
+  }
+
+  async getAbTelemetry() {
+    return this.request<{
+      ok: boolean;
+      has_tagged_data: boolean;
+      total_apps: number;
+      variants: Array<{
+        variant: string;
+        total: number;
+        interviewed: number;
+        offers: number;
+        callback_rate: number;
+      }>;
+      insight?: string;
+    }>("/resume/beta/ab-telemetry", { method: "GET" });
   }
 
   async checkEmail(email: string) {

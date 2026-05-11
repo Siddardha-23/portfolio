@@ -81,6 +81,7 @@ function relativeLabel(days: number | null): string {
 export default function VisaTimelineTab() {
   const [profile, setProfile] = useState<VisaProfile>(EMPTY_PROFILE);
   const [milestones, setMilestones] = useState<VisaMilestone[]>([]);
+  const [recommendation, setRecommendation] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -90,6 +91,7 @@ export default function VisaTimelineTab() {
     if (resp.data) {
       setProfile({ ...EMPTY_PROFILE, ...resp.data.profile });
       setMilestones(resp.data.milestones || []);
+      setRecommendation(resp.data.recommendation || '');
       setDirty(false);
     }
     setLoading(false);
@@ -325,6 +327,18 @@ export default function VisaTimelineTab() {
           </div>
         </CardContent>
       </Card>
+
+      {recommendation && (
+        <Card className="border-emerald-500/30 bg-gradient-to-br from-emerald-500/[0.05] to-teal-500/[0.05]">
+          <CardContent className="p-4 space-y-1.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 inline-flex items-center gap-1.5">
+              <ShieldCheck className="h-3 w-3" />
+              AI recommendation
+            </p>
+            <p className="text-sm text-foreground/90 leading-relaxed">{recommendation}</p>
+          </CardContent>
+        </Card>
+      )}
 
       <div>
         <h3 className="mb-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">

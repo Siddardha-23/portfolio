@@ -3037,8 +3037,92 @@ def get_visa_timeline():
         doc = db.visa_profiles.find_one({"user_email": user_email}) or {}
         profile = normalize_profile(doc)
         milestones = compute_timeline(profile)
-        return jsonify({"profile": profile, "milestones": serialize_timeline(milestones)}), 200
+        serialized = serialize_timeline(milestones)
+
+        # Gemini-generated personalized recommendation (Flash, soft-fail).
+        # Deterministic milestones already cover "what" — this adds the
+        # "what next" judgment that's hard to express in pure logic.
+        recommendation = ""
+        try:
+            critical = [m for m in serialized if m.get("severity") == "critical"]
+            warnings = [m for m in serialized if m.get("severity") == "warning"]
+            if critical or warnings:
+                from services.gemini_client import gemini_json, GEMINI_FLASH
+                prompt = (
+                    "You are an experienced international-student advisor. In "
+                    "2-3 short sentences, give this F-1 candidate a specific, "
+                    "calm, actionable recommendation based on their visa state. "
+                    "Reference dates and milestones by name when you mention "
+                    "them. No fluff, no emojis.\n\n"
+                    f"Visa status: {profile.get('visa_status')}\n"
+                    f"STEM degree: {profile.get('stem_degree')}\n"
+                    f"E-Verify employer: {profile.get('current_employer_e_verified')}\n"
+                    f"Upcoming critical cliffs: {critical}\n"
+                    f"Upcoming warnings: {warnings}\n\n"
+                    'Return JSON: { "recommendation": "..." }.'
+                )
+                out = gemini_json(
+                    prompt=prompt, model=GEMINI_FLASH, temperature=0.3,
+                    schema={"recommendation": str}, max_tokens=200,
+                )
+                if isinstance(out, dict) and isinstance(out.get("recommendation"), str):
+                    recommendation = out["recommendation"].strip()[:500]
+        except Exception as e:
+            logger.info("visa timeline recommendation soft-fail: %s", e)
+
+        return jsonify({
+            "profile": profile,
+            "milestones": serialized,
+            "recommendation": recommendation,
+        }), 200
     except Exception as e:
         logger.exception("visa timeline error: %s", e)
         return jsonify({"error": "Failed to compute timeline"}), 500
 
+
+
+# ------------------------------------------------------------------
+# Beta Lab features — Morning brief, JD reverse-search, A/B telemetry.
+# Each endpoint is intentionally lightweight; surfaces in the Beta tab.
+# ------------------------------------------------------------------
+@resume_bp.route("/beta/morning-brief", methods=["GET"])
+@jwt_required()
+def beta_morning_brief():
+    user_email = get_jwt_identity()
+    try:
+        from services.beta_features_service import build_morning_brief
+        return jsonify(build_morning_brief(user_email)), 200
+    except Exception as e:
+        logger.exception("morning-brief error: %s", e)
+        return jsonify({"ok": False, "error": "Failed to build brief"}), 500
+
+
+@resume_bp.route("/beta/similar-roles", methods=["POST"])
+@jwt_required()
+def beta_similar_roles():
+    user_email = get_jwt_identity()
+    try:
+        body = request.get_json(silent=True) or {}
+        jd_text = InputSanitizer.sanitize_string(str(body.get("jd_text") or ""), max_length=15000)
+        try:
+            limit = int(body.get("limit", 10))
+        except (TypeError, ValueError):
+            limit = 10
+        limit = max(1, min(limit, 25))
+        from services.beta_features_service import find_similar_roles
+        return jsonify(find_similar_roles(user_email, jd_text, limit=limit)), 200
+    except Exception as e:
+        logger.exception("similar-roles error: %s", e)
+        return jsonify({"ok": False, "error": "Failed to find similar roles"}), 500
+
+
+@resume_bp.route("/beta/ab-telemetry", methods=["GET"])
+@jwt_required()
+def beta_ab_telemetry():
+    user_email = get_jwt_identity()
+    try:
+        from services.beta_features_service import ab_telemetry
+        return jsonify(ab_telemetry(user_email)), 200
+    except Exception as e:
+        logger.exception("ab-telemetry error: %s", e)
+        return jsonify({"ok": False, "error": "Failed to load telemetry"}), 500

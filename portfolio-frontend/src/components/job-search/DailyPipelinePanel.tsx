@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { ChipsInput } from './ChipsInput';
 import { ApifyKeyCard } from './ApifyKeyCard';
 import { ReachOutModal } from './ReachOutModal';
+import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import type {
   DailyPipelineParams,
@@ -186,7 +187,18 @@ const TIER_STYLES: Record<string, { label: string; ring: string; chip: string; i
 // --------------------------------------------------------------------------
 // Persistence
 // --------------------------------------------------------------------------
-const STORAGE_KEY = 'daily_pipeline_state_v2';
+// Storage key is user-scoped: every entry lives under
+// `daily_pipeline_state_v2:<user_email>` so two users on the same browser
+// never read each other's filters / snoozes / mutes / applied IDs.
+// Anonymous fallback keeps the panel usable before login.
+const STORAGE_KEY_PREFIX = 'daily_pipeline_state_v2';
+function storageKey(userEmail: string | null | undefined): string {
+  const slug = (userEmail || '').trim().toLowerCase() || 'anonymous';
+  return `${STORAGE_KEY_PREFIX}:${slug}`;
+}
+// Legacy global key — read once on first mount to migrate the old blob into
+// the user-scoped key so nobody loses their snoozes / mutes during the rollout.
+const LEGACY_STORAGE_KEY = 'daily_pipeline_state_v2';
 
 // Bump when the resume-driven filter-suggester taxonomy changes so we drop
 // stale linkedinKws / workdayTitles / customRoles that were derived from an
@@ -282,7 +294,18 @@ function _slimForStorage(state: PersistedState): PersistedState {
   };
 }
 
-function readPersisted(): PersistedState | null {
+// Tracks which user the in-memory cache belongs to, so a logout / login on
+// the same tab doesn't bleed state across users via _memoryCache.
+let _memoryCacheOwner: string | null = null;
+
+function readPersisted(userEmail: string | null | undefined): PersistedState | null {
+  const key = storageKey(userEmail);
+  // Invalidate the in-memory cache if the owning user changed (cross-account
+  // switch on the same browser without a refresh).
+  if (_memoryCache && _memoryCacheOwner !== key) {
+    _memoryCache = null;
+    _memoryCacheOwner = null;
+  }
   if (_memoryCache) {
     if (_memoryCache.result && _memoryCache.resultAt && Date.now() - _memoryCache.resultAt > RESULT_TTL_MS) {
       _memoryCache = { ..._memoryCache, result: null, resultAt: null };
@@ -290,7 +313,20 @@ function readPersisted(): PersistedState | null {
     return _memoryCache;
   }
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
+    let raw = sessionStorage.getItem(key);
+    // One-time migration: if no user-scoped entry exists yet but a legacy
+    // global one does, adopt it as this user's starting state and DROP the
+    // global key so the next user on this browser starts fresh.
+    if (!raw) {
+      const legacy = sessionStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy && key !== LEGACY_STORAGE_KEY) {
+        try {
+          sessionStorage.setItem(key, legacy);
+          sessionStorage.removeItem(LEGACY_STORAGE_KEY);
+          raw = legacy;
+        } catch { /* quota */ }
+      }
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedState;
     if (parsed.result && parsed.resultAt && Date.now() - parsed.resultAt > RESULT_TTL_MS) {
@@ -309,16 +345,19 @@ function readPersisted(): PersistedState | null {
       parsed.filtersDerivedVersion = FILTERS_DERIVED_VERSION;
     }
     _memoryCache = parsed;
+    _memoryCacheOwner = key;
     return parsed;
   } catch {
     return null;
   }
 }
 
-function writePersisted(state: PersistedState) {
+function writePersisted(state: PersistedState, userEmail: string | null | undefined) {
+  const key = storageKey(userEmail);
   _memoryCache = state;
+  _memoryCacheOwner = key;
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(_slimForStorage(state)));
+    sessionStorage.setItem(key, JSON.stringify(_slimForStorage(state)));
   } catch {
     /* quota / disabled */
   }
@@ -824,7 +863,9 @@ export function DailyPipelinePanel({
   onSuggestionsConsumed,
   onJobApplied,
 }: DailyPipelinePanelProps) {
-  const persisted = typeof window !== 'undefined' ? readPersisted() : null;
+  const { user } = useAuth();
+  const userEmail = user?.email || null;
+  const persisted = typeof window !== 'undefined' ? readPersisted(userEmail) : null;
 
   const [linkedinKws, setLinkedinKws] = useState<string[]>(persisted?.linkedinKws ?? DEFAULT_LINKEDIN_KEYWORDS);
   const [workdayTitles, setWorkdayTitles] = useState<string[]>(persisted?.workdayTitles ?? DEFAULT_WORKDAY_TITLES);
@@ -932,13 +973,13 @@ export function DailyPipelinePanel({
       hideTitlePatterns,
       maxPerCompany,
       filtersDerivedVersion: FILTERS_DERIVED_VERSION,
-    });
+    }, userEmail);
   }, [
     linkedinKws, workdayTitles, customRoles, pastDays, showAdvanced,
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
-    batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany,
+    batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany, userEmail,
   ]);
 
   // Manual "↻ Re-suggest from resume" trigger — bypasses prefilledRef so the

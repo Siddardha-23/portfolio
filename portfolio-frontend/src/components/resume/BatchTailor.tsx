@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { apiService } from '@/lib/api';
 import { toast } from 'sonner';
 import type { TailoredFullResume, JDAnalysis, ATSScores } from '@/types/resume';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface JDEntry {
   id: string;
@@ -59,21 +60,38 @@ function DownloadIcon({ className = 'w-4 h-4' }: { className?: string }) {
 let idCounter = 0;
 const nextId = () => `jd-${++idCounter}`;
 
-// Persistence — keyed so a refresh in the middle of a 5-minute batch
-// re-hydrates the result cards and resumes polling for any active jobs.
-// We persist a slimmed copy (results can be ~30KB each; we keep them as-is
-// since the user expects them downloadable from the same row).
-const BATCH_STORAGE_KEY = 'batch_tailor_jobs_v1';
+// Persistence — keyed per user so two accounts on the same browser never
+// see each other's in-flight batch. The legacy global key is migrated
+// to the current user on first read so nobody loses a running batch
+// during the rollout.
+const BATCH_STORAGE_PREFIX = 'batch_tailor_jobs_v1';
+const LEGACY_BATCH_KEY = 'batch_tailor_jobs_v1';
 const BATCH_TTL_MS = 6 * 60 * 60 * 1000; // 6h — after that, results are stale
+function batchStorageKey(userEmail: string | null | undefined): string {
+  const slug = (userEmail || '').trim().toLowerCase() || 'anonymous';
+  return `${BATCH_STORAGE_PREFIX}:${slug}`;
+}
 
-function readPersistedBatch(): BatchJob[] | null {
+function readPersistedBatch(userEmail: string | null | undefined): BatchJob[] | null {
+  const key = batchStorageKey(userEmail);
   try {
-    const raw = localStorage.getItem(BATCH_STORAGE_KEY);
+    let raw = localStorage.getItem(key);
+    // One-time migration of the legacy global key to the current user.
+    if (!raw && key !== LEGACY_BATCH_KEY) {
+      const legacy = localStorage.getItem(LEGACY_BATCH_KEY);
+      if (legacy) {
+        try {
+          localStorage.setItem(key, legacy);
+          localStorage.removeItem(LEGACY_BATCH_KEY);
+          raw = legacy;
+        } catch { /* quota */ }
+      }
+    }
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { jobs: BatchJob[]; savedAt: number };
     if (!parsed?.jobs || !Array.isArray(parsed.jobs)) return null;
     if (Date.now() - (parsed.savedAt || 0) > BATCH_TTL_MS) {
-      localStorage.removeItem(BATCH_STORAGE_KEY);
+      localStorage.removeItem(key);
       return null;
     }
     return parsed.jobs;
@@ -82,14 +100,15 @@ function readPersistedBatch(): BatchJob[] | null {
   }
 }
 
-function writePersistedBatch(jobs: BatchJob[]): void {
+function writePersistedBatch(jobs: BatchJob[], userEmail: string | null | undefined): void {
+  const key = batchStorageKey(userEmail);
   try {
     if (!jobs.length) {
-      localStorage.removeItem(BATCH_STORAGE_KEY);
+      localStorage.removeItem(key);
       return;
     }
     localStorage.setItem(
-      BATCH_STORAGE_KEY,
+      key,
       JSON.stringify({ jobs, savedAt: Date.now() }),
     );
   } catch {
@@ -98,15 +117,26 @@ function writePersistedBatch(jobs: BatchJob[]): void {
 }
 
 export default function BatchTailor() {
+  const { user } = useAuth();
+  const userEmail = user?.email || null;
   const [jdEntries, setJdEntries] = useState<JDEntry[]>([{ id: nextId(), title: '', text: '' }]);
-  const [batchJobs, setBatchJobs] = useState<BatchJob[]>(() => readPersistedBatch() ?? []);
+  const [batchJobs, setBatchJobs] = useState<BatchJob[]>(() => readPersistedBatch(userEmail) ?? []);
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Persist on every batchJobs change so refresh / tab close survive.
   useEffect(() => {
-    writePersistedBatch(batchJobs);
-  }, [batchJobs]);
+    writePersistedBatch(batchJobs, userEmail);
+  }, [batchJobs, userEmail]);
+
+  // If the user switches accounts on the same tab (rare but real), reset
+  // local state and re-hydrate from THAT user's key. Without this, the
+  // previously-mounted state would persist into the new user's session.
+  useEffect(() => {
+    const fresh = readPersistedBatch(userEmail) ?? [];
+    setBatchJobs(fresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userEmail]);
 
   const addEntry = useCallback(() => {
     if (jdEntries.length >= BATCH_TAILOR_MAX) return;

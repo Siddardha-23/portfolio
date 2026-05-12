@@ -31,30 +31,22 @@ import type {
 // --------------------------------------------------------------------------
 // Defaults & presets
 // --------------------------------------------------------------------------
+// DOMAIN-NEUTRAL defaults — used ONLY when:
+//   · the user hasn't uploaded a resume yet, OR
+//   · the resume-driven suggester returned an error
+// These intentionally avoid biasing toward any single role family
+// (cloud / backend / frontend / AI). Once the suggester runs against the
+// user's resume, these get replaced with personalized titles.
 const DEFAULT_LINKEDIN_KEYWORDS = [
-  'Cloud Engineer DevOps',
-  'Site Reliability Platform Engineer',
-  'full stack engineer AI',
-  'backend engineer Python AWS',
-  'agentic AI engineer new grad',
-  'software engineer new grad entry level',
-  'associate software engineer h1b sponsor',
+  'software engineer new grad',
+  'software engineer entry level',
+  'software developer entry level',
+  'software engineer h1b sponsor',
+  'graduate software engineer',
 ];
 
 const DEFAULT_WORKDAY_TITLES = [
-  // Cloud / DevOps / SRE / Platform
-  'Cloud Engineer', 'DevOps Engineer', 'Site Reliability Engineer', 'SRE',
-  'Platform Engineer', 'Infrastructure Engineer',
-  'AWS Engineer', 'Kubernetes Engineer',
-  // Backend / Full-Stack / Frontend
-  'Backend Engineer', 'Backend Developer',
-  'Full Stack Engineer', 'Full Stack Developer',
-  'Frontend Engineer', 'Frontend Developer',
-  'API Engineer', 'Software Developer',
-  // AI / ML
-  'AI Engineer', 'Machine Learning Engineer', 'ML Engineer',
-  'LLM Engineer', 'GenAI Engineer', 'Applied Scientist',
-  // General SWE early-career
+  // Generic early-career SWE titles only — no domain anchors.
   'Software Engineer', 'Software Engineer I',
   'Associate Software Engineer', 'Junior Software Engineer',
   'New Grad Software Engineer', 'Entry Level Software Engineer',
@@ -996,8 +988,18 @@ export function DailyPipelinePanel({
       // shapes so the handler is resilient to future endpoint changes.
       const raw = resp.data as any;
       const s = (raw && (raw.suggestions ?? raw)) || null;
+      // Distinguish "no resume" from other failures — the action is different.
+      if (resp.error && /no resume/i.test(resp.error)) {
+        toast.warning('Upload your resume first', {
+          description: 'The current filters are GENERIC SWE defaults. Head to My Resumes / Profile and upload your resume, then click ↻ Re-suggest again to get titles tailored to your stack.',
+          duration: 9000,
+        });
+        return;
+      }
       if (!s) {
-        toast.error("Couldn't fetch resume-based filters — make sure your resume is uploaded.");
+        toast.error("Couldn't fetch resume-based filters", {
+          description: resp.error || 'Try again in a moment, or upload a resume if you haven\'t yet.',
+        });
         return;
       }
       if (s.linkedin_keyword_sets?.length) setLinkedinKws(s.linkedin_keyword_sets);
@@ -1043,7 +1045,20 @@ export function DailyPipelinePanel({
     if (!isDefaultLinkedin && !isDefaultTitles) return; // user has edits
     let cancelled = false;
     apiService.suggestPipelineFilters().then((resp) => {
-      if (cancelled || !resp.data?.suggestions) return;
+      if (cancelled) return;
+      // Loud "upload your resume" CTA when the backend says no resume is on
+      // file. Previously this was a silent catch, so a brand-new user just
+      // saw the cloud-flavored defaults and assumed those were "for them" —
+      // never realizing personalization was waiting one upload away.
+      if (resp.error && /no resume/i.test(resp.error)) {
+        toast.warning('No resume on file', {
+          description:
+            'These default filters are GENERIC SWE titles. Upload your resume in My Resumes / Profile to get titles personalized to your actual stack — then click ↻ Re-suggest.',
+          duration: 9000,
+        });
+        return;
+      }
+      if (!resp.data?.suggestions) return;
       const s = resp.data.suggestions;
       if (s.linkedin_keyword_sets?.length) setLinkedinKws(s.linkedin_keyword_sets);
       if (s.workday_titles?.length) setWorkdayTitles(s.workday_titles);
@@ -1055,7 +1070,10 @@ export function DailyPipelinePanel({
         description: 'Personalized to your resume — adjust before running.',
         duration: 4500,
       });
-    }).catch(() => { /* no resume — user fills in manually */ });
+    }).catch(() => {
+      // Network error — defaults stay in place; user can retry via ↻ button.
+      // Not toasting because this can fire pre-auth on slow loads.
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persisted]);

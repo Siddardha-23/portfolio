@@ -198,7 +198,11 @@ const LEGACY_STORAGE_KEY = 'daily_pipeline_state_v2';
 // applied ids) — only the resume-derived filters get invalidated.
 // v3: new resume-driven title synthesizer (Gemini Pro reads actual resume
 // content) replaces the static per-intent seed lists.
-const FILTERS_DERIVED_VERSION = 3;
+// v4 (May 2026): force re-fetch after defaults were made domain-neutral
+// and the silent-catch failure mode was replaced with a loud CTA. Existing
+// users whose persisted state still has cloud-flavored defaults from the
+// pre-personalization era will get a fresh synth call on their next mount.
+const FILTERS_DERIVED_VERSION = 4;
 const RESULT_TTL_MS = 30 * 60 * 1000;
 
 interface PersistedState {
@@ -979,6 +983,16 @@ export function DailyPipelinePanel({
   // resume, after a profiler upgrade, etc). Replaces linkedinKws / titles /
   // customRoles wholesale; everything else (snoozes, mutes) is preserved.
   const [refreshingFilters, setRefreshingFilters] = useState(false);
+  // Persistent debug panel showing what the synth detected — surfaces the
+  // information that was previously only in transient toasts so any user
+  // (or friend testing the system) can see at a glance whether their
+  // filters are personalized to THEIR resume or fell back to defaults.
+  const [detectedSummary, setDetectedSummary] = useState<{
+    headline: string;
+    rationale: string;
+    firstTitle: string;
+    usedSynth: boolean;
+  } | null>(null);
   const handleRefreshFromResume = useCallback(async () => {
     if (refreshingFilters) return;
     setRefreshingFilters(true);
@@ -1012,11 +1026,18 @@ export function DailyPipelinePanel({
       const headline = s.headline || s.intent?.primary_label || 'your resume';
       const rationale = s.rationale || '';
       const firstTitle = s.workday_titles?.[0] || '(no titles)';
+      const usedSynth = (s as { synth_meta?: { used_synth?: boolean } }).synth_meta?.used_synth;
+      setDetectedSummary({
+        headline,
+        rationale,
+        firstTitle,
+        usedSynth: usedSynth ?? false,
+      });
       toast.success(`Detected: ${headline}`, {
         description: rationale
-          ? `${rationale}\nFirst Workday title: "${firstTitle}".`
-          : `First Workday title: "${firstTitle}".`,
-        duration: 8000,
+          ? `${rationale}\nFirst Workday title: "${firstTitle}". Synth: ${usedSynth ? 'YES' : 'fallback'}.`
+          : `First Workday title: "${firstTitle}". Synth: ${usedSynth ? 'YES' : 'fallback'}.`,
+        duration: 9000,
       });
     } catch {
       toast.error('Filter refresh failed.');
@@ -1065,7 +1086,19 @@ export function DailyPipelinePanel({
       if (s.custom_role_terms?.length) setCustomRoles(s.custom_role_terms);
       if (typeof s.past_days === 'number') setPastDays(s.past_days);
       prefilledRef.current = true;
-      const headline = (s as { headline?: string }).headline || 'your resume';
+      const sx = s as {
+        headline?: string;
+        rationale?: string;
+        synth_meta?: { used_synth?: boolean };
+        workday_titles?: string[];
+      };
+      const headline = sx.headline || 'your resume';
+      setDetectedSummary({
+        headline,
+        rationale: sx.rationale || '',
+        firstTitle: sx.workday_titles?.[0] || '',
+        usedSynth: sx.synth_meta?.used_synth ?? false,
+      });
       toast.success(`Filters refreshed from ${headline}`, {
         description: 'Personalized to your resume — adjust before running.',
         duration: 4500,
@@ -2162,6 +2195,37 @@ export function DailyPipelinePanel({
               )}
             </Button>
           </div>
+
+          {detectedSummary && (
+            <div className={`flex flex-wrap items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+              detectedSummary.usedSynth
+                ? 'border-emerald-500/30 bg-emerald-500/[0.05]'
+                : 'border-amber-500/30 bg-amber-500/[0.05]'
+            }`}>
+              <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                detectedSummary.usedSynth
+                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+              }`}>
+                {detectedSummary.usedSynth ? 'AI synth ✓' : 'Fallback'}
+              </span>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <p className="font-medium text-foreground/90">
+                  Detected: {detectedSummary.headline}
+                </p>
+                {detectedSummary.rationale && (
+                  <p className="text-muted-foreground leading-relaxed">
+                    {detectedSummary.rationale}
+                  </p>
+                )}
+                {!detectedSummary.usedSynth && (
+                  <p className="text-amber-700/90 dark:text-amber-300/90">
+                    Filters fell back to a static template — your resume may not have parsed cleanly. Try re-uploading in My Resumes, then click ↻ Re-suggest.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
 
           {showAdvanced && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">

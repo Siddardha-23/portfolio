@@ -951,7 +951,10 @@ export function DailyPipelinePanel({
     setRefreshingFilters(true);
     try {
       const resp = await apiService.suggestPipelineFilters();
-      const s = resp.data as any;
+      // Backend wraps the payload as { suggestions: { ... } }. Accept both
+      // shapes so the handler is resilient to future endpoint changes.
+      const raw = resp.data as any;
+      const s = (raw && (raw.suggestions ?? raw)) || null;
       if (!s) {
         toast.error("Couldn't fetch resume-based filters — make sure your resume is uploaded.");
         return;

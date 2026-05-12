@@ -192,7 +192,9 @@ const STORAGE_KEY = 'daily_pipeline_state_v2';
 // stale linkedinKws / workdayTitles / customRoles that were derived from an
 // older profiler. We preserve everything else (snoozes, mutes, counters,
 // applied ids) — only the resume-derived filters get invalidated.
-const FILTERS_DERIVED_VERSION = 2;
+// v3: new resume-driven title synthesizer (Gemini Pro reads actual resume
+// content) replaces the static per-intent seed lists.
+const FILTERS_DERIVED_VERSION = 3;
 const RESULT_TTL_MS = 30 * 60 * 1000;
 
 interface PersistedState {
@@ -949,7 +951,7 @@ export function DailyPipelinePanel({
     setRefreshingFilters(true);
     try {
       const resp = await apiService.suggestPipelineFilters();
-      const s = resp.data;
+      const s = resp.data as any;
       if (!s) {
         toast.error("Couldn't fetch resume-based filters — make sure your resume is uploaded.");
         return;
@@ -959,7 +961,17 @@ export function DailyPipelinePanel({
       if (s.custom_role_terms?.length) setCustomRoles(s.custom_role_terms);
       if (typeof s.past_days === 'number') setPastDays(s.past_days);
       prefilledRef.current = true;
-      toast.success('Filters refreshed from your resume — review and run pipeline.');
+      // Show what the backend actually detected so the user can verify the
+      // suggestion is grounded in their resume — not generic.
+      const headline = s.headline || s.intent?.primary_label || 'your resume';
+      const rationale = s.rationale || '';
+      const firstTitle = s.workday_titles?.[0] || '(no titles)';
+      toast.success(`Detected: ${headline}`, {
+        description: rationale
+          ? `${rationale}\nFirst Workday title: "${firstTitle}".`
+          : `First Workday title: "${firstTitle}".`,
+        duration: 8000,
+      });
     } catch {
       toast.error('Filter refresh failed.');
     } finally {

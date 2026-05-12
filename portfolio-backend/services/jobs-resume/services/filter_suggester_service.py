@@ -142,54 +142,82 @@ def _synthesize_titles_from_resume(
         f"INTENT HINT (NOT authoritative): {primary_label}{secondary_clause}, "
         f"~{seniority_hint} (≈{years}y experience).\n\n"
         f"CANDIDATE RESUME (JSON, slimmed):\n{slim}\n\n"
-        "MANDATORY COVERAGE RULES — non-negotiable:\n"
+        "MANDATORY COVERAGE RULES — non-negotiable. Every example below is "
+        "ILLUSTRATIVE across multiple role families to show the *shape* of "
+        "good output — IGNORE any example whose stack doesn't match this "
+        "candidate's resume. Use the candidate's actual tech stack words.\n\n"
         "  1. PRIMARY domain — generate AT LEAST 10 titles for the candidate's "
-        f"strongest signal (here: {primary_label}). Include level variants AND "
-        "stack-specific variants (e.g. 'AWS Cloud Engineer', 'Cloud Engineer "
-        "Terraform', 'EKS Platform Engineer').\n"
+        "strongest signal. Include level variants AND stack-specific variants. "
+        "Shape examples across different domains:\n"
+        "       Frontend candidate → 'Frontend Engineer React', 'UI Engineer "
+        "TypeScript', 'Web Engineer Next.js'\n"
+        "       Backend candidate  → 'Backend Engineer Python', 'API Engineer "
+        "Go', 'Server Engineer Java'\n"
+        "       Cloud candidate    → 'Cloud Engineer AWS', 'DevOps Engineer "
+        "Kubernetes', 'Platform Engineer Terraform'\n"
+        "       Data candidate     → 'Data Engineer Spark', 'Analytics "
+        "Engineer dbt', 'Data Platform Engineer'\n"
+        "       ML/AI candidate    → 'ML Engineer PyTorch', 'Applied "
+        "Scientist NLP', 'GenAI Engineer LLM'\n"
+        "       Mobile candidate   → 'iOS Engineer Swift', 'Android Engineer "
+        "Kotlin', 'Mobile Engineer React Native'\n"
+        "       Security candidate → 'Security Engineer AppSec', 'DevSecOps "
+        "Engineer', 'Cloud Security Engineer'\n"
+        "    Pick the row that matches THIS candidate; the others are noise.\n"
         "  2. SECONDARY domain — if the resume shows clear evidence for a "
         "secondary role family (here: " + (secondary_label or "any cross-trained area") + "), "
-        "generate AT LEAST 6 titles for it too. A Cloud/DevOps engineer who "
-        "also has Python+Java backend experience MUST get Backend Engineer / "
-        "API Engineer / Backend Software Engineer variants.\n"
-        "  3. AI / ML adjacency — if the resume mentions LLMs, Bedrock, RAG, "
-        "knowledge graphs, or agentic AI, ALSO include 3-5 AI infra titles "
-        "(AI Platform Engineer, ML Infrastructure Engineer, GenAI Platform "
-        "Engineer, MLOps Engineer).\n"
+        "generate AT LEAST 6 titles for it too. Examples of valid hybrid pairs:\n"
+        "       Full-Stack       → frontend + backend titles\n"
+        "       Cloud + Backend  → cloud/devops + backend titles\n"
+        "       ML + Data Eng    → ML + data engineer titles\n"
+        "       Backend + Data   → backend + data engineer titles\n"
+        "    Do NOT force a secondary that isn't supported by the resume — "
+        "a pure-frontend resume should NOT get backend titles forced in.\n"
+        "  3. AI / ML adjacency — ONLY if the resume mentions LLMs, foundation "
+        "models, RAG, vector DBs, agentic AI, or fine-tuning, include 3-5 AI "
+        "infra titles (e.g. AI Platform Engineer, ML Infrastructure Engineer, "
+        "GenAI Platform Engineer, MLOps Engineer). Otherwise omit.\n"
         "  4. Seniority variants — for the detected seniority, include 2-3 "
         'prefix variants: "Junior/Associate/New Grad/Graduate" for junior; '
         '"" (no prefix) and "II"/"Mid-Level" for mid; "Senior"/"Staff"/"Lead" '
         "for senior. If the candidate is a current MS / new grad, also include "
         "new-grad variants regardless of past experience years.\n"
         "  5. Stack-specific phrasing — bake in the candidate's actual stack "
-        "(e.g. 'Backend Engineer Python', 'DevOps Engineer Kubernetes') so the "
-        "feed leans toward postings that mention their tech.\n"
+        "tokens (look at their skills + experience bullets + project tech). "
+        "If they show 'Postgres + Node + GraphQL', generate 'Backend Engineer "
+        "Node', 'GraphQL Engineer', 'API Engineer Postgres'. If they show "
+        "'React + TypeScript + Tailwind', generate 'Frontend Engineer React', "
+        "'UI Engineer TypeScript' — NOT generic 'Software Engineer'.\n"
         "  6. Each title must be anchored to a tech engineering domain word "
-        '(Engineer / Developer / Scientist / SRE / Analyst) — never just '
-        '"Junior" or "Associate" alone.\n'
+        '(Engineer / Developer / Scientist / SRE / Analyst / Architect) — '
+        'never just "Junior" or "Associate" alone.\n'
         "  7. ANTI-keywords: list 4-10 tokens that should NEVER appear in this "
-        "candidate's feed (e.g. 'Sales Engineer' for an SWE, 'Hardware Engineer' "
-        "for a backend dev, 'Solutions Architect' for a new grad).\n\n"
+        "candidate's feed. Examples vary by candidate:\n"
+        "       For a pure frontend dev → 'Backend', 'Data Scientist', 'SRE'\n"
+        "       For a backend dev       → 'Frontend', 'UI Designer', 'Data Analyst'\n"
+        "       For a data scientist    → 'Frontend', 'Mobile', 'DevOps'\n"
+        "       Universal noise         → 'Sales Engineer', 'Hardware Engineer', "
+        "'Solutions Architect (Pre-Sales)', 'Manager', 'Director'\n\n"
         "OUTPUT QUOTAS — enforce strictly:\n"
-        "  · workday_titles: MIN 22, MAX 45. Cover primary + secondary + AI "
-        "adjacent (if applicable) + seniority variants. Quality > quantity but "
-        "MIN 22 ensures the daily feed has enough surface area.\n"
+        "  · workday_titles: MIN 22, MAX 45. Cover primary + secondary (if "
+        "any) + AI adjacent (only if signal exists) + seniority variants.\n"
         "  · linkedin_phrases: MIN 7, MAX 10. Each 3-6 words. MUST mirror the "
-        "domain coverage from workday_titles — if the workday list includes "
-        "AI infra titles (because the resume has LLM/Bedrock/RAG signals), the "
-        "linkedin_phrases MUST also include 1-2 AI-flavored phrases (e.g. "
-        "'AI Platform Engineer LLM', 'GenAI Infrastructure Engineer'). Same "
-        "rule for backend when secondary signal is present (always include "
-        "≥1 backend-stack phrase). Mix specific stack ('Cloud Engineer AWS "
-        "Terraform') and broader fallback ('DevOps Engineer Kubernetes').\n"
+        "domain coverage from workday_titles — every domain represented in "
+        "workday_titles should have ≥1 LinkedIn phrase. Mix specific-stack "
+        "phrases with broader fallback phrases.\n"
         "  · anti_keywords: MIN 4, MAX 10.\n\n"
         "Return JSON:\n"
-        '  - "detected_role": one-line role summary using resume evidence '
-        '("Cloud/DevOps Engineer with Backend + AI Infra experience, mid-level").\n'
+        '  - "detected_role": one-line role summary using resume evidence. '
+        'Shape examples (pick the matching one for this candidate, write your '
+        'own using their actual stack):\n'
+        '       "Frontend Engineer specializing in React + TypeScript, mid-level"\n'
+        '       "Backend Engineer with Java + Spring Boot + Postgres, junior"\n'
+        '       "Cloud / DevOps Engineer with AWS + Terraform + K8s, mid-level"\n'
+        '       "ML Engineer focused on PyTorch + NLP, senior"\n'
         '  - "rationale": 1-2 sentences citing 2-3 specific resume signals.\n'
         '  - "seniority": "junior" | "mid" | "senior".\n'
         '  - "workday_titles": list (length 22-45).\n'
-        '  - "linkedin_phrases": list (length 6-10).\n'
+        '  - "linkedin_phrases": list (length 7-10).\n'
         '  - "anti_keywords": list (length 4-10).\n'
         "Return ONLY the JSON object, no commentary."
     )

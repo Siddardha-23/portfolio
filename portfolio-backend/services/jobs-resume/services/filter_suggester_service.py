@@ -130,44 +130,62 @@ def _synthesize_titles_from_resume(
     seniority_hint = "junior" if years <= 2 else ("senior" if years >= 7 else "mid")
 
     slim = _resume_summary(structured_resume)
+    secondary_clause = f" + {secondary_label}" if secondary_label else ""
     prompt = (
         "You are a senior tech recruiter. Your job is to generate Workday "
         "job-title search terms and LinkedIn keyword phrases PERSONALIZED to a "
         "specific candidate's resume. The output drives an automated daily "
-        "job-pipeline scrape — wrong titles waste the candidate's day, so be "
-        "precise. Use evidence FROM THE RESUME, not generic role templates.\n\n"
-        f"INTENT HINT (NOT authoritative): {primary_label}"
-        + (f" + {secondary_label}" if secondary_label else "")
-        + f", ~{seniority_hint} (≈{years}y experience).\n\n"
+        "job-pipeline scrape that must surface BOTH the candidate's primary "
+        "specialty AND realistic adjacent specializations — too narrow = "
+        "candidate misses opportunities; too broad = noise. Aim for the right "
+        "balance, leaning slightly broad on a hybrid resume.\n\n"
+        f"INTENT HINT (NOT authoritative): {primary_label}{secondary_clause}, "
+        f"~{seniority_hint} (≈{years}y experience).\n\n"
         f"CANDIDATE RESUME (JSON, slimmed):\n{slim}\n\n"
-        "Rules:\n"
-        "  1. READ the candidate's actual experience titles, project tech, and "
-        "skills. Generate titles that match THEIR specific stack, not generic "
-        f"{primary_label} templates. If the candidate has built REST APIs in "
-        "Node + Postgres, generate 'Backend Engineer Node', 'API Engineer "
-        "Postgres', etc., NOT 'Cloud Engineer DevOps' just because they list AWS.\n"
-        "  2. For the candidate's seniority level, include 2-3 prefix variants: "
-        '"Junior/Associate/New Grad/Graduate" for junior; "" (no prefix) and '
-        '"II"/"Mid-Level" for mid; "Senior"/"Staff"/"Lead" for senior.\n'
-        "  3. Cover 2-4 adjacent specializations the candidate could "
-        "realistically apply for (e.g. a Full-Stack engineer can apply for "
-        "Backend, Frontend, or Full-Stack roles — but NOT Cloud Engineer unless "
-        "they have actual cloud-engineer titles in their history).\n"
-        "  4. Each title must be anchored to a tech engineering domain word "
+        "MANDATORY COVERAGE RULES — non-negotiable:\n"
+        "  1. PRIMARY domain — generate AT LEAST 10 titles for the candidate's "
+        f"strongest signal (here: {primary_label}). Include level variants AND "
+        "stack-specific variants (e.g. 'AWS Cloud Engineer', 'Cloud Engineer "
+        "Terraform', 'EKS Platform Engineer').\n"
+        "  2. SECONDARY domain — if the resume shows clear evidence for a "
+        "secondary role family (here: " + (secondary_label or "any cross-trained area") + "), "
+        "generate AT LEAST 6 titles for it too. A Cloud/DevOps engineer who "
+        "also has Python+Java backend experience MUST get Backend Engineer / "
+        "API Engineer / Backend Software Engineer variants.\n"
+        "  3. AI / ML adjacency — if the resume mentions LLMs, Bedrock, RAG, "
+        "knowledge graphs, or agentic AI, ALSO include 3-5 AI infra titles "
+        "(AI Platform Engineer, ML Infrastructure Engineer, GenAI Platform "
+        "Engineer, MLOps Engineer).\n"
+        "  4. Seniority variants — for the detected seniority, include 2-3 "
+        'prefix variants: "Junior/Associate/New Grad/Graduate" for junior; '
+        '"" (no prefix) and "II"/"Mid-Level" for mid; "Senior"/"Staff"/"Lead" '
+        "for senior. If the candidate is a current MS / new grad, also include "
+        "new-grad variants regardless of past experience years.\n"
+        "  5. Stack-specific phrasing — bake in the candidate's actual stack "
+        "(e.g. 'Backend Engineer Python', 'DevOps Engineer Kubernetes') so the "
+        "feed leans toward postings that mention their tech.\n"
+        "  6. Each title must be anchored to a tech engineering domain word "
         '(Engineer / Developer / Scientist / SRE / Analyst) — never just '
         '"Junior" or "Associate" alone.\n'
-        "  5. ANTI-keywords: list 3-8 tokens that should NEVER appear in this "
-        "candidate's feed (e.g. 'Sales Engineer' for a backend dev, "
-        "'Hardware Engineer' for a software person).\n\n"
+        "  7. ANTI-keywords: list 4-10 tokens that should NEVER appear in this "
+        "candidate's feed (e.g. 'Sales Engineer' for an SWE, 'Hardware Engineer' "
+        "for a backend dev, 'Solutions Architect' for a new grad).\n\n"
+        "OUTPUT QUOTAS — enforce strictly:\n"
+        "  · workday_titles: MIN 22, MAX 45. Cover primary + secondary + AI "
+        "adjacent (if applicable) + seniority variants. Quality > quantity but "
+        "MIN 22 ensures the daily feed has enough surface area.\n"
+        "  · linkedin_phrases: MIN 6, MAX 10. Each 3-6 words. Mix specific "
+        "stack ('Cloud Engineer AWS Terraform') and broader fallback "
+        "('DevOps Engineer Kubernetes').\n"
+        "  · anti_keywords: MIN 4, MAX 10.\n\n"
         "Return JSON:\n"
         '  - "detected_role": one-line role summary using resume evidence '
-        '("Full-Stack Engineer specializing in React + Node + Postgres, mid-level").\n'
-        '  - "rationale": 1-2 sentences explaining WHY these titles fit, '
-        "citing 2-3 specific resume signals.\n"
+        '("Cloud/DevOps Engineer with Backend + AI Infra experience, mid-level").\n'
+        '  - "rationale": 1-2 sentences citing 2-3 specific resume signals.\n'
         '  - "seniority": "junior" | "mid" | "senior".\n'
-        '  - "workday_titles": 20-40 personalized job titles.\n'
-        '  - "linkedin_phrases": 5-8 LinkedIn search phrases (3-6 words each).\n'
-        '  - "anti_keywords": 3-8 tokens to EXCLUDE.\n'
+        '  - "workday_titles": list (length 22-45).\n'
+        '  - "linkedin_phrases": list (length 6-10).\n'
+        '  - "anti_keywords": list (length 4-10).\n'
         "Return ONLY the JSON object, no commentary."
     )
     try:
@@ -257,12 +275,30 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         workday_titles = list(synth["workday_titles"])
         linkedin_phrases = list(synth["linkedin_phrases"])
         custom_role_terms = list(synth.get("anti_keywords") or [])
-        # repurpose: anti_keywords aren't custom_role_terms semantically — let
-        # the synthesizer drive custom_role_terms from its own field below.
-        # We keep top tokens from the resume as default custom_role_terms.
         detected_role = synth.get("detected_role") or primary_label
         rationale = synth.get("rationale") or ""
         headline = detected_role
+
+        # Breadth safety net: even when synth runs, Gemini Pro sometimes
+        # returns a narrow primary-only list (e.g. only Cloud Engineer
+        # variants for a cloud+backend+AI candidate). Backfill from the
+        # primary+secondary intent seeds so the feed has enough surface area
+        # for adjacent specializations. Synth titles stay first (better
+        # targeting); seeds fill any gap to reach a minimum of 20.
+        MIN_TITLES = 20
+        MIN_PHRASES = 5
+        if len(workday_titles) < MIN_TITLES:
+            seed_titles = list(profile.get("target_titles") or [])
+            if secondary:
+                seed_titles += list(INTENTS[secondary].get("target_titles") or [])[:6]
+            workday_titles = _merge_preserving_order(workday_titles, seed_titles)
+            logger.info(
+                "synth: workday_titles too thin (%d), backfilled with seeds -> %d",
+                len(synth["workday_titles"]), len(workday_titles),
+            )
+        if len(linkedin_phrases) < MIN_PHRASES:
+            seed_phrases = list(profile.get("keyword_phrases") or [])
+            linkedin_phrases = _merge_preserving_order(linkedin_phrases, seed_phrases)
     else:
         # Fallback path — keep the legacy static-seed behaviour so nobody is
         # left without filters when Gemini is rate-limited.

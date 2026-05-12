@@ -982,13 +982,24 @@ export function DailyPipelinePanel({
     }
   }, [refreshingFilters]);
 
-  // Auto-prefill from /pipeline/suggest-filters on first ever mount when the
-  // user has a parsed resume but has never explicitly edited the form. We
-  // never overwrite a user's saved state — once they touch a chip, they own
-  // the form. Silent on failure (e.g. no resume uploaded yet).
+  // Auto-prefill from /pipeline/suggest-filters when the user has a parsed
+  // resume but no resume-derived filters yet. Triggers in three cases:
+  //   1. First-ever mount (no persisted state)
+  //   2. After a FILTERS_DERIVED_VERSION migration wiped the stale filter
+  //      fields (persisted exists but linkedinKws fell back to defaults)
+  //   3. Never — once prefilledRef is true (auto-prefill succeeded once, or
+  //      the user applied Smart Filters / Refresh), we don't re-run
+  //
+  // Previously this bailed on `if (persisted) return` which blocked case 2,
+  // leaving existing users stuck on DEFAULT_LINKEDIN_KEYWORDS after a
+  // version bump until they manually clicked Re-suggest.
   useEffect(() => {
     if (prefilledRef.current) return;
-    if (persisted) return; // user has a saved state already
+    // Reference-equality check: state was initialized from the constant
+    // array, so === holds until the user (or a fetch) replaces it.
+    const isDefaultLinkedin = linkedinKws === DEFAULT_LINKEDIN_KEYWORDS;
+    const isDefaultTitles = workdayTitles === DEFAULT_WORKDAY_TITLES;
+    if (!isDefaultLinkedin && !isDefaultTitles) return; // user has edits
     let cancelled = false;
     apiService.suggestPipelineFilters().then((resp) => {
       if (cancelled || !resp.data?.suggestions) return;
@@ -998,11 +1009,14 @@ export function DailyPipelinePanel({
       if (s.custom_role_terms?.length) setCustomRoles(s.custom_role_terms);
       if (typeof s.past_days === 'number') setPastDays(s.past_days);
       prefilledRef.current = true;
-      toast.success('Pipeline pre-filled from your resume — adjust before running.', {
-        duration: 3500,
+      const headline = (s as { headline?: string }).headline || 'your resume';
+      toast.success(`Filters refreshed from ${headline}`, {
+        description: 'Personalized to your resume — adjust before running.',
+        duration: 4500,
       });
     }).catch(() => { /* no resume — user fills in manually */ });
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persisted]);
 
   // Load saved presets on mount.

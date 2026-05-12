@@ -1276,19 +1276,43 @@ export function DailyPipelinePanel({
     // empty description (LinkedIn snippet only, Workday actor missed it,
     // ATS scrape pre-fix, etc.). When that happens AND we have a URL, hit
     // /jobs/fetch-jd which classifies the URL by source (LinkedIn guest
-    // API, Greenhouse / Lever / Ashby APIs, or generic HTML strip) and
-    // returns the rendered JD text. Bounded to ~12s server-side; we show
-    // a brief toast while it works so the user knows what's happening.
+    // API, Greenhouse / Lever / Ashby APIs, or generic HTML strip / Apify
+    // browser fallback) and returns the rendered JD text. Bounded ~45s
+    // (Apify fallback can take ~30s); we show a toast while it works.
+    //
+    // Cache layer: if the user clicked Tailor on this URL earlier in the
+    // same session, use the cached JD instantly. The Tailor receiver also
+    // writes the result to the cache, so re-clicks are free.
     let jdText = (rec.description || '').trim();
     let fetchedKind: string | undefined;
     if (!jdText && rec.url) {
-      const fetching = toast.loading('Fetching job description…', { duration: 15000 });
+      try {
+        const cached = sessionStorage.getItem(`jd_cache:${rec.url}`);
+        if (cached) {
+          const obj = JSON.parse(cached) as { text: string; at: number };
+          if (obj.text && Date.now() - obj.at < 60 * 60 * 1000) {
+            jdText = obj.text;
+            fetchedKind = 'session_cache';
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    if (!jdText && rec.url) {
+      const fetching = toast.loading('Fetching job description…', { duration: 50000 });
       try {
         const resp = await apiService.fetchJobDescription(rec.url);
         toast.dismiss(fetching);
         if (resp.data?.ok && resp.data.jd_text) {
           jdText = resp.data.jd_text;
           fetchedKind = resp.data.source_kind;
+          // Cache for the rest of the session — re-clicks on the same row
+          // (or pasting the same URL into another flow) are instant.
+          try {
+            sessionStorage.setItem(
+              `jd_cache:${rec.url}`,
+              JSON.stringify({ text: resp.data.jd_text, at: Date.now() }),
+            );
+          } catch { /* quota */ }
         } else if (resp.data?.error) {
           // Soft-fail — fall through to the placeholder so user can paste manually.
           toast.message(resp.data.error);

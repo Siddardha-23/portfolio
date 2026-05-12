@@ -3172,6 +3172,12 @@ function TailorTab() {
   const [hasResumes, setHasResumes] = useState<boolean | null>(null);
   const [loadingCheck, setLoadingCheck] = useState(true);
   const [jdText, setJdText] = useState("");
+  // Original posting URL when the user came from Daily Pipeline / batch
+  // handoff — keeps the "Retry JD fetch" button next to the JD textarea
+  // useful even after the initial fetch failed or timed out. Cleared once
+  // jdText has a real value via paste or successful fetch.
+  const [pendingJobUrl, setPendingJobUrl] = useState<string>("");
+  const [retryingJdFetch, setRetryingJdFetch] = useState(false);
   const [analyzingJD, setAnalyzingJD] = useState(false);
   const [tailoring, setTailoring] = useState(false);
   const [tailorError, setTailorError] = useState("");
@@ -3244,20 +3250,63 @@ function TailorTab() {
       };
       if (parsed?.job_id) pendingJobIdRef.current = parsed.job_id;
       if (parsed?.jd_text) setJdText(parsed.jd_text);
+      if (parsed?.url) setPendingJobUrl(parsed.url);
       if (parsed?.title || parsed?.company) {
         toast.info(`Tailoring for ${parsed.title || ''}${parsed.company ? ' @ ' + parsed.company : ''} — apply status auto-tracks`);
       }
       // When the pipeline couldn't auto-fetch the JD (LinkedIn cookie wall,
       // ATS that needed a real browser, JS-rendered Workday, etc.), give the
       // user a clear prompt to paste it instead of leaving them staring at
-      // an empty textarea wondering what went wrong.
+      // an empty textarea wondering what went wrong. Background retry will
+      // also kick off below.
       if (parsed?.jd_fetch_failed) {
         toast.warning(
           parsed?.url
-            ? `Couldn't auto-fetch this JD — open the posting (${new URL(parsed.url).hostname}) in a new tab and paste the description into the box below.`
+            ? `Couldn't auto-fetch this JD — opening the posting in a new tab and pasting it works, OR click "Retry JD fetch" beside the textarea.`
             : "Couldn't auto-fetch this JD — please copy-paste it from the posting into the box below.",
           { duration: 8000 },
         );
+        // Background retry — initial attempt may have timed out (LinkedIn
+        // guest API can be slow); a second attempt often succeeds when the
+        // backend's Apify fallback gets enough budget. Silent on failure;
+        // user always has the explicit Retry button as a manual fallback.
+        if (parsed?.url) {
+          const url = parsed.url;
+          // Check sessionStorage cache first — if a prior attempt for this
+          // URL succeeded in this session, use it instantly.
+          try {
+            const cached = sessionStorage.getItem(`jd_cache:${url}`);
+            if (cached) {
+              const obj = JSON.parse(cached) as { text: string; at: number };
+              if (obj.text && Date.now() - obj.at < 60 * 60 * 1000) {
+                setJdText(obj.text);
+                toast.success('JD recovered from session cache.');
+                return;
+              }
+            }
+          } catch { /* ignore */ }
+          apiService.fetchJobDescription(url).then((r) => {
+            if (r.data?.ok && r.data.jd_text) {
+              setJdText(r.data.jd_text);
+              try {
+                sessionStorage.setItem(
+                  `jd_cache:${url}`,
+                  JSON.stringify({ text: r.data.jd_text, at: Date.now() }),
+                );
+              } catch { /* quota */ }
+              toast.success('JD auto-fetched on retry — review and tailor.');
+            }
+          }).catch(() => { /* silent — user has the manual Retry button */ });
+        }
+      } else if (parsed?.jd_text && parsed?.url) {
+        // Cache the successful fetch so re-clicking Tailor on the same row
+        // is instant the second time.
+        try {
+          sessionStorage.setItem(
+            `jd_cache:${parsed.url}`,
+            JSON.stringify({ text: parsed.jd_text, at: Date.now() }),
+          );
+        } catch { /* quota */ }
       }
     } catch {
       /* ignore */
@@ -4730,6 +4779,60 @@ function TailorTab() {
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {pendingJobUrl && !jdText && (
+                        <button
+                          onClick={async () => {
+                            if (retryingJdFetch) return;
+                            setRetryingJdFetch(true);
+                            const fetching = toast.loading('Fetching JD…', { duration: 50000 });
+                            try {
+                              const r = await apiService.fetchJobDescription(pendingJobUrl);
+                              toast.dismiss(fetching);
+                              if (r.data?.ok && r.data.jd_text) {
+                                setJdText(r.data.jd_text);
+                                try {
+                                  sessionStorage.setItem(
+                                    `jd_cache:${pendingJobUrl}`,
+                                    JSON.stringify({ text: r.data.jd_text, at: Date.now() }),
+                                  );
+                                } catch { /* quota */ }
+                                toast.success('JD fetched — review and tailor.');
+                              } else {
+                                toast.warning(
+                                  r.data?.error || "Still couldn't fetch — open the posting and paste manually.",
+                                  { duration: 8000 },
+                                );
+                              }
+                            } catch {
+                              toast.dismiss(fetching);
+                              toast.error('Network issue — try again or paste manually.');
+                            } finally {
+                              setRetryingJdFetch(false);
+                            }
+                          }}
+                          disabled={analyzingJD || tailoring || retryingJdFetch}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-purple-700 dark:text-purple-300 bg-purple-500/10 border border-purple-500/30 hover:bg-purple-500/20 transition-all disabled:opacity-50"
+                          title={`Re-attempt auto-fetch from ${(() => { try { return new URL(pendingJobUrl).hostname; } catch { return pendingJobUrl; } })()}`}
+                        >
+                          {retryingJdFetch ? (
+                            <span className="inline-block h-3 w-3 rounded-full border-2 border-purple-500/60 border-t-transparent animate-spin" />
+                          ) : (
+                            <span>↻</span>
+                          )}
+                          {retryingJdFetch ? 'Fetching…' : 'Retry JD fetch'}
+                        </button>
+                      )}
+                      {pendingJobUrl && (
+                        <a
+                          href={pendingJobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-gray-600 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-300 hover:bg-emerald-500/10 transition-all"
+                          title="Open the original posting in a new tab"
+                        >
+                          Open posting ↗
+                        </a>
+                      )}
                       <button
                         onClick={async () => {
                           try {

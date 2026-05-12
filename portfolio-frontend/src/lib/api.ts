@@ -756,10 +756,13 @@ class ApiService {
   }
 
   async fetchJobDescription(url: string) {
+    // 45s — the backend tries direct strategies (~12s budget each) then falls
+    // back to Apify's browser-rendered scrape (~30s). 20s was leaving Apify
+    // results on the floor for LinkedIn / Workday SPA postings.
     return this.request<{ ok: boolean; jd_text?: string; source_kind?: string; error?: string }>(
       "/jobs/fetch-jd",
       { method: "POST", body: JSON.stringify({ url }) },
-      20000,
+      45000,
     );
   }
 

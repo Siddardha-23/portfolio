@@ -677,6 +677,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # Combined: extract JD → tailor resume (single job for batch efficiency)
             user_email = payload.get("user_email", "")
             jd_text = payload.get("jd_text", "")
+            source_job_id = (payload.get("source_job_id") or "").strip() or None
 
             # Step 1: Extract JD
             jd_analysis = svc.extract_jd(jd_text)
@@ -704,11 +705,80 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             result = normalize_titles(result)
 
             _attach_ats_keyword_audit(result, jd_analysis)
+
+            # ── Wire the batch result into the same lifecycle as a single-row
+            # tailor — create a tailoring_record (so it surfaces in My Resumes /
+            # Tailored / Applications), record a streak increment, and mark the
+            # source saved_job as applied so the Applications kanban moves it
+            # off "Interested". Previously the batch flow only stored the result
+            # in the jobs table → invisible to Applications/Streak.
+            record_id_for_response = None
+            try:
+                import uuid as _uuid
+                from services.resume_versioning import build_initial_version
+                from utils.db_connect import DBConnect
+                _db = DBConnect().get_db()
+                rid = str(_uuid.uuid4())
+                initial = build_initial_version(result, source="initial", ats_scores=None)
+                record_doc = {
+                    "record_id": rid,
+                    "user_email": user_email,
+                    "base_resume_filename": resume.get("filename") or "",
+                    "base_resume_s3_key": resume.get("s3_key") or "",
+                    "jd_text": (jd_text or "")[:15000],
+                    "jd_analysis": jd_analysis,
+                    "tailored_resume": result,
+                    "versions": [initial],
+                    "current_version_id": initial["version_id"],
+                    "ats_scores": None,
+                    "created_at": datetime.now(timezone.utc),
+                    "updated_at": datetime.now(timezone.utc),
+                    "source": "batch_tailor",
+                    "source_job_id": source_job_id,
+                    "application": {
+                        "status": "applied" if source_job_id else "interested",
+                        "applied_at": datetime.now(timezone.utc) if source_job_id else None,
+                        "updated_at": datetime.now(timezone.utc),
+                    },
+                }
+                _db.tailoring_records.insert_one(record_doc)
+                record_id_for_response = rid
+                logger.info(
+                    "batch_tailor_item: saved tailoring_record %s for %s (source_job_id=%s)",
+                    rid, user_email, source_job_id,
+                )
+            except Exception as e:
+                logger.warning("batch_tailor_item: failed to save tailoring_record: %s", e)
+
+            # Streak: count every batch item as a daily application (only when
+            # a record was created successfully — failures shouldn't inflate).
+            if record_id_for_response:
+                try:
+                    from services.streak_service import record_application
+                    record_application(user_email)
+                except Exception as e:
+                    logger.warning("batch_tailor_item: streak update failed: %s", e)
+
+            # Flip the source saved_job → applied so the Applications kanban
+            # picks it up. Only when source_job_id was passed from the daily
+            # pipeline handoff. Best-effort — the user can correct via the
+            # kanban if the auto-flip is wrong.
+            if source_job_id:
+                try:
+                    from services.job_service import get_job_service
+                    get_job_service().update_saved_job(
+                        source_job_id, status="applied", user_email=user_email,
+                    )
+                except Exception as e:
+                    logger.warning("batch_tailor_item: saved_job update failed: %s", e)
+
             svc.complete_job(
                 job_id,
                 {
                     "tailored_resume": result,
                     "jd_analysis": jd_analysis,
+                    "record_id": record_id_for_response,
+                    "source_job_id": source_job_id,
                 },
             )
 

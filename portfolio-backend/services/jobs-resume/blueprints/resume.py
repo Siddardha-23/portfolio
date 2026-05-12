@@ -506,6 +506,11 @@ def batch_tailor():
                 "jd_text": jd["text"].strip()[:15000],
                 "jd_title": jd.get("title", "").strip(),
                 "user_email": user_email,
+                # source_job_id ties the batch result back to a saved_jobs row
+                # when the batch was launched from the Daily Pipeline handoff.
+                # Without this the tailored result never updates the kanban
+                # nor increments the streak — it just lives in the jobs table.
+                "source_job_id": (jd.get("source_job_id") or "").strip() or None,
             }
             job_id = svc.create_job("batch_tailor_item", payload, user_email=user_email)
             ResumeService.invoke_async(job_id, "batch_tailor_item", payload)

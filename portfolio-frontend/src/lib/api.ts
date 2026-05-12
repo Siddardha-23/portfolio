@@ -1265,7 +1265,7 @@ class ApiService {
   }
 
   async batchTailor(
-    jdList: { text: string; title: string }[],
+    jdList: { text: string; title: string; source_job_id?: string }[],
   ): Promise<ApiResponse<{ jobs: { job_id: string; title: string }[] }>> {
     return this.request(
       "/resume/batch-tailor",

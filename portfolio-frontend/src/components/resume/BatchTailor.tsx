@@ -14,6 +14,11 @@ interface JDEntry {
   /** Original posting URL when handed off from the pipeline — surfaced so
    * the user can click through and copy the JD from the source. */
   sourceUrl?: string;
+  /** Daily-pipeline record id. When present the backend wires the resulting
+   * tailoring_record back to the saved_job (status → applied, streak++) so
+   * the batch flow shows up in Applications / Tailored / My Resumes the same
+   * way a single-row Tailor does. */
+  sourceJobId?: string;
 }
 
 const BATCH_TAILOR_MAX = 25;
@@ -132,6 +137,7 @@ export default function BatchTailor() {
         text: j.jd_text || '',
         fetchFailed: !!j.jd_fetch_failed,
         sourceUrl: j.url || undefined,
+        sourceJobId: j.job_id || undefined,
       }));
       setJdEntries(incoming);
       const failedN = incoming.filter((e) => e.fetchFailed).length;
@@ -164,7 +170,11 @@ export default function BatchTailor() {
 
     setSubmitting(true);
     const resp = await apiService.batchTailor(
-      validEntries.map(e => ({ text: e.text.trim(), title: e.title.trim() || `Job ${jdEntries.indexOf(e) + 1}` }))
+      validEntries.map(e => ({
+        text: e.text.trim(),
+        title: e.title.trim() || `Job ${jdEntries.indexOf(e) + 1}`,
+        source_job_id: e.sourceJobId,
+      }))
     );
     setSubmitting(false);
 

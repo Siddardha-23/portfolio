@@ -98,9 +98,14 @@ locals {
 
   # Shared Datadog env vars merged into every service. Empty map when disabled
   # so the existing tfstate stays clean.
+  #
+  # Note: DD_API_KEY_SECRET_ARN expects an AWS Secrets Manager ARN. Since we
+  # store the key in SSM Parameter Store (free, KMS-encrypted, already wired
+  # for every other secret), we use DD_API_KEY_SSM_NAME instead which takes
+  # the SSM parameter NAME (not an ARN).
   datadog_env_vars = var.enable_datadog ? {
     DD_SITE                    = var.datadog_site
-    DD_API_KEY_SECRET_ARN      = aws_ssm_parameter.datadog_api_key[0].arn
+    DD_API_KEY_SSM_NAME        = aws_ssm_parameter.datadog_api_key[0].name
     DD_ENV                     = var.environment
     DD_VERSION                 = "terraform"
     DD_SERVERLESS_LOGS_ENABLED = "true"

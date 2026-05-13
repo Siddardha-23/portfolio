@@ -265,13 +265,13 @@ variable "datadog_site" {
 variable "datadog_extension_layer_version" {
   description = "Datadog Lambda Extension layer version. Find latest at github.com/DataDog/datadog-lambda-extension/releases"
   type        = number
-  default     = 62
+  default     = 70
 }
 
 variable "datadog_python_layer_version" {
-  description = "Datadog Python tracer layer version. Find latest at github.com/DataDog/datadog-lambda-python/releases"
+  description = "Datadog Python tracer layer version. v123+ ships ddtrace 3.x which supports Flask 3.1's renamed internals. Find latest at github.com/DataDog/datadog-lambda-python/releases"
   type        = number
-  default     = 101
+  default     = 123
 }
 
 variable "datadog_trace_sample_rate" {

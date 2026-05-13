@@ -120,7 +120,7 @@ enable_datadog                  = false
 datadog_api_key                 = "" # from DD UI → Organization Settings → API Keys
 datadog_app_key                 = "" # from DD UI → Organization Settings → Application Keys
 datadog_site                    = "datadoghq.com" # US1 (us-east-1). Use us5.datadoghq.com / datadoghq.eu / ap1.datadoghq.com if you picked a different region.
-datadog_extension_layer_version = 62  # bump as Datadog releases
-datadog_python_layer_version    = 101 # bump as Datadog releases
+datadog_extension_layer_version = 70  # bump as Datadog releases
+datadog_python_layer_version    = 123 # bump as Datadog releases (123 = Flask 3.1-compatible)
 datadog_trace_sample_rate       = 0.1
 datadog_synthetic_email         = "" # e.g. harshith.siddardha@gmail.com

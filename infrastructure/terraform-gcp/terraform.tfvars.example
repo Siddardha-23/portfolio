@@ -36,4 +36,5 @@ aws_region            = "us-east-1"
 # Grafana
 # =============================================================================
 
-grafana_admin_password = "Sidd@rdha@23"
+# Set a strong unique password before applying. NEVER commit the real value.
+grafana_admin_password = "CHANGE_ME_TO_A_STRONG_PASSWORD"

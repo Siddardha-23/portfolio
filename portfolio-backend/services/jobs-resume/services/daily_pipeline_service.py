@@ -28,6 +28,7 @@ from urllib.parse import quote
 import requests
 
 from utils.config import _get_config_value
+from utils.datadog_metrics import dd_metric
 
 logger = logging.getLogger(__name__)
 
@@ -465,12 +466,16 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
     url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items?token={quote(token)}"
     logger.info("[apify] starting %s ...", actor)
     t0 = time.time()
+    # Short, low-cardinality actor tag (drop the dataset slug after `/` or `~`).
+    actor_tag = actor.split("/", 1)[-1].split("~", 1)[-1][:48]
     try:
         r = requests.post(url, json=run_input, timeout=timeout_s)
     except requests.RequestException as e:
+        dd_metric("portfolio.job_scrape.run", 1, tags=[f"actor:{actor_tag}", "result:network_error"])
         raise RuntimeError(f"APIFY_ERROR: {actor} request failed: {e}") from e
     if r.status_code >= 400:
         code = _classify_apify_error(r.status_code, r.text)
+        dd_metric("portfolio.job_scrape.run", 1, tags=[f"actor:{actor_tag}", "result:error", f"code:{code.lower()}"])
         # Include a short slice of the actor's response body for 4xx errors
         # so the diagnostic surfaces "field X is required" / "invalid value"
         # to the logs and the UI errors panel. Strip newlines + cap to keep
@@ -492,7 +497,11 @@ def _run_actor(actor: str, run_input: dict, token: str, timeout_s: int = 480) ->
         raise RuntimeError(f"{code}: {actor} reported {err.get('type', 'error')}")
     if not isinstance(items, list):
         items = []
-    logger.info("[apify] %s -> %d items in %.1fs", actor, len(items), time.time() - t0)
+    elapsed_ms = (time.time() - t0) * 1000
+    logger.info("[apify] %s -> %d items in %.1fs", actor, len(items), elapsed_ms / 1000)
+    dd_metric("portfolio.job_scrape.run", 1, tags=[f"actor:{actor_tag}", "result:success"])
+    dd_metric("portfolio.job_scrape.items", len(items), tags=[f"actor:{actor_tag}"])
+    dd_metric("portfolio.job_scrape.duration_ms", elapsed_ms, tags=[f"actor:{actor_tag}"])
     return items
 
 

@@ -231,3 +231,57 @@ variable "grafana_gcp_ip" {
   type        = string
   default     = ""
 }
+
+# =============================================================================
+# Datadog (Serverless APM + SLOs + Dashboards)
+# =============================================================================
+
+variable "enable_datadog" {
+  description = "Provision Datadog SSM secret, attach Lambda extension layers, and create dashboards/SLOs/monitors. Leave false until you've created a Datadog account and have an API key."
+  type        = bool
+  default     = false
+}
+
+variable "datadog_api_key" {
+  description = "Datadog API key (organization-scoped). Stored in SSM and fetched at Lambda init by the Datadog Extension. Generate at: <DD_SITE>/organization-settings/api-keys"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "datadog_app_key" {
+  description = "Datadog Application key (user-scoped). Required by the Datadog Terraform provider to manage dashboards/SLOs/monitors. Generate at: <DD_SITE>/organization-settings/application-keys"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "datadog_site" {
+  description = "Datadog site. US1=datadoghq.com (us-east-1), US3=us3.datadoghq.com, US5=us5.datadoghq.com, EU1=datadoghq.eu, AP1=ap1.datadoghq.com. Locked to your org at signup — check the URL of your Datadog tab if unsure."
+  type        = string
+  default     = "datadoghq.com"
+}
+
+variable "datadog_extension_layer_version" {
+  description = "Datadog Lambda Extension layer version. Find latest at github.com/DataDog/datadog-lambda-extension/releases"
+  type        = number
+  default     = 62
+}
+
+variable "datadog_python_layer_version" {
+  description = "Datadog Python tracer layer version. Find latest at github.com/DataDog/datadog-lambda-python/releases"
+  type        = number
+  default     = 101
+}
+
+variable "datadog_trace_sample_rate" {
+  description = "APM trace sample rate (0.0-1.0). 0.1 = 10% of traces kept, keeps free-tier usage in check."
+  type        = number
+  default     = 0.1
+}
+
+variable "datadog_synthetic_email" {
+  description = "Email for Datadog synthetic test failure notifications. Leave empty to disable email routing."
+  type        = string
+  default     = ""
+}

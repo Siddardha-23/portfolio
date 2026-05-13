@@ -95,3 +95,32 @@ enable_logging = true
 # 5. Use these in infrastructure/terraform-gcp/terraform.tfvars
 
 enable_grafana = false
+
+# =============================================================================
+# Datadog (optional) — Serverless APM + SLOs + golden-signals dashboards
+# =============================================================================
+# Adds Datadog Lambda Extension + Python tracer layers to every service, and
+# provisions a golden-signals dashboard, two SLOs, four monitors, and a
+# synthetic API test via the Datadog Terraform provider.
+#
+# Setup:
+#   1. Sign up at https://www.datadoghq.com/ (free trial → free tier)
+#   2. Pick your site. US1 (datadoghq.com) is the original us-east-1 region —
+#      lowest latency for AWS us-east-1-hosted workloads and the default here.
+#      The site is locked to your org at signup; you cannot change it later.
+#   3. Organization Settings → API Keys → create "portfolio-prod"
+#   4. Organization Settings → Application Keys → create "portfolio-prod-tf"
+#   5. Fill the four values below and set enable_datadog = true
+#   6. terraform apply
+#
+# Cost: free trial covers everything for 14 days. After trial, set
+#   datadog_trace_sample_rate low (0.1 = 10%) to stay inside free tier limits.
+
+enable_datadog                  = false
+datadog_api_key                 = "" # from DD UI → Organization Settings → API Keys
+datadog_app_key                 = "" # from DD UI → Organization Settings → Application Keys
+datadog_site                    = "datadoghq.com" # US1 (us-east-1). Use us5.datadoghq.com / datadoghq.eu / ap1.datadoghq.com if you picked a different region.
+datadog_extension_layer_version = 62  # bump as Datadog releases
+datadog_python_layer_version    = 101 # bump as Datadog releases
+datadog_trace_sample_rate       = 0.1
+datadog_synthetic_email         = "" # e.g. harshith.siddardha@gmail.com

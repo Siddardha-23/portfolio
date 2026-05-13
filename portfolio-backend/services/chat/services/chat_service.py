@@ -7,6 +7,8 @@ skills, experience, projects, and education.
 import logging
 from typing import List, Dict, Optional
 
+from utils.datadog_metrics import dd_metric, dd_span
+
 logger = logging.getLogger(__name__)
 
 # All portfolio data embedded as context for the AI model
@@ -160,13 +162,26 @@ def generate_response(message: str, history: Optional[List[Dict[str, str]]] = No
 
     contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            temperature=0.7,
-            max_output_tokens=1024,
-        ),
-    )
+    model_name = "gemini-2.5-flash-lite"
+    with dd_span("ai.gemini.generate", tags={"model": model_name, "agent": "concierge"}):
+        response = client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT,
+                temperature=0.7,
+                max_output_tokens=1024,
+            ),
+        )
+
+    # Custom metrics: count chat replies + total tokens (input + output) per call.
+    # Usage data is on response.usage_metadata when the SDK populates it.
+    base_tags = [f"model:{model_name}", "agent:concierge"]
+    dd_metric("portfolio.chat.replies", 1, tags=base_tags)
+    usage = getattr(response, "usage_metadata", None)
+    if usage is not None:
+        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
+        output_tokens = getattr(usage, "candidates_token_count", 0) or 0
+        dd_metric("portfolio.chat.tokens.input", prompt_tokens, tags=base_tags)
+        dd_metric("portfolio.chat.tokens.output", output_tokens, tags=base_tags)
     return response.text

@@ -30,6 +30,7 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 from utils.db_connect import DBConnect
+from utils.datadog_metrics import dd_metric
 from services.s3_service import get_storage_service
 from services.resume_versioning import (
     canonical_content_hash,
@@ -2027,6 +2028,13 @@ def download_file(s3_key):
     # Determine content type
     content_type = "application/pdf" if s3_key.endswith(".pdf") else "application/octet-stream"
     filename = resume.get("filename", "resume.pdf")
+    # Business metric: classify base vs generated/tailored from the key prefix.
+    variant = "generated" if "/generated/" in s3_key else "base"
+    dd_metric(
+        "portfolio.resume.download",
+        1,
+        tags=[f"variant:{variant}", f"format:{'pdf' if s3_key.endswith('.pdf') else 'other'}"],
+    )
     return send_file(
         io.BytesIO(file_bytes), mimetype=content_type, as_attachment=True, download_name=filename
     )

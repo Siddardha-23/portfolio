@@ -10,3 +10,7 @@ bcrypt==4.2.0
 apig-wsgi>=2.18.0
 python-dotenv==1.0.1
 aws-xray-sdk>=2.14.0
+# Datadog serverless APM — provided by the Datadog-Python312 Lambda layer in
+# prod, but kept here so local installs of the shared layer match the runtime.
+datadog-lambda>=6.105.0
+ddtrace>=2.18.0

@@ -232,7 +232,7 @@ resource "aws_ssm_parameter" "google_oauth_redirect_uri" {
   name        = "/${var.project_name}/${var.environment}/google-oauth-redirect-uri"
   description = "OAuth redirect URI registered in the Google client"
   type        = "String"
-  value = var.google_oauth_redirect_uri != "" ? var.google_oauth_redirect_uri : "https://${var.domain_name}/oauth/gmail/callback"
+  value       = var.google_oauth_redirect_uri != "" ? var.google_oauth_redirect_uri : "https://${var.domain_name}/oauth/gmail/callback"
   tier        = "Standard"
 
   tags = {
@@ -256,6 +256,30 @@ resource "aws_ssm_parameter" "gmail_token_encryption_key" {
 
   tags = {
     Name        = "${var.project_name}-gmail-token-encryption-key"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Datadog API Key (SecureString - optional)
+# Fetched at Lambda init by the Datadog Extension via DD_API_KEY_SECRET_ARN.
+# The Extension supports both SSM and Secrets Manager ARNs.
+# -----------------------------------------------------------------------------
+resource "aws_ssm_parameter" "datadog_api_key" {
+  count = var.enable_datadog && var.datadog_api_key != "" ? 1 : 0
+
+  name        = "/${var.project_name}/${var.environment}/datadog-api-key"
+  description = "Datadog API key for serverless APM + metrics + logs"
+  type        = "SecureString"
+  value       = var.datadog_api_key
+  tier        = "Standard"
+
+  tags = {
+    Name        = "${var.project_name}-datadog-api-key"
     Environment = var.environment
   }
 
@@ -300,19 +324,20 @@ output "ssm_parameter_paths" {
   description = "SSM Parameter Store paths"
   sensitive   = true
   value = {
-    mongodb_uri              = aws_ssm_parameter.mongodb_uri.name
-    jwt_secret               = aws_ssm_parameter.jwt_secret.name
-    ipinfo_token             = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
-    gemini_api_key           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
-    jsearch_api_key          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
-    apify_api_key            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : "not configured"
-    job_search_password_hash    = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
-    github_pat                  = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
-    google_oauth_client_id      = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : "not configured"
-    google_oauth_client_secret  = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : "not configured"
-    google_oauth_redirect_uri   = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_redirect_uri[0].name : "not configured"
-    gmail_token_encryption_key  = var.gmail_token_encryption_key != "" ? aws_ssm_parameter.gmail_token_encryption_key[0].name : "not configured"
-    allowed_origins             = aws_ssm_parameter.allowed_origins.name
-    environment                 = aws_ssm_parameter.environment.name
+    mongodb_uri                = aws_ssm_parameter.mongodb_uri.name
+    jwt_secret                 = aws_ssm_parameter.jwt_secret.name
+    ipinfo_token               = var.ipinfo_token != "" ? aws_ssm_parameter.ipinfo_token[0].name : "not configured"
+    gemini_api_key             = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : "not configured"
+    jsearch_api_key            = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : "not configured"
+    apify_api_key              = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : "not configured"
+    job_search_password_hash   = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : "not configured"
+    github_pat                 = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : "not configured"
+    google_oauth_client_id     = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : "not configured"
+    google_oauth_client_secret = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : "not configured"
+    google_oauth_redirect_uri  = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_redirect_uri[0].name : "not configured"
+    gmail_token_encryption_key = var.gmail_token_encryption_key != "" ? aws_ssm_parameter.gmail_token_encryption_key[0].name : "not configured"
+    datadog_api_key            = var.enable_datadog && var.datadog_api_key != "" ? aws_ssm_parameter.datadog_api_key[0].name : "not configured"
+    allowed_origins            = aws_ssm_parameter.allowed_origins.name
+    environment                = aws_ssm_parameter.environment.name
   }
 }

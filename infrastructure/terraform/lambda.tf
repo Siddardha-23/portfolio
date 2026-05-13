@@ -37,28 +37,28 @@ locals {
       # 900s (Lambda max) — async path runs the Apify daily pipeline
       # (parallel LinkedIn + Workday scrapes + scoring) which can exceed 5 min.
       # API Gateway requests still return in <30s thanks to the 202 + poll pattern.
-      timeout     = 900
+      timeout = 900
       env_vars = {
-        SSM_MONGODB_URI                  = aws_ssm_parameter.mongodb_uri.name
-        SSM_JWT_SECRET                   = aws_ssm_parameter.jwt_secret.name
-        SSM_JSEARCH_API_KEY              = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
-        SSM_APIFY_API_KEY                = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
-        SSM_JOB_SEARCH_PASSWORD_HASH     = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
-        SSM_GEMINI_API_KEY               = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
+        SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name
+        SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
+        SSM_APIFY_API_KEY            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
+        SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
+        SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
         # Gmail integration — empty strings when not configured so the feature self-disables.
-        SSM_GOOGLE_OAUTH_CLIENT_ID       = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : ""
-        SSM_GOOGLE_OAUTH_CLIENT_SECRET   = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : ""
-        SSM_GOOGLE_OAUTH_REDIRECT_URI    = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_redirect_uri[0].name : ""
-        SSM_GMAIL_TOKEN_ENCRYPTION_KEY   = var.gmail_token_encryption_key != "" ? aws_ssm_parameter.gmail_token_encryption_key[0].name : ""
-        APIFY_ACTOR_MEMORY_MB            = tostring(var.apify_actor_memory_mb)
-        APIFY_COMPANY_ACTOR_MEMORY_MB    = tostring(var.apify_company_actor_memory_mb)
-        APIFY_LINKEDIN_ACTOR             = var.apify_linkedin_actor
-        APIFY_WORKDAY_ACTOR              = var.apify_workday_actor
-        APIFY_INDEED_ACTOR               = var.apify_indeed_actor
-        APIFY_GOOGLE_ACTOR               = var.apify_google_actor
-        APIFY_COMPANY_ACTOR              = var.apify_company_actor
-        APIFY_JOBRIGHT_ACTOR             = var.apify_jobright_actor
-        RESUME_S3_BUCKET                 = aws_s3_bucket.resumes.id
+        SSM_GOOGLE_OAUTH_CLIENT_ID     = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : ""
+        SSM_GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : ""
+        SSM_GOOGLE_OAUTH_REDIRECT_URI  = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_redirect_uri[0].name : ""
+        SSM_GMAIL_TOKEN_ENCRYPTION_KEY = var.gmail_token_encryption_key != "" ? aws_ssm_parameter.gmail_token_encryption_key[0].name : ""
+        APIFY_ACTOR_MEMORY_MB          = tostring(var.apify_actor_memory_mb)
+        APIFY_COMPANY_ACTOR_MEMORY_MB  = tostring(var.apify_company_actor_memory_mb)
+        APIFY_LINKEDIN_ACTOR           = var.apify_linkedin_actor
+        APIFY_WORKDAY_ACTOR            = var.apify_workday_actor
+        APIFY_INDEED_ACTOR             = var.apify_indeed_actor
+        APIFY_GOOGLE_ACTOR             = var.apify_google_actor
+        APIFY_COMPANY_ACTOR            = var.apify_company_actor
+        APIFY_JOBRIGHT_ACTOR           = var.apify_jobright_actor
+        RESUME_S3_BUCKET               = aws_s3_bucket.resumes.id
       }
     }
     chat = {
@@ -88,6 +88,29 @@ locals {
       }
     }
   }
+
+  # =========================================================================
+  # Datadog Lambda layer ARNs (region-locked)
+  # docs: docs.datadoghq.com/serverless/aws_lambda/installation/python/
+  # =========================================================================
+  datadog_extension_arn = var.enable_datadog ? "arn:aws:lambda:${var.aws_region}:464622532012:layer:Datadog-Extension:${var.datadog_extension_layer_version}" : ""
+  datadog_python_arn    = var.enable_datadog ? "arn:aws:lambda:${var.aws_region}:464622532012:layer:Datadog-Python312:${var.datadog_python_layer_version}" : ""
+
+  # Shared Datadog env vars merged into every service. Empty map when disabled
+  # so the existing tfstate stays clean.
+  datadog_env_vars = var.enable_datadog ? {
+    DD_SITE                    = var.datadog_site
+    DD_API_KEY_SECRET_ARN      = aws_ssm_parameter.datadog_api_key[0].arn
+    DD_ENV                     = var.environment
+    DD_VERSION                 = "terraform"
+    DD_SERVERLESS_LOGS_ENABLED = "true"
+    DD_TRACE_ENABLED           = "true"
+    DD_LOGS_INJECTION          = "true"
+    DD_CAPTURE_LAMBDA_PAYLOAD  = "false"
+    DD_TRACE_SAMPLE_RATE       = tostring(var.datadog_trace_sample_rate)
+    DD_MERGE_XRAY_TRACES       = "true"
+    DD_LAMBDA_HANDLER          = "lambda_handler.handler"
+  } : {}
 
   # API Gateway route-to-service mapping
   api_routes = {
@@ -351,11 +374,13 @@ resource "aws_lambda_function" "service" {
 
   function_name = "${var.project_name}-${each.key}"
   role          = aws_iam_role.lambda.arn
-  handler       = "lambda_handler.handler"
-  runtime       = "python3.12"
-  memory_size   = each.value.memory
-  timeout       = each.value.timeout
-  description   = each.value.description
+  # Datadog Extension takes over as the handler when enabled; it reads the
+  # original handler from DD_LAMBDA_HANDLER and forwards to it.
+  handler     = var.enable_datadog ? "datadog_lambda.handler.handler" : "lambda_handler.handler"
+  runtime     = "python3.12"
+  memory_size = each.value.memory
+  timeout     = each.value.timeout
+  description = each.value.description
 
   # Infra Lambda fronts /api/preview-route/* (proxy to per-PR API GWs) in addition
   # to its own /api/infra, /api/trace, /api/admin/environments routes.
@@ -371,7 +396,10 @@ resource "aws_lambda_function" "service" {
   filename         = data.archive_file.service_placeholder[each.key].output_path
   source_code_hash = data.archive_file.service_placeholder[each.key].output_base64sha256
 
-  layers = [aws_lambda_layer_version.shared.arn]
+  layers = concat(
+    [aws_lambda_layer_version.shared.arn],
+    var.enable_datadog ? [local.datadog_extension_arn, local.datadog_python_arn] : []
+  )
 
   environment {
     variables = merge(
@@ -383,7 +411,17 @@ resource "aws_lambda_function" "service" {
         AWS_REGION_NAME = var.aws_region
         USE_SSM_SECRETS = "true"
         SERVICE_NAME    = each.key
-      }
+      },
+      # Per-service Datadog identity merged on top of shared vars.
+      var.enable_datadog ? merge(
+        local.datadog_env_vars,
+        {
+          DD_SERVICE = "${var.project_name}-${each.key}"
+          # Sampling override: jobs-resume bursts on the daily Apify pipeline,
+          # so trace it at 1% to avoid blowing through trace quota.
+          DD_TRACE_SAMPLE_RATE = each.key == "jobs-resume" ? "0.01" : tostring(var.datadog_trace_sample_rate)
+        }
+      ) : {}
     )
   }
 

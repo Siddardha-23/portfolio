@@ -73,19 +73,51 @@ interface AdminPrepPack {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+
+// Defensive ISO parser. Backend now emits UTC-tagged ISO ("…Z"), but legacy
+// rows in the DB were written before the fix and arrive without a timezone.
+// JS `new Date(...)` treats those as local time which throws off "just now"
+// math (the wall-clock-vs-UTC delta becomes the relative diff). We assume any
+// naive ISO is UTC — that's what the server records, and matches the new
+// emit path. Returns null for unparseable input.
+function parseISO(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  let s = iso;
+  // Treat "YYYY-MM-DDTHH:MM:SS[.ffffff]" with no zone designator as UTC.
+  if (/T\d/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = s + 'Z';
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
 function fmtDate(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
+  const d = parseISO(iso);
+  if (!d) return '—';
   return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
+// Long, viewer-friendly absolute. Example: "May 12, 2026 · 3:42:18 PM"
+function fmtAbsolute(iso: string | null | undefined): string {
+  const d = parseISO(iso);
+  if (!d) return '—';
+  const date = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  return `${date} · ${time}`;
+}
 function fmtRel(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
+  const d = parseISO(iso);
+  if (!d) return '—';
   const diffMs = Date.now() - d.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return 'just now';
+  // Future-dated entries are surfaced explicitly so admins can spot clock
+  // drift or seed data instead of being misled by "just now".
+  if (diffMs < -45_000) {
+    const futureSec = Math.floor(-diffMs / 1000);
+    if (futureSec < 60) return `in ${futureSec}s`;
+    if (futureSec < 3600) return `in ${Math.floor(futureSec / 60)}m`;
+    if (futureSec < 86400) return `in ${Math.floor(futureSec / 3600)}h`;
+    return `in ${Math.floor(futureSec / 86400)}d`;
+  }
+  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+  if (diffSec < 10) return 'just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
   const diffH = Math.floor(diffMin / 60);
   if (diffH < 24) return `${diffH}h ago`;
@@ -366,7 +398,7 @@ function ActivityRow({ a }: { a: Activity }) {
             ATS {a.ats_score}
           </span>
         )}
-        <span className="block text-[11px] text-gray-600 mt-0.5">{fmtRel(a.timestamp)}</span>
+        <TimeStamp iso={a.timestamp} className="block text-[11px] text-gray-600 mt-0.5" />
       </div>
     </div>
   );
@@ -484,7 +516,7 @@ function RecentlyActiveUsers({
                 </div>
                 <p className="text-[12px] text-gray-400 mt-0.5 truncate">
                   <span className="text-gray-500">Last seen </span>
-                  <span className="text-gray-200">{fmtRel(r.lastSeen)}</span>
+                  <TimeStamp iso={r.lastSeen} className="text-gray-200" />
                   {r.lastAction && (
                     <>
                       <span className="text-gray-600"> · </span>
@@ -526,6 +558,161 @@ function SectionHeading({ title, subtitle, action }: { title: string; subtitle?:
         {subtitle && <p className="text-xs text-gray-500 mt-0.5">{subtitle}</p>}
       </div>
       {action}
+    </div>
+  );
+}
+
+// Renders a relative timestamp with the exact wall-clock time on hover. The
+// inner <time> uses the standard datetime attribute so screen readers and
+// copy/paste pick up the ISO value too.
+function TimeStamp({
+  iso, prefix, className = 'text-xs text-gray-500 whitespace-nowrap',
+}: { iso: string | null | undefined; prefix?: string; className?: string }) {
+  const exact = fmtAbsolute(iso);
+  const rel = fmtRel(iso);
+  return (
+    <time
+      dateTime={iso || undefined}
+      title={exact === '—' ? undefined : exact}
+      className={`${className} cursor-help underline decoration-dotted decoration-gray-700 underline-offset-2`}
+    >
+      {prefix ? `${prefix} ` : ''}{rel}
+    </time>
+  );
+}
+
+// Horizontal bar — used in distribution panels (ATS bands, top companies…)
+function HBar({ label, value, max, color = 'indigo', sub }: {
+  label: string; value: number; max: number;
+  color?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet' | 'sky';
+  sub?: string;
+}) {
+  const fill: Record<string, string> = {
+    indigo:  'from-indigo-500/60 to-indigo-500/30',
+    emerald: 'from-emerald-500/60 to-emerald-500/30',
+    amber:   'from-amber-500/60 to-amber-500/30',
+    rose:    'from-rose-500/60 to-rose-500/30',
+    cyan:    'from-cyan-500/60 to-cyan-500/30',
+    violet:  'from-violet-500/60 to-violet-500/30',
+    sky:     'from-sky-500/60 to-sky-500/30',
+  };
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline justify-between gap-3 text-[11px]">
+        <span className="text-gray-300 truncate">{label}</span>
+        <span className="text-gray-500 tabular-nums shrink-0">
+          {sub ? `${sub} · ` : ''}<span className="text-white font-bold">{value}</span>
+        </span>
+      </div>
+      <div className="relative h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
+        <motion.div
+          initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${fill[color]}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+// Vertical mini-bar chart (e.g., ATS bucket distribution).
+function MiniBars({ buckets, color = 'indigo' }: {
+  buckets: { label: string; value: number }[];
+  color?: 'indigo' | 'emerald' | 'violet' | 'cyan';
+}) {
+  const max = Math.max(1, ...buckets.map(b => b.value));
+  const fill: Record<string, string> = {
+    indigo:  'from-indigo-400 to-indigo-600',
+    emerald: 'from-emerald-400 to-emerald-600',
+    violet:  'from-violet-400 to-violet-600',
+    cyan:    'from-cyan-400 to-cyan-600',
+  };
+  return (
+    <div className="flex items-end gap-2 h-28 px-1">
+      {buckets.map((b, i) => {
+        const h = (b.value / max) * 100;
+        return (
+          <div key={i} className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
+            <span className="text-[10px] tabular-nums text-gray-400 font-semibold">{b.value || ''}</span>
+            <div className="w-full bg-white/[0.03] rounded-md overflow-hidden flex items-end" style={{ height: '70%' }}>
+              <motion.div
+                initial={{ height: 0 }} animate={{ height: `${h}%` }}
+                transition={{ duration: 0.55, ease: 'easeOut', delay: i * 0.04 }}
+                className={`w-full bg-gradient-to-t ${fill[color]} rounded-md`}
+              />
+            </div>
+            <span className="text-[10px] text-gray-600 truncate w-full text-center">{b.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Conversion funnel — vertical stages with a contracting bar.
+function Funnel({ stages }: { stages: { label: string; value: number; color?: string }[] }) {
+  const max = Math.max(1, ...stages.map(s => s.value));
+  return (
+    <div className="space-y-2.5">
+      {stages.map((s, i) => {
+        const pct = (s.value / max) * 100;
+        const conv = i > 0 ? (stages[i - 1].value > 0 ? (s.value / stages[i - 1].value) * 100 : 0) : 100;
+        return (
+          <div key={s.label}>
+            <div className="flex items-baseline justify-between gap-3 text-[11px] mb-1">
+              <span className="text-gray-300 font-medium">{s.label}</span>
+              <span className="tabular-nums text-gray-500">
+                {i > 0 && <span className="text-gray-600">{conv.toFixed(0)}% conv · </span>}
+                <span className="text-white font-bold">{s.value}</span>
+              </span>
+            </div>
+            <div className="relative h-7 rounded-lg bg-white/[0.03] overflow-hidden ring-1 ring-white/[0.04]">
+              <motion.div
+                initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, ease: 'easeOut', delay: i * 0.05 }}
+                className={`absolute inset-y-0 left-0 rounded-lg ${s.color || 'bg-gradient-to-r from-indigo-500/60 via-violet-500/40 to-violet-500/10'}`}
+              />
+              <span className="relative z-10 inline-flex h-full items-center pl-3 text-[11px] font-semibold text-white/90">
+                {s.label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Consistent inner page container — same horizontal padding, max width, and
+// vertical rhythm across every tab so navigation feels stable.
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="mx-auto w-full max-w-[1480px] px-4 sm:px-6 lg:px-8 py-6 sm:py-7 space-y-7">
+      {children}
+    </div>
+  );
+}
+
+// Generic Toolbar row — used by list panels (Users, Resumes, Tailoring, Prep).
+function Toolbar({ left, right }: { left?: React.ReactNode; right?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+      <div className="flex-1 flex items-center gap-3 flex-wrap min-w-0">{left}</div>
+      {right && <div className="flex items-center gap-2 shrink-0 flex-wrap">{right}</div>}
+    </div>
+  );
+}
+
+// Surface card — standardized container used everywhere list/analytics content
+// lives. Prevents drift between panels (each tab used a slightly different
+// border/background recipe before).
+function Card({
+  children, padded = true, className = '',
+}: { children: React.ReactNode; padded?: boolean; className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.025] to-white/[0.01] ${padded ? 'p-5 sm:p-6' : ''} ${className}`}>
+      {children}
     </div>
   );
 }
@@ -846,16 +1033,21 @@ export default function AdminPortal() {
 
   useEffect(() => {
     if (!isSuperAdmin) return;
-    // Overview now shows a "Recently active users" panel — pull the user
-    // list eagerly the first time so the panel populates instantly when the
-    // admin lands on the page.
-    if (tab === 'overview' && users.length === 0) fetchUsers();
+    // Overview now feeds analytics widgets (ATS distribution, top roles,
+    // velocity trend, conversion funnel) from the same datasets used by
+    // other tabs — pull them once on landing so the dashboard hydrates with
+    // real data instead of permanently-empty charts.
+    if (tab === 'overview') {
+      if (users.length === 0) fetchUsers();
+      if (tailoring.length === 0) fetchTailoring();
+      if (applications.length === 0) fetchApplications();
+    }
     else if (tab === 'users') fetchUsers();
     else if (tab === 'resumes') fetchResumes();
     else if (tab === 'tailoring') fetchTailoring();
     else if (tab === 'applications') fetchApplications();
     else if (tab === 'prep') fetchPrepPacks();
-  }, [tab, isSuperAdmin, users.length, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
+  }, [tab, isSuperAdmin, users.length, tailoring.length, applications.length, fetchUsers, fetchResumes, fetchTailoring, fetchApplications, fetchPrepPacks]);
 
   const handleRefresh = async () => {
     setError(''); setRefreshing(true);
@@ -943,35 +1135,42 @@ export default function AdminPortal() {
           )}
         </AnimatePresence>
 
-        <div className="flex-1 px-6 py-6">
+        {/* Page-scroll model: sidebar/topbar stay sticky to the viewport,
+            this column contributes the long page content. Inner PageShell
+            standardizes horizontal padding/max-width across every tab. */}
+        <div className="flex-1">
           <AnimatePresence mode="wait">
             <motion.div
               key={selectedUser ? `user-detail:${selectedUser.user.email}` : tab}
               initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
               transition={{ duration: 0.22 }}
             >
-              {selectedUser ? (
-                <UserDetailDrawer detail={selectedUser} onBack={() => setSelectedUser(null)} />
-              ) : tab === 'overview' ? (
-                <OverviewPanel
-                  stats={stats}
-                  activities={activities}
-                  users={users}
-                  onSelectUser={(email) => { setTab('users'); fetchUserDetail(email); }}
-                />
-              ) : tab === 'users' ? (
-                <UsersPanel users={users} loading={loading} search={userSearch} setSearch={setUserSearch} onSelect={fetchUserDetail} />
-              ) : tab === 'resumes' ? (
-                <ResumesPanel resumes={resumes} loading={loading} />
-              ) : tab === 'tailoring' ? (
-                <TailoringPanel records={tailoring} loading={loading} />
-              ) : tab === 'applications' ? (
-                <ApplicationsPanel applications={applications} loading={loading} onRefetch={fetchApplications} setApplications={setApplications} />
-              ) : tab === 'environments' ? (
-                <EnvironmentsPanel />
-              ) : (
-                <PrepPanel prepPacks={prepPacks} loading={loading} />
-              )}
+              <PageShell>
+                {selectedUser ? (
+                  <UserDetailDrawer detail={selectedUser} onBack={() => setSelectedUser(null)} />
+                ) : tab === 'overview' ? (
+                  <OverviewPanel
+                    stats={stats}
+                    activities={activities}
+                    users={users}
+                    tailoring={tailoring}
+                    applications={applications}
+                    onSelectUser={(email) => { setTab('users'); fetchUserDetail(email); }}
+                  />
+                ) : tab === 'users' ? (
+                  <UsersPanel users={users} loading={loading} search={userSearch} setSearch={setUserSearch} onSelect={fetchUserDetail} />
+                ) : tab === 'resumes' ? (
+                  <ResumesPanel resumes={resumes} loading={loading} />
+                ) : tab === 'tailoring' ? (
+                  <TailoringPanel records={tailoring} loading={loading} />
+                ) : tab === 'applications' ? (
+                  <ApplicationsPanel applications={applications} loading={loading} onRefetch={fetchApplications} setApplications={setApplications} />
+                ) : tab === 'environments' ? (
+                  <EnvironmentsPanel />
+                ) : (
+                  <PrepPanel prepPacks={prepPacks} loading={loading} />
+                )}
+              </PageShell>
             </motion.div>
           </AnimatePresence>
         </div>
@@ -982,18 +1181,31 @@ export default function AdminPortal() {
 
 // ─── Overview Panel ───────────────────────────────────────────────────────
 
-function OverviewPanel({ stats, activities, users, onSelectUser }: {
+function OverviewPanel({ stats, activities, users, tailoring, applications, onSelectUser }: {
   stats: AdminStats | null;
   activities: Activity[];
   users: AdminUser[];
+  tailoring: any[];
+  applications: AdminApplication[];
   onSelectUser?: (email: string) => void;
 }) {
   if (!stats) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" />
-        ))}
+      <div className="space-y-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-32 rounded-2xl bg-white/[0.03] animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-28 rounded-2xl bg-white/[0.025] animate-pulse" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-6">
+          <div className="h-72 rounded-2xl bg-white/[0.02] animate-pulse" />
+          <div className="h-72 rounded-2xl bg-white/[0.02] animate-pulse" />
+        </div>
       </div>
     );
   }
@@ -1022,6 +1234,98 @@ function OverviewPanel({ stats, activities, users, onSelectUser }: {
   const usersTrend = trendFrom(stats.users_7d, stats.users_30d);
   const tailoringTrend = trendFrom(stats.tailoring_7d, stats.tailoring_30d);
 
+  // ATS score distribution across all tailoring records — buckets of 20.
+  const atsScores: number[] = tailoring
+    .map(r => r.ats_scores?.overall)
+    .filter((n: any): n is number => typeof n === 'number');
+  const atsBuckets = [
+    { label: '0–39', value: 0 }, { label: '40–59', value: 0 },
+    { label: '60–74', value: 0 }, { label: '75–89', value: 0 }, { label: '90+', value: 0 },
+  ];
+  for (const s of atsScores) {
+    if (s < 40) atsBuckets[0].value++;
+    else if (s < 60) atsBuckets[1].value++;
+    else if (s < 75) atsBuckets[2].value++;
+    else if (s < 90) atsBuckets[3].value++;
+    else atsBuckets[4].value++;
+  }
+  const avgAts = atsScores.length
+    ? Math.round(atsScores.reduce((a, b) => a + b, 0) / atsScores.length)
+    : null;
+
+  // Top companies / roles from tailoring records — useful for spotting demand.
+  const tally = (key: (r: any) => string | undefined) => {
+    const m: Record<string, number> = {};
+    for (const r of tailoring) {
+      const k = (key(r) || '').trim();
+      if (!k || k === 'Not specified') continue;
+      m[k] = (m[k] || 0) + 1;
+    }
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  };
+  const topCompanies = tally(r => r.jd_analysis?.company);
+  const topRoles = tally(r => r.jd_analysis?.job_title);
+
+  // Daily tailoring volume — last 14 days, by created_at.
+  const days: { label: string; iso: string; value: number }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    days.push({
+      label: d.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0),
+      iso: d.toISOString().slice(0, 10),
+      value: 0,
+    });
+  }
+  for (const r of tailoring) {
+    const d = parseISO(r.created_at);
+    if (!d) continue;
+    const local = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const key = local.toISOString().slice(0, 10);
+    const bucket = days.find(x => x.iso === key);
+    if (bucket) bucket.value++;
+  }
+
+  // Conversion funnel — visualizes the journey through the platform.
+  const appliedCount = (applications.length
+    ? applications.filter(a => a.status && a.status !== 'draft').length
+    : Object.entries(stats.applications_by_status || {})
+        .filter(([k]) => k !== 'draft')
+        .reduce((s, [, v]) => s + (v as number), 0));
+  const offers = stats.applications_by_status?.offer || 0;
+  const interviewing = stats.applications_by_status?.interviewing || 0;
+  const funnelStages = [
+    { label: 'Registered', value: stats.total_users },
+    { label: 'Parsed resume', value: stats.total_parsed_resumes },
+    { label: 'Tailored a JD', value: stats.total_tailoring_sessions },
+    { label: 'Applied', value: appliedCount, color: 'bg-gradient-to-r from-indigo-500/70 via-blue-500/50 to-blue-500/10' },
+    { label: 'Interviewing', value: interviewing, color: 'bg-gradient-to-r from-blue-500/70 via-sky-500/50 to-sky-500/10' },
+    { label: 'Offer', value: offers, color: 'bg-gradient-to-r from-emerald-500/70 via-emerald-500/40 to-emerald-500/10' },
+  ];
+
+  // Activity-this-week per day, from the activities array.
+  const activityDays: { label: string; value: number }[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - i);
+    activityDays.push({
+      label: d.toLocaleDateString('en-US', { weekday: 'narrow' }),
+      value: 0,
+    });
+  }
+  for (const a of activities) {
+    const d = parseISO(a.timestamp);
+    if (!d) continue;
+    const daysAgo = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (daysAgo < 0 || daysAgo > 6) continue;
+    activityDays[6 - daysAgo].value++;
+  }
+
+  // Storage breakdown for the donut.
+  const storageMax = Math.max(1, stats.total_base_resumes, stats.cached_pdf_files, stats.cached_docx_files, stats.legacy_generated_resumes);
+
   return (
     <div className="space-y-8">
       {/* Primary KPIs */}
@@ -1036,9 +1340,9 @@ function OverviewPanel({ stats, activities, users, onSelectUser }: {
           />
           <KPICard
             label="Tailoring Sessions" value={fmtNum(stats.total_tailoring_sessions)}
-            sub={`+${stats.tailoring_7d} this week`}
+            sub={`+${stats.tailoring_7d} this week · avg ATS ${avgAts ?? '—'}`}
             icon={<Icon.Bolt c="w-4 h-4" />} color="violet" trend={tailoringTrend}
-            sparklineData={mkSpark(stats.total_tailoring_sessions)}
+            sparklineData={days.map(d => d.value)}
           />
           <KPICard
             label="Applications" value={fmtNum(stats.total_applications)}
@@ -1055,6 +1359,65 @@ function OverviewPanel({ stats, activities, users, onSelectUser }: {
         </div>
       </div>
 
+      {/* Tailoring velocity + ATS distribution */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.3fr_1fr] gap-6">
+        <Card>
+          <SectionHeading
+            title="Tailoring velocity"
+            subtitle={`Sessions per day, last 14 days · total ${days.reduce((s, d) => s + d.value, 0)} · peak ${Math.max(0, ...days.map(d => d.value))}/day`}
+          />
+          {days.some(d => d.value > 0) ? (
+            <MiniBars buckets={days.map(d => ({ label: d.label, value: d.value }))} color="violet" />
+          ) : (
+            <p className="text-xs text-gray-600 italic py-6 text-center">No tailoring activity in the last 14 days.</p>
+          )}
+        </Card>
+        <Card>
+          <SectionHeading
+            title="ATS score distribution"
+            subtitle={atsScores.length > 0 ? `${atsScores.length} scored sessions · avg ${avgAts}` : 'No ATS scores yet'}
+          />
+          {atsScores.length > 0 ? (
+            <MiniBars buckets={atsBuckets} color="emerald" />
+          ) : (
+            <p className="text-xs text-gray-600 italic py-6 text-center">Run tailoring + ATS scoring to populate this.</p>
+          )}
+        </Card>
+      </div>
+
+      {/* Conversion funnel + Top demand */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-6">
+        <Card>
+          <SectionHeading
+            title="Conversion funnel"
+            subtitle="From signup → tailoring → application → interview → offer."
+          />
+          <Funnel stages={funnelStages} />
+        </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-6">
+          <Card>
+            <SectionHeading title="Top roles" subtitle="By tailoring volume." />
+            {topRoles.length > 0 ? (
+              <div className="space-y-3">
+                {topRoles.map(([label, value]) => (
+                  <HBar key={label} label={label} value={value} max={topRoles[0][1]} color="indigo" />
+                ))}
+              </div>
+            ) : <p className="text-xs text-gray-600 italic">No role data yet.</p>}
+          </Card>
+          <Card>
+            <SectionHeading title="Top companies" subtitle="JDs users targeted most." />
+            {topCompanies.length > 0 ? (
+              <div className="space-y-3">
+                {topCompanies.map(([label, value]) => (
+                  <HBar key={label} label={label} value={value} max={topCompanies[0][1]} color="cyan" />
+                ))}
+              </div>
+            ) : <p className="text-xs text-gray-600 italic">No company data yet.</p>}
+          </Card>
+        </div>
+      </div>
+
       {/* Secondary KPIs — infra + storage */}
       <div>
         <SectionHeading title="Storage & versioning" subtitle="How resume files are cached across the new versioning model." />
@@ -1064,13 +1427,23 @@ function OverviewPanel({ stats, activities, users, onSelectUser }: {
           <KPICard label="Cached PDFs" value={fmtNum(stats.cached_pdf_files)} sub={`${fmtNum(stats.cached_docx_files)} DOCX · ${fmtNum(stats.total_versions)} versions`} icon={<Icon.Doc c="w-4 h-4" />} color="cyan" />
           <KPICard label="Legacy downloads" value={fmtNum(stats.legacy_generated_resumes)} sub="Pre-refactor user_resumes rows" icon={<Icon.Download c="w-4 h-4" />} color="rose" />
         </div>
+        <Card className="mt-4">
+          <SectionHeading title="Storage utilization" subtitle="Relative scale of each artifact type." />
+          <div className="space-y-3">
+            <HBar label="Base uploads (S3)" value={stats.total_base_resumes} max={storageMax} color="amber" />
+            <HBar label="Cached PDFs (tailored)" value={stats.cached_pdf_files} max={storageMax} color="cyan" />
+            <HBar label="Cached DOCXs (tailored)" value={stats.cached_docx_files} max={storageMax} color="violet" />
+            <HBar label="Versions tracked" value={stats.total_versions} max={storageMax} color="indigo" />
+            <HBar label="Legacy generated rows" value={stats.legacy_generated_resumes} max={storageMax} color="rose" />
+          </div>
+        </Card>
       </div>
 
       {/* Pipeline + Recently-active two-column. The right column has two
           tabs (people-first vs event-first) — the people view is the default
           because it's easier for a non-technical viewer to scan. */}
       <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_1fr] gap-6">
-        <div className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.02] to-transparent p-6">
+        <Card>
           <SectionHeading
             title="Application pipeline"
             subtitle={stats.total_applications > 0 ? `${stats.total_applications} applications across all users` : 'No applications tracked yet'}
@@ -1084,7 +1457,11 @@ function OverviewPanel({ stats, activities, users, onSelectUser }: {
               subtitle="Applications appear here as users mark status on their tailored resumes."
             />
           )}
-        </div>
+          <div className="mt-6">
+            <SectionHeading title="Activity this week" subtitle="Events per day across the platform." />
+            <MiniBars buckets={activityDays} color="indigo" />
+          </div>
+        </Card>
 
         <RecentActivityCard
           activities={activities}
@@ -1255,8 +1632,8 @@ function UsersPanel({ users, loading, search, setSearch, onSelect }: {
                     ) : <span className="text-xs text-gray-600">—</span>}
                     {u.sector && <span className="text-[10px] text-gray-600 truncate">{u.sector}</span>}
                   </div>
-                  <span className="hidden md:block text-xs text-gray-500 whitespace-nowrap">{fmtDate(u.created_at)}</span>
-                  <span className="hidden md:block text-xs text-gray-500 whitespace-nowrap">{fmtRel(u.last_login)}</span>
+                  <span className="hidden md:block text-xs text-gray-500 whitespace-nowrap" title={fmtAbsolute(u.created_at)}>{fmtDate(u.created_at)}</span>
+                  <span className="hidden md:block"><TimeStamp iso={u.last_login} /></span>
                   <div className="hidden md:flex items-center gap-1.5">
                     {u.has_parsed_resume && (
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">✓ Parsed</span>
@@ -1287,17 +1664,44 @@ function UsersPanel({ users, loading, search, setSearch, onSelect }: {
 
 // ─── Resumes Panel ────────────────────────────────────────────────────────
 
+type ResumeSort = 'recent' | 'oldest' | 'most_skills' | 'most_experience';
+
 function ResumesPanel({ resumes, loading }: { resumes: any[]; loading: boolean }) {
   const [search, setSearch] = useState('');
-  const filtered = useMemo(() => {
+  const [sort, setSort] = useState<ResumeSort>('recent');
+  const [density, setDensity] = useState<'grid' | 'table'>('grid');
+
+  const processed = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return resumes;
-    return resumes.filter(r =>
-      (r.user_email || '').toLowerCase().includes(q)
-      || (r.contact?.name || '').toLowerCase().includes(q)
-      || (r.summary || '').toLowerCase().includes(q),
-    );
-  }, [resumes, search]);
+    let list = resumes.slice();
+    if (q) {
+      list = list.filter(r =>
+        (r.user_email || '').toLowerCase().includes(q)
+        || (r.contact?.name || '').toLowerCase().includes(q)
+        || (r.summary || '').toLowerCase().includes(q)
+        || (Object.values(r.skills || {}).flat() as string[]).some(s => (s || '').toLowerCase().includes(q)),
+      );
+    }
+    const t = (s: string | null | undefined) => (parseISO(s)?.getTime() ?? 0);
+    const skillCount = (r: any) => (Object.values(r.skills || {}).flat() as string[]).length;
+    switch (sort) {
+      case 'recent':          list.sort((a, b) => t(b.parsed_at) - t(a.parsed_at)); break;
+      case 'oldest':          list.sort((a, b) => t(a.parsed_at) - t(b.parsed_at)); break;
+      case 'most_skills':     list.sort((a, b) => skillCount(b) - skillCount(a)); break;
+      case 'most_experience': list.sort((a, b) => (b.experience?.length || 0) - (a.experience?.length || 0)); break;
+    }
+    return list;
+  }, [resumes, search, sort]);
+
+  // Roll-ups for the audit summary tiles.
+  const kpis = useMemo(() => {
+    const withSummary = resumes.filter(r => r.summary && r.summary.length > 0).length;
+    const withExp = resumes.filter(r => (r.experience?.length || 0) > 0).length;
+    const withProj = resumes.filter(r => (r.projects?.length || 0) > 0).length;
+    const skillTotal = resumes.reduce((s, r) => s + (Object.values(r.skills || {}).flat() as string[]).length, 0);
+    const avgSkills = resumes.length ? Math.round(skillTotal / resumes.length) : 0;
+    return { withSummary, withExp, withProj, avgSkills };
+  }, [resumes]);
 
   if (loading) return <SkeletonRow />;
   if (resumes.length === 0) {
@@ -1305,18 +1709,90 @@ function ResumesPanel({ resumes, loading }: { resumes: any[]; loading: boolean }
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex-1 max-w-md"><SearchBox value={search} onChange={setSearch} placeholder="Search name, email, or summary…" /></div>
-        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} of {resumes.length}</span>
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile label="Parsed" value={resumes.length} tint="emerald" />
+        <StatTile label="With summary" value={kpis.withSummary} sub={`${resumes.length ? Math.round((kpis.withSummary / resumes.length) * 100) : 0}%`} tint="indigo" />
+        <StatTile label="With experience" value={kpis.withExp} sub={`${kpis.withProj} have projects`} tint="violet" />
+        <StatTile label="Avg skills" value={kpis.avgSkills} tint="cyan" />
       </div>
 
-      {filtered.length === 0 ? (
+      <Toolbar
+        left={<>
+          <div className="flex-1 max-w-md min-w-[200px]">
+            <SearchBox value={search} onChange={setSearch} placeholder="Search name, email, summary, or skills…" />
+          </div>
+        </>}
+        right={<>
+          <Select
+            value={sort}
+            onChange={(v) => setSort(v as ResumeSort)}
+            options={[
+              { value: 'recent',          label: 'Newest parsed' },
+              { value: 'oldest',          label: 'Oldest parsed' },
+              { value: 'most_skills',     label: 'Most skills' },
+              { value: 'most_experience', label: 'Most experience' },
+            ]}
+          />
+          <div className="inline-flex rounded-lg bg-white/[0.03] border border-white/[0.06] p-0.5">
+            <button
+              onClick={() => setDensity('grid')}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition ${density === 'grid' ? 'bg-white/10 text-white' : 'text-gray-500'}`}
+              title="Card grid"
+              aria-label="Card grid"
+            ><Icon.Kanban c="w-3.5 h-3.5" /></button>
+            <button
+              onClick={() => setDensity('table')}
+              className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition ${density === 'table' ? 'bg-white/10 text-white' : 'text-gray-500'}`}
+              title="Table"
+              aria-label="Table"
+            ><Icon.List c="w-3.5 h-3.5" /></button>
+          </div>
+          <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{processed.length} of {resumes.length}</span>
+        </>}
+      />
+
+      {processed.length === 0 ? (
         <EmptyHero icon={<Icon.Search c="w-5 h-5" />} title="No matches" subtitle="Try a different search term." />
-      ) : (
+      ) : density === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filtered.map((r, i) => <ResumeCard key={i} r={r} />)}
+          {processed.map((r, i) => <ResumeCard key={i} r={r} />)}
         </div>
+      ) : (
+        <Card padded={false}>
+          <div className="overflow-x-auto overscroll-contain">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/[0.06] bg-white/[0.02]">
+                  {['Name', 'Email', 'Skills', 'Exp', 'Edu', 'Projects', 'Parsed'].map(h => (
+                    <th key={h} className="text-left px-4 py-3 text-[10px] text-gray-500 font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {processed.map((r, i) => {
+                  const skillCount = (Object.values(r.skills || {}).flat() as string[]).length;
+                  return (
+                    <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Avatar seed={r.contact?.name || r.user_email} size="sm" />
+                          <span className="text-sm text-gray-200 font-medium truncate max-w-[220px]">{r.contact?.name || 'Unknown'}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500 font-mono truncate max-w-[260px]">{r.user_email}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{skillCount}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{r.experience?.length || 0}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{r.education?.length || 0}</td>
+                      <td className="px-4 py-3 text-xs text-gray-400 tabular-nums">{r.projects?.length || 0}</td>
+                      <td className="px-4 py-3"><TimeStamp iso={r.parsed_at} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </div>
   );
@@ -1328,7 +1804,7 @@ function ResumeCard({ r }: { r: any }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden transition-all hover:border-white/[0.12]"
+      className="rounded-2xl border border-white/[0.06] bg-gradient-to-b from-white/[0.025] to-white/[0.01] overflow-hidden transition-all hover:border-white/[0.12]"
     >
       <div className="p-5 space-y-3">
         <div className="flex items-start justify-between gap-3">
@@ -1339,7 +1815,7 @@ function ResumeCard({ r }: { r: any }) {
               <p className="text-[11px] text-gray-500 font-mono truncate">{r.user_email}</p>
             </div>
           </div>
-          <span className="text-[10px] text-gray-600 whitespace-nowrap shrink-0">{fmtRel(r.parsed_at)}</span>
+          <TimeStamp iso={r.parsed_at} className="text-[10px] text-gray-600 whitespace-nowrap shrink-0" />
         </div>
 
         {r.summary && <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">{r.summary}</p>}
@@ -1377,46 +1853,128 @@ function ResumeCard({ r }: { r: any }) {
 
 // ─── Tailoring Panel ──────────────────────────────────────────────────────
 
+type TailoringSort = 'recent' | 'oldest' | 'ats_desc' | 'ats_asc' | 'versions';
+
 function TailoringPanel({ records, loading }: { records: any[]; loading: boolean }) {
   const [search, setSearch] = useState('');
-  const filtered = useMemo(() => {
+  const [sort, setSort] = useState<TailoringSort>('recent');
+  const [filter, setFilter] = useState<'all' | 'with_ats' | 'with_prep' | 'multi_version' | 'applied'>('all');
+  const [selected, setSelected] = useState<any | null>(null);
+
+  const processed = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter(r =>
-      (r.user_email || '').toLowerCase().includes(q)
-      || (r.jd_analysis?.job_title || '').toLowerCase().includes(q)
-      || (r.jd_analysis?.company || '').toLowerCase().includes(q),
-    );
-  }, [records, search]);
+    let list = records.slice();
+    if (q) {
+      list = list.filter(r =>
+        (r.user_email || '').toLowerCase().includes(q)
+        || (r.jd_analysis?.job_title || '').toLowerCase().includes(q)
+        || (r.jd_analysis?.company || '').toLowerCase().includes(q),
+      );
+    }
+    if (filter === 'with_ats')      list = list.filter(r => r.ats_scores?.overall != null);
+    if (filter === 'with_prep')     list = list.filter(r => r._summary?.interview_prep_ready);
+    if (filter === 'multi_version') list = list.filter(r => (r._summary?.version_count || 0) > 1);
+    if (filter === 'applied')       list = list.filter(r => r._summary?.application_status && r._summary.application_status !== 'draft');
+
+    const t = (s: string | null | undefined) => (parseISO(s)?.getTime() ?? 0);
+    switch (sort) {
+      case 'recent':   list.sort((a, b) => t(b.created_at) - t(a.created_at)); break;
+      case 'oldest':   list.sort((a, b) => t(a.created_at) - t(b.created_at)); break;
+      case 'ats_desc': list.sort((a, b) => (b.ats_scores?.overall || -1) - (a.ats_scores?.overall || -1)); break;
+      case 'ats_asc':  list.sort((a, b) => (a.ats_scores?.overall ?? 999) - (b.ats_scores?.overall ?? 999)); break;
+      case 'versions': list.sort((a, b) => (b._summary?.version_count || 0) - (a._summary?.version_count || 0)); break;
+    }
+    return list;
+  }, [records, search, sort, filter]);
+
+  // Roll-ups for the toolbar KPI strip — gives a quick at-a-glance audit.
+  const kpis = useMemo(() => {
+    const scored = records.filter(r => r.ats_scores?.overall != null);
+    const avg = scored.length
+      ? Math.round(scored.reduce((s, r) => s + r.ats_scores.overall, 0) / scored.length)
+      : null;
+    const ge80 = scored.filter(r => r.ats_scores.overall >= 80).length;
+    const lt60 = scored.filter(r => r.ats_scores.overall < 60).length;
+    const multi = records.filter(r => (r._summary?.version_count || 0) > 1).length;
+    const prep = records.filter(r => r._summary?.interview_prep_ready).length;
+    const applied = records.filter(r => r._summary?.application_status && r._summary.application_status !== 'draft').length;
+    return { avg, ge80, lt60, multi, prep, applied, scored: scored.length };
+  }, [records]);
 
   if (loading) return <SkeletonRow />;
   if (records.length === 0) {
     return <EmptyHero icon={<Icon.Bolt c="w-5 h-5" />} title="No tailoring sessions yet" subtitle="Appears after any user runs the tailor pipeline." />;
   }
 
+  if (selected) {
+    return <TailoringDetail record={selected} onBack={() => setSelected(null)} />;
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <div className="flex-1 max-w-md"><SearchBox value={search} onChange={setSearch} placeholder="Search email, role, or company…" /></div>
-        <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{filtered.length} of {records.length}</span>
+    <div className="space-y-5">
+      {/* Audit summary strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3">
+        <StatTile label="Sessions" value={records.length} tint="violet" />
+        <StatTile label="Scored" value={kpis.scored} sub={`${records.length ? Math.round((kpis.scored / records.length) * 100) : 0}%`} tint="cyan" />
+        <StatTile label="Avg ATS" value={kpis.avg ?? '—'} tint="emerald" />
+        <StatTile label="ATS ≥ 80" value={kpis.ge80} sub={`${kpis.lt60} below 60`} tint="amber" />
+        <StatTile label="Multi-version" value={kpis.multi} tint="indigo" />
+        <StatTile label="Prep ready" value={kpis.prep} sub={`${kpis.applied} applied`} tint="rose" />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.01]">
+      <Toolbar
+        left={<>
+          <div className="flex-1 max-w-md min-w-[200px]">
+            <SearchBox value={search} onChange={setSearch} placeholder="Search email, role, or company…" />
+          </div>
+          <FilterPills
+            value={filter}
+            onChange={(v) => setFilter(v as any)}
+            options={[
+              { value: 'all',           label: 'All',           count: records.length },
+              { value: 'with_ats',      label: 'With ATS',      count: kpis.scored },
+              { value: 'with_prep',     label: 'With prep',     count: kpis.prep },
+              { value: 'multi_version', label: 'Multi-version', count: kpis.multi },
+              { value: 'applied',       label: 'Applied',       count: kpis.applied },
+            ]}
+          />
+        </>}
+        right={<>
+          <Select
+            value={sort}
+            onChange={(v) => setSort(v as TailoringSort)}
+            options={[
+              { value: 'recent',   label: 'Newest first' },
+              { value: 'oldest',   label: 'Oldest first' },
+              { value: 'ats_desc', label: 'ATS · high → low' },
+              { value: 'ats_asc',  label: 'ATS · low → high' },
+              { value: 'versions', label: 'Most versions' },
+            ]}
+          />
+          <span className="text-xs text-gray-500 tabular-nums whitespace-nowrap">{processed.length} of {records.length}</span>
+        </>}
+      />
+
+      <Card padded={false}>
         <div className="overflow-x-auto overscroll-contain">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                {['User', 'Role', 'Company', 'Versions', 'Files', 'Status', 'Prep', 'ATS', 'Created'].map(h => (
+                {['User', 'Role', 'Company', 'Versions', 'Files', 'Status', 'Prep', 'ATS', 'Created', ''].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-[10px] text-gray-500 font-semibold uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r, i) => {
+              {processed.map((r, i) => {
                 const s = r._summary || {};
                 const ats = r.ats_scores?.overall;
                 return (
-                  <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                  <tr
+                    key={i}
+                    onClick={() => setSelected(r)}
+                    className="group border-b border-white/[0.03] hover:bg-white/[0.03] transition-colors cursor-pointer"
+                  >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5 min-w-0">
                         <Avatar seed={r.user_email} size="sm" />
@@ -1452,13 +2010,285 @@ function TailoringPanel({ records, loading }: { records: any[]; loading: boolean
                         }`}>{ats}</span>
                       ) : <span className="text-xs text-gray-700">—</span>}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(r.created_at)}</td>
+                    <td className="px-4 py-3"><TimeStamp iso={r.created_at} /></td>
+                    <td className="px-4 py-3">
+                      <Icon.Chevron c="w-3.5 h-3.5 text-gray-700 group-hover:text-gray-300" />
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+      </Card>
+    </div>
+  );
+}
+
+// Compact KPI cell used by panel toolbars. Lighter than KPICard.
+function StatTile({ label, value, sub, tint = 'indigo' }: {
+  label: string; value: number | string; sub?: string;
+  tint?: 'indigo' | 'emerald' | 'amber' | 'rose' | 'cyan' | 'violet';
+}) {
+  const tints: Record<string, string> = {
+    indigo:  'from-indigo-500/15 ring-indigo-500/25 text-indigo-200',
+    emerald: 'from-emerald-500/15 ring-emerald-500/25 text-emerald-200',
+    amber:   'from-amber-500/15 ring-amber-500/25 text-amber-200',
+    rose:    'from-rose-500/15 ring-rose-500/25 text-rose-200',
+    cyan:    'from-cyan-500/15 ring-cyan-500/25 text-cyan-200',
+    violet:  'from-violet-500/15 ring-violet-500/25 text-violet-200',
+  };
+  return (
+    <div className={`rounded-xl ring-1 bg-gradient-to-b ${tints[tint]} to-transparent px-3.5 py-3`}>
+      <p className="text-[10px] uppercase tracking-wider opacity-70 font-semibold">{label}</p>
+      <p className="text-xl font-bold tabular-nums leading-tight mt-0.5">{value}</p>
+      {sub && <p className="text-[10px] opacity-60 mt-0.5 truncate">{sub}</p>}
+    </div>
+  );
+}
+
+function FilterPills({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; count: number }[];
+}) {
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {options.map(o => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            onClick={() => onChange(o.value)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border transition ${
+              active
+                ? 'bg-indigo-500/15 text-indigo-200 border-indigo-500/30'
+                : 'bg-white/[0.03] text-gray-400 border-white/[0.06] hover:border-white/10 hover:text-gray-200'
+            }`}
+          >
+            <span>{o.label}</span>
+            <span className={`tabular-nums font-bold ${active ? 'opacity-90' : 'opacity-60'}`}>{o.count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Select({ value, onChange, options }: {
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      className="h-9 pl-3 pr-8 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-gray-200 focus:outline-none focus:border-indigo-500/40 focus:ring-1 focus:ring-indigo-500/30 transition appearance-none bg-no-repeat bg-right"
+      style={{
+        backgroundImage:
+          'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' fill=\'none\' viewBox=\'0 0 20 20\' stroke=\'%23a3a3a3\' stroke-width=\'1.8\'%3E%3Cpath d=\'m6 8 4 4 4-4\'/%3E%3C/svg%3E")',
+        backgroundSize: '14px',
+        backgroundPosition: 'right 10px center',
+      }}
+    >
+      {options.map(o => (
+        <option key={o.value} value={o.value} className="bg-[#0d0d14] text-gray-200">{o.label}</option>
+      ))}
+    </select>
+  );
+}
+
+// Read-only audit drawer for a single tailoring session. Surfaces JD, ATS
+// sub-scores, version timeline, app status, and prep readiness — everything
+// an admin needs to inspect a record without leaving the Tailoring tab.
+function TailoringDetail({ record, onBack }: { record: any; onBack: () => void }) {
+  const s = record._summary || {};
+  const jd = record.jd_analysis || {};
+  const ats = record.ats_scores || {};
+  const overall: number | undefined = ats.overall;
+  const subScores: { label: string; value: number }[] = [];
+  for (const k of Object.keys(ats)) {
+    if (k === 'overall') continue;
+    if (typeof ats[k] === 'number') subScores.push({ label: k.replace(/_/g, ' '), value: ats[k] });
+  }
+  const versions = (record.versions || []) as any[];
+  const sortedVersions = [...versions].sort((a, b) => (a.version_number || 0) - (b.version_number || 0));
+  const app = record.application || {};
+  const prep = record.interview_prep || {};
+  const atsColor =
+    overall == null ? 'bg-gray-500/10 text-gray-400 ring-gray-500/20' :
+    overall >= 80 ? 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30' :
+    overall >= 60 ? 'bg-amber-500/15 text-amber-300 ring-amber-500/30' :
+                    'bg-red-500/15 text-red-300 ring-red-500/30';
+
+  return (
+    <div className="space-y-5">
+      {/* Breadcrumb */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-white transition">
+          <Icon.Back c="w-3.5 h-3.5" /> Tailoring
+        </button>
+        <span className="text-gray-700">/</span>
+        <span className="text-xs text-gray-300">{jd.job_title || 'Untitled'}{jd.company && jd.company !== 'Not specified' ? ` · ${jd.company}` : ''}</span>
+      </div>
+
+      {/* Hero */}
+      <Card className="bg-gradient-to-br from-violet-500/10 via-white/[0.02] to-transparent">
+        <div className="flex items-start gap-5 flex-wrap">
+          <Avatar seed={record.user_email} size="lg" />
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-bold text-white">{jd.job_title || 'Untitled tailoring session'}</h2>
+            {jd.company && jd.company !== 'Not specified' && (
+              <p className="text-sm text-gray-400">at <span className="text-gray-200 font-medium">{jd.company}</span></p>
+            )}
+            <p className="text-xs text-gray-500 font-mono mt-1">{record.user_email}</p>
+            <div className="flex items-center gap-3 mt-3 text-[11px] text-gray-500 flex-wrap">
+              <TimeStamp iso={record.created_at} prefix="Created" />
+              {record.updated_at && <><span className="text-gray-700">·</span><TimeStamp iso={record.updated_at} prefix="Updated" /></>}
+              {record.ats_scored_at && <><span className="text-gray-700">·</span><TimeStamp iso={record.ats_scored_at} prefix="Scored" /></>}
+            </div>
+          </div>
+          <div className={`shrink-0 inline-flex flex-col items-center gap-0.5 px-5 py-3 rounded-2xl ring-1 ${atsColor}`}>
+            <span className="text-[10px] uppercase tracking-wider opacity-70 font-semibold">ATS Overall</span>
+            <span className="text-3xl font-bold tabular-nums">{overall ?? '—'}</span>
+          </div>
+        </div>
+      </Card>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatTile label="Versions" value={s.version_count || 0} sub={s.current_version_number ? `current v${s.current_version_number}` : undefined} tint="violet" />
+        <StatTile label="Cached files" value={s.files_cached || 0} sub={s.version_sources?.length ? s.version_sources.join(' · ') : undefined} tint="cyan" />
+        <StatTile label="App status" value={s.application_status || '—'} sub={app.applied_at ? `applied ${fmtRel(app.applied_at)}` : undefined} tint="indigo" />
+        <StatTile label="Prep ready" value={prep.generated_at ? '✓' : '—'} sub={prep.generated_at ? fmtRel(prep.generated_at) : 'Not generated'} tint="rose" />
+      </div>
+
+      {/* ATS sub-scores */}
+      {subScores.length > 0 && (
+        <Card>
+          <SectionHeading title="ATS sub-scores" subtitle="Per-category breakdown of the latest scoring pass." />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+            {subScores.map(s => (
+              <HBar
+                key={s.label}
+                label={s.label.replace(/\b\w/g, c => c.toUpperCase())}
+                value={s.value}
+                max={100}
+                color={s.value >= 80 ? 'emerald' : s.value >= 60 ? 'amber' : 'rose'}
+                sub="/ 100"
+              />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* JD analysis */}
+      {(jd.must_haves?.length > 0 || jd.nice_to_haves?.length > 0 || jd.keywords?.length > 0) && (
+        <Card>
+          <SectionHeading title="JD analysis" subtitle="What the tailor pipeline extracted from the job description." />
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <JDChips title="Must-haves" items={jd.must_haves} tint="rose" />
+            <JDChips title="Nice-to-haves" items={jd.nice_to_haves} tint="amber" />
+            <JDChips title="Keywords" items={jd.keywords} tint="indigo" />
+          </div>
+        </Card>
+      )}
+
+      {/* Version timeline */}
+      {sortedVersions.length > 0 && (
+        <Card>
+          <SectionHeading
+            title="Version history"
+            subtitle={`${sortedVersions.length} version${sortedVersions.length === 1 ? '' : 's'} · current v${s.current_version_number ?? sortedVersions[sortedVersions.length - 1].version_number}`}
+          />
+          <div className="relative pl-4">
+            <span className="absolute left-1.5 top-2 bottom-2 w-px bg-gradient-to-b from-violet-500/40 via-white/[0.06] to-transparent" />
+            <ul className="space-y-3">
+              {sortedVersions.map((v: any) => {
+                const isCurrent = v.version_id === record.current_version_id;
+                const files = v.files || {};
+                const fileEntries = Object.entries(files).filter(([, f]) => f && typeof f === 'object');
+                return (
+                  <li key={v.version_id} className="relative pl-4">
+                    <span className={`absolute -left-[3px] top-2 w-2.5 h-2.5 rounded-full ring-2 ring-[#0a0a0f] ${isCurrent ? 'bg-violet-400' : 'bg-white/30'}`} />
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span className="text-sm font-semibold text-white">v{v.version_number}</span>
+                      <span className="text-[10px] uppercase tracking-wider text-gray-500 px-1.5 py-0.5 rounded bg-white/[0.04] border border-white/[0.06]">{v.source || 'initial'}</span>
+                      {isCurrent && <span className="text-[10px] uppercase tracking-wider text-violet-200 px-1.5 py-0.5 rounded bg-violet-500/15 border border-violet-500/25">Current</span>}
+                      <TimeStamp iso={v.created_at} className="text-[11px] text-gray-500 whitespace-nowrap" />
+                    </div>
+                    {v.note && <p className="text-xs text-gray-400 mt-1 italic">{v.note}</p>}
+                    {fileEntries.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {fileEntries.map(([k, f]) => {
+                          const file = f as any;
+                          return (
+                            <span key={k} className="inline-flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded-md border border-white/[0.06] bg-white/[0.03] text-gray-400">
+                              <Icon.Doc c="w-3 h-3" />
+                              <span className="uppercase font-bold tracking-wider">{k}</span>
+                              {file.rendered_at && <TimeStamp iso={file.rendered_at} className="text-[10px] text-gray-600" />}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </Card>
+      )}
+
+      {/* Application + Prep details */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <SectionHeading title="Application" />
+          <div className="space-y-1">
+            <Info label="Status" value={app.status ? app.status : '—'} />
+            <Info label="Applied" value={fmtAbsolute(app.applied_at)} />
+            <Info label="Next action" value={app.next_action_date ? `${fmtAbsolute(app.next_action_date)}${app.next_action_note ? ` · ${app.next_action_note}` : ''}` : '—'} />
+            <Info label="Recruiter" value={app.recruiter_name || app.recruiter_email || '—'} />
+            <Info label="Recruiter company" value={app.recruiter_company || '—'} />
+            <Info label="Job URL" value={app.job_url || record.job_url || '—'} />
+          </div>
+        </Card>
+        <Card>
+          <SectionHeading title="Interview prep" />
+          <div className="space-y-1">
+            <Info label="Generated" value={fmtAbsolute(prep.generated_at)} />
+            <Info label="Grounded on version" value={prep.grounded_version_id || '—'} mono />
+            <Info label="Role type" value={prep.content?.role_type || '—'} />
+            <Info label="Record ID" value={record.record_id || '—'} mono />
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function JDChips({ title, items, tint }: { title: string; items?: string[]; tint: 'rose' | 'amber' | 'indigo' }) {
+  const tints: Record<string, string> = {
+    rose:   'bg-rose-500/10 text-rose-300 border-rose-500/20',
+    amber:  'bg-amber-500/10 text-amber-300 border-amber-500/20',
+    indigo: 'bg-indigo-500/10 text-indigo-300 border-indigo-500/20',
+  };
+  if (!items || items.length === 0) {
+    return (
+      <div>
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">{title}</p>
+        <p className="text-xs text-gray-600 italic">None extracted.</p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">{title} · {items.length}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {items.map((it, i) => (
+          <span key={i} className={`px-2 py-0.5 rounded text-[11px] border ${tints[tint]}`}>{it}</span>
+        ))}
       </div>
     </div>
   );
@@ -1607,11 +2437,11 @@ function ApplicationsPanel({
                       <p className="text-xs text-gray-500">{a.company && a.company !== 'Not specified' ? a.company : '—'}</p>
                     </td>
                     <td className="px-4 py-3"><StatusPill status={a.status} /></td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{a.applied_at ? fmtRel(a.applied_at) : '—'}</td>
+                    <td className="px-4 py-3"><TimeStamp iso={a.applied_at} /></td>
                     <td className="px-4 py-3 text-xs">
                       {a.next_action_date ? (
                         <div>
-                          <p className="text-gray-300">{fmtRel(a.next_action_date)}</p>
+                          <TimeStamp iso={a.next_action_date} className="text-xs text-gray-300 whitespace-nowrap" />
                           {a.next_action_note && <p className="text-gray-600 italic">{a.next_action_note}</p>}
                         </div>
                       ) : <span className="text-gray-700">—</span>}
@@ -1769,8 +2599,8 @@ function PrepPanel({ prepPacks, loading }: { prepPacks: AdminPrepPack[]; loading
                       ) : <span className="text-xs text-gray-700">—</span>}
                     </td>
                     <td className="px-4 py-3"><StatusPill status={p.application?.status} size="sm" /></td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(p.interview_prep?.generated_at)}</td>
-                    <td className="px-4 py-3 text-xs text-gray-500 whitespace-nowrap">{fmtRel(p.created_at)}</td>
+                    <td className="px-4 py-3"><TimeStamp iso={p.interview_prep?.generated_at} /></td>
+                    <td className="px-4 py-3"><TimeStamp iso={p.created_at} /></td>
                   </tr>
                 );
               })}
@@ -1877,9 +2707,15 @@ function UserDetailDrawer({ detail, onBack }: { detail: UserDetail; onBack: () =
             </div>
             <p className="text-xs text-gray-400 font-mono mt-1">{u.email}</p>
             <div className="flex items-center gap-4 mt-3 text-[11px] text-gray-500 flex-wrap">
-              <span><span className="text-gray-600">Joined</span> {fmtDate(u.created_at)}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-gray-600">Joined</span>
+                <span title={fmtAbsolute(u.created_at)} className="text-gray-300 cursor-help underline decoration-dotted decoration-gray-700 underline-offset-2">{fmtDate(u.created_at)}</span>
+              </span>
               <span className="text-gray-700">·</span>
-              <span><span className="text-gray-600">Last active</span> {fmtRel(u.last_login)}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-gray-600">Last active</span>
+                <TimeStamp iso={u.last_login} className="text-xs text-gray-300 whitespace-nowrap" />
+              </span>
               {u.last_login_ip && (<><span className="text-gray-700">·</span><span className="font-mono text-gray-600">{u.last_login_ip}</span></>)}
             </div>
           </div>
@@ -2059,7 +2895,10 @@ function FileBlock({ title, items, dateKey, onView, onDownload, downloadingKey }
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-200 truncate">{f.filename || f.job_title || '(no name)'}</p>
-                <p className="text-[11px] text-gray-500">{fmtRel(f[dateKey])} · {f.size_bytes ? `${Math.round(f.size_bytes / 1024)}KB` : ''}</p>
+                <p className="text-[11px] text-gray-500 inline-flex items-center gap-1.5">
+                  <TimeStamp iso={f[dateKey]} className="text-[11px] text-gray-500" />
+                  {f.size_bytes ? <><span>·</span><span className="tabular-nums">{Math.round(f.size_bytes / 1024)} KB</span></> : null}
+                </p>
               </div>
               <button
                 onClick={() => onView(f.s3_key, f.filename)}
@@ -2109,7 +2948,10 @@ function TailoringRecordCard({ r }: { r: any }) {
           </div>
           {r.base_resume_filename && <p className="text-[10px] text-gray-600 mt-2">Base: {r.base_resume_filename}</p>}
           {s.next_action_date && (
-            <p className="text-[10px] text-amber-400/80 mt-1">Next: {fmtRel(s.next_action_date)}{s.next_action_note ? ` · ${s.next_action_note}` : ''}</p>
+            <p className="text-[10px] text-amber-400/80 mt-1">
+              Next: <TimeStamp iso={s.next_action_date} className="text-[10px] text-amber-300" />
+              {s.next_action_note ? ` · ${s.next_action_note}` : ''}
+            </p>
           )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
@@ -2123,7 +2965,7 @@ function TailoringRecordCard({ r }: { r: any }) {
               <span className="text-[9px] text-gray-500 uppercase">ATS</span>
             </div>
           )}
-          <span className="text-[10px] text-gray-600">{fmtRel(r.created_at)}</span>
+          <TimeStamp iso={r.created_at} className="text-[10px] text-gray-600" />
         </div>
       </div>
     </div>

@@ -37,7 +37,16 @@ def require_super_admin(fn):
 #   interview_prep.generated_at
 # ------------------------------------------------------------------
 def _iso(v):
-    return v.isoformat() if hasattr(v, 'isoformat') else v
+    # Server uses datetime.utcnow() → naive UTC. .isoformat() drops the
+    # timezone, which causes JS `new Date(...)` to interpret the string as
+    # local time (a "just now" timestamp ends up in the future). Append 'Z'
+    # for naive datetimes so the wire format is unambiguous UTC.
+    if not hasattr(v, 'isoformat'):
+        return v
+    s = v.isoformat()
+    if getattr(v, 'tzinfo', None) is None and 'T' in s and not s.endswith('Z'):
+        return s + 'Z'
+    return s
 
 
 def _serialize_tailoring_record(rec):
@@ -238,8 +247,8 @@ def list_users():
                 'name': u.get('name'),
                 'role': u.get('role'),
                 'sector': u.get('sector'),
-                'created_at': u['created_at'].isoformat() if u.get('created_at') else None,
-                'last_login': u['last_login'].isoformat() if u.get('last_login') else None,
+                'created_at': _iso(u.get('created_at')),
+                'last_login': _iso(u.get('last_login')),
                 'last_login_ip': u.get('last_login_ip'),
                 'login_attempts': u.get('login_attempts', 0),
                 'base_resumes': base_count,
@@ -268,26 +277,24 @@ def get_user_detail(email):
 
         # Parsed resume
         parsed = db.parsed_resumes.find_one({'user_email': email}, {'_id': 0})
-        if parsed and hasattr(parsed.get('parsed_at'), 'isoformat'):
-            parsed['parsed_at'] = parsed['parsed_at'].isoformat()
+        if parsed and parsed.get('parsed_at') is not None:
+            parsed['parsed_at'] = _iso(parsed['parsed_at'])
 
         # Base resumes
         bases = list(db.user_resumes.find(
             {'user_email': email, 'type': 'base'}, {'_id': 0}
         ).sort('uploaded_at', -1))
         for b in bases:
-            for key in ('uploaded_at',):
-                if hasattr(b.get(key), 'isoformat'):
-                    b[key] = b[key].isoformat()
+            if b.get('uploaded_at') is not None:
+                b['uploaded_at'] = _iso(b['uploaded_at'])
 
         # Generated resumes
         generated = list(db.user_resumes.find(
             {'user_email': email, 'type': 'generated'}, {'_id': 0}
         ).sort('generated_at', -1))
         for g in generated:
-            for key in ('generated_at',):
-                if hasattr(g.get(key), 'isoformat'):
-                    g[key] = g[key].isoformat()
+            if g.get('generated_at') is not None:
+                g['generated_at'] = _iso(g['generated_at'])
 
         # Tailoring records — strip heavy fields, keep versions/application/
         # interview_prep shape + run full nested datetime serialization.
@@ -312,8 +319,8 @@ def get_user_detail(email):
                 'name': user.get('name'),
                 'role': user.get('role'),
                 'sector': user.get('sector'),
-                'created_at': user['created_at'].isoformat() if user.get('created_at') else None,
-                'last_login': user['last_login'].isoformat() if user.get('last_login') else None,
+                'created_at': _iso(user.get('created_at')),
+                'last_login': _iso(user.get('last_login')),
                 'last_login_ip': user.get('last_login_ip'),
                 'login_attempts': user.get('login_attempts', 0),
                 'fingerprint_hash': user.get('fingerprint_hash'),
@@ -339,8 +346,8 @@ def list_resumes():
         db = DBConnect().get_db()
         resumes = list(db.parsed_resumes.find({}, {'_id': 0}).sort('parsed_at', -1))
         for r in resumes:
-            if hasattr(r.get('parsed_at'), 'isoformat'):
-                r['parsed_at'] = r['parsed_at'].isoformat()
+            if r.get('parsed_at') is not None:
+                r['parsed_at'] = _iso(r['parsed_at'])
         return jsonify({'resumes': resumes}), 200
     except Exception as e:
         logger.error(f"Admin list resumes error: {e}")
@@ -504,12 +511,11 @@ def list_interview_prep():
             },
         ).sort('interview_prep.generated_at', -1).limit(500))
         for r in records:
-            for k in ('created_at',):
-                if hasattr(r.get(k), 'isoformat'):
-                    r[k] = r[k].isoformat()
+            if r.get('created_at') is not None:
+                r['created_at'] = _iso(r['created_at'])
             prep = r.get('interview_prep') or {}
-            if hasattr(prep.get('generated_at'), 'isoformat'):
-                prep['generated_at'] = prep['generated_at'].isoformat()
+            if prep.get('generated_at') is not None:
+                prep['generated_at'] = _iso(prep['generated_at'])
         return jsonify({'prep_packs': records}), 200
     except Exception as e:
         logger.exception(f"Admin prep list error: {e}")
@@ -588,7 +594,7 @@ def activity_feed():
                 'type': 'registration',
                 'email': u.get('email'),
                 'name': u.get('name'),
-                'timestamp': u['created_at'].isoformat() if u.get('created_at') else None,
+                'timestamp': _iso(u.get('created_at')),
             })
 
         # Recent logins (users who logged in recently)
@@ -601,7 +607,7 @@ def activity_feed():
                 'type': 'login',
                 'email': u.get('email'),
                 'name': u.get('name'),
-                'timestamp': u['last_login'].isoformat() if u.get('last_login') else None,
+                'timestamp': _iso(u.get('last_login')),
             })
 
         # Recent resume uploads
@@ -614,7 +620,7 @@ def activity_feed():
                 'type': 'upload',
                 'email': r.get('user_email'),
                 'detail': r.get('filename'),
-                'timestamp': r['uploaded_at'].isoformat() if r.get('uploaded_at') else None,
+                'timestamp': _iso(r.get('uploaded_at')),
             })
 
         # Recent tailoring sessions
@@ -630,7 +636,7 @@ def activity_feed():
                 'detail': t.get('jd_analysis', {}).get('job_title'),
                 'company': t.get('jd_analysis', {}).get('company'),
                 'ats_score': t.get('ats_scores', {}).get('overall'),
-                'timestamp': t['created_at'].isoformat() if t.get('created_at') else None,
+                'timestamp': _iso(t.get('created_at')),
             })
 
         # Sort all by timestamp descending

@@ -36,13 +36,28 @@ const STATUS_STYLES: Record<string, string> = {
 
 function ageOf(iso?: string): string {
   if (!iso) return '—';
-  const t = Date.parse(iso);
+  // Backend writes naive UTC for older rows — JS would otherwise read those
+  // as local time. Treat undated ISO strings as UTC so age math is honest.
+  let s = iso;
+  if (/T\d/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = s + 'Z';
+  const t = Date.parse(s);
   if (Number.isNaN(t)) return '—';
   const secs = Math.max(0, Math.floor((Date.now() - t) / 1000));
   if (secs < 60) return `${secs}s`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m`;
   if (secs < 86400) return `${Math.floor(secs / 3600)}h`;
   return `${Math.floor(secs / 86400)}d`;
+}
+
+function absoluteOf(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  let s = iso;
+  if (/T\d/.test(s) && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) s = s + 'Z';
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const date = d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  return `${date} · ${time}`;
 }
 
 function StatusBadge({ status }: { status?: string }) {
@@ -143,14 +158,19 @@ export function EnvironmentsPanel() {
   }, [rows]);
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h2 className="text-xl font-bold text-white">Preview Environments</h2>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Per-PR ephemeral envs. {rows.length} total · auto-reaped after 7 days idle.
-          </p>
+    <div className="space-y-5">
+      {/* Header — matches the toolbar pattern other tabs use so admins
+          don't lose their visual bearing when switching between sections. */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex flex-wrap gap-2">
+          {Object.entries(counts).map(([s, n]) => (
+            <span key={s} className="text-[10px] px-2 py-1 rounded-lg bg-white/[0.04] text-gray-300 border border-white/10 inline-flex items-center gap-1.5">
+              <StatusBadge status={s} /> <span className="tabular-nums font-bold text-white">{n}</span>
+            </span>
+          ))}
+          {Object.keys(counts).length === 0 && (
+            <span className="text-[11px] text-gray-500">No environments running.</span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <label className="flex items-center gap-1.5 text-[11px] text-gray-400 select-none">
@@ -165,7 +185,7 @@ export function EnvironmentsPanel() {
           <button
             onClick={() => fetchEnvs(true)}
             disabled={loading}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 disabled:opacity-40"
+            className="h-9 px-3 rounded-xl text-xs font-medium text-indigo-200 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 disabled:opacity-40"
             title="Reconcile against AWS resource tags"
           >
             Reconcile
@@ -173,19 +193,8 @@ export function EnvironmentsPanel() {
         </div>
       </div>
 
-      {/* Status summary chips */}
-      {Object.keys(counts).length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {Object.entries(counts).map(([s, n]) => (
-            <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-white/[0.04] text-gray-300 border border-white/10">
-              <StatusBadge status={s} /> <span className="ml-1 tabular-nums font-bold">{n}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
       {error && (
-        <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">{error}</div>
+        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-sm text-red-300">{error}</div>
       )}
 
       {/* Card grid */}
@@ -215,9 +224,9 @@ export function EnvironmentsPanel() {
                 <dt className="text-gray-600">Owner</dt>
                 <dd className="text-gray-300 truncate">{r.actor || '—'}</dd>
                 <dt className="text-gray-600">Age</dt>
-                <dd className="text-gray-300 tabular-nums">{ageOf(r.created_at)}</dd>
+                <dd className="text-gray-300 tabular-nums" title={absoluteOf(r.created_at)}>{ageOf(r.created_at)}</dd>
                 <dt className="text-gray-600">Idle</dt>
-                <dd className="text-gray-300 tabular-nums">{ageOf(r.last_seen_at)}</dd>
+                <dd className="text-gray-300 tabular-nums" title={absoluteOf(r.last_seen_at)}>{ageOf(r.last_seen_at)}</dd>
                 <dt className="text-gray-600">DB</dt>
                 <dd className="text-indigo-300 truncate font-mono">{r.mongo_db || '—'}</dd>
               </dl>

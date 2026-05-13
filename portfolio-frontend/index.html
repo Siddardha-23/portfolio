@@ -18,8 +18,10 @@
   <!-- Theme color for browser UI -->
   <meta name="theme-color" content="#4338CA" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#27272A" media="(prefers-color-scheme: dark)">
-  <!-- CSP: allow map, IP APIs, Google Fonts, data: images, Office Online iframe for PPTX viewer -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' blob:; connect-src 'self' http://localhost:5000 https://manneharshithsiddardha.com https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;">
+  <!-- CSP: allow map, IP APIs, Google Fonts, data: images, Office Online iframe for PPTX viewer.
+       Datadog RUM ships events to *.browser-intake-datadoghq.com (event intake) and
+       reads SDK chunks from www.datadoghq-browser-agent.com when the recorder lazy-loads. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'self' blob:; connect-src 'self' http://localhost:5000 https://manneharshithsiddardha.com https://ipapi.co https://api.ipify.org https://api64.ipify.org https://api.github.com https://*.basemaps.cartocdn.com https://*.browser-intake-datadoghq.com; img-src 'self' data: https:; script-src 'self' https://www.datadoghq-browser-agent.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com;">
 </head>
 
 <body>

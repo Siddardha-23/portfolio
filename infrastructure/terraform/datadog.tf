@@ -25,6 +25,32 @@ provider "datadog" {
 }
 
 # =============================================================================
+# Datadog Browser RUM — end-to-end (browser → API Gateway → Lambda → MongoDB)
+# =============================================================================
+# Creates a RUM application and exposes its application_id + client_token so
+# the frontend can initialize @datadog/browser-rum. The client_token is a
+# write-only public token (safe to ship in the browser bundle) — it cannot
+# read data, only submit RUM events.
+
+resource "datadog_rum_application" "portfolio" {
+  count = var.enable_datadog ? 1 : 0
+
+  name = "${var.project_name}-frontend"
+  type = "browser"
+}
+
+output "datadog_rum_application_id" {
+  description = "Datadog RUM application ID — set as VITE_DD_RUM_APPLICATION_ID in the frontend build."
+  value       = var.enable_datadog ? datadog_rum_application.portfolio[0].id : ""
+}
+
+output "datadog_rum_client_token" {
+  description = "Datadog RUM client token (public, write-only) — set as VITE_DD_RUM_CLIENT_TOKEN in the frontend build."
+  value       = var.enable_datadog ? datadog_rum_application.portfolio[0].client_token : ""
+  sensitive   = true
+}
+
+# =============================================================================
 # Golden-Signals Dashboard — 1 row per service, 4 widgets per row
 #   (latency, throughput, errors, saturation)
 # Plus a header row with SLO status + overall service health.

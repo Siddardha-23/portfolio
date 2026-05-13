@@ -1,6 +1,9 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { initDatadogRum } from './lib/datadogRum';
 import './index.css';
+
+initDatadogRum();
 
 // Force initial theme check on load to prevent flicker
 const root = document.documentElement;

@@ -462,9 +462,21 @@ resource "aws_apigatewayv2_api" "backend" {
   description   = "Portfolio Backend API (microservices)"
 
   cors_configuration {
-    allow_origins     = ["https://${var.domain_name}", "https://www.${var.domain_name}"]
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-    allow_headers     = ["Content-Type", "Authorization"]
+    allow_origins = ["https://${var.domain_name}", "https://www.${var.domain_name}"]
+    allow_methods = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    # Datadog RUM injects x-datadog-* + W3C traceparent/tracestate headers on
+    # browser fetch/XHR calls so backend spans get stitched to the RUM session.
+    # API Gateway HTTP API enforces CORS allow_headers, so we must list them.
+    allow_headers = [
+      "Content-Type",
+      "Authorization",
+      "x-datadog-trace-id",
+      "x-datadog-parent-id",
+      "x-datadog-sampling-priority",
+      "x-datadog-origin",
+      "traceparent",
+      "tracestate",
+    ]
     allow_credentials = true
     max_age           = 3600
   }

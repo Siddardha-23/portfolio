@@ -58,7 +58,11 @@ GMAIL_SCOPES = [
 # rejection that arrived later. The per-record thread classifier is the real
 # accuracy fix; this raised bar just keeps borderline calls in the user's
 # review queue instead of auto-applying them.
-AUTO_APPLY_CONFIDENCE = 0.85
+# Raised 0.85 → 0.92 — false positives are dramatically worse than slow user
+# review. A wrongly-moved card ("interview" → "rejected" off a boilerplate
+# phrase) erodes trust in the auto-classification. The remaining bucket
+# (0.60-0.92) lands in the user-review queue where they approve/reject.
+AUTO_APPLY_CONFIDENCE = 0.92
 
 # Cap how many messages we look at per sync. Bumped along with the 60-day
 # lookback so a freshly-linked inbox gets enough headroom to scan two months
@@ -1138,6 +1142,42 @@ status reflected by the most-recent meaningful event.
 
 {emails_text}
 
+CRITICAL ANTI-FALSE-POSITIVE GUARDS (read these BEFORE the decision rules):
+
+A. If NONE of the emails are addressed to this specific application (e.g. the
+   subject mentions a different role at a different company, OR the body
+   talks about an unrelated job/event), pick "ignore". Do NOT bend signals
+   from unrelated mail toward this record.
+
+B. The phrase "we will keep your resume on file" is rejection UNLESS it
+   appears inside a positive context ("…we're moving you to the next round
+   and will keep your resume on file for the full process"). Read context.
+
+C. "We're moving forward" is AMBIGUOUS in isolation:
+     • "we're moving forward with other candidates" → rejection ✓
+     • "we're moving forward to schedule your next interview" → interviewing ✓
+     • "we're moving forward in the process" — needs more context, don't
+       infer rejection unless an explicit decline phrase follows.
+
+D. Mass/newsletter signals — DO NOT classify as interviewing or applied:
+     • "join our talent community" / "career community update"
+     • job-alert digests ("3 new roles at <company>")
+     • generic event invites ("Tech Talk", "Open House", "AMA")
+     • surveys / feedback requests after an interview
+   These are "ignore" status; the record's tracker status stays unchanged.
+
+E. Automated platform reminders (HackerRank/Codility/CodeSignal) about a
+   take-home are interviewing-signal ONLY when the user clearly received
+   the invite for THIS role at THIS company. Standalone platform marketing
+   or reminder emails for OTHER assessments are "ignore".
+
+F. Withdrawal language ("we received your withdrawal", "we've removed you
+   from this process at your request") → status="withdrawn", NOT rejected.
+
+G. Don't conflate "next steps" boilerplate in an application-receipt email
+   with progression. "We've received your application. If you move forward,
+   next steps will be shared" is still "applied", not interviewing.
+
 DECISION RULES (apply in order — first match wins):
 
 1. rejected — pick this if ANY email contains explicit decline language directed at the
@@ -1147,7 +1187,7 @@ DECISION RULES (apply in order — first match wins):
      • "we regret to inform you"
      • "unfortunately, we are not able to offer"
      • "your application was not selected"
-     • "we'll keep your resume on file"
+     • "we'll keep your resume on file" (with rejection context — see Guard B)
      • "no longer under consideration"
    A rejection email overrides any earlier interview/applied state — the final status is
    "rejected" even if there was a prior interview.
@@ -1193,17 +1233,35 @@ suggestion the user reviews instead of auto-applying):
 Output strict JSON: {{"status": "...", "confidence": 0.0-1.0, "reason": "one short sentence quoting the specific phrase or email that drove the decision"}}.
 """
 
+    # Two-tier model approach: Pro first for accuracy on nuanced cases
+    # (politely-phrased rejections, soft interview signals, multi-message
+    # threads where status flips mid-conversation). Flash as fallback when
+    # Pro rate-limits / times out — still better than no classification.
+    # Temperature stays at 0.0 for deterministic output.
+    result: Optional[Dict[str, Any]] = None
     try:
-        from services.gemini_client import gemini_json, GEMINI_FLASH
-        result = gemini_json(
-            prompt=prompt,
-            max_tokens=400,
-            temperature=0.0,
-            model=GEMINI_FLASH,
-            max_retries=1,
-        )
+        from services.gemini_client import gemini_json, GEMINI_PRO, GEMINI_FLASH
+        try:
+            result = gemini_json(
+                prompt=prompt,
+                max_tokens=400,
+                temperature=0.0,
+                model=GEMINI_PRO,
+                max_retries=1,
+            )
+        except Exception as pro_err:
+            logger.info("classify_record_thread Pro failed (%s); retrying with Flash", pro_err)
+            result = gemini_json(
+                prompt=prompt,
+                max_tokens=400,
+                temperature=0.0,
+                model=GEMINI_FLASH,
+                max_retries=1,
+            )
     except Exception as e:
-        logger.warning("classify_record_thread LLM call failed: %s", e)
+        logger.warning("classify_record_thread LLM call failed (both tiers): %s", e)
+        return None
+    if not isinstance(result, dict):
         return None
 
     status = (result.get("status") or "").lower()

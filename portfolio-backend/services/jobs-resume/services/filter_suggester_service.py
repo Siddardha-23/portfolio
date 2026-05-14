@@ -458,7 +458,10 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
     # adjacent specialties (e.g. an ML candidate's "Data Science" tail).
     # ------------------------------------------------------------------
     intent_scores = profile.get("intent_scores") or {}
-    soft_floor = max(3.0, profile.get("intent_scores", {}).get(primary, 0.0) * 0.15)
+    # Lowered floor 0.15 → 0.08 (and base 3.0 → 1.5) so more adjacent intent
+    # groups surface in the Smart Filters tab. Users wanted broader coverage
+    # while still filtering out near-zero signals.
+    soft_floor = max(1.5, profile.get("intent_scores", {}).get(primary, 0.0) * 0.08)
     groups = []
     for intent_key, spec in INTENTS.items():
         score = float(intent_scores.get(intent_key, 0.0))

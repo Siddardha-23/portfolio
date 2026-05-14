@@ -590,13 +590,22 @@ def get_streak_route():
 def list_tailoring_records():
     user_email = get_jwt_identity()
     include_full = request.args.get("include") == "full"
+    # `limit` query param tunable; bumped default from 100 → 1000 so the
+    # kanban can show ALL of a user's records. The 100 cap was causing the
+    # funnel summary (server aggregation) and kanban column counts (local
+    # records) to disagree once a user exceeded 100 total tailoring records.
+    try:
+        limit = int(request.args.get("limit") or 1000)
+    except (TypeError, ValueError):
+        limit = 1000
+    limit = max(50, min(limit, 5000))
     try:
         db = DBConnect().get_db()
         projection = {"_id": 0}
         records = list(
             db.tailoring_records.find({"user_email": user_email}, projection)
             .sort("created_at", -1)
-            .limit(100)
+            .limit(limit)
         )
         out = []
         for r in records:

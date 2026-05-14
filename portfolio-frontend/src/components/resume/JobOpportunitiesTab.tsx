@@ -34,14 +34,46 @@ export default function JobOpportunitiesTab() {
   }, []);
 
   const handleApplySuggestions = (s: SmartFilterSuggestions, mode: SmartFilterApplyMode = 'replace') => {
-    setPendingSuggestions({ data: s, mode });
-    // Replace = big "Apply to pipeline" button — switch tabs so the user sees
-    // the populated form. Append = per-group "+ Add" — DO NOT switch; the user
-    // is browsing groups and stacking selections, switching kicks them out of
-    // their browse flow on every click.
     if (mode === 'replace') {
+      // Replace = big "Apply to pipeline" button — switch tabs so the user
+      // sees the populated form.
+      setPendingSuggestions({ data: s, mode: 'replace' });
       setActiveTab('pipeline');
+      return;
     }
+    // Append mode = per-group "+ Add to pipeline" while user stacks groups
+    // on the Smart Filters tab. DailyPipelinePanel isn't mounted yet (Radix
+    // Tabs only mounts the active content), so we MUST accumulate the
+    // suggestions ourselves — otherwise the second click overwrites the
+    // first and only the last group ever lands.
+    setPendingSuggestions((prev) => {
+      if (!prev || prev.mode !== 'append') {
+        return { data: s, mode: 'append' };
+      }
+      const dedup = (a: string[], b: string[]) => {
+        const seen = new Set(a.map((x) => x.toLowerCase()));
+        const out = [...a];
+        for (const item of b) {
+          const k = (item || '').trim().toLowerCase();
+          if (!k || seen.has(k)) continue;
+          seen.add(k);
+          out.push(item);
+        }
+        return out;
+      };
+      const merged: SmartFilterSuggestions = {
+        ...s,
+        headline: prev.data.headline || s.headline,
+        rationale: prev.data.rationale || s.rationale,
+        linkedin_keyword_sets: dedup(prev.data.linkedin_keyword_sets || [], s.linkedin_keyword_sets || []),
+        workday_titles: dedup(prev.data.workday_titles || [], s.workday_titles || []),
+        custom_role_terms: dedup(prev.data.custom_role_terms || [], s.custom_role_terms || []),
+        preset_tags: dedup(prev.data.preset_tags || [], s.preset_tags || []),
+        past_days: prev.data.past_days ?? s.past_days,
+        intent: prev.data.intent ?? s.intent,
+      };
+      return { data: merged, mode: 'append' };
+    });
   };
 
   return (

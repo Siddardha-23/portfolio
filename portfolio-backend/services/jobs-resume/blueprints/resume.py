@@ -892,6 +892,32 @@ def update_application(record_id):
             except Exception as e:
                 logger.warning("batch confirmation: streak update failed: %s", e)
 
+        # Bidirectional sync — when the tailoring_record's application status
+        # changes AND the record is linked to a saved_job from the Daily
+        # Pipeline (source_job_id present), propagate the status to that
+        # saved_job so the Daily Pipeline UI greys-out the row, hides "Open
+        # posting", and tags it as applied. Without this, batch-tailor
+        # confirmations updated only the tailoring_record and the
+        # Daily Pipeline kept showing the job as fresh / clickable.
+        if status:
+            try:
+                rec_meta = db.tailoring_records.find_one(
+                    {"record_id": record_id, "user_email": user_email},
+                    {"source_job_id": 1, "_id": 0},
+                ) or {}
+                src_job_id = (rec_meta.get("source_job_id") or "").strip()
+                if src_job_id:
+                    from services.job_service import get_job_service
+                    get_job_service().update_saved_job(
+                        src_job_id, status=status, user_email=user_email,
+                    )
+                    logger.info(
+                        "tailoring_record→saved_job sync: %s → status=%s",
+                        src_job_id, status,
+                    )
+            except Exception as e:
+                logger.warning("tailoring→saved_job sync failed: %s", e)
+
         record = db.tailoring_records.find_one(
             {"record_id": record_id, "user_email": user_email},
             {"application": 1, "_id": 0},

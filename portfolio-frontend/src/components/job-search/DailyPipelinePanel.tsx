@@ -484,6 +484,17 @@ function PipelineRow({
     } catch { return ''; }
   })();
   const showPrevApplied = !!prevStatus && prevStatus !== 'interested' && !applied;
+  // Effective applied state — true when EITHER the user marked applied in
+  // this session OR the saved_job already shows an active-funnel status
+  // (applied / interview / offer). This unifies the "I just applied"
+  // flow with the "Batch Tailor confirmed applied" flow and the "synced
+  // from Daily Pipeline → tailoring_record" flow: same visual outcome
+  // (greyed-out card, no "Open posting" button, Applied pill).
+  const effectivelyApplied =
+    applied ||
+    prevStatus === 'applied' ||
+    prevStatus === 'interview' ||
+    prevStatus === 'offer';
   const prevPalette = (() => {
     // Active in funnel → amber (still relevant). Closed-loop → muted gray
     // (rejected/withdrawn — user can still re-apply but signal is weaker).
@@ -524,7 +535,7 @@ function PipelineRow({
     <Card
       ref={cardRef}
       className={`group relative rounded-xl border ${
-        applied
+        effectivelyApplied
           ? 'border-emerald-500/40 bg-emerald-500/5 opacity-60'
           : showPrevApplied
           ? prevPalette.ring
@@ -633,14 +644,19 @@ function PipelineRow({
         </div>
 
         <div className="flex flex-shrink-0 flex-col items-stretch gap-1.5 sm:w-32">
-          {applied ? (
+          {effectivelyApplied ? (
             <Button
               size="sm"
               disabled
               className="gap-1 bg-emerald-600 text-white"
+              title={
+                applied
+                  ? 'You marked this applied in this session'
+                  : `Already in your funnel — status: ${prevStatus || 'applied'}`
+              }
             >
               <CheckCircle2 className="h-3 w-3" />
-              Applied
+              {prevStatus === 'interview' ? 'In Interview' : prevStatus === 'offer' ? 'Offer' : 'Applied'}
             </Button>
           ) : opened ? (
             // Two-stage flow — user clicked "Open posting" in this run. Now
@@ -678,7 +694,7 @@ function PipelineRow({
               <ExternalLink className="h-3 w-3" />
             </Button>
           ) : null}
-          {!applied && (
+          {!effectivelyApplied && (
             <Button
               size="sm"
               variant="outline"
@@ -695,7 +711,7 @@ function PipelineRow({
               {tailorLoading ? 'Fetching JD…' : 'Tailor'}
             </Button>
           )}
-          {!applied && rec.company && (
+          {!effectivelyApplied && rec.company && (
             <Button
               size="sm"
               variant="outline"

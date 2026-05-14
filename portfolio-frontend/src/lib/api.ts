@@ -1523,6 +1523,8 @@ class ApiService {
       recruiter_company?: string;
       job_url?: string;
       interview_dates?: string[];
+      /** Clears the "Did you apply?" prompt set on batch-tailored items. */
+      batch_confirmation_pending?: boolean;
     },
   ): Promise<ApiResponse<{ application: any }>> {
     return this.request(

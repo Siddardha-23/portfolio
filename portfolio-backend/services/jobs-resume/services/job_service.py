@@ -1820,6 +1820,45 @@ class JobService:
         result = self.saved_jobs.find_one(query)
         if result:
             result["_id"] = str(result["_id"])
+
+        # Bidirectional sync — when a Daily Pipeline saved_job changes status
+        # AND the user has tailoring_records linked to it (source_job_id), keep
+        # the most recent tailoring_record in lockstep so the Applications
+        # kanban + Batch Tailor view both reflect the change. Daily Pipeline
+        # row "I applied" → tailoring_record auto-applied, no separate click.
+        # Best-effort; failure here doesn't block the saved_job update.
+        if status is not None:
+            try:
+                from utils.db_connect import DBConnect
+                from datetime import datetime as _dt, timezone as _tz
+                _db = DBConnect().get_db()
+                trec = _db.tailoring_records.find_one(
+                    {"user_email": user_email, "source_job_id": job_id},
+                    sort=[("created_at", -1)],
+                    projection={"record_id": 1, "_id": 0},
+                )
+                if trec and trec.get("record_id"):
+                    set_fields = {
+                        "application.status": status,
+                        "application.updated_at": _dt.now(_tz.utc),
+                        # Clear the batch-confirmation prompt — the user has
+                        # answered via the Daily Pipeline side.
+                        "application.batch_confirmation_pending": False,
+                        "updated_at": _dt.now(_tz.utc),
+                    }
+                    if status == "applied":
+                        set_fields["application.applied_at"] = _dt.now(_tz.utc)
+                    _db.tailoring_records.update_one(
+                        {"record_id": trec["record_id"], "user_email": user_email},
+                        {"$set": set_fields},
+                    )
+                    logger.info(
+                        "saved_job→tailoring_record sync: %s → status=%s",
+                        trec["record_id"], status,
+                    )
+            except Exception as e:
+                logger.warning("saved_job→tailoring sync failed: %s", e)
+
         return result
 
     def delete_saved_job(self, job_id: str, user_email: str = "") -> bool:

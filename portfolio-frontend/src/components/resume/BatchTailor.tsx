@@ -31,14 +31,28 @@ interface BatchJob {
   jobId: string;
   title: string;
   status: 'queued' | 'processing' | 'completed' | 'failed';
-  result?: { tailored_resume: TailoredFullResume; jd_analysis: JDAnalysis };
+  result?: {
+    tailored_resume: TailoredFullResume;
+    jd_analysis: JDAnalysis;
+    record_id?: string;
+    source_job_id?: string;
+  };
   error?: string;
   /** Original posting URL when handed off from the Daily Pipeline. */
   sourceUrl?: string;
+  /** Daily Pipeline saved_job id linked to this batch entry (passed through
+   *  from the handoff). Server-side sync flips this saved_job's status when
+   *  the user confirms applied via the batch prompt. */
+  sourceJobId?: string;
   /** Lazy-generated cover letter — only kicks off on user click. */
   coverLetter?: { status: ExtraStatus; text?: string; error?: string };
   /** Lazy-generated ATS scores — same pattern. */
   atsScores?: { status: ExtraStatus; data?: ATSScores; error?: string };
+  /** Local mirror of application.status — toggled by the I applied / Not
+   *  yet / Dismiss prompt. Starts undefined until the user picks one. */
+  applicationStatus?: 'interested' | 'applied' | 'dismissed';
+  /** True while a PATCH is in flight from one of the three buttons. */
+  confirming?: boolean;
 }
 
 function PlusIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -217,6 +231,7 @@ export default function BatchTailor() {
       title: j.title || validEntries[i].title || `Job ${i + 1}`,
       status: 'processing' as const,
       sourceUrl: validEntries[i].sourceUrl,
+      sourceJobId: validEntries[i].sourceJobId,
     }));
     setBatchJobs(jobs);
     toast.success(`${jobs.length} job${jobs.length > 1 ? 's' : ''} submitted`);
@@ -259,6 +274,60 @@ export default function BatchTailor() {
     a.download = `cover_letter_${safe}.txt`;
     a.click();
     URL.revokeObjectURL(u);
+  }, []);
+
+  // "Did you apply?" prompt — sets the tailoring_record's application
+  // status to applied (or clears the prompt without changing it) AND
+  // syncs the linked Daily Pipeline saved_job via the backend sync
+  // helper. Single source of truth: PATCH on the record, backend handles
+  // the saved_job propagation.
+  const handleConfirmApplied = useCallback(async (job: BatchJob) => {
+    const recordId = job.result?.record_id;
+    if (!recordId || job.confirming) return;
+    setBatchJobs((prev) => prev.map((j) =>
+      j.jobId === job.jobId ? { ...j, confirming: true } : j,
+    ));
+    const r = await apiService.updateApplication(recordId, {
+      status: 'applied',
+      batch_confirmation_pending: false,
+    });
+    if (r.error) {
+      toast.error(`Couldn't mark applied for "${job.title}"`);
+      setBatchJobs((prev) => prev.map((j) =>
+        j.jobId === job.jobId ? { ...j, confirming: false } : j,
+      ));
+      return;
+    }
+    setBatchJobs((prev) => prev.map((j) =>
+      j.jobId === job.jobId
+        ? { ...j, confirming: false, applicationStatus: 'applied' }
+        : j,
+    ));
+    toast.success(`"${job.title}" marked as applied — synced to Daily Pipeline.`);
+  }, []);
+
+  const handleConfirmNotYet = useCallback(async (job: BatchJob, label = 'Not yet') => {
+    const recordId = job.result?.record_id;
+    if (!recordId || job.confirming) return;
+    setBatchJobs((prev) => prev.map((j) =>
+      j.jobId === job.jobId ? { ...j, confirming: true } : j,
+    ));
+    const r = await apiService.updateApplication(recordId, {
+      batch_confirmation_pending: false,
+    });
+    if (r.error) {
+      toast.error(`Couldn't update "${job.title}"`);
+      setBatchJobs((prev) => prev.map((j) =>
+        j.jobId === job.jobId ? { ...j, confirming: false } : j,
+      ));
+      return;
+    }
+    setBatchJobs((prev) => prev.map((j) =>
+      j.jobId === job.jobId
+        ? { ...j, confirming: false, applicationStatus: 'dismissed' }
+        : j,
+    ));
+    toast.message(`"${job.title}" — kept as Interested. ${label === 'Dismiss' ? 'Prompt dismissed.' : 'Confirm later from the kanban.'}`);
   }, []);
 
   const handleOpenInEditor = useCallback((job: BatchJob) => {
@@ -622,6 +691,58 @@ export default function BatchTailor() {
                     </span>
                   </p>
                 ) : null}
+
+                {/* Did-you-apply prompt — shown only while the batch row is
+                    still pending confirmation. Three exits: applied (syncs
+                    Daily Pipeline saved_job → applied + ticks streak), Not
+                    yet (keeps as Interested for later confirm from kanban),
+                    Dismiss (same as Not yet, just clears the prompt). */}
+                {job.status === 'completed'
+                  && job.result?.record_id
+                  && !job.applicationStatus
+                  && (
+                  <div className="mt-3 rounded-lg border border-emerald-500/30 bg-gradient-to-r from-emerald-500/[0.04] to-teal-500/[0.04] px-3 py-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                        Did you actually apply to <b>{job.title}</b>?
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmApplied(job)}
+                          disabled={job.confirming}
+                          className="inline-flex items-center gap-1 rounded-md bg-gradient-to-r from-emerald-600 to-teal-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90 disabled:opacity-60"
+                        >
+                          ✓ I applied
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmNotYet(job, 'Not yet')}
+                          disabled={job.confirming}
+                          className="inline-flex items-center gap-1 rounded-md border border-gray-300 dark:border-white/15 bg-white dark:bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-700 dark:text-gray-200 hover:border-gray-400 disabled:opacity-60"
+                        >
+                          Not yet
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleConfirmNotYet(job, 'Dismiss')}
+                          disabled={job.confirming}
+                          className="inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-60"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-1 text-[10px] text-emerald-700/70 dark:text-emerald-300/70">
+                      "I applied" syncs to Daily Pipeline + Applications board + ticks today's streak.
+                    </p>
+                  </div>
+                )}
+                {job.applicationStatus === 'applied' && (
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                    ✓ Marked applied — synced everywhere
+                  </p>
+                )}
               </div>
             ))}
           </div>

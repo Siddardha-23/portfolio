@@ -147,17 +147,34 @@ export default function ApplicationsTab() {
     setRecords(prev => prev.map(r => r.record_id === id ? patcher(r) : r));
   }, []);
 
+  // Refresh the funnel counts after a status change so the column counts
+  // (from local `grouped`) and the summary chips (from server `funnel`)
+  // stay in lockstep. Cheap fire-and-forget — no toast on failure.
+  const refreshFunnel = useCallback(async () => {
+    try {
+      const r = await apiService.getFunnelAnalytics();
+      if (r.data) {
+        setFunnel({
+          counts: r.data.counts || {},
+          conversions: r.data.conversions || {},
+          insight: r.data.insight,
+        });
+      }
+    } catch { /* best effort */ }
+  }, []);
+
   const handleStatusChange = useCallback(async (id: string, status: ApplicationStatus) => {
     setSavingId(id);
     const resp = await apiService.updateApplication(id, { status });
     setSavingId(null);
     if (resp.error) { toast.error("Failed to update status"); return; }
     updateRecord(id, r => ({ ...r, application: { ...(r.application || {}), ...resp.data!.application } }));
+    refreshFunnel();
     if (status === "rejected") {
       const refr = await apiService.reframeRejection(id);
       if (refr.data?.reframe) setReframe(refr.data.reframe);
     }
-  }, [updateRecord]);
+  }, [updateRecord, refreshFunnel]);
 
   // Drag & drop handlers — optimistic update, then persist via the
   // existing updateApplication endpoint. Rollback on failure.
@@ -191,11 +208,12 @@ export default function ApplicationsTab() {
       ...r,
       application: { ...(r.application || {}), ...resp.data!.application },
     }));
+    refreshFunnel();
     if (status === 'rejected') {
       const refr = await apiService.reframeRejection(id);
       if (refr.data?.reframe) setReframe(refr.data.reframe);
     }
-  }, [draggingId, records, updateRecord]);
+  }, [draggingId, records, updateRecord, refreshFunnel]);
 
   const handlePatch = useCallback(async (id: string, patch: Parameters<typeof apiService.updateApplication>[1]) => {
     setSavingId(id);

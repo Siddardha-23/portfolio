@@ -792,6 +792,16 @@ def update_application(record_id):
 
     updates = {}
     status = data.get("status")
+    # Read existing record once — we need to know if a batch-tailor confirmation
+    # was pending (so we can fire the streak event when the user confirms).
+    db_pre = DBConnect().get_db()
+    existing_app = (db_pre.tailoring_records.find_one(
+        {"record_id": record_id, "user_email": user_email},
+        {"application": 1, "_id": 0},
+    ) or {}).get("application") or {}
+    was_confirmation_pending = bool(existing_app.get("batch_confirmation_pending"))
+    was_status = existing_app.get("status")
+
     if status is not None:
         if status not in _APPLICATION_STATUSES:
             return jsonify({"error": f"Invalid status. Must be one of {sorted(_APPLICATION_STATUSES)}"}), 400
@@ -799,6 +809,11 @@ def update_application(record_id):
         # Stamp applied_at automatically when transitioning from draft → applied
         if status == "applied":
             updates["application.applied_at"] = updates.get("application.applied_at") or datetime.utcnow()
+
+    # batch_confirmation_pending — accept boolean from frontend (typically
+    # false, set by "I applied" / "Not yet" / "Dismiss" buttons on the board).
+    if "batch_confirmation_pending" in data:
+        updates["application.batch_confirmation_pending"] = bool(data.get("batch_confirmation_pending"))
 
     for field in ("recruiter_name", "recruiter_email", "recruiter_company",
                   "next_action_note", "notes", "job_url"):
@@ -849,6 +864,24 @@ def update_application(record_id):
         )
         if not result.matched_count:
             return jsonify({"error": "Record not found"}), 404
+
+        # Streak: increment the daily counter ONLY when a batch-confirmation
+        # transitioned to "applied" (user clicked "I applied" on the prompt).
+        # Otherwise normal status changes shouldn't double-fire the streak.
+        if (
+            was_confirmation_pending
+            and was_status != "applied"
+            and status == "applied"
+        ):
+            try:
+                from services.streak_service import record_application
+                record_application(user_email)
+                logger.info(
+                    "batch confirmation: streak incremented for %s record %s",
+                    user_email, record_id,
+                )
+            except Exception as e:
+                logger.warning("batch confirmation: streak update failed: %s", e)
 
         record = db.tailoring_records.find_one(
             {"record_id": record_id, "user_email": user_email},

@@ -2220,7 +2220,11 @@ export function DailyPipelinePanel({
                 )}
                 {!detectedSummary.usedSynth && (
                   <p className="text-amber-700/90 dark:text-amber-300/90">
-                    Filters fell back to a static template — your resume may not have parsed cleanly. Try re-uploading in My Resumes, then click ↻ Re-suggest.
+                    The resume classifier ran fine; the AI title generator hit
+                    a transient error (rate limit / timeout) and fell back to
+                    the curated default set for {detectedSummary.headline}.
+                    Click ↻ Re-suggest in 10-20 seconds — it usually succeeds
+                    on the second try.
                   </p>
                 )}
               </div>

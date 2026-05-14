@@ -3235,7 +3235,13 @@ function TailorTab() {
   }, []);
 
   // Consume any "tailor this job" handoff from the Daily Pipeline.
-  useEffect(() => {
+  //
+  // Called both on initial mount AND whenever a navigate-to-tailor event
+  // fires. The same-page event-driven nav flow (vs new-tab batch handoff)
+  // sets sessionStorage AFTER ResumeParser has already mounted, so the
+  // mount-time read alone misses it. We re-run on every nav event so the
+  // single-row Tailor button reliably pastes the JD.
+  const consumePendingTailorJob = useCallback(() => {
     try {
       const raw = sessionStorage.getItem('pending_tailor_job');
       if (!raw) return;
@@ -3254,11 +3260,6 @@ function TailorTab() {
       if (parsed?.title || parsed?.company) {
         toast.info(`Tailoring for ${parsed.title || ''}${parsed.company ? ' @ ' + parsed.company : ''} — apply status auto-tracks`);
       }
-      // When the pipeline couldn't auto-fetch the JD (LinkedIn cookie wall,
-      // ATS that needed a real browser, JS-rendered Workday, etc.), give the
-      // user a clear prompt to paste it instead of leaving them staring at
-      // an empty textarea wondering what went wrong. Background retry will
-      // also kick off below.
       if (parsed?.jd_fetch_failed) {
         toast.warning(
           parsed?.url
@@ -3266,14 +3267,8 @@ function TailorTab() {
             : "Couldn't auto-fetch this JD — please copy-paste it from the posting into the box below.",
           { duration: 8000 },
         );
-        // Background retry — initial attempt may have timed out (LinkedIn
-        // guest API can be slow); a second attempt often succeeds when the
-        // backend's Apify fallback gets enough budget. Silent on failure;
-        // user always has the explicit Retry button as a manual fallback.
         if (parsed?.url) {
           const url = parsed.url;
-          // Check sessionStorage cache first — if a prior attempt for this
-          // URL succeeded in this session, use it instantly.
           try {
             const cached = sessionStorage.getItem(`jd_cache:${url}`);
             if (cached) {
@@ -3299,8 +3294,6 @@ function TailorTab() {
           }).catch(() => { /* silent — user has the manual Retry button */ });
         }
       } else if (parsed?.jd_text && parsed?.url) {
-        // Cache the successful fetch so re-clicking Tailor on the same row
-        // is instant the second time.
         try {
           sessionStorage.setItem(
             `jd_cache:${parsed.url}`,
@@ -3312,6 +3305,27 @@ function TailorTab() {
       /* ignore */
     }
   }, []);
+
+  // 1. Run once on mount in case the handoff was written before this
+  //    component existed (rare, but possible if user lands on /resume-parser
+  //    via a deep link).
+  useEffect(() => {
+    consumePendingTailorJob();
+  }, [consumePendingTailorJob]);
+
+  // 2. Re-run every time the navigate-to-tailor event fires. This is the
+  //    critical fix — when the user clicks Tailor on the Daily Pipeline,
+  //    handleTailor writes pending_tailor_job AND dispatches the event in
+  //    the same call. The dispatch wakes this listener up to consume.
+  useEffect(() => {
+    const onNavTailor = () => {
+      // Defer slightly so the dispatcher's setSessionStorage definitely
+      // landed before we try to read.
+      window.setTimeout(consumePendingTailorJob, 0);
+    };
+    window.addEventListener('portfolio:navigate-to-tailor', onNavTailor);
+    return () => window.removeEventListener('portfolio:navigate-to-tailor', onNavTailor);
+  }, [consumePendingTailorJob]);
 
   // Lock page scroll while the full-screen editor overlay is mounted.
   // Without this, wheel/touch gestures chain through to the TailorTab

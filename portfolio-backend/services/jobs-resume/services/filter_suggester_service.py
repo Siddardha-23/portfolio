@@ -221,38 +221,63 @@ def _synthesize_titles_from_resume(
         '  - "anti_keywords": list (length 4-10).\n'
         "Return ONLY the JSON object, no commentary."
     )
-    try:
-        out = gemini_json(
-            prompt=prompt,
-            model=GEMINI_PRO,         # Pro for this — it's the high-value step
-            temperature=0.35,
-            schema=_SYNTHESIZER_SCHEMA,
-            max_tokens=2000,
-        )
-        if not isinstance(out, dict):
-            return {}
-        # Coerce types defensively
-        titles = [str(t).strip() for t in (out.get("workday_titles") or []) if t]
-        phrases = [str(p).strip() for p in (out.get("linkedin_phrases") or []) if p]
-        anti = [str(a).strip() for a in (out.get("anti_keywords") or []) if a]
-        if len(titles) < 5:
-            # Too thin — fall back
-            logger.warning(
-                "synthesize: gemini returned only %d titles for %s; falling back to seed",
-                len(titles), primary_label,
+    # Two-tier synth: Pro first (best quality), Flash on Pro failure or thin
+    # output. Either result counts as success — the upstream backfill safety
+    # net fills any gap from intent seeds. Falling back to empty {} only when
+    # BOTH calls error or return zero titles (very rare).
+    def _try_model(model_name: str, label: str) -> Dict[str, Any]:
+        try:
+            out = gemini_json(
+                prompt=prompt,
+                model=model_name,
+                temperature=0.35,
+                schema=_SYNTHESIZER_SCHEMA,
+                max_tokens=2000,
             )
+            if not isinstance(out, dict):
+                logger.warning("synthesize/%s: non-dict output for %s", label, primary_label)
+                return {}
+            titles_local = [str(t).strip() for t in (out.get("workday_titles") or []) if t]
+            phrases_local = [str(p).strip() for p in (out.get("linkedin_phrases") or []) if p]
+            anti_local = [str(a).strip() for a in (out.get("anti_keywords") or []) if a]
+            logger.info(
+                "synthesize/%s: %s -> %d titles, %d phrases, %d anti for %s",
+                label, model_name, len(titles_local), len(phrases_local), len(anti_local),
+                primary_label,
+            )
+            if len(titles_local) < 3:
+                # Threshold lowered from 5 → 3 — even thin output is more
+                # personalized than the static seed list. The upstream
+                # backfill helper will top it up from intent seeds.
+                logger.warning(
+                    "synthesize/%s: too few titles (%d), retrying / falling through",
+                    label, len(titles_local),
+                )
+                return {}
+            return {
+                "detected_role": str(out.get("detected_role") or "")[:200].strip(),
+                "rationale": str(out.get("rationale") or "")[:400].strip(),
+                "seniority": str(out.get("seniority") or seniority_hint).strip(),
+                "workday_titles": titles_local[:60],
+                "linkedin_phrases": phrases_local[:8],
+                "anti_keywords": anti_local[:10],
+            }
+        except Exception as e:
+            logger.warning("synthesize/%s (%s) failed: %s", label, model_name, e)
             return {}
-        return {
-            "detected_role": str(out.get("detected_role") or "")[:200].strip(),
-            "rationale": str(out.get("rationale") or "")[:400].strip(),
-            "seniority": str(out.get("seniority") or seniority_hint).strip(),
-            "workday_titles": titles[:60],
-            "linkedin_phrases": phrases[:8],
-            "anti_keywords": anti[:10],
-        }
-    except Exception as e:
-        logger.warning("synthesize_titles_from_resume failed: %s", e)
-        return {}
+
+    # Try Pro first.
+    result = _try_model(GEMINI_PRO, "pro")
+    if result:
+        return result
+    # Pro failed or returned thin — retry with Flash. Flash is faster and has
+    # different rate-limit pool, so this catches Pro's quota / timeout issues.
+    logger.info("synthesize: Pro returned empty; retrying with Flash for %s", primary_label)
+    result = _try_model(GEMINI_FLASH, "flash")
+    if result:
+        return result
+    logger.warning("synthesize: BOTH Pro and Flash failed for %s; caller will use seed fallback", primary_label)
+    return {}
 
 
 def _resume_signature(structured_resume: Dict[str, Any]) -> str:
@@ -343,10 +368,15 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         linkedin_phrases = list(profile["keyword_phrases"])
         custom_role_terms = []
         detected_role = primary_label
+        # Accurate rationale: the resume parse worked (profile got a confident
+        # primary intent), but Gemini Pro AND Flash both errored or timed out.
+        # The user should retry — this is usually transient (rate limit or
+        # cold start) rather than a resume issue.
         rationale = (
-            f"Detected {primary_label} from your resume. Showing the default "
-            "title set for that role family while we wait for personalized "
-            "suggestions — click ↻ Re-suggest to retry."
+            f"Classified resume as {primary_label}. AI title-synthesizer hit a "
+            "transient error (rate limit / timeout) and fell back to a curated "
+            "default set for this role. Click ↻ Re-suggest in 10-20 seconds — "
+            "it usually succeeds on retry."
         )
         headline = primary_label
 

@@ -843,22 +843,68 @@ def _ats_apify_fallback(
     return out
 
 
-def _scrape_indeed(token: str, queries: Optional[List[str]] = None, max_rows: int = 75) -> List[Dict[str, Any]]:
-    """Source 3 — Indeed scrape. Returns normalized records or [] on any failure."""
+def _scrape_indeed(
+    token: str,
+    queries: Optional[List[str]] = None,
+    max_rows: int = 75,
+    *,
+    past_days: int = 1,
+    experience_level: str = "entry",
+    employment_type: str = "FULLTIME",
+    location: str = "United States",
+) -> List[Dict[str, Any]]:
+    """Source 3 — Indeed scrape. Returns normalized records or [] on any failure.
+
+    User filters (past_days / experience_level / employment_type / location)
+    are now threaded through to the actor input — previously they were
+    hardcoded so the Indeed source ignored the rest of the form. The actor's
+    canonical values are mapped from our internal vocab.
+    """
     if not token:
         return []
     qs = queries if queries is not None else INDEED_QUERIES
+
+    # Indeed actor's `level` accepts: entry_level | mid_level | senior_level | internship.
+    indeed_level_map = {
+        "internship": "internship",
+        "entry": "entry_level",
+        "associate": "entry_level",   # Indeed has no associate tier
+        "mid": "mid_level",
+        "senior": "senior_level",
+        "any": "",                     # leave out to widen
+    }
+    # Indeed actor's `jobType`: fulltime | parttime | contract | temporary | internship.
+    indeed_emp_map = {
+        "FULLTIME": "fulltime",
+        "PARTTIME": "parttime",
+        "CONTRACTOR": "contract",
+        "INTERN": "internship",
+        "ANY": "",
+    }
+    level_v = indeed_level_map.get((experience_level or "").lower(), "entry_level")
+    emp_v = indeed_emp_map.get((employment_type or "").upper(), "fulltime")
+    # Indeed's `fromDays` is a string of days back. Clamp to actor's range.
+    from_days = str(max(1, min(int(past_days or 1), 14)))
+    country = "us"  # Indeed actor requires this — fixed regardless of location string.
+
     out: List[Dict[str, Any]] = []
     for q in qs:
-        payload = {
-            "country": "us",
+        payload: Dict[str, Any] = {
+            "country": country,
             "query": q,
-            "level": "entry_level",
-            "jobType": "fulltime",
-            "fromDays": "1",
+            "fromDays": from_days,
             "sort": "date",
             "maxRows": max_rows,
         }
+        if level_v:
+            payload["level"] = level_v
+        if emp_v:
+            payload["jobType"] = emp_v
+        # location string — only emit when user picked something more specific
+        # than the US-baseline so the actor's default coverage stays wide.
+        loc_clean = (location or "").strip()
+        if loc_clean and loc_clean.lower() not in ("united states", "usa", "us", ""):
+            payload["location"] = loc_clean
         try:
             items = _run_actor(INDEED_ACTOR, payload, token, timeout_s=180)
         except Exception as e:
@@ -1900,7 +1946,13 @@ def run_pipeline(
             employment_type=employment_type,
             work_arrangement=work_arrangement,
         )
-        f_indeed = pool.submit(_scrape_indeed, token) if include_indeed else None
+        f_indeed = pool.submit(
+            _scrape_indeed, token,
+            past_days=past_days,
+            experience_level=experience_level,
+            employment_type=employment_type,
+            location=location,
+        ) if include_indeed else None
         f_ats = pool.submit(_scrape_ats_direct)
         linkedin_items, workday_items, errors, actor_diagnostics = f_apify.result()
         indeed_items = f_indeed.result() if f_indeed is not None else []

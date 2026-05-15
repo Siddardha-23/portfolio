@@ -10,6 +10,7 @@ import Footer from '@/components/Footer';
 import FloatingFormPrompt from '@/components/FloatingFormPrompt';
 import BuilderAgent from '@/components/agent/BuilderAgent';
 import NowBuildingTicker from '@/components/NowBuildingTicker';
+import ConciergeRoot from '@/components/concierge/ConciergeRoot';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
 import { lazy, Suspense, useEffect } from 'react';
@@ -64,6 +65,7 @@ export default function Home() {
       <Footer />
       <FloatingFormPrompt />
       <BuilderAgent />
+      <ConciergeRoot />
       <Suspense fallback={null}>
         <VisitorGlobe />
       </Suspense>

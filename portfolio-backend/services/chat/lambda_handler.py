@@ -106,7 +106,14 @@ def handler(event, context):
             payload = event if isinstance(event, dict) else {}
             return diary_handler(payload, context)
 
-        # ── Normal API Gateway request ──
+        # ── API Gateway WebSocket request (Concierge low-latency channel) ──
+        # Detected by the presence of routeKey + connectionId in requestContext.
+        # Routes $connect, $disconnect, $default → websocket_handler.handle.
+        from websocket_handler import is_websocket_event, handle as ws_handle
+        if is_websocket_event(event):
+            return ws_handle(event, context)
+
+        # ── Normal API Gateway HTTP request ──
         if os.getenv('ENVIRONMENT') != 'prod':
             logger.info(
                 f"Incoming request: "

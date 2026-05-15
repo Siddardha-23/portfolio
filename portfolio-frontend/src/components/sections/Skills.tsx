@@ -1,5 +1,5 @@
 import { motion, useInView } from 'framer-motion';
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SKILLS } from '@/lib/constants';
@@ -417,6 +417,28 @@ function SkillsStats() {
 }
 
 export default function Skills() {
+  // Concierge filter_skills intent — scroll to the requested category
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const group = (e as CustomEvent<{ group: string }>).detail?.group;
+      const map: Record<string, string> = {
+        cloud: 'skills-cloudDevOps',
+        programming: 'skills-programmingLanguages',
+        tools: 'skills-toolsAndDatabases',
+        all: 'skills',
+      };
+      const id = map[group] || 'skills';
+      const el = document.getElementById(id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.classList.add('concierge-pulse');
+        window.setTimeout(() => el.classList.remove('concierge-pulse'), 2200);
+      }
+    };
+    window.addEventListener('concierge:filter-skills', handler);
+    return () => window.removeEventListener('concierge:filter-skills', handler);
+  }, []);
+
   return (
     <section id="skills" className="pb-20 md:pb-24 section-dark relative overflow-hidden">
       {/* Animated background */}

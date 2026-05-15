@@ -214,6 +214,30 @@ export const EXPERIENCE = [
 
 export const PROJECTS = [
   {
+    title: "Live Infrastructure Health Dashboard",
+    slug: "infra-health-dashboard",
+    period: "March 2026 - Present",
+    status: "Live",
+    description: [
+      "Real-time observability cockpit embedded in the portfolio - pings CloudFront, API Gateway+Lambda, ACM SSL, and Route 53 DNS from the visitor's browser and reports per-leg latency, status code, and SSL chain validity in one glanceable view.",
+      "Surfaces the production stack as a clickable service topology: each node shows live latency, recent failure rate, and the AWS resource backing it - turning the portfolio itself into a living architecture demo.",
+      "Built as a pure client-side health probe with browser-native fetch timings (PerformanceObserver), so the dashboard works without any backend cost - and exposes a /api/infra/health endpoint for synthetic check parity.",
+      "Drives my Concierge AI avatar's 'how is the portfolio doing right now' answer - the model reads the same probe results and narrates them in plain English.",
+      "Designed for recruiters as a tangible 'this person can build SRE tools' artifact - opens in a floating overlay, no signup, no clutter."
+    ],
+    technologies: ["AWS", "CloudFront", "Lambda", "Route 53", "ACM", "SRE", "React"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["React probe orchestrator", "PerformanceObserver timings", "Live status pills"],
+        backend: ["/api/infra/health Lambda", "Synthetic checks", "CloudWatch metrics"],
+        infrastructure: ["CloudFront CDN", "API Gateway", "Lambda", "Route 53", "ACM"],
+        cicd: ["GitHub Actions probes", "CloudWatch alarms", "Self-healing alerts"],
+        monitoring: ["Latency percentiles", "Uptime tracking", "Synthetic monitoring"]
+      }
+    }
+  },
+  {
     title: "Cybersecurity in Connected Aviation - AEROSEC",
     slug: "aerosec",
     period: "August 2025 - December 2025",

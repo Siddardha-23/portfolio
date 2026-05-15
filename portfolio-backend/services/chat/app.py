@@ -82,6 +82,10 @@ def create_app():
     from blueprints.agent import agent_bp
     app.register_blueprint(agent_bp, url_prefix='/api/chat')
 
+    # Register Concierge blueprint (animated avatar with tool calling)
+    from blueprints.concierge import concierge_bp
+    app.register_blueprint(concierge_bp, url_prefix='/api/chat')
+
     # Health check endpoint
     @app.route('/api/health')
     def health():

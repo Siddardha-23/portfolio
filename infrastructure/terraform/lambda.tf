@@ -62,7 +62,7 @@ locals {
       }
     }
     chat = {
-      description = "Multi-agent AI concierge + Cloud Diary cron"
+      description = "Multi-agent AI concierge + Cloud Diary cron + WebSocket transport"
       memory      = 320
       timeout     = 60
       env_vars = {
@@ -71,6 +71,8 @@ locals {
         # GITHUB_PAT lifts the GitHub API rate limit and unlocks private-repo metadata
         # for the Cloud Diary + Builder specialist's `whats_new` tool.
         SSM_GITHUB_PAT = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""
+        # Concierge WebSocket connection store (defined in concierge_websocket.tf)
+        WS_CONNECTIONS_TABLE = aws_dynamodb_table.concierge_ws_connections.name
       }
     }
     infra = {

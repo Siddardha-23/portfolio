@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -251,6 +251,36 @@ const MICROSERVICES_ARCH: ArchData = {
   ],
 };
 
+// ---- Live Infrastructure Health Dashboard ----
+const INFRA_HEALTH_ARCH: ArchData = {
+  regions: [
+    { label: 'Visitor Browser', x: 12, y: 20, w: 140, h: 240, color: '#3B82F6', dashed: false, icon: <Activity className="h-3 w-3" /> },
+    { label: 'AWS Edge', x: 164, y: 20, w: 156, h: 240, color: '#8B5CF6', dashed: false, icon: <Globe className="h-3 w-3" /> },
+    { label: 'AWS Compute', x: 332, y: 20, w: 148, h: 240, color: '#FF9900', dashed: false, icon: <Cloud className="h-3 w-3" /> },
+    { label: 'Telemetry', x: 492, y: 20, w: 156, h: 240, color: '#10B981', dashed: true, icon: <BarChart3 className="h-3 w-3" /> },
+  ],
+  nodes: [
+    { id: 'probe', label: 'Probe Orchestrator', sublabel: 'PerfObserver', icon: <Activity className="h-4 w-4" />, color: '#3B82F6', x: 82, y: 90 },
+    { id: 'panel', label: 'Status Panel', sublabel: 'Live UI', icon: <BarChart3 className="h-4 w-4" />, color: '#3B82F6', x: 82, y: 200 },
+    { id: 'cf', label: 'CloudFront', sublabel: 'CDN ping', icon: <Network className="h-4 w-4" />, color: '#8B5CF6', x: 242, y: 90 },
+    { id: 'r53', label: 'Route 53', sublabel: 'DNS lookup', icon: <Globe className="h-4 w-4" />, color: '#8B5CF6', x: 242, y: 200 },
+    { id: 'apigw', label: 'API Gateway', sublabel: '/health', icon: <Server className="h-4 w-4" />, color: '#E7157B', x: 406, y: 90 },
+    { id: 'lambda', label: 'Lambda', sublabel: 'Synthetic', icon: <Cpu className="h-4 w-4" />, color: '#FF9900', x: 406, y: 200 },
+    { id: 'cw', label: 'CloudWatch', sublabel: 'Metrics', icon: <Activity className="h-4 w-4" />, color: '#10B981', x: 570, y: 90 },
+    { id: 'acm', label: 'ACM Cert', sublabel: 'SSL chain', icon: <Lock className="h-4 w-4" />, color: '#DD344C', x: 570, y: 200 },
+  ],
+  edges: [
+    { from: 'probe', to: 'cf', label: 'GET /' },
+    { from: 'probe', to: 'r53', dashed: true, label: 'DNS' },
+    { from: 'probe', to: 'apigw', label: '/health' },
+    { from: 'cf', to: 'apigw', dashed: true },
+    { from: 'apigw', to: 'lambda', label: 'invoke' },
+    { from: 'lambda', to: 'cw', label: 'log' },
+    { from: 'cf', to: 'acm', dashed: true },
+    { from: 'panel', to: 'cw', dashed: true, label: 'read' },
+  ],
+};
+
 // ---- Cross-Account CI/CD Multi-Tenancy ----
 const CROSS_ACCOUNT_ARCH: ArchData = {
   regions: [
@@ -284,7 +314,11 @@ const ARCH_MAP: Record<string, ArchData> = {
   'aerosec': AEROSEC_ARCH,
   'aws-microservices-cicd': MICROSERVICES_ARCH,
   'cross-account-cicd': CROSS_ACCOUNT_ARCH,
+  'infra-health-dashboard': INFRA_HEALTH_ARCH,
 };
+
+// Lazy-load the live dashboard overlay only when a visitor opens it
+const InfraHealthDashboard = lazy(() => import('@/components/InfraHealthDashboard'));
 
 // AWS-style service icon node dimensions
 const NW = 78;
@@ -491,14 +525,39 @@ function MiniArchitectureDiagram({ slug }: { slug: string }) {
 
 // ==================== PROJECT CARD ====================
 
-function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: number }) {
+function ProjectCard({
+  project, index, onOpenLiveDashboard,
+}: {
+  project: typeof PROJECTS[0];
+  index: number;
+  onOpenLiveDashboard?: () => void;
+}) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const navigate = useNavigate();
   const hasArch = !!ARCH_MAP[project.slug];
+  const isLiveDashboard = project.slug === 'infra-health-dashboard';
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Listen for Concierge highlight events targeting this card by slug
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const slug = (e as CustomEvent<{ slug: string }>).detail?.slug;
+      if (slug !== project.slug || !cardRef.current) return;
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      cardRef.current.classList.add('concierge-project-glow');
+      window.setTimeout(() => {
+        cardRef.current?.classList.remove('concierge-project-glow');
+      }, 2500);
+    };
+    window.addEventListener('concierge:highlight-project', handler);
+    return () => window.removeEventListener('concierge:highlight-project', handler);
+  }, [project.slug]);
 
   return (
     <motion.div
+      ref={cardRef}
+      data-project-slug={project.slug}
       initial={{ opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-50px" }}
@@ -660,10 +719,20 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
               <Button
                 className="flex-1 btn-premium group"
                 size="sm"
-                onClick={() => navigate(`/project/${project.slug}`)}
+                onClick={() => {
+                  if (isLiveDashboard && onOpenLiveDashboard) {
+                    onOpenLiveDashboard();
+                  } else {
+                    navigate(`/project/${project.slug}`);
+                  }
+                }}
               >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                {project.slug === 'aerosec' ? 'Case Study' : project.status === 'Live' ? 'Full Architecture' : 'Architecture'}
+                {isLiveDashboard ? <Activity className="h-4 w-4 mr-2" /> : <ExternalLink className="h-4 w-4 mr-2" />}
+                {isLiveDashboard
+                  ? 'Open Live Dashboard'
+                  : project.slug === 'aerosec'
+                    ? 'Case Study'
+                    : project.status === 'Live' ? 'Full Architecture' : 'Architecture'}
                 <ArrowRight className="ml-auto h-4 w-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
               </Button>
               <Button
@@ -686,6 +755,20 @@ function ProjectCard({ project, index }: { project: typeof PROJECTS[0]; index: n
 }
 
 export default function Projects() {
+  const [liveDashboardOpen, setLiveDashboardOpen] = useState(false);
+
+  // Concierge "open_project" intent for the live dashboard auto-opens the overlay
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const slug = (e as CustomEvent<{ slug: string }>).detail?.slug;
+      if (slug === 'infra-health-dashboard') {
+        window.setTimeout(() => setLiveDashboardOpen(true), 600);
+      }
+    };
+    window.addEventListener('concierge:highlight-project', handler);
+    return () => window.removeEventListener('concierge:highlight-project', handler);
+  }, []);
+
   return (
     <section id="projects" className="pb-20 md:pb-24 section-light relative overflow-hidden">
       {/* Animated background */}
@@ -758,9 +841,26 @@ export default function Projects() {
         {/* Projects grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-6xl mx-auto">
           {PROJECTS.map((project, index) => (
-            <ProjectCard key={index} project={project} index={index} />
+            <ProjectCard
+              key={index}
+              project={project}
+              index={index}
+              onOpenLiveDashboard={
+                project.slug === 'infra-health-dashboard'
+                  ? () => setLiveDashboardOpen(true)
+                  : undefined
+              }
+            />
           ))}
         </div>
+
+        {/* Live Infrastructure Dashboard overlay */}
+        <Suspense fallback={null}>
+          <InfraHealthDashboard
+            isOpen={liveDashboardOpen}
+            onClose={() => setLiveDashboardOpen(false)}
+          />
+        </Suspense>
 
         {/* More projects CTA */}
         <motion.div

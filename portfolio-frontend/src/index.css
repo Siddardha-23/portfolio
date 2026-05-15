@@ -506,3 +506,27 @@ html, body, #root {
 .leaflet-circle-marker {
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
 }
+
+/* ===== Concierge — section + project pulse effects ===== */
+@keyframes concierge-section-pulse {
+  0%   { box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45), inset 0 0 0 0 hsl(var(--primary) / 0); }
+  35%  { box-shadow: 0 0 0 14px hsl(var(--primary) / 0.0), inset 0 0 0 2px hsl(var(--primary) / 0.55); }
+  100% { box-shadow: 0 0 0 0 hsl(var(--primary) / 0), inset 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.concierge-pulse {
+  position: relative;
+  animation: concierge-section-pulse 2.2s ease-out;
+  border-radius: 12px;
+}
+
+@keyframes concierge-project-glow {
+  0%   { transform: scale(1); box-shadow: 0 0 0 0 hsl(var(--primary) / 0.6); }
+  40%  { transform: scale(1.015); box-shadow: 0 0 0 8px hsl(var(--primary) / 0); }
+  100% { transform: scale(1); box-shadow: 0 0 0 0 hsl(var(--primary) / 0); }
+}
+.concierge-project-glow {
+  animation: concierge-project-glow 2.4s ease-out;
+  border-radius: 16px;
+  position: relative;
+  z-index: 5;
+}

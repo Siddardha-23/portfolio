@@ -597,6 +597,28 @@ class ApiService {
     });
   }
 
+  // ----- Concierge (animated avatar with tool-calling) -----
+  async sendConciergeTurn(payload: {
+    message: string;
+    history?: Array<{ role: string; content: string }>;
+    current_section?: string | null;
+    recruiter_mode?: boolean;
+  }) {
+    return this.request<{
+      spoken: string;
+      caption: string;
+      intents: Array<{ name: string; args: Record<string, unknown> }>;
+      display: { type: string; payload: Record<string, unknown> } | null;
+      suggestions: string[];
+      emotion: "neutral" | "happy" | "thoughtful" | "excited";
+      meta?: { model?: string; recruiter_mode?: boolean };
+      success?: boolean;
+    }>("/chat/concierge", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }, 25000);
+  }
+
   // ============================================
   // Cloud Diary (powers Now Building ticker + agent's Builder specialist)
   // ============================================

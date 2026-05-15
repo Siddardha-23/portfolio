@@ -49,14 +49,37 @@ export function useMic(): UseMicResult {
     };
   }, []);
 
-  const start = useCallback(() => {
+  const start = useCallback(async () => {
     if (!Ctor || listening) return;
     setError(null);
     setPartial("");
     finalRef.current = "";
 
+    // Preflight: explicitly request mic permission via getUserMedia so the
+    // browser shows a clear permission prompt (some browsers won't prompt
+    // from SpeechRecognition.start() alone, especially after a prior denial).
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // We don't actually consume the stream — SpeechRecognition uses its
+        // own mic pipeline. Stop the tracks immediately to release the LED.
+        stream.getTracks().forEach((t) => t.stop());
+      } catch (permErr: any) {
+        const name = permErr?.name || "NotAllowedError";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+          setError("Mic permission denied. Click the 🔒 in your browser's address bar to allow it.");
+        } else if (name === "NotFoundError") {
+          setError("No microphone found on this device.");
+        } else {
+          setError(`Mic unavailable: ${name}`);
+        }
+        return;
+      }
+    }
+
     const rec = new Ctor();
-    rec.continuous = false;
+    // continuous=true so a brief pause mid-sentence doesn't end recognition
+    rec.continuous = true;
     rec.interimResults = true;
     rec.lang = "en-US";
 
@@ -74,8 +97,17 @@ export function useMic(): UseMicResult {
 
     rec.onerror = (e: any) => {
       const code = e?.error || "unknown";
-      // Don't surface aborts/no-speech as real errors
-      if (code !== "aborted" && code !== "no-speech") setError(code);
+      if (code === "not-allowed" || code === "service-not-allowed") {
+        setError("Mic permission denied. Allow it in your browser's site settings.");
+      } else if (code === "no-speech") {
+        // Don't surface — common false positive when user is thinking
+      } else if (code === "audio-capture") {
+        setError("No mic detected. Plug one in and try again.");
+      } else if (code === "network") {
+        setError("Network hiccup — voice service unreachable.");
+      } else if (code !== "aborted") {
+        setError(`Voice error: ${code}`);
+      }
       setListening(false);
     };
 

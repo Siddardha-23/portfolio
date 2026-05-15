@@ -269,6 +269,7 @@ export default function ConciergeRoot() {
         onSubmit={onSubmit}
         micSupported={mic.supported}
         micActive={mic.listening}
+        micError={mic.error}
         ttsMuted={tts.muted}
         ttsAmplitude={tts.amplitude}
         onToggleMic={onToggleMic}

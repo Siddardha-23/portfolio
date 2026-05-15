@@ -39,6 +39,7 @@ interface StageProps {
   onSubmit: () => void;
   micSupported: boolean;
   micActive: boolean;
+  micError: string | null;
   ttsMuted: boolean;
   ttsAmplitude: number;
   onToggleMic: () => void;
@@ -54,7 +55,7 @@ export default function ConciergeStage(props: StageProps) {
   const {
     open, minimized, onClose, onMinimize, onRestore,
     transcript, pending, partial, inputValue, setInputValue, onSubmit,
-    micSupported, micActive, ttsMuted, ttsAmplitude,
+    micSupported, micActive, micError, ttsMuted, ttsAmplitude,
     onToggleMic, onToggleMute, suggestions, onSuggestion, recruiterMode,
     avatarState, emotion,
   } = props;
@@ -130,36 +131,39 @@ export default function ConciergeStage(props: StageProps) {
             transition={{ duration: 0.35 }}
           />
 
-          {/* Two-column stage */}
+          {/* Two-column stage. Order classes flip the layout so the chat panel
+              is on the LEFT and the avatar is on the RIGHT on desktop. On
+              mobile the avatar still appears on top so visitors see him
+              first. */}
           <div className="relative h-full w-full flex flex-col md:flex-row">
 
-            {/* ===== LEFT: Avatar stage ===== */}
+            {/* ===== Avatar stage (mobile: top, desktop: RIGHT) ===== */}
             <motion.div
-              initial={{ x: -40, opacity: 0 }}
+              initial={{ x: 40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -40, opacity: 0 }}
+              exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="hidden md:flex md:w-[45%] lg:w-[42%] items-end justify-center relative pointer-events-none"
+              className="hidden md:flex md:w-[45%] lg:w-[42%] order-1 md:order-2 items-center justify-center relative pointer-events-none py-6"
             >
               {/* Floor reflection / pedestal glow */}
               <div
-                className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[70%] h-32 pointer-events-none"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[60%] h-28 pointer-events-none"
                 style={{
-                  background: "radial-gradient(ellipse at center bottom, hsl(290 95% 65% / 0.45), transparent 70%)",
+                  background: "radial-gradient(ellipse at center bottom, hsl(200 95% 60% / 0.45), transparent 70%)",
                   filter: "blur(20px)",
                 }}
               />
               {/* Vertical light beam behind avatar */}
               <div
-                className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-[80%] pointer-events-none"
+                className="absolute inset-y-4 left-1/2 -translate-x-1/2 w-[70%] pointer-events-none"
                 style={{
                   background:
-                    "linear-gradient(180deg, transparent 0%, hsl(290 95% 65% / 0.12) 30%, hsl(190 95% 60% / 0.18) 70%, transparent 100%)",
+                    "linear-gradient(180deg, transparent 0%, hsl(200 95% 60% / 0.12) 30%, hsl(180 95% 60% / 0.18) 70%, transparent 100%)",
                 }}
               />
-              <div className="relative w-[78%] max-w-[480px] mb-[-2%]">
+              {/* Avatar fills the column height — never clips */}
+              <div className="relative h-full max-h-[88vh] flex items-center justify-center">
                 <Avatar
-                  size={480}
                   state={avatarState}
                   emotion={emotion}
                   amplitude={ttsAmplitude}
@@ -180,13 +184,13 @@ export default function ConciergeStage(props: StageProps) {
               </div>
             </motion.div>
 
-            {/* ===== RIGHT: Conversation window ===== */}
+            {/* ===== Conversation window (mobile: bottom, desktop: LEFT) ===== */}
             <motion.div
-              initial={{ x: 40, opacity: 0 }}
+              initial={{ x: -40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 40, opacity: 0 }}
+              exit={{ x: -40, opacity: 0 }}
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-              className="flex-1 md:w-[55%] lg:w-[58%] flex flex-col p-3 md:p-6 lg:p-8"
+              className="flex-1 md:w-[55%] lg:w-[58%] order-2 md:order-1 flex flex-col p-3 md:p-6 lg:p-8"
             >
               <div className="flex-1 flex flex-col bg-background/85 backdrop-blur-2xl rounded-2xl border border-border/60 shadow-2xl overflow-hidden max-h-full">
 
@@ -352,6 +356,12 @@ export default function ConciergeStage(props: StageProps) {
                 {!micSupported && (
                   <div className="mx-3 md:mx-4 mb-2 text-[10px] text-muted-foreground italic text-center">
                     Voice input isn't supported in this browser — use the box below.
+                  </div>
+                )}
+
+                {micError && (
+                  <div className="mx-3 md:mx-4 mb-2 px-3 py-2 rounded-lg bg-destructive/10 border border-destructive/30 text-[11px] text-destructive">
+                    {micError}
                   </div>
                 )}
 

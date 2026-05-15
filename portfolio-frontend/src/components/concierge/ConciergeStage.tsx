@@ -18,7 +18,7 @@
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useRef } from "react";
 import {
-  Send, Mic, MicOff, Volume2, VolumeX, X, Minimize2, Maximize2, Sparkles,
+  Send, Mic, MicOff, Volume2, VolumeX, X, Minimize2, Maximize2, Sparkles, Radio,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Avatar, { AvatarState, AvatarEmotion } from "./Avatar";
@@ -118,18 +118,20 @@ export default function ConciergeStage(props: StageProps) {
           role="dialog"
           aria-label="The Concierge"
         >
-          {/* Backdrop — dim + blur but visible */}
+          {/* Backdrop — dim + blur but visible. Purely decorative; the only way
+              to dismiss/minimize is via the header buttons. Removing the
+              backdrop-click handler also removed a `pointer-events-none`
+              cascade on the stage container that was blocking the input. */}
           <motion.div
-            className="absolute inset-0"
+            className="absolute inset-0 pointer-events-none"
             initial={{ backdropFilter: "blur(0px)", backgroundColor: "rgba(0,0,0,0)" }}
             animate={{ backdropFilter: "blur(10px)", backgroundColor: "rgba(8,4,20,0.55)" }}
             exit={{ backdropFilter: "blur(0px)", backgroundColor: "rgba(0,0,0,0)" }}
             transition={{ duration: 0.35 }}
-            onClick={onMinimize}
           />
 
           {/* Two-column stage */}
-          <div className="relative h-full w-full flex flex-col md:flex-row pointer-events-none">
+          <div className="relative h-full w-full flex flex-col md:flex-row">
 
             {/* ===== LEFT: Avatar stage ===== */}
             <motion.div
@@ -184,8 +186,7 @@ export default function ConciergeStage(props: StageProps) {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-              className="flex-1 md:w-[55%] lg:w-[58%] flex flex-col p-3 md:p-6 lg:p-8 pointer-events-auto"
-              onClick={(e) => e.stopPropagation()}
+              className="flex-1 md:w-[55%] lg:w-[58%] flex flex-col p-3 md:p-6 lg:p-8"
             >
               <div className="flex-1 flex flex-col bg-background/85 backdrop-blur-2xl rounded-2xl border border-border/60 shadow-2xl overflow-hidden max-h-full">
 
@@ -293,6 +294,67 @@ export default function ConciergeStage(props: StageProps) {
                   </div>
                 )}
 
+                {/* Listening overlay — covers the input bar with a big visual
+                    indicator while the mic is hot. Tap "Stop" or the mic
+                    button to finalize and submit. */}
+                <AnimatePresence>
+                  {micActive && (
+                    <motion.div
+                      key="listening-overlay"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 8 }}
+                      className="mx-3 md:mx-4 mb-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 flex items-center gap-3"
+                    >
+                      <div className="relative w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                        <Mic className="h-4 w-4" />
+                        <motion.span
+                          className="absolute inset-0 rounded-full border-2 border-primary"
+                          animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
+                          transition={{ duration: 1.2, repeat: Infinity }}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                          <Radio className="h-3 w-3 animate-pulse" />
+                          Listening…
+                        </div>
+                        <div className="text-[11px] text-muted-foreground truncate">
+                          {partial ? `"${partial}"` : "Speak now — tap stop when done"}
+                        </div>
+                      </div>
+                      <Button size="sm" onClick={onToggleMic} className="shrink-0">
+                        Stop
+                      </Button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Big "Tap to speak" CTA when idle — much more discoverable
+                    than the tiny mic icon. Disappears while listening (the
+                    overlay above replaces it) and while typing in the box. */}
+                {!micActive && micSupported && !inputValue && (
+                  <div className="mx-3 md:mx-4 mb-2">
+                    <button
+                      type="button"
+                      onClick={onToggleMic}
+                      className="w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-2.5 text-xs font-medium text-primary group"
+                    >
+                      <Mic className="h-4 w-4" />
+                      Tap to speak with Aria
+                      <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">
+                        · she'll listen then answer
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+                {!micSupported && (
+                  <div className="mx-3 md:mx-4 mb-2 text-[10px] text-muted-foreground italic text-center">
+                    Voice input isn't supported in this browser — use the box below.
+                  </div>
+                )}
+
                 {/* Input bar */}
                 <form
                   className="flex items-center gap-2 p-3 md:p-4 border-t border-border/60 bg-background/60"
@@ -300,29 +362,37 @@ export default function ConciergeStage(props: StageProps) {
                 >
                   <Button
                     type="button" size="icon"
-                    variant={micActive ? "default" : "outline"}
+                    variant={micActive ? "destructive" : "outline"}
                     onClick={onToggleMic}
                     disabled={!micSupported}
-                    aria-label={micActive ? "Stop listening" : "Push to talk"}
-                    title={micSupported ? "Push to talk" : "Mic not supported in this browser"}
-                    className="h-10 w-10 shrink-0"
+                    aria-label={micActive ? "Stop listening" : "Tap to speak"}
+                    title={micSupported ? (micActive ? "Stop listening" : "Tap to speak") : "Mic not supported"}
+                    className="h-11 w-11 shrink-0 relative"
                   >
-                    {micActive ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {micActive ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+                    {micActive && (
+                      <motion.span
+                        className="absolute inset-0 rounded-md border-2 border-destructive"
+                        animate={{ scale: [1, 1.25], opacity: [0.7, 0] }}
+                        transition={{ duration: 1.1, repeat: Infinity }}
+                      />
+                    )}
                   </Button>
                   <input
                     ref={inputRef}
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
-                    placeholder="Ask about skills, projects, or paste a JD…"
+                    placeholder={micActive ? "Listening…" : "Type or tap mic to speak…"}
                     maxLength={500}
-                    className="flex-1 h-10 px-3 rounded-md border border-border/60 bg-background text-[13px] focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    disabled={micActive}
+                    className="flex-1 h-11 px-3 rounded-md border border-border/60 bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60"
                   />
                   <Button
                     type="submit" size="icon"
-                    disabled={!inputValue.trim() || pending}
-                    className="h-10 w-10 shrink-0"
+                    disabled={!inputValue.trim() || pending || micActive}
+                    className="h-11 w-11 shrink-0"
                   >
-                    <Send className="h-4 w-4" />
+                    <Send className="h-5 w-5" />
                   </Button>
                 </form>
               </div>

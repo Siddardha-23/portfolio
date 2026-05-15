@@ -76,6 +76,58 @@ function FloatingTrigger({ open, onOpen, hasUnseen }: { open: boolean; onOpen: (
   );
 }
 
+/**
+ * Inline trigger — the SAME multi-orb pulse icon (cluster of 4 colored dots
+ * + halo + pulse ring) that used to float in the bottom-right, but sized for
+ * inline placement (e.g. next to the user's name). Click fires the
+ * "builder-agent:open" event the BuilderAgent component listens for.
+ */
+export function BuilderAgentInlineTrigger({
+  label = "Ask the team",
+  size = 40,
+}: { label?: string; size?: number }) {
+  const onClick = () => window.dispatchEvent(new Event("builder-agent:open"));
+  const innerSize = `${size}px`;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Open the AI agent team"
+      className="group relative inline-flex items-center gap-2 align-middle"
+    >
+      {/* Halo */}
+      <span className="relative inline-flex items-center justify-center" style={{ width: innerSize, height: innerSize }}>
+        <motion.span
+          className="absolute -inset-1.5 rounded-full bg-gradient-to-br from-amber-400/40 via-violet-500/40 to-emerald-400/40 blur-lg opacity-80 group-hover:opacity-100 transition-opacity"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+        />
+        {/* Pulse ring */}
+        <motion.span
+          className="absolute inset-0 rounded-full border border-foreground/25"
+          animate={{ scale: [1, 1.45], opacity: [0.7, 0] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeOut" }}
+        />
+        {/* Cluster */}
+        <span
+          className="relative rounded-full bg-background/85 backdrop-blur-xl border border-border/60 shadow-lg flex items-center justify-center overflow-hidden group-hover:scale-105 transition-transform"
+          style={{ width: innerSize, height: innerSize }}
+        >
+          <span className="grid grid-cols-2 gap-[3px]">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_5px_rgba(245,158,11,0.7)]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(16,185,129,0.7)]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-violet-400 shadow-[0_0_5px_rgba(139,92,246,0.7)]" />
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-400 shadow-[0_0_5px_rgba(244,63,94,0.7)]" />
+          </span>
+        </span>
+      </span>
+      <span className="hidden sm:inline text-[11px] font-medium text-muted-foreground group-hover:text-foreground transition-colors">
+        {label}
+      </span>
+    </button>
+  );
+}
+
 export default function BuilderAgent() {
   const { turns, status, specialists, activeAgents, send, reset } = useBuilderAgent();
   const [open, setOpen] = useState(false);
@@ -97,6 +149,15 @@ export default function BuilderAgent() {
       setHasUnseen(false);
     }
   }, [open]);
+
+  // External open trigger — fired from the inline icon next to the name in Hero.
+  // Lets us drop the floating bottom-right launcher (which collided with the
+  // Concierge launcher) without losing access to the multi-agent panel.
+  useEffect(() => {
+    const handler = () => setOpen(true);
+    window.addEventListener("builder-agent:open", handler);
+    return () => window.removeEventListener("builder-agent:open", handler);
+  }, []);
 
   // Hide "Ask the team" trigger while another modal/dialog is open.
   useEffect(() => {
@@ -134,12 +195,17 @@ export default function BuilderAgent() {
 
   const isEmpty = turns.length === 0;
 
+  // FloatingTrigger removed — the multi-orb launcher now lives inline next to
+  // the name in Hero.tsx (see <BuilderAgentInlineTrigger />) and fires the
+  // "builder-agent:open" event handled above. Frees the bottom-right corner
+  // for the Concierge launcher. The component below is kept as an unused
+  // reference for the design tokens. `hasBlockingDialog` is still computed so
+  // any future re-introduction stays compatible.
+  void FloatingTrigger;
+  void hasBlockingDialog;
+
   return (
     <>
-      {!hasBlockingDialog && (
-        <FloatingTrigger open={open} onOpen={() => setOpen(true)} hasUnseen={hasUnseen} />
-      )}
-
       <AnimatePresence>
         {open && (
           <motion.div

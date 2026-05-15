@@ -11,6 +11,7 @@ import { VisitorMapTrigger } from '@/components/VisitorMapTrigger';
 import { ResumeViewer } from '@/components/ResumeViewer';
 import UnderTheHoodChips from '@/components/UnderTheHoodChips';
 import { FEATURES } from '@/lib/underTheHoodData';
+import { BuilderAgentInlineTrigger } from '@/components/agent/BuilderAgent';
 
 
 // Animated role typewriter
@@ -439,14 +440,20 @@ export default function Hero() {
               </h2>
             </motion.div>
 
-            {/* Name */}
+            {/* Name + inline AI-team trigger (the blink icon that used to
+                float at bottom-right and collide with the Concierge) */}
             <motion.h1
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, duration: 0.6 }}
               className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-4 text-foreground leading-tight"
             >
-              <span className="gradient-text">Harshith</span>
+              <span className="inline-flex items-center gap-3 flex-wrap">
+                <span className="gradient-text">Harshith</span>
+                <span className="inline-block align-middle">
+                  <BuilderAgentInlineTrigger size={38} />
+                </span>
+              </span>
               <br />
               <span className="text-foreground/80">Siddardha</span>
             </motion.h1>

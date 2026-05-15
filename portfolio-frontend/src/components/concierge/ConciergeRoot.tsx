@@ -222,7 +222,10 @@ export default function ConciergeRoot() {
           <motion.button
             key="concierge-launcher"
             onClick={() => { setOpen(true); setMinimized(false); }}
-            className="fixed bottom-5 right-5 z-[55] group"
+            // Compact circular launcher at far-right, vertically centered low.
+            // FloatingFormPrompt lives at bottom-LEFT so no horizontal clash;
+            // we sit above the page footer so we don't cover content.
+            className="fixed bottom-6 right-4 z-[55] group"
             initial={{ opacity: 0, scale: 0.85, y: 16 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.85, y: 16 }}
@@ -231,8 +234,11 @@ export default function ConciergeRoot() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
           >
-            <div className="relative w-[64px] h-[100px]">
-              <Avatar size={64} state="idle" emotion="happy" />
+            <div className="relative h-14 w-14 rounded-full overflow-hidden bg-background/85 backdrop-blur-xl border border-border/60 shadow-2xl flex items-center justify-center">
+              {/* Just the head — much more compact than full-body */}
+              <div className="absolute inset-0 flex items-center justify-center scale-[2.2] translate-y-[18%]">
+                <Avatar size={56} state="idle" emotion="happy" />
+              </div>
               <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-background flex items-center justify-center z-20">
                 <Sparkles className="h-2.5 w-2.5 text-white" />
               </div>

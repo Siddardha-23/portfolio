@@ -97,7 +97,16 @@ export function useMic(): UseMicResult {
   const startAudioMeter = useCallback(async (): Promise<MediaStream | null> => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        // autoGainControl: false fixes the "loud for 3 sec then quiet" bug —
+        // AGC silently reduces gain after detecting loud input, which made
+        // the level meter (and the apparent voice loudness) drop off. We
+        // keep echoCancellation so we don't feed back the TTS, and keep
+        // noiseSuppression to avoid spurious recognition on background noise.
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+        },
       });
       streamRef.current = stream;
 

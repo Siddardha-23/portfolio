@@ -1,24 +1,26 @@
 /**
- * ConciergeStage - The split-stage layout for The Concierge.
+ * ConciergeStage - "Spotlight" UI (not a chatbot).
  *
- * Replaces the old chatbot-bubble UX. Full-viewport overlay with:
- *   - LEFT (45% / hidden on mobile): the avatar, large, on a soft holographic
- *     stage with ambient gradient. This is the visual "presence."
- *   - RIGHT (55% / full on mobile): the conversation window — active card
- *     lane on top, transcript in the middle, suggestion chips + mic/text
- *     input at the bottom.
+ * Replaces the message-bubble transcript with a single-focus layout:
+ *   - Top : the question you just asked, in a glowing banner.
+ *   - Mid : the active response area. Changes based on state:
+ *           • IDLE  → friendly hero copy + starter chips
+ *           • LISTENING → HUGE live transcript of your voice, mic pulse,
+ *                         waveform-style amplitude bars, big Stop button
+ *           • THINKING  → echo of the question + Aria's "thinking" stream
+ *           • SPEAKING/IDLE post-answer → big answer text + active card
+ *   - Hist: collapsed history rail (chips you can scrub to recall prior
+ *           turns) instead of bubbles stacked all the way up the panel.
+ *   - Foot: suggestion chips + mic + input + send.
  *
- * Minimize: collapses to a corner widget (small avatar + last caption) so
- * users can see the page being driven by intents. Click the widget to
- * restore.
- *
- * Backdrop is dimmed + blurred but visible — the avatar isn't hiding the
- * portfolio, it's hosting a conversation in front of it.
+ * Live transcription is the centerpiece while the mic is hot — words
+ * appear at 24-28px as recognition fires, so it's impossible to miss.
  */
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Send, Mic, MicOff, Volume2, VolumeX, X, Minimize2, Maximize2, Sparkles, Radio,
+  Send, Mic, MicOff, Volume2, VolumeX, X, Minimize2, Maximize2,
+  Sparkles, Radio, Clock, Quote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Avatar, { AvatarState, AvatarEmotion } from "./Avatar";
@@ -51,6 +53,34 @@ interface StageProps {
   emotion: AvatarEmotion;
 }
 
+/** Compact audio-amplitude bar viz (synthesizes a visual while no real
+ *  PCM stream is hooked up to the AnalyserNode). */
+function VoiceWaveform({ active }: { active: boolean }) {
+  const bars = 24;
+  return (
+    <div className="flex items-end justify-center gap-1 h-10">
+      {Array.from({ length: bars }).map((_, i) => (
+        <motion.span
+          key={i}
+          className="w-1 rounded-full bg-primary"
+          initial={{ height: 6 }}
+          animate={{
+            height: active
+              ? [4, 8 + Math.random() * 22, 4 + Math.random() * 8, 14, 4]
+              : 4,
+          }}
+          transition={{
+            duration: 0.8 + Math.random() * 0.6,
+            repeat: Infinity,
+            ease: "easeInOut",
+            delay: i * 0.04,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function ConciergeStage(props: StageProps) {
   const {
     open, minimized, onClose, onMinimize, onRestore,
@@ -60,14 +90,8 @@ export default function ConciergeStage(props: StageProps) {
     avatarState, emotion,
   } = props;
 
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open && !minimized && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [transcript, pending, open, minimized]);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     if (open && !minimized) {
@@ -76,9 +100,19 @@ export default function ConciergeStage(props: StageProps) {
     }
   }, [open, minimized]);
 
-  // Active card = the most recent model turn's display card
-  const activeCard = [...transcript].reverse().find((t) => t.role === "model" && t.display)?.display || null;
-  const latestModelText = [...transcript].reverse().find((t) => t.role === "model")?.text || "";
+  // Latest pair
+  const lastUserTurn = [...transcript].reverse().find((t) => t.role === "user");
+  const lastModelTurn = [...transcript].reverse().find((t) => t.role === "model");
+  const activeCard = lastModelTurn?.display || null;
+  const latestModelText = lastModelTurn?.caption || lastModelTurn?.text || "";
+
+  // Visual state for the central spotlight
+  const showListening = micActive;
+  const showThinking = pending && !micActive;
+  const showAnswer = !showListening && !showThinking && !!lastModelTurn;
+  const showIdle = !showListening && !showThinking && !lastModelTurn;
+
+  const historyTurns = transcript.filter((t) => t.role === "user");
 
   return (
     <AnimatePresence>
@@ -119,10 +153,7 @@ export default function ConciergeStage(props: StageProps) {
           role="dialog"
           aria-label="The Concierge"
         >
-          {/* Backdrop — dim + blur but visible. Purely decorative; the only way
-              to dismiss/minimize is via the header buttons. Removing the
-              backdrop-click handler also removed a `pointer-events-none`
-              cascade on the stage container that was blocking the input. */}
+          {/* Backdrop (decorative only — close via header buttons) */}
           <motion.div
             className="absolute inset-0 pointer-events-none"
             initial={{ backdropFilter: "blur(0px)", backgroundColor: "rgba(0,0,0,0)" }}
@@ -131,9 +162,6 @@ export default function ConciergeStage(props: StageProps) {
             transition={{ duration: 0.35 }}
           />
 
-          {/* Two-column stage: avatar on the LEFT, chat panel on the RIGHT
-              on desktop. Mobile keeps the avatar on top so visitors see him
-              first. */}
           <div className="relative h-full w-full flex flex-col md:flex-row">
 
             {/* ===== Avatar stage (mobile: top, desktop: LEFT) ===== */}
@@ -144,7 +172,6 @@ export default function ConciergeStage(props: StageProps) {
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
               className="hidden md:flex md:w-[45%] lg:w-[42%] items-center justify-center relative pointer-events-none py-6"
             >
-              {/* Floor reflection / pedestal glow */}
               <div
                 className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[60%] h-28 pointer-events-none"
                 style={{
@@ -152,7 +179,6 @@ export default function ConciergeStage(props: StageProps) {
                   filter: "blur(20px)",
                 }}
               />
-              {/* Vertical light beam behind avatar */}
               <div
                 className="absolute inset-y-4 left-1/2 -translate-x-1/2 w-[70%] pointer-events-none"
                 style={{
@@ -160,7 +186,6 @@ export default function ConciergeStage(props: StageProps) {
                     "linear-gradient(180deg, transparent 0%, hsl(200 95% 60% / 0.12) 30%, hsl(180 95% 60% / 0.18) 70%, transparent 100%)",
                 }}
               />
-              {/* Avatar fills the column height — never clips */}
               <div className="relative h-full max-h-[88vh] flex items-center justify-center">
                 <Avatar
                   state={avatarState}
@@ -183,7 +208,7 @@ export default function ConciergeStage(props: StageProps) {
               </div>
             </motion.div>
 
-            {/* ===== Conversation window (mobile: bottom, desktop: RIGHT) ===== */}
+            {/* ===== Spotlight window (mobile: bottom, desktop: RIGHT) ===== */}
             <motion.div
               initial={{ x: 40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -202,20 +227,30 @@ export default function ConciergeStage(props: StageProps) {
                     <div className="min-w-0">
                       <div className="text-sm font-semibold truncate">The Concierge</div>
                       <div className="text-[10px] text-muted-foreground truncate">
-                        {recruiterMode ? "Recruiter mode active" : "Harshith's AI · ask anything"}
+                        {recruiterMode ? "Recruiter mode active" : "Aris · ask anything"}
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    {historyTurns.length > 0 && (
+                      <Button size="icon" variant="ghost"
+                        onClick={() => setHistoryOpen((v) => !v)}
+                        aria-label="History"
+                        title={`${historyTurns.length} turn${historyTurns.length === 1 ? "" : "s"} in this session`}
+                        className="h-8 w-8"
+                      >
+                        <Clock className="h-4 w-4" />
+                      </Button>
+                    )}
                     <Button size="icon" variant="ghost" onClick={onToggleMute}
                       aria-label={ttsMuted ? "Unmute" : "Mute"}
-                      title={ttsMuted ? "Unmute voice" : "Mute voice (transcript continues)"}
+                      title={ttsMuted ? "Unmute voice" : "Mute voice"}
                       className="h-8 w-8"
                     >
                       {ttsMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
                     </Button>
                     <Button size="icon" variant="ghost" onClick={onMinimize}
-                      aria-label="Minimize" title="Minimize (so you can see the page)"
+                      aria-label="Minimize" title="Minimize"
                       className="h-8 w-8"
                     >
                       <Minimize2 className="h-4 w-4" />
@@ -228,62 +263,207 @@ export default function ConciergeStage(props: StageProps) {
                   </div>
                 </div>
 
-                {/* Active card lane */}
-                {activeCard && (
-                  <div className="px-4 md:px-5 pt-3">
-                    <CardRenderer card={activeCard} />
-                  </div>
-                )}
-
-                {/* Transcript */}
-                <div
-                  ref={scrollRef}
-                  className="flex-1 overflow-y-auto px-4 md:px-5 py-3 space-y-2.5 scroll-smooth min-h-[120px]"
-                >
-                  {transcript.length === 0 && !pending && (
-                    <div className="h-full flex flex-col items-center justify-center text-center text-xs text-muted-foreground py-10">
-                      <p className="mb-2 text-sm font-medium text-foreground">I'm Aria — Harshith's AI Concierge.</p>
-                      <p>Ask me anything, or tap a chip below.</p>
-                    </div>
-                  )}
-                  {transcript.map((t) => (
+                {/* Question banner — only when there's a current turn and not listening */}
+                <AnimatePresence>
+                  {lastUserTurn && !showListening && (
                     <motion.div
-                      key={t.id}
-                      initial={{ opacity: 0, y: 6 }}
+                      key={lastUserTurn.id}
+                      initial={{ opacity: 0, y: -6 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.22 }}
-                      className={`flex ${t.role === "user" ? "justify-end" : "justify-start"}`}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.25 }}
+                      className="mx-4 md:mx-5 mt-4 mb-2 px-4 py-2.5 rounded-xl bg-primary/5 border border-primary/20"
                     >
-                      <div className={`max-w-[88%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed ${
-                        t.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-tr-sm"
-                          : "bg-muted/60 rounded-tl-sm"
-                      }`}>
-                        {t.caption || t.text}
+                      <div className="flex items-start gap-2">
+                        <Quote className="h-3.5 w-3.5 text-primary mt-1 shrink-0" />
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider font-semibold text-primary">
+                            You asked
+                          </div>
+                          <div className="text-sm font-medium text-foreground leading-snug">
+                            {lastUserTurn.text}
+                          </div>
+                        </div>
                       </div>
                     </motion.div>
-                  ))}
-                  {pending && (
-                    <div className="flex items-center gap-1.5 px-1 py-1">
-                      {[0, 1, 2].map((i) => (
-                        <motion.div
-                          key={i}
-                          className="w-1.5 h-1.5 rounded-full bg-primary/60"
-                          animate={{ y: [0, -4, 0] }}
-                          transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.12 }}
-                        />
-                      ))}
-                    </div>
                   )}
-                  {partial && micActive && (
-                    <div className="px-3 py-1.5 rounded-lg bg-primary/5 text-[11px] italic text-muted-foreground">
-                      "{partial}"
-                    </div>
+                </AnimatePresence>
+
+                {/* ===== SPOTLIGHT main area ===== */}
+                <div className="flex-1 overflow-y-auto px-4 md:px-5 py-3 scroll-smooth">
+
+                  {/* IDLE state */}
+                  {showIdle && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="h-full flex flex-col items-center justify-center text-center py-8"
+                    >
+                      <div className="text-3xl md:text-4xl font-bold mb-2 bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent">
+                        Ask me anything.
+                      </div>
+                      <p className="text-sm text-muted-foreground max-w-sm">
+                        I'm Aris — Harshith's AI Concierge.
+                        Speak or type and I'll show you his work.
+                      </p>
+                    </motion.div>
                   )}
+
+                  {/* LISTENING state — HUGE live transcript */}
+                  <AnimatePresence>
+                    {showListening && (
+                      <motion.div
+                        key="listening-spotlight"
+                        initial={{ opacity: 0, scale: 0.96 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.96 }}
+                        className="h-full flex flex-col items-center justify-center text-center"
+                      >
+                        {/* Pulsing mic icon */}
+                        <div className="relative mb-4">
+                          <div className="h-16 w-16 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-2xl shadow-primary/40">
+                            <Mic className="h-7 w-7" />
+                          </div>
+                          <motion.div
+                            className="absolute inset-0 rounded-full border-2 border-primary"
+                            initial={{ scale: 1, opacity: 0.7 }}
+                            animate={{ scale: [1, 1.5], opacity: [0.7, 0] }}
+                            transition={{ duration: 1.2, repeat: Infinity }}
+                          />
+                          <motion.div
+                            className="absolute inset-0 rounded-full border-2 border-primary"
+                            initial={{ scale: 1, opacity: 0.7 }}
+                            animate={{ scale: [1, 1.8], opacity: [0.5, 0] }}
+                            transition={{ duration: 1.2, repeat: Infinity, delay: 0.4 }}
+                          />
+                        </div>
+
+                        {/* Status line */}
+                        <div className="text-xs uppercase font-semibold tracking-widest text-primary flex items-center gap-2 mb-4">
+                          <Radio className="h-3 w-3 animate-pulse" />
+                          Listening
+                        </div>
+
+                        {/* HUGE live transcript */}
+                        <div className="min-h-[80px] md:min-h-[110px] w-full max-w-md flex items-center justify-center">
+                          {partial ? (
+                            <motion.div
+                              key={partial}
+                              initial={{ opacity: 0, y: 4 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="text-xl md:text-2xl font-medium leading-snug text-foreground"
+                            >
+                              {partial}
+                              <motion.span
+                                className="inline-block w-[2px] h-5 bg-primary ml-1 align-middle"
+                                animate={{ opacity: [1, 0, 1] }}
+                                transition={{ duration: 0.8, repeat: Infinity }}
+                              />
+                            </motion.div>
+                          ) : (
+                            <div className="text-base md:text-lg text-muted-foreground italic">
+                              Speak now — I'll transcribe in real time
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Waveform */}
+                        <div className="mt-6">
+                          <VoiceWaveform active={micActive} />
+                        </div>
+
+                        {/* Stop button */}
+                        <Button onClick={onToggleMic} className="mt-6 px-6" size="lg">
+                          <MicOff className="h-4 w-4 mr-2" />
+                          Stop & Ask
+                        </Button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* THINKING state */}
+                  {showThinking && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="h-full flex flex-col items-center justify-center text-center"
+                    >
+                      <div className="text-sm uppercase tracking-widest font-semibold text-primary mb-3">
+                        Thinking
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            className="w-3 h-3 rounded-full bg-primary"
+                            animate={{ y: [0, -8, 0], opacity: [0.4, 1, 0.4] }}
+                            transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.18 }}
+                          />
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* ANSWER state */}
+                  {showAnswer && lastModelTurn && (
+                    <motion.div
+                      key={lastModelTurn.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                      className="space-y-4"
+                    >
+                      {/* Aris label + answer */}
+                      <div className="flex items-start gap-3">
+                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center shrink-0 mt-0.5">
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-[10px] uppercase tracking-wider font-semibold text-primary mb-1">
+                            Aris
+                          </div>
+                          <div className="text-base md:text-lg leading-relaxed text-foreground/90 whitespace-pre-wrap">
+                            {lastModelTurn.caption || lastModelTurn.text}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Active visual card */}
+                      {activeCard && <CardRenderer card={activeCard} />}
+                    </motion.div>
+                  )}
+
+                  {/* History panel — collapsed unless toggled */}
+                  <AnimatePresence>
+                    {historyOpen && historyTurns.length > 0 && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="mt-6 pt-4 border-t border-border/60"
+                      >
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-2">
+                          Earlier in this session
+                        </div>
+                        <div className="space-y-2">
+                          {historyTurns.slice(0, -1).reverse().map((t) => (
+                            <button
+                              key={t.id}
+                              onClick={() => onSuggestion(t.text)}
+                              className="w-full text-left px-3 py-1.5 rounded-lg bg-muted/30 hover:bg-muted/60 text-xs transition-colors"
+                            >
+                              <span className="text-muted-foreground">↻ </span>
+                              {t.text}
+                            </button>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                {/* Suggestions */}
-                {suggestions.length > 0 && !pending && (
+                {/* Suggestion chips */}
+                {suggestions.length > 0 && !pending && !micActive && (
                   <div className="px-4 md:px-5 pb-2 flex flex-wrap gap-1.5">
                     {suggestions.map((s, i) => (
                       <button
@@ -297,46 +477,8 @@ export default function ConciergeStage(props: StageProps) {
                   </div>
                 )}
 
-                {/* Listening overlay — covers the input bar with a big visual
-                    indicator while the mic is hot. Tap "Stop" or the mic
-                    button to finalize and submit. */}
-                <AnimatePresence>
-                  {micActive && (
-                    <motion.div
-                      key="listening-overlay"
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 8 }}
-                      className="mx-3 md:mx-4 mb-2 rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 flex items-center gap-3"
-                    >
-                      <div className="relative w-9 h-9 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0">
-                        <Mic className="h-4 w-4" />
-                        <motion.span
-                          className="absolute inset-0 rounded-full border-2 border-primary"
-                          animate={{ scale: [1, 1.5], opacity: [0.6, 0] }}
-                          transition={{ duration: 1.2, repeat: Infinity }}
-                        />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-semibold text-primary flex items-center gap-1.5">
-                          <Radio className="h-3 w-3 animate-pulse" />
-                          Listening…
-                        </div>
-                        <div className="text-[11px] text-muted-foreground truncate">
-                          {partial ? `"${partial}"` : "Speak now — tap stop when done"}
-                        </div>
-                      </div>
-                      <Button size="sm" onClick={onToggleMic} className="shrink-0">
-                        Stop
-                      </Button>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Big "Tap to speak" CTA when idle — much more discoverable
-                    than the tiny mic icon. Disappears while listening (the
-                    overlay above replaces it) and while typing in the box. */}
-                {!micActive && micSupported && !inputValue && (
+                {/* Mic CTA pill — only when idle */}
+                {!micActive && micSupported && !inputValue && !showListening && (
                   <div className="mx-3 md:mx-4 mb-2">
                     <button
                       type="button"
@@ -344,9 +486,9 @@ export default function ConciergeStage(props: StageProps) {
                       className="w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-2.5 text-xs font-medium text-primary group"
                     >
                       <Mic className="h-4 w-4" />
-                      Tap to speak with Aria
+                      Tap to speak with Aris
                       <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">
-                        · she'll listen then answer
+                        · live transcript appears as you talk
                       </span>
                     </button>
                   </div>
@@ -382,6 +524,7 @@ export default function ConciergeStage(props: StageProps) {
                     {micActive && (
                       <motion.span
                         className="absolute inset-0 rounded-md border-2 border-destructive"
+                        initial={{ scale: 1, opacity: 0.7 }}
                         animate={{ scale: [1, 1.25], opacity: [0.7, 0] }}
                         transition={{ duration: 1.1, repeat: Infinity }}
                       />

@@ -30,15 +30,14 @@ export interface TurnHandlers {
 }
 
 function getWsUrl(): string | null {
+  // ONLY attempt WebSocket when an explicit URL is provided. Same-origin
+  // /ws/* would only work if CloudFront has a behavior pointing at the WS
+  // API Gateway domain — until that's set up, deriving a same-origin URL
+  // just produces noisy console errors. REST is the default transport;
+  // set VITE_CONCIERGE_WS_URL=wss://<ws-api-gateway>/prod to enable WS.
   const explicit = (import.meta as any).env?.VITE_CONCIERGE_WS_URL as string | undefined;
-  if (explicit) return explicit;
-  if (typeof window === "undefined") return null;
-  // Build same-origin ws URL (works when API Gateway WebSocket is exposed via /ws)
-  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  // Only attempt WS in production-like envs (we don't run a WS server locally by default)
-  const isLocalhost = /localhost|127\.0\.0\.1/.test(window.location.hostname);
-  if (isLocalhost) return null;
-  return `${proto}//${window.location.host}/ws/concierge`;
+  if (explicit && /^wss?:\/\//i.test(explicit)) return explicit;
+  return null;
 }
 
 const HANDSHAKE_TIMEOUT_MS = 1500;

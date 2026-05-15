@@ -131,19 +131,18 @@ export default function ConciergeStage(props: StageProps) {
             transition={{ duration: 0.35 }}
           />
 
-          {/* Two-column stage. Order classes flip the layout so the chat panel
-              is on the LEFT and the avatar is on the RIGHT on desktop. On
-              mobile the avatar still appears on top so visitors see him
+          {/* Two-column stage: avatar on the LEFT, chat panel on the RIGHT
+              on desktop. Mobile keeps the avatar on top so visitors see him
               first. */}
           <div className="relative h-full w-full flex flex-col md:flex-row">
 
-            {/* ===== Avatar stage (mobile: top, desktop: RIGHT) ===== */}
+            {/* ===== Avatar stage (mobile: top, desktop: LEFT) ===== */}
             <motion.div
-              initial={{ x: 40, opacity: 0 }}
+              initial={{ x: -40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 40, opacity: 0 }}
+              exit={{ x: -40, opacity: 0 }}
               transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="hidden md:flex md:w-[45%] lg:w-[42%] order-1 md:order-2 items-center justify-center relative pointer-events-none py-6"
+              className="hidden md:flex md:w-[45%] lg:w-[42%] items-center justify-center relative pointer-events-none py-6"
             >
               {/* Floor reflection / pedestal glow */}
               <div
@@ -184,13 +183,13 @@ export default function ConciergeStage(props: StageProps) {
               </div>
             </motion.div>
 
-            {/* ===== Conversation window (mobile: bottom, desktop: LEFT) ===== */}
+            {/* ===== Conversation window (mobile: bottom, desktop: RIGHT) ===== */}
             <motion.div
-              initial={{ x: -40, opacity: 0 }}
+              initial={{ x: 40, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -40, opacity: 0 }}
+              exit={{ x: 40, opacity: 0 }}
               transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.05 }}
-              className="flex-1 md:w-[55%] lg:w-[58%] order-2 md:order-1 flex flex-col p-3 md:p-6 lg:p-8"
+              className="flex-1 md:w-[55%] lg:w-[58%] flex flex-col p-3 md:p-6 lg:p-8"
             >
               <div className="flex-1 flex flex-col bg-background/85 backdrop-blur-2xl rounded-2xl border border-border/60 shadow-2xl overflow-hidden max-h-full">
 

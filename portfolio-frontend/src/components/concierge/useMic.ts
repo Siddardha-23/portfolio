@@ -226,7 +226,10 @@ export function useMic(): UseMicResult {
       const prevOnEnd = rec.onend;
       rec.onend = () => {
         prevOnEnd?.();
-        const text = (finalRef.current + partial).trim();
+        // `partial` already equals (finalRef + interim). Returning
+        // finalRef + partial would duplicate the finalized portion
+        // (caused the visible "X X" bug). Just use `partial`.
+        const text = partial.trim() || finalRef.current.trim();
         cleanupAudio();
         resolve(text);
       };

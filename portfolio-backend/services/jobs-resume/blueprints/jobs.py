@@ -541,6 +541,33 @@ def daily_pipeline():
         max_per_company = 4
     max_per_company = max(1, min(max_per_company, 20))
 
+    # Per-source filter overrides — each key under source_overrides is a partial
+    # filter dict that takes precedence over the matching global field. Unknown
+    # source names are dropped silently; the source whitelist matches what the
+    # backend actually fans out to.
+    so_raw = data.get("source_overrides") if isinstance(data.get("source_overrides"), dict) else {}
+    _allowed_sources = {"linkedin", "workday", "indeed", "ats"}
+    _allowed_exp = ("any", "internship", "entry", "associate", "mid", "senior")
+    source_overrides: dict = {}
+    for src in _allowed_sources:
+        node = so_raw.get(src) if isinstance(so_raw.get(src), dict) else None
+        if not node:
+            continue
+        cleaned: dict = {}
+        if "enabled" in node:
+            cleaned["enabled"] = bool(node.get("enabled"))
+        if "past_days" in node:
+            try:
+                cleaned["past_days"] = max(0, min(int(node.get("past_days")), 30))
+            except (TypeError, ValueError):
+                pass
+        if "experience_level" in node:
+            ev = str(node.get("experience_level") or "").lower()
+            if ev in _allowed_exp:
+                cleaned["experience_level"] = ev
+        if cleaned:
+            source_overrides[src] = cleaned
+
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
         "workday_titles": workday_titles or None,
@@ -560,6 +587,7 @@ def daily_pipeline():
         "hide_companies": hide_companies,
         "hide_title_patterns": hide_title_patterns,
         "max_per_company": max_per_company,
+        "source_overrides": source_overrides or None,
     }
 
     try:
@@ -824,6 +852,47 @@ def delete_pipeline_preset_route(name: str):
     except Exception as e:
         logger.error(f"Delete pipeline preset error: {e}")
         return jsonify({"error": "Failed to delete preset"}), 500
+
+
+# ------------------------------------------------------------------
+# JD ↔ Resume match scoring (deterministic, reuses scraped JDs)
+# ------------------------------------------------------------------
+
+@jobs_bp.route("/pipeline/match-scores", methods=["POST"])
+@jwt_required()
+def pipeline_match_scores():
+    """Score a batch of pipeline rows against the caller's parsed resume.
+
+    Body: { "items": [{ "id": "...", "title": "...", "description": "..." }, ...] }
+    Returns: { "scores": { id: { match_score, matched_skills, missing_top, explain } },
+               "meta":   { resume_skill_count, has_resume } }
+
+    Stateless on the backend — the frontend fires this after a pipeline run
+    lands and overlays the scores on the already-rendered tier groups. No
+    Gemini call, no caching needed: the comparison is regex-against-skills,
+    fast enough to score 100 rows under ~50ms.
+    """
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"jobs_match_scores:{client_ip}", max_requests=30, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded"}), 429
+
+    user_email = get_jwt_identity()
+    data = request.get_json(silent=True) or {}
+    items_raw = data.get("items") or []
+    if not isinstance(items_raw, list):
+        return jsonify({"error": "items must be a list"}), 400
+    # Cap input size — 200 is double the typical pipeline result, plenty of
+    # headroom but bounded so a misbehaving client can't ask us to score 10k.
+    items = items_raw[:200]
+
+    try:
+        from services.jd_match_scorer import score_batch
+        scores, meta = score_batch(user_email, items)
+        return jsonify({"scores": scores, "meta": meta}), 200
+    except Exception as e:
+        logger.error(f"Pipeline match-scores error: {e}")
+        return jsonify({"error": "Failed to compute match scores"}), 500
 
 
 # ------------------------------------------------------------------

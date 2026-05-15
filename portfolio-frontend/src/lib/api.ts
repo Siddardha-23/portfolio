@@ -755,6 +755,27 @@ class ApiService {
     );
   }
 
+  async pipelineMatchScores(
+    items: Array<{ id: string; title?: string; description?: string }>,
+  ) {
+    // Deterministic regex match against the user's parsed resume skills.
+    // Fast (no LLM), so a 100-row batch lands in well under a second; the
+    // caller fires this once per pipeline run.
+    return this.request<{
+      scores: Record<string, {
+        match_score: number;
+        matched_skills: string[];
+        missing_top: string[];
+        explain: string;
+      }>;
+      meta: { resume_skill_count: number; has_resume: boolean };
+    }>(
+      "/jobs/pipeline/match-scores",
+      { method: "POST", body: JSON.stringify({ items }) },
+      30000,
+    );
+  }
+
   async fetchJobDescription(url: string) {
     // 45s — the backend tries direct strategies (~12s budget each) then falls
     // back to Apify's browser-rendered scrape (~30s). 20s was leaving Apify

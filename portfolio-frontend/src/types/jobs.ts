@@ -56,6 +56,18 @@ export interface DailyPipelineParams {
   // F-1 / H-1B opt-ins (default false → no behavior change).
   h1b_only?: boolean;
   exclude_no_sponsorship?: boolean;
+  // Hide companies + title patterns / company-cap (legacy fields that the
+  // backend already accepts).
+  hide_companies?: string[];
+  hide_title_patterns?: string[];
+  max_per_company?: number;
+  // Per-source overrides — partial filter dicts keyed by source. Missing keys
+  // fall back to the global args above. `enabled: false` skips the source
+  // scrape entirely for this run.
+  source_overrides?: Partial<Record<
+    'linkedin' | 'workday' | 'indeed' | 'ats',
+    { enabled?: boolean; past_days?: number; experience_level?: PipelineExperienceLevel }
+  >>;
 }
 
 export interface PipelinePreset {

@@ -268,6 +268,12 @@ interface PersistedState {
    *  workdayTitles / customRoles. When this lags FILTERS_DERIVED_VERSION we
    *  drop those fields so the next mount re-fetches from /suggest-filters. */
   filtersDerivedVersion?: number;
+  /** Per-source filter overrides — each source key holds an optional
+   *  enabled/past_days/experience override. Missing = use global filter. */
+  sourceOverrides?: Record<
+    'linkedin' | 'workday' | 'indeed' | 'ats',
+    { enabled: boolean; pastDays?: number; experience?: PipelineExperienceLevel }
+  >;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -419,6 +425,7 @@ function PipelineRow({
   isNew,
   tailorLoading,
   batchChecked,
+  matchScore,
   onOpen,
   onMarkApplied,
   onDismissOpened,
@@ -441,6 +448,8 @@ function PipelineRow({
   tailorLoading: boolean;
   /** True when this row is ticked for the batch-tailor handoff. */
   batchChecked: boolean;
+  /** Resume-vs-JD overlap score (deterministic), or undefined while loading. */
+  matchScore?: { match_score: number; matched_skills: string[]; missing_top: string[]; explain: string };
   onOpen: () => void;
   onMarkApplied: () => void;
   onDismissOpened: () => void;
@@ -602,6 +611,29 @@ function PipelineRow({
               {rec.source}
             </Badge>
             <VisaBadge status={rec.visa_status} confidence={rec.visa_confidence} />
+            {matchScore && (
+              <span
+                className={
+                  'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-tight ' +
+                  (matchScore.match_score >= 70
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : matchScore.match_score >= 40
+                      ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                      : 'bg-slate-500/15 text-slate-600 dark:text-slate-300')
+                }
+                title={
+                  `Resume match ${matchScore.match_score}% (${matchScore.explain} skills matched)\n` +
+                  (matchScore.matched_skills.length
+                    ? `\nMatched: ${matchScore.matched_skills.slice(0, 8).join(', ')}`
+                    : '') +
+                  (matchScore.missing_top.length
+                    ? `\nMissing: ${matchScore.missing_top.slice(0, 6).join(', ')}`
+                    : '')
+                }
+              >
+                🎯 {matchScore.match_score}% match
+              </span>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
@@ -758,6 +790,13 @@ function PipelineRow({
   );
 }
 
+type MatchScoreEntry = {
+  match_score: number;
+  matched_skills: string[];
+  missing_top: string[];
+  explain: string;
+};
+
 function TierGroup({
   title,
   items,
@@ -769,6 +808,7 @@ function TierGroup({
   tailorLoadingId,
   focusedId,
   showApplied,
+  matchScores,
   onOpen,
   onMarkApplied,
   onDismissOpened,
@@ -789,6 +829,7 @@ function TierGroup({
   tailorLoadingId: string | null;
   focusedId: string | null;
   showApplied: boolean;
+  matchScores?: Record<string, MatchScoreEntry>;
   onOpen: (rec: DailyPipelineRecord) => void;
   onMarkApplied: (rec: DailyPipelineRecord) => void;
   onDismissOpened: (rec: DailyPipelineRecord) => void;
@@ -827,6 +868,7 @@ function TierGroup({
                 isNew={newIds.has(id)}
                 tailorLoading={tailorLoadingId === id}
                 batchChecked={batchSelectedIds.has(id)}
+                matchScore={matchScores?.[id]}
                 onOpen={() => onOpen(rec)}
                 onMarkApplied={() => onMarkApplied(rec)}
                 onDismissOpened={() => onDismissOpened(rec)}
@@ -947,6 +989,56 @@ export function DailyPipelinePanel({
     return { date: _todayDate, count: 0 };
   });
   const [activePreset, setActivePreset] = useState<string | null>(null);
+  // Per-source overrides — user can mute a board (enabled=false) or set a
+  // tighter/looser past_days / experience_level just for that source. All
+  // boards default to "enabled with global filters", which reproduces the
+  // pre-feature behavior exactly.
+  type SourceId = 'linkedin' | 'workday' | 'indeed' | 'ats';
+  type SourceOverride = {
+    enabled: boolean;
+    pastDays?: number;
+    experience?: PipelineExperienceLevel;
+  };
+  type SourceOverridesMap = Record<SourceId, SourceOverride>;
+  const _DEFAULT_SRC_OVR: SourceOverridesMap = {
+    linkedin: { enabled: true },
+    workday: { enabled: true },
+    indeed: { enabled: true },
+    ats: { enabled: true },
+  };
+  const [sourceOverrides, setSourceOverrides] = useState<SourceOverridesMap>(
+    (persisted as { sourceOverrides?: SourceOverridesMap })?.sourceOverrides ?? _DEFAULT_SRC_OVR,
+  );
+  const buildSourceOverridesPayload = useCallback((): DailyPipelineParams['source_overrides'] => {
+    const out: NonNullable<DailyPipelineParams['source_overrides']> = {};
+    (Object.keys(sourceOverrides) as SourceId[]).forEach((src) => {
+      const o = sourceOverrides[src];
+      const node: { enabled?: boolean; past_days?: number; experience_level?: PipelineExperienceLevel } = {};
+      if (o.enabled === false) node.enabled = false;
+      if (typeof o.pastDays === 'number') node.past_days = o.pastDays;
+      if (o.experience) node.experience_level = o.experience;
+      if (Object.keys(node).length > 0) out[src] = node;
+    });
+    return Object.keys(out).length > 0 ? out : undefined;
+  }, [sourceOverrides]);
+  // Post-run date slicer — pure client-side filter over the existing
+  // `result.apply_now` / `verify_dates` lists. Doesn't re-fetch from the
+  // server. Ephemeral on purpose: a refresh restores results but resets the
+  // slicer to "all" so the user sees the full set first.
+  type PostRunDateFilter = 'all' | 'today' | 'yesterday' | '3d' | '7d';
+  const [dateFilter, setDateFilter] = useState<PostRunDateFilter>('all');
+  // JD-vs-resume match scores — populated after each pipeline run by an async
+  // batch call to /pipeline/match-scores. Deterministic (regex against resume
+  // skills) so it's safe to overlay on every row without burning LLM quota.
+  type MatchScore = {
+    match_score: number;
+    matched_skills: string[];
+    missing_top: string[];
+    explain: string;
+  };
+  const [matchScores, setMatchScores] = useState<Record<string, MatchScore>>({});
+  const [matchScoresLoading, setMatchScoresLoading] = useState(false);
+  const [matchScoresHasResume, setMatchScoresHasResume] = useState<boolean>(true);
   // Bumped each time we want to pop the Apify key card open (e.g. after a
   // credit-exhausted run). The card only reacts when this value changes.
   const [apifyForceOpen, setApifyForceOpen] = useState<number | undefined>(undefined);
@@ -984,6 +1076,7 @@ export function DailyPipelinePanel({
       hideCompanies,
       hideTitlePatterns,
       maxPerCompany,
+      sourceOverrides,
       filtersDerivedVersion: FILTERS_DERIVED_VERSION,
     }, userEmail);
   }, [
@@ -991,7 +1084,8 @@ export function DailyPipelinePanel({
     result, resultAt, appliedIds, showApplied, workdayLimit, linkedinCount, includeIndeed,
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
-    batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany, userEmail,
+    batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany,
+    sourceOverrides, userEmail,
   ]);
 
   // Manual "↻ Re-suggest from resume" trigger — bypasses prefilledRef so the
@@ -1219,6 +1313,7 @@ export function DailyPipelinePanel({
       hide_companies: hideCompanies,
       hide_title_patterns: hideTitlePatterns,
       max_per_company: maxPerCompany,
+      source_overrides: buildSourceOverridesPayload(),
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -1651,10 +1746,34 @@ export function DailyPipelinePanel({
   );
   const _notSnoozed = (r: DailyPipelineRecord) => !snoozedSet.has(_recordId(r));
 
-  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1' && _notSnoozed(r));
-  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2' && _notSnoozed(r));
-  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3' && _notSnoozed(r));
+  // Date-filter chip ("Today" / "Yesterday" / "Last 3d" / "Last 7d" / "All").
+  // Rows without a parseable posted date pass the "all" filter and the wider
+  // 3d/7d windows, but get dropped from the strict Today/Yesterday slices —
+  // we shouldn't lie about freshness when we don't know.
+  const _todayIsoStr = new Date().toISOString().slice(0, 10);
+  const _yesterdayIsoStr = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const _dateMatches = useCallback(
+    (r: DailyPipelineRecord) => {
+      if (dateFilter === 'all') return true;
+      const posted = (r.posted || '').slice(0, 10);
+      const parseable = /^\d{4}-\d{2}-\d{2}$/.test(posted);
+      if (!parseable) return dateFilter === '3d' || dateFilter === '7d';
+      if (dateFilter === 'today') return posted === _todayIsoStr;
+      if (dateFilter === 'yesterday') return posted === _yesterdayIsoStr;
+      const cutoffDays = dateFilter === '3d' ? 3 : 7;
+      const cutoffIso = new Date(Date.now() - cutoffDays * 86_400_000).toISOString().slice(0, 10);
+      return posted >= cutoffIso;
+    },
+    [dateFilter, _todayIsoStr, _yesterdayIsoStr],
+  );
+
+  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1' && _notSnoozed(r) && _dateMatches(r));
+  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2' && _notSnoozed(r) && _dateMatches(r));
+  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3' && _notSnoozed(r) && _dateMatches(r));
   const allApplyNow = (result?.apply_now || []).filter(_notSnoozed);
+  // Verify-dates list also respects the chip — interns from 5 days ago
+  // shouldn't surface under "Today".
+  const filteredVerifyDates = (result?.verify_dates || []).filter(_dateMatches);
   const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
 
   // "New since last check" — anything in the current result that the user
@@ -1765,6 +1884,34 @@ export function DailyPipelinePanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [result, appliedSet, newIds, snoozedSet]);
+
+  // Fire a single batch match-scores call after each pipeline run lands.
+  // Reuses the JD text already scraped — no extra fetches. The state map
+  // is keyed by record_id so PipelineRow can look up its own score O(1).
+  // We dedupe by resultAt so flipping date-filter chips doesn't re-fire.
+  const lastScoredAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!result || !resultAt) return;
+    if (lastScoredAtRef.current === resultAt) return;
+    const all = [...(result.apply_now || []), ...(result.verify_dates || [])];
+    if (all.length === 0) return;
+    lastScoredAtRef.current = resultAt;
+    setMatchScoresLoading(true);
+    const items = all.slice(0, 200).map((r) => ({
+      id: _recordId(r),
+      title: r.title || '',
+      description: r.description || '',
+    }));
+    apiService.pipelineMatchScores(items)
+      .then((resp) => {
+        if (resp.ok && resp.data) {
+          setMatchScores(resp.data.scores || {});
+          setMatchScoresHasResume(!!resp.data.meta?.has_resume);
+        }
+      })
+      .catch(() => { /* silent — badges just don't render */ })
+      .finally(() => setMatchScoresLoading(false));
+  }, [result, resultAt]);
 
   // Bulk-open Tier 1 — opens the top N postings in new tabs and saves each as
   // Interested. Browsers throttle multi-window.open, but every modern
@@ -2333,6 +2480,117 @@ export function DailyPipelinePanel({
                   helperText="Anchor each title to a software domain word so 'New Grad' doesn't pull non-tech roles."
                 />
               </div>
+              {/* Per-source filter overrides — give the user fine control over
+                  each board independently. Defaults to "use global", which is
+                  the same as not setting anything. Common use cases:
+                    • Mute a noisy board for a day (enabled = off)
+                    • Tighten LinkedIn to past 1d but let ATS/Workday catch up at 7d
+                    • Run "intern" experience on Indeed only (without polluting
+                      the LinkedIn results that already filter by entry-level). */}
+              <div className="space-y-1.5 lg:col-span-2 xl:col-span-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                    <Filter className="mr-1 inline h-3 w-3" />
+                    Per-source filter overrides
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSourceOverrides(_DEFAULT_SRC_OVR)}
+                    className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    Reset all to global
+                  </button>
+                </div>
+                <div className="overflow-hidden rounded-lg border border-border/60">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left">Source</th>
+                        <th className="px-2 py-1.5 text-left">Enabled</th>
+                        <th className="px-2 py-1.5 text-left">Past days (override)</th>
+                        <th className="px-2 py-1.5 text-left">Experience (override)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        { id: 'linkedin' as const, label: 'LinkedIn' },
+                        { id: 'workday' as const, label: 'Workday' },
+                        { id: 'indeed' as const, label: 'Indeed' },
+                        { id: 'ats' as const, label: 'ATS direct (Greenhouse / Lever / Ashby)' },
+                      ]).map((src) => {
+                        const ov = sourceOverrides[src.id];
+                        const updateOv = (patch: Partial<SourceOverride>) => {
+                          setSourceOverrides((prev) => ({
+                            ...prev,
+                            [src.id]: { ...prev[src.id], ...patch },
+                          }));
+                        };
+                        return (
+                          <tr key={src.id} className="border-t border-border/40">
+                            <td className="px-2 py-1.5 font-medium">{src.label}</td>
+                            <td className="px-2 py-1.5">
+                              <label className="inline-flex cursor-pointer items-center gap-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={ov.enabled !== false}
+                                  onChange={(e) => updateOv({ enabled: e.target.checked })}
+                                  className="h-3.5 w-3.5 accent-purple-600"
+                                />
+                                <span className="text-[10px] text-muted-foreground">
+                                  {ov.enabled === false ? 'Muted' : 'Active'}
+                                </span>
+                              </label>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <select
+                                className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px] disabled:opacity-50"
+                                value={ov.pastDays === undefined ? '' : String(ov.pastDays)}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  updateOv({ pastDays: v === '' ? undefined : Number(v) });
+                                }}
+                                disabled={ov.enabled === false}
+                                title="Override the global Past days for this source only. Empty = use global."
+                              >
+                                <option value="">Use global ({pastDays}d)</option>
+                                <option value="0">Today only</option>
+                                <option value="1">1 day</option>
+                                <option value="3">3 days</option>
+                                <option value="7">7 days</option>
+                                <option value="14">14 days</option>
+                                <option value="30">30 days</option>
+                              </select>
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <select
+                                className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px] disabled:opacity-50"
+                                value={ov.experience ?? ''}
+                                onChange={(e) => {
+                                  const v = e.target.value as PipelineExperienceLevel | '';
+                                  updateOv({ experience: v === '' ? undefined : v });
+                                }}
+                                disabled={ov.enabled === false}
+                                title="Override the global Experience level for this source only. Empty = use global."
+                              >
+                                <option value="">Use global ({experienceLevel})</option>
+                                <option value="any">Any</option>
+                                <option value="internship">Internship</option>
+                                <option value="entry">Entry-level</option>
+                                <option value="associate">Associate</option>
+                                <option value="mid">Mid-level</option>
+                                <option value="senior">Senior</option>
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Empty cells inherit the global filters above. Muting a source skips its scrape entirely — useful when one board floods you with noise.
+                </p>
+              </div>
             </div>
           )}
         </CardContent>
@@ -2670,6 +2928,18 @@ export function DailyPipelinePanel({
                       {digest.noSponsor} no-sponsor (demoted)
                     </span>
                   )}
+                  {matchScoresLoading && (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground">
+                      <Sparkles className="h-3 w-3 animate-pulse" />
+                      Scoring resume match…
+                    </span>
+                  )}
+                  {!matchScoresLoading && !matchScoresHasResume && (
+                    <span className="inline-flex items-center gap-1 text-muted-foreground" title="Upload a resume to see per-job match scores">
+                      <AlertCircle className="h-3 w-3" />
+                      No resume → match scores hidden
+                    </span>
+                  )}
                 </div>
                 {digest.tier1Open > 0 && (
                   <div className="flex items-center gap-2">
@@ -2694,6 +2964,70 @@ export function DailyPipelinePanel({
             </Card>
           )}
 
+          {/* Post-run date slicer — narrows the visible tier lists without
+              re-running the pipeline. The chip set is intentionally small:
+              Today / Yesterday cover the daily-check use case; 3d/7d catch
+              up after a weekend. Always-visible counts on each chip preview
+              how many rows survive the filter so the user can pick wisely. */}
+          {result && (allApplyNow.length > 0 || result.verify_dates.length > 0) && (() => {
+            const _all = [...(result.apply_now || []), ...(result.verify_dates || [])].filter(_notSnoozed);
+            const _count = (filt: PostRunDateFilter) => {
+              if (filt === 'all') return _all.length;
+              return _all.filter((r) => {
+                const posted = (r.posted || '').slice(0, 10);
+                const parseable = /^\d{4}-\d{2}-\d{2}$/.test(posted);
+                if (!parseable) return filt === '3d' || filt === '7d';
+                if (filt === 'today') return posted === _todayIsoStr;
+                if (filt === 'yesterday') return posted === _yesterdayIsoStr;
+                const cutoffDays = filt === '3d' ? 3 : 7;
+                const cutoffIso = new Date(Date.now() - cutoffDays * 86_400_000).toISOString().slice(0, 10);
+                return posted >= cutoffIso;
+              }).length;
+            };
+            const chips: { id: PostRunDateFilter; label: string }[] = [
+              { id: 'all', label: 'All' },
+              { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: '3d', label: 'Last 3 days' },
+              { id: '7d', label: 'Last 7 days' },
+            ];
+            return (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-border/40 bg-muted/30 px-2 py-1.5 text-xs">
+                <span className="mr-1 text-muted-foreground">Posted:</span>
+                {chips.map((c) => {
+                  const active = dateFilter === c.id;
+                  const n = _count(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setDateFilter(c.id)}
+                      className={
+                        'rounded-full px-2.5 py-0.5 text-[11px] transition-colors ' +
+                        (active
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'border border-border/60 bg-background/70 text-foreground/80 hover:border-indigo-500/40 hover:bg-indigo-500/10')
+                      }
+                      title={`${c.label} — ${n} posting${n === 1 ? '' : 's'}`}
+                    >
+                      {c.label}
+                      <span className={'ml-1 ' + (active ? 'opacity-90' : 'opacity-60')}>· {n}</span>
+                    </button>
+                  );
+                })}
+                {dateFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setDateFilter('all')}
+                    className="ml-auto text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+
           <TierGroup
             title={`🥇 Tier 1 — apply first (${tier1.length})`}
             items={tier1}
@@ -2705,6 +3039,7 @@ export function DailyPipelinePanel({
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
+            matchScores={matchScores}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
@@ -2726,6 +3061,7 @@ export function DailyPipelinePanel({
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
+            matchScores={matchScores}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
@@ -2747,6 +3083,7 @@ export function DailyPipelinePanel({
             tailorLoadingId={tailorLoadingId}
             focusedId={focusedRowId}
             showApplied={showApplied}
+            matchScores={matchScores}
             onOpen={handleOpenPosting}
             onMarkApplied={handleMarkApplied}
             onDismissOpened={handleDismissOpened}
@@ -2758,10 +3095,10 @@ export function DailyPipelinePanel({
             onReachOut={handleReachOut}
           />
 
-          {result.verify_dates.length > 0 && (
+          {filteredVerifyDates.length > 0 && (
             <TierGroup
-              title={`⚠️ Verify dates (interns / co-ops) — ${result.verify_dates.length}`}
-              items={result.verify_dates}
+              title={`⚠️ Verify dates (interns / co-ops) — ${filteredVerifyDates.length}`}
+              items={filteredVerifyDates}
               accent="border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               appliedIds={appliedSet}
               openedIds={openedSet}
@@ -2770,6 +3107,7 @@ export function DailyPipelinePanel({
               tailorLoadingId={tailorLoadingId}
               focusedId={focusedRowId}
               showApplied={showApplied}
+              matchScores={matchScores}
               onOpen={handleOpenPosting}
               onMarkApplied={handleMarkApplied}
               onDismissOpened={handleDismissOpened}

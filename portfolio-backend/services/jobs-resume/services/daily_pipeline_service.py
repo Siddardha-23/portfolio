@@ -938,15 +938,28 @@ def _scrape_in_parallel(
     experience_level: str = "entry",
     employment_type: str = "FULLTIME",
     work_arrangement: str = "any",
+    # Per-source override hooks — when None, the global args above apply to
+    # every source (existing behavior). When set, each dict can override
+    # past_days / experience_level for that one source and `enabled=False`
+    # short-circuits the scrape so the user can mute one board for the day.
+    linkedin_override: Optional[Dict[str, Any]] = None,
+    workday_override: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
     errors: List[str] = []
+
+    li_pd = int((linkedin_override or {}).get("past_days") or past_days)
+    li_exp = str((linkedin_override or {}).get("experience_level") or experience_level)
+    li_enabled = bool((linkedin_override or {}).get("enabled", True))
+    wd_pd = int((workday_override or {}).get("past_days") or past_days)
+    wd_exp = str((workday_override or {}).get("experience_level") or experience_level)
+    wd_enabled = bool((workday_override or {}).get("enabled", True))
 
     linkedin_input = {
         "urls": [
             _build_linkedin_url(
-                k, past_days,
+                k, li_pd,
                 location=location,
-                experience_level=experience_level,
+                experience_level=li_exp,
                 employment_type=employment_type,
                 work_arrangement=work_arrangement,
             )
@@ -972,7 +985,7 @@ def _scrape_in_parallel(
         "removeAgency": True,
         "titleSearch": safe_workday_titles,
     }
-    exp_key = (experience_level or "").lower()
+    exp_key = (wd_exp or "").lower()
     if exp_key and exp_key != "any":
         wd_experience = _WORKDAY_EXPERIENCE_MAP.get(exp_key)
         if wd_experience:
@@ -1019,10 +1032,14 @@ def _scrape_in_parallel(
             return []
 
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_li = ex.submit(_safe_run, LINKEDIN_ACTOR, linkedin_input)
-        f_wd = ex.submit(_safe_run, WORKDAY_ACTOR, workday_input)
-        linkedin = f_li.result()
-        workday = f_wd.result()
+        f_li = ex.submit(_safe_run, LINKEDIN_ACTOR, linkedin_input) if li_enabled else None
+        f_wd = ex.submit(_safe_run, WORKDAY_ACTOR, workday_input) if wd_enabled else None
+        linkedin = f_li.result() if f_li is not None else []
+        workday = f_wd.result() if f_wd is not None else []
+    if not li_enabled:
+        logger.info("[pipeline] LinkedIn skipped per user override")
+    if not wd_enabled:
+        logger.info("[pipeline] Workday skipped per user override")
 
     # Silent-zero detection — when an actor returns [] with HTTP 200 and no
     # entry was added to the errors list, we can't tell from the result
@@ -1688,7 +1705,11 @@ def _filter_and_score(
                     excluded.append({**r, "reason": "not a contract role",
                                      "tier": "Skip", "score": 0, "flags": ""}); continue
             elif emp_type == "INTERN":
-                if "intern" not in t_blob:
+                # Word-boundary check on the TITLE only — substring 'intern' in
+                # 'internal' / 'international' was promoting full-time roles
+                # into the intern bucket. Description-level mentions are too
+                # noisy to count toward this filter.
+                if not INTERN_TITLE.search(r.get("title") or ""):
                     excluded.append({**r, "reason": "not an internship",
                                      "tier": "Skip", "score": 0, "flags": ""}); continue
 
@@ -1766,7 +1787,11 @@ def _filter_and_score(
                "roles": ", ".join(roles), "opt": _opt_status(r)}
         if sc < 60:
             excluded.append({**rec, "reason": f"score {sc} < 60"})
-        elif "intern" in r["title"].lower():
+        elif INTERN_TITLE.search(r.get("title") or ""):
+            # Word-boundary regex (not substring) — previously "Senior Internal
+            # Tools Engineer" and "International Backend Engineer" got demoted
+            # to verify_dates because "intern" is a substring of internal /
+            # international. Real intern/co-op postings still route here.
             verify.append(rec)
         else:
             # Past-N-days strict mode: when the user asked for a narrow window
@@ -1908,6 +1933,10 @@ def run_pipeline(
     hide_companies: Optional[List[str]] = None,
     hide_title_patterns: Optional[List[str]] = None,
     max_per_company: int = 4,
+    # Per-source overrides. Shape: {"linkedin": {"enabled": bool, "past_days":
+    # int, "experience_level": str}, "workday": ...,  "indeed": ..., "ats": ...}
+    # All keys optional — anything missing falls back to the global args.
+    source_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1932,6 +1961,19 @@ def run_pipeline(
     # when the Apify token is missing or an actor is rate-limited. Indeed is
     # opt-in (include_indeed=True) — its date reliability is poor and its
     # listings are dominated by body-shop reposts.
+    # Pre-resolve per-source overrides — each dict is safe to pass straight
+    # through to the scrapers (missing/empty keys mean "use global").
+    so = source_overrides or {}
+    so_linkedin = (so.get("linkedin") or {}) if isinstance(so.get("linkedin"), dict) else {}
+    so_workday = (so.get("workday") or {}) if isinstance(so.get("workday"), dict) else {}
+    so_indeed = (so.get("indeed") or {}) if isinstance(so.get("indeed"), dict) else {}
+    so_ats = (so.get("ats") or {}) if isinstance(so.get("ats"), dict) else {}
+
+    indeed_enabled = bool(so_indeed.get("enabled", True)) and include_indeed
+    indeed_pd = int(so_indeed.get("past_days") or past_days)
+    indeed_exp = str(so_indeed.get("experience_level") or experience_level)
+    ats_enabled = bool(so_ats.get("enabled", True))
+
     with ThreadPoolExecutor(max_workers=3) as pool:
         f_apify = pool.submit(
             _scrape_in_parallel,
@@ -1945,23 +1987,26 @@ def run_pipeline(
             experience_level=experience_level,
             employment_type=employment_type,
             work_arrangement=work_arrangement,
+            linkedin_override=so_linkedin,
+            workday_override=so_workday,
         )
         f_indeed = pool.submit(
             _scrape_indeed, token,
-            past_days=past_days,
-            experience_level=experience_level,
+            past_days=indeed_pd,
+            experience_level=indeed_exp,
             employment_type=employment_type,
             location=location,
-        ) if include_indeed else None
-        f_ats = pool.submit(_scrape_ats_direct)
+        ) if indeed_enabled else None
+        f_ats = pool.submit(_scrape_ats_direct) if ats_enabled else None
         linkedin_items, workday_items, errors, actor_diagnostics = f_apify.result()
         indeed_items = f_indeed.result() if f_indeed is not None else []
-        ats_items = f_ats.result()
+        ats_items = f_ats.result() if f_ats is not None else []
 
     # Source-4 fallback: only fire for companies that returned 0 postings from
     # Source 5 (direct API). When APIFY_ATS_ACTOR is unset, _ats_apify_fallback
-    # returns []. Still gated by the existing Apify token.
-    if token and _ats_apify_actor_id():
+    # returns []. Still gated by the existing Apify token. Skipped entirely
+    # when the user muted the ATS source for this run.
+    if ats_enabled and token and _ats_apify_actor_id():
         def _missing(slugs: List[Tuple[str, str, str]], label: str) -> List[Tuple[str, str, str]]:
             seen = {(r.get("company") or "").strip().lower() for r in ats_items if r.get("source") == label}
             return [t for t in slugs if t[1].lower() not in seen]

@@ -137,10 +137,11 @@ export default function Avatar({
   const excited = emotion === "excited";
   const isAnger = emotion === "anger";
 
-  const baseSmile = emotion === "happy" || excited ? 6 : emotion === "thoughtful" ? 1 : 4;
-  const mouthOpen = speaking ? Math.max(1.5, amplitude * 11) : 1.5;
-  const mouthCurve = speaking ? Math.min(8, baseSmile + amplitude * 6) : baseSmile;
-  const mouthWidth = speaking ? 16 + amplitude * 3 : 16;
+  // Smile defaults pushed wider/friendlier — more open-mouthed by default
+  const baseSmile = emotion === "happy" || excited ? 9 : emotion === "thoughtful" ? 2 : 7;
+  const mouthOpen = speaking ? Math.max(2.5, amplitude * 13) : 3;
+  const mouthCurve = speaking ? Math.min(11, baseSmile + amplitude * 7) : baseSmile;
+  const mouthWidth = speaking ? 19 + amplitude * 3 : 19;
   const browY = thinking ? -3 : excited || isAnger ? -5 : 0;
   const browAngle = isAnger ? 0.35 : 0;
 
@@ -301,16 +302,43 @@ export default function Avatar({
 
           <ellipse cx="150" cy="360" rx="140" ry="220" fill="url(#body-glow)" filter="url(#soft-blur)" />
 
-          {/* ===== LEGS ===== */}
+          {/* ===== LEGS — refined slim-fit jeans with thigh + calf taper ===== */}
           <motion.g animate={{ x: [0, -1, 0] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}>
-            <path d="M 128 410 Q 122 470 120 540 Q 120 600 126 644 L 142 644 Q 144 600 142 540 Q 142 470 144 410 Z" fill="url(#jeans)" />
-            <path d="M 122 510 Q 132 515 142 510" stroke="#06091a" strokeWidth="0.6" fill="none" />
-            <path d="M 121 420 L 121 630" stroke="#3a5080" strokeWidth="0.4" opacity="0.5" />
+            {/* Left leg — wider at hip, tapering at ankle */}
+            <path
+              d="M 124 410
+                 Q 116 460 116 520
+                 Q 117 580 124 638
+                 L 144 638
+                 Q 146 580 145 520
+                 Q 146 460 145 410 Z"
+              fill="url(#jeans)"
+            />
+            {/* Thigh shading */}
+            <path d="M 125 420 Q 130 470 132 540" stroke="#3a5080" strokeWidth="0.5" opacity="0.45" fill="none" />
+            {/* Knee crease */}
+            <path d="M 117 506 Q 130 512 145 506" stroke="#040712" strokeWidth="0.9" fill="none" />
+            <path d="M 119 510 Q 130 515 144 510" stroke="#2a3a60" strokeWidth="0.5" fill="none" opacity="0.7" />
+            {/* Hem fold */}
+            <path d="M 124 636 Q 134 638 144 636" stroke="#040712" strokeWidth="0.7" fill="none" />
+            {/* Side seam highlight */}
+            <path d="M 118 425 L 118 624" stroke="#a3b5d8" strokeWidth="0.3" opacity="0.35" />
           </motion.g>
           <motion.g animate={{ x: [0, 1, 0] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.3 }}>
-            <path d="M 156 410 Q 156 470 158 540 Q 158 600 152 644 L 170 644 Q 178 600 180 540 Q 178 470 172 410 Z" fill="url(#jeans)" />
-            <path d="M 156 510 Q 168 515 178 510" stroke="#06091a" strokeWidth="0.6" fill="none" />
-            <path d="M 179 420 L 179 630" stroke="#3a5080" strokeWidth="0.4" opacity="0.5" />
+            <path
+              d="M 156 410
+                 Q 155 460 155 520
+                 Q 154 580 156 638
+                 L 176 638
+                 Q 184 580 184 520
+                 Q 184 460 176 410 Z"
+              fill="url(#jeans)"
+            />
+            <path d="M 175 420 Q 170 470 168 540" stroke="#3a5080" strokeWidth="0.5" opacity="0.45" fill="none" />
+            <path d="M 155 506 Q 170 512 184 506" stroke="#040712" strokeWidth="0.9" fill="none" />
+            <path d="M 156 510 Q 170 515 182 510" stroke="#2a3a60" strokeWidth="0.5" fill="none" opacity="0.7" />
+            <path d="M 156 636 Q 170 638 176 636" stroke="#040712" strokeWidth="0.7" fill="none" />
+            <path d="M 182 425 L 182 624" stroke="#a3b5d8" strokeWidth="0.3" opacity="0.35" />
           </motion.g>
 
           {/* Sneakers */}
@@ -397,12 +425,22 @@ export default function Avatar({
               <rect x="-9" y="12" width="18" height="4" fill="#0a0d18" />
             </g>
             <g>
-              <ellipse cx="74" cy="436" rx="11" ry="10" fill="url(#skin-arm)" />
-              <path d="M 66 444 Q 64 454 68 458" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 71 446 Q 69 456 73 460" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 76 447 Q 75 457 79 460" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 82 444 Q 84 454 80 458" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 65 432 Q 59 428 62 424" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
+              {/* Palm — wider, more anatomical */}
+              <ellipse cx="74" cy="436" rx="12" ry="11" fill="url(#skin-arm)" />
+              {/* Wrist line for definition */}
+              <path d="M 64 428 Q 74 432 84 428" stroke="#9c6f48" strokeWidth="0.4" fill="none" opacity="0.4" />
+              {/* Fingers — rounded rect digits, slightly curled */}
+              <path d="M 65 444 Q 63 452 64 458 Q 66 460 68 458 Q 70 452 69 444 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 70 446 Q 68 455 69 462 Q 71 464 73 462 Q 75 455 74 446 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 75 446 Q 73 455 74 462 Q 76 464 78 462 Q 80 455 79 446 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 80 444 Q 78 452 79 458 Q 81 460 83 458 Q 85 452 84 444 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              {/* Thumb — wider, on outer side */}
+              <path d="M 63 432 Q 58 428 56 422 Q 56 418 59 419 Q 63 423 65 428 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              {/* Knuckle hints */}
+              <circle cx="67" cy="445" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="72" cy="447" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="77" cy="447" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="82" cy="445" r="0.7" fill="#9c6f48" opacity="0.4" />
             </g>
           </motion.g>
           <motion.g
@@ -416,12 +454,21 @@ export default function Avatar({
             <path d="M 228 408 Q 221 412 214 408" stroke="hsl(200 95% 65%)" strokeWidth="1.2" fill="none" opacity="0.85" />
             <path d="M 220 290 Q 222 340 224 400" stroke="#0a0d18" strokeWidth="0.5" fill="none" opacity="0.7" />
             <g>
-              <ellipse cx="226" cy="436" rx="11" ry="10" fill="url(#skin-arm)" />
-              <path d="M 234 444 Q 236 454 232 458" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 229 446 Q 231 456 227 460" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 224 447 Q 225 457 221 460" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 218 444 Q 216 454 220 458" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
-              <path d="M 235 432 Q 241 428 238 424" stroke="#9c6f48" strokeWidth="2" fill="none" strokeLinecap="round" />
+              {/* Palm */}
+              <ellipse cx="226" cy="436" rx="12" ry="11" fill="url(#skin-arm)" />
+              <path d="M 216 428 Q 226 432 236 428" stroke="#9c6f48" strokeWidth="0.4" fill="none" opacity="0.4" />
+              {/* Fingers (mirrored from left hand) */}
+              <path d="M 235 444 Q 237 452 236 458 Q 234 460 232 458 Q 230 452 231 444 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 230 446 Q 232 455 231 462 Q 229 464 227 462 Q 225 455 226 446 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 225 446 Q 227 455 226 462 Q 224 464 222 462 Q 220 455 221 446 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              <path d="M 220 444 Q 222 452 221 458 Q 219 460 217 458 Q 215 452 216 444 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              {/* Thumb */}
+              <path d="M 237 432 Q 242 428 244 422 Q 244 418 241 419 Q 237 423 235 428 Z" fill="url(#skin-arm)" stroke="#9c6f48" strokeWidth="0.4" />
+              {/* Knuckles */}
+              <circle cx="233" cy="445" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="228" cy="447" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="223" cy="447" r="0.7" fill="#9c6f48" opacity="0.4" />
+              <circle cx="218" cy="445" r="0.7" fill="#9c6f48" opacity="0.4" />
             </g>
           </motion.g>
 

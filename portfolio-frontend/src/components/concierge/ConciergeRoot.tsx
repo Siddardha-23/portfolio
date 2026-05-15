@@ -1,33 +1,40 @@
 /**
- * ConciergeRoot - The animated AI avatar that drives Harshith's portfolio.
+ * ConciergeRoot - The animated AI Concierge that drives the portfolio.
  *
- * Responsibilities:
- *   - Floating trigger button on idle.
- *   - On click: avatar materializes, side panel slides in.
- *   - Owns state machine: idle | listening | thinking | speaking.
- *   - Pumps user input → backend → executes intents + renders cards + speaks.
- *   - Detects recruiter context from query string / referrer.
- *   - Per-session cost guardrail (TURNS_PER_SESSION).
+ * Split-stage UX (replaces the old chatbot bubble):
+ *  - Floating launcher at bottom-right shows the avatar as a teaser.
+ *  - Click → full-viewport stage opens: avatar large on the LEFT, panel on
+ *    the RIGHT, backdrop dimmed-but-visible.
+ *  - When the avatar fires a navigate/highlight/open_project intent, the
+ *    stage auto-minimizes to a corner widget so the user can SEE the page
+ *    being driven. Restores on click or next user turn.
+ *
+ * Owns the state machine: idle | listening | thinking | speaking.
+ * Recruiter mode detected from URL/referrer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { MessageCircleHeart, Sparkles } from "lucide-react";
-import Avatar, { AvatarState } from "./Avatar";
-import ConciergePanel from "./ConciergePanel";
+import Avatar, { AvatarState, AvatarEmotion } from "./Avatar";
+import ConciergeStage from "./ConciergeStage";
 import { useMic } from "./useMic";
 import { useTTS } from "./useTTS";
 import { runConciergeTurn } from "./transport";
 import { executeIntents, detectCurrentSection } from "./IntentBus";
-import type { ConciergeTurn, TranscriptEntry } from "./types";
+import type { ConciergeTurn, TranscriptEntry, ConciergeIntent } from "./types";
 
 const TURNS_PER_SESSION = 40;
 const STORAGE_KEY = "concierge:turns";
 
+const NAVIGATION_INTENTS = new Set<ConciergeIntent["name"]>([
+  "navigate_to_section",
+  "highlight_section",
+  "open_project",
+  "filter_skills",
+]);
+
 function readTurnCount(): number {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    return raw ? parseInt(raw, 10) || 0 : 0;
-  } catch { return 0; }
+  try { return parseInt(sessionStorage.getItem(STORAGE_KEY) || "0", 10) || 0; } catch { return 0; }
 }
 function bumpTurnCount(): number {
   const next = readTurnCount() + 1;
@@ -43,19 +50,14 @@ function detectRecruiterMode(): boolean {
     if (/recruiter|linkedin|indeed|wellfound|builtin/i.test(from)) return true;
     const ref = document.referrer || "";
     if (/linkedin\.com|indeed\.com|wellfound\.com|builtin\.com/i.test(ref)) return true;
-    // Manual override via localStorage
     if (localStorage.getItem("concierge:recruiter") === "1") return true;
     return false;
   } catch { return false; }
 }
 
-interface ConciergeRootProps {
-  /** Optional: render the trigger inside an existing container instead of fixed. */
-  hideTrigger?: boolean;
-}
-
-export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProps) {
+export default function ConciergeRoot() {
   const [open, setOpen] = useState(false);
+  const [minimized, setMinimized] = useState(false);
   const [hasGreeted, setHasGreeted] = useState(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [pending, setPending] = useState(false);
@@ -65,7 +67,7 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
     "What are your top skills?",
     "Tell me about AEROSEC",
   ]);
-  const [emotion, setEmotion] = useState<ConciergeTurn["emotion"]>("neutral");
+  const [emotion, setEmotion] = useState<AvatarEmotion>("neutral");
   const [recruiterMode] = useState<boolean>(detectRecruiterMode);
   const [trayHint, setTrayHint] = useState(false);
 
@@ -73,7 +75,6 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
   const tts = useTTS();
   const turnCountRef = useRef<number>(readTurnCount());
 
-  // Compute the avatar state for the Avatar component
   const avatarState: AvatarState = pending
     ? "thinking"
     : mic.listening
@@ -82,10 +83,9 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
         ? "speaking"
         : "idle";
 
-  // After mount, tease the trigger so visitors notice it
   useEffect(() => {
     const t = setTimeout(() => setTrayHint(true), 2400);
-    const t2 = setTimeout(() => setTrayHint(false), 8000);
+    const t2 = setTimeout(() => setTrayHint(false), 8200);
     return () => { clearTimeout(t); clearTimeout(t2); };
   }, []);
 
@@ -93,15 +93,14 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
   useEffect(() => {
     if (!open || hasGreeted) return;
     setHasGreeted(true);
+    const greetSpoken = recruiterMode
+      ? "Hi, I'm Aria — Harshith's AI Concierge. Want the 30-second pitch, or should I show you his best work?"
+      : "Hi, I'm Aria — Harshith's AI Concierge. Ask me anything, or I can give you the tour.";
     const greeting: TranscriptEntry = {
       id: `model-${Date.now()}`,
       role: "model",
-      text: recruiterMode
-        ? "Hey — I'm Harshith. Want the 30-second pitch, or should I just show you my best work?"
-        : "Hey, I'm Harshith. Ask me anything about my work, or I can give you the tour.",
-      caption: recruiterMode
-        ? "Hey — I'm Harshith. Want the **30-second pitch**, or should I just show you my best work?"
-        : "Hey, I'm Harshith. Ask me anything about my work, or I can give you the tour.",
+      text: greetSpoken,
+      caption: greetSpoken,
       emotion: "happy",
       ts: Date.now(),
     };
@@ -110,7 +109,7 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
     if (recruiterMode) {
       setSuggestions(["Give me the 30-second pitch", "Show me your AWS projects", "Paste a JD to match"]);
     }
-    tts.speak(greeting.text);
+    tts.speak(greetSpoken);
   }, [open, hasGreeted, recruiterMode, tts]);
 
   const buildHistory = useCallback((): Array<{ role: string; content: string }> => {
@@ -128,7 +127,7 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
       const cap: TranscriptEntry = {
         id: `model-${Date.now()}`,
         role: "model",
-        text: "I've chatted a lot this session — for more, refresh the page. Or email me directly.",
+        text: "I've chatted a lot this session — for more, refresh the page. Or email Harshith directly.",
         emotion: "thoughtful",
         ts: Date.now(),
       };
@@ -146,10 +145,11 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
     setTranscript((prev) => [...prev, userEntry]);
     setInputValue("");
     setPending(true);
-    tts.cancel(); // stop any in-flight speech when user takes a turn
+    setMinimized(false); // restore stage when user submits a new turn
+    tts.cancel();
 
     try {
-      const envelope = await runConciergeTurn({
+      const envelope: ConciergeTurn = await runConciergeTurn({
         message,
         history: buildHistory(),
         current_section: detectCurrentSection(),
@@ -171,10 +171,16 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
       setSuggestions(envelope.suggestions?.length ? envelope.suggestions : suggestions);
       setEmotion(envelope.emotion);
 
-      // Fire intents in parallel with speech for that "moves while talking" feel
-      void executeIntents(envelope.intents as any);
+      // Auto-minimize when the avatar is about to move the page — so the user can SEE it
+      const willNavigate = envelope.intents?.some((it) => NAVIGATION_INTENTS.has(it.name));
+      if (willNavigate) {
+        // Tiny delay so the caption + speech start before the stage shrinks
+        window.setTimeout(() => setMinimized(true), 350);
+      }
+
+      void executeIntents(envelope.intents as ConciergeIntent[]);
       tts.speak(envelope.spoken);
-    } catch (err) {
+    } catch {
       const errEntry: TranscriptEntry = {
         id: `model-${Date.now()}`,
         role: "model",
@@ -198,107 +204,63 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
     }
   }, [mic, sendMessage]);
 
-  const onToggleMute = useCallback(() => {
-    tts.setMuted(!tts.muted);
-  }, [tts]);
-
-  const onSuggestion = useCallback((s: string) => {
-    sendMessage(s);
-  }, [sendMessage]);
-
-  const onSubmit = useCallback(() => {
-    if (inputValue.trim()) sendMessage(inputValue);
-  }, [inputValue, sendMessage]);
-
+  const onToggleMute = useCallback(() => tts.setMuted(!tts.muted), [tts]);
+  const onSuggestion = useCallback((s: string) => sendMessage(s), [sendMessage]);
+  const onSubmit = useCallback(() => { if (inputValue.trim()) sendMessage(inputValue); }, [inputValue, sendMessage]);
   const onClose = useCallback(() => {
     tts.cancel();
     if (mic.listening) void mic.stop();
     setOpen(false);
+    setMinimized(false);
   }, [tts, mic]);
-
-  const avatarSize = useMemo(() => (open ? 220 : 64), [open]);
 
   return (
     <>
-      {/* Floating trigger — visible when panel closed (or always if anchored) */}
-      {!hideTrigger && !open && (
-        <motion.button
-          onClick={() => setOpen(true)}
-          className="fixed bottom-5 right-5 z-[54] group"
-          initial={{ opacity: 0, scale: 0.85, y: 16 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ delay: 1.2, type: "spring", stiffness: 180, damping: 16 }}
-          aria-label="Open The Concierge"
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <div className="relative">
-            <Avatar size={64} state="idle" emotion="happy" />
-            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-background flex items-center justify-center">
-              <Sparkles className="h-2.5 w-2.5 text-white" />
+      {/* Launcher — visible only when fully closed */}
+      <AnimatePresence>
+        {!open && (
+          <motion.button
+            key="concierge-launcher"
+            onClick={() => { setOpen(true); setMinimized(false); }}
+            className="fixed bottom-5 right-5 z-[55] group"
+            initial={{ opacity: 0, scale: 0.85, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.85, y: 16 }}
+            transition={{ delay: 0.6, type: "spring", stiffness: 180, damping: 16 }}
+            aria-label="Open The Concierge"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <div className="relative w-[64px] h-[100px]">
+              <Avatar size={64} state="idle" emotion="happy" />
+              <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-emerald-500 ring-2 ring-background flex items-center justify-center z-20">
+                <Sparkles className="h-2.5 w-2.5 text-white" />
+              </div>
             </div>
-          </div>
-          <AnimatePresence>
-            {trayHint && (
-              <motion.div
-                initial={{ opacity: 0, x: 10 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 10 }}
-                className="absolute right-[72px] top-1/2 -translate-y-1/2 whitespace-nowrap px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium shadow-lg"
-              >
-                <MessageCircleHeart className="inline h-3.5 w-3.5 mr-1" />
-                Talk to me
-                <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-primary" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.button>
-      )}
-
-      {/* Stage Avatar — visible when panel is open, sits to the left of the panel */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            key="stage-avatar"
-            initial={{ opacity: 0, scale: 0.8, x: 20 }}
-            animate={{ opacity: 1, scale: 1, x: 0 }}
-            exit={{ opacity: 0, scale: 0.8, x: 20 }}
-            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-            className="fixed bottom-6 right-[440px] z-[56] hidden md:block pointer-events-none"
-          >
-            <Avatar
-              size={avatarSize}
-              state={avatarState}
-              emotion={emotion}
-              amplitude={tts.amplitude}
-            />
-          </motion.div>
+            <AnimatePresence>
+              {trayHint && (
+                <motion.div
+                  initial={{ opacity: 0, x: 10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10 }}
+                  className="absolute right-[72px] top-1/2 -translate-y-1/2 whitespace-nowrap px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium shadow-lg"
+                >
+                  <MessageCircleHeart className="inline h-3.5 w-3.5 mr-1" />
+                  Meet Aria, my AI
+                  <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-primary" />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.button>
         )}
       </AnimatePresence>
 
-      {/* Mobile inline avatar (top of panel) */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            key="mobile-avatar"
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="md:hidden fixed top-3 right-3 z-[57] pointer-events-none"
-          >
-            <Avatar
-              size={72}
-              state={avatarState}
-              emotion={emotion}
-              amplitude={tts.amplitude}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <ConciergePanel
+      <ConciergeStage
         open={open}
+        minimized={minimized}
         onClose={onClose}
+        onMinimize={() => setMinimized(true)}
+        onRestore={() => setMinimized(false)}
         transcript={transcript}
         pending={pending}
         partial={mic.partial}
@@ -308,11 +270,14 @@ export default function ConciergeRoot({ hideTrigger = false }: ConciergeRootProp
         micSupported={mic.supported}
         micActive={mic.listening}
         ttsMuted={tts.muted}
+        ttsAmplitude={tts.amplitude}
         onToggleMic={onToggleMic}
         onToggleMute={onToggleMute}
         suggestions={suggestions}
         onSuggestion={onSuggestion}
         recruiterMode={recruiterMode}
+        avatarState={avatarState}
+        emotion={emotion}
       />
     </>
   );

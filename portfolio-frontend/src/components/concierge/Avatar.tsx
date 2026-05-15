@@ -1,17 +1,21 @@
 /**
- * Avatar - Premium stylized 2D character for The Concierge.
+ * Avatar - "Aria", the AI Concierge character.
  *
- * A vector portrait that nods to Harshith's look (dark hair + beard + slim
- * glasses) without going uncanny. It blinks, breathes, raises an eyebrow when
- * thinking, smiles when happy, and lipsyncs from an external amplitude signal
- * (0..1) provided by the TTS hook.
+ * A stylized 3/4-body humanoid AI persona. Intentionally NOT a face mimic —
+ * platinum hair, holographic accents, luminous eyes — reads as a digital
+ * being, not a real person. Designed for the split-stage layout where the
+ * avatar takes the left half of the viewport.
  *
- * Design choices:
- *  - SVG over canvas: crisp at any size, accessible, themeable via CSS.
- *  - Layered groups (skull → hair-back → face → beard → glasses → hair-front
- *    → mouth) so layering reads correctly on any background.
- *  - Lipsync = jaw open (mouth height scales) + lip width modulation, driven
- *    by amplitude. Cheap, convincing.
+ * Animations (composed, GPU-accelerated):
+ *  - Idle: gentle vertical sway + breathing scale
+ *  - Blink: every 3-5s, both eyes
+ *  - Speak: jaw open driven by external amplitude (0..1)
+ *  - Listen: outer aura ring pulses, eyes glow brighter
+ *  - Think: brow lift, slow head tilt, hand-to-chin gesture
+ *  - Excited: hand raises, particles intensify, eyebrow raise
+ *
+ * All effects are pure SVG + framer-motion. No 3D, no GLB loading, ships in
+ * the main bundle weight (~12KB of JSX → <3KB gzipped).
  */
 import { useEffect, useState } from "react";
 import { motion, useAnimationControls } from "framer-motion";
@@ -20,7 +24,6 @@ export type AvatarEmotion = "neutral" | "happy" | "thoughtful" | "excited" | "li
 export type AvatarState = "idle" | "listening" | "thinking" | "speaking";
 
 interface AvatarProps {
-  /** External 0..1 amplitude for mouth animation while speaking. */
   amplitude?: number;
   emotion?: AvatarEmotion;
   state?: AvatarState;
@@ -32,279 +35,438 @@ export default function Avatar({
   amplitude = 0,
   emotion = "neutral",
   state = "idle",
-  size = 220,
+  size = 480,
   className = "",
 }: AvatarProps) {
   const [blink, setBlink] = useState(false);
 
-  // Auto-blink every 3-5s — keeps the character alive.
   useEffect(() => {
     let cancelled = false;
     const loop = () => {
-      const delay = 2500 + Math.random() * 2500;
+      const delay = 2400 + Math.random() * 2800;
       setTimeout(() => {
         if (cancelled) return;
         setBlink(true);
-        setTimeout(() => !cancelled && setBlink(false), 120);
+        setTimeout(() => !cancelled && setBlink(false), 110);
         loop();
       }, delay);
     };
     loop();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
-  // Smile curve based on emotion
-  const smile =
-    emotion === "happy" || emotion === "excited"
-      ? 14
-      : emotion === "thoughtful"
-        ? -2
-        : 6;
-
-  // Eyebrow lift for thinking
-  const browLift = emotion === "thoughtful" ? -4 : emotion === "excited" ? -6 : 0;
-
-  // Mouth: width and openness from amplitude (when speaking) or smile (idle)
   const speaking = state === "speaking";
-  const mouthOpen = speaking ? Math.max(2, amplitude * 22) : 2.5;
-  const mouthWidth = speaking ? 28 + amplitude * 8 : 28 + smile * 0.4;
-  const lipCurve = speaking ? Math.min(8, 3 + amplitude * 10) : smile;
+  const listening = state === "listening";
+  const thinking = state === "thinking";
 
-  // Subtle head bob & breathing
-  const breathControls = useAnimationControls();
+  // Mouth — amplitude-driven when speaking, smile when happy/excited
+  const baseMouthCurve = emotion === "happy" || emotion === "excited" ? 5 : emotion === "thoughtful" ? -1 : 2;
+  const mouthOpen = speaking ? Math.max(1.5, amplitude * 12) : 1.5;
+  const mouthCurve = speaking ? Math.min(7, 2 + amplitude * 7) : baseMouthCurve;
+
+  // Eyebrow
+  const browY = thinking ? -3 : emotion === "excited" ? -5 : 0;
+
+  // Body sway
+  const bodyControls = useAnimationControls();
   useEffect(() => {
-    breathControls.start({
-      y: [0, -2, 0],
-      transition: { duration: 4, repeat: Infinity, ease: "easeInOut" },
+    bodyControls.start({
+      y: [0, -4, 0],
+      transition: { duration: 4.5, repeat: Infinity, ease: "easeInOut" },
     });
-  }, [breathControls]);
+  }, [bodyControls]);
 
-  // Listening ring (pulsing aura)
-  const isListening = state === "listening";
-  const isThinking = state === "thinking";
+  // Hand position — raises during excited or thinking (chin)
+  const handRaised = emotion === "excited" || thinking;
 
   return (
-    <div
-      className={`relative ${className}`}
-      style={{ width: size, height: size }}
-      aria-hidden="true"
-    >
-      {/* Outer aura — pulses on listening, slow swirl on thinking */}
+    <div className={`relative ${className}`} style={{ width: size, aspectRatio: "3 / 5" }} aria-hidden="true">
+      {/* Ambient aura — pulses on listening, slow drift otherwise */}
       <motion.div
-        className="absolute inset-0 rounded-full"
+        className="absolute inset-0 rounded-full pointer-events-none"
         animate={
-          isListening
-            ? { scale: [1, 1.08, 1], opacity: [0.45, 0.75, 0.45] }
-            : isThinking
-              ? { rotate: 360, opacity: [0.4, 0.6, 0.4] }
-              : { scale: [1, 1.02, 1], opacity: [0.35, 0.5, 0.35] }
+          listening
+            ? { scale: [1, 1.06, 1], opacity: [0.55, 0.85, 0.55] }
+            : thinking
+              ? { rotate: 360, opacity: [0.4, 0.55, 0.4] }
+              : { scale: [1, 1.02, 1], opacity: [0.4, 0.55, 0.4] }
         }
-        transition={{
-          duration: isListening ? 1.4 : isThinking ? 6 : 5,
-          repeat: Infinity,
-          ease: "easeInOut",
-        }}
+        transition={{ duration: listening ? 1.4 : thinking ? 8 : 5.5, repeat: Infinity, ease: "easeInOut" }}
         style={{
           background:
-            "radial-gradient(circle at 50% 50%, hsl(var(--primary) / 0.45), hsl(var(--primary) / 0) 65%)",
-          filter: "blur(8px)",
+            "radial-gradient(60% 50% at 50% 40%, hsl(290 95% 65% / 0.45), hsl(190 95% 60% / 0.25) 50%, transparent 75%)",
+          filter: "blur(28px)",
         }}
       />
 
-      {/* Inner glow ring */}
-      <div
-        className="absolute inset-2 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle at 30% 25%, hsl(var(--primary) / 0.25), transparent 70%)",
-        }}
-      />
-
-      <motion.svg
-        viewBox="0 0 200 200"
-        width={size}
-        height={size}
-        className="relative z-10 drop-shadow-xl"
-        animate={breathControls}
+      {/* Orbit rings */}
+      <svg
+        className="absolute inset-0 w-full h-full pointer-events-none"
+        viewBox="0 0 300 500"
+        preserveAspectRatio="xMidYMid meet"
       >
         <defs>
-          {/* Skin gradient */}
-          <radialGradient id="cg-skin" cx="45%" cy="40%" r="70%">
-            <stop offset="0%" stopColor="#f3c8a1" />
-            <stop offset="55%" stopColor="#d59a73" />
-            <stop offset="100%" stopColor="#a36b48" />
+          <linearGradient id="orbit-g1" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="hsl(290 95% 70%)" stopOpacity="0" />
+            <stop offset="50%" stopColor="hsl(290 95% 70%)" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="hsl(190 95% 60%)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        <motion.ellipse
+          cx="150" cy="160" rx="120" ry="32"
+          fill="none" stroke="url(#orbit-g1)" strokeWidth="1.2"
+          animate={{ rotate: 360 }}
+          transition={{ duration: 22, repeat: Infinity, ease: "linear" }}
+          style={{ transformOrigin: "150px 160px" }}
+        />
+        <motion.ellipse
+          cx="150" cy="160" rx="135" ry="40"
+          fill="none" stroke="url(#orbit-g1)" strokeWidth="0.8" opacity="0.6"
+          animate={{ rotate: -360 }}
+          transition={{ duration: 32, repeat: Infinity, ease: "linear" }}
+          style={{ transformOrigin: "150px 160px" }}
+        />
+      </svg>
+
+      {/* Particle field */}
+      <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 300 500">
+        {Array.from({ length: 18 }).map((_, i) => {
+          const x = 30 + (i * 17) % 240;
+          const y = 60 + (i * 31) % 380;
+          const dur = 3 + (i % 4);
+          return (
+            <motion.circle
+              key={i}
+              cx={x}
+              cy={y}
+              r={1 + (i % 3) * 0.6}
+              fill={i % 2 ? "hsl(290 95% 70%)" : "hsl(190 95% 60%)"}
+              initial={{ opacity: 0.15 }}
+              animate={{ opacity: [0.15, 0.85, 0.15], y: [y, y - 10, y] }}
+              transition={{ duration: dur, repeat: Infinity, ease: "easeInOut", delay: i * 0.18 }}
+            />
+          );
+        })}
+      </svg>
+
+      {/* Main character */}
+      <motion.svg
+        className="relative z-10 w-full h-full drop-shadow-[0_20px_40px_rgba(155,80,255,0.25)]"
+        viewBox="0 0 300 500"
+        preserveAspectRatio="xMidYMid meet"
+        animate={bodyControls}
+      >
+        <defs>
+          {/* Holographic skin — porcelain with cyan undertone */}
+          <radialGradient id="skin" cx="40%" cy="35%" r="80%">
+            <stop offset="0%" stopColor="#fff8f5" />
+            <stop offset="40%" stopColor="#f3e0e8" />
+            <stop offset="100%" stopColor="#c89cd6" />
           </radialGradient>
-          {/* Hair gradient — deep almost-black with a warm highlight */}
-          <linearGradient id="cg-hair" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2a1d14" />
-            <stop offset="100%" stopColor="#171012" />
+          {/* Hair — platinum with magenta highlight */}
+          <linearGradient id="hair-main" x1="0" y1="0" x2="0.5" y2="1">
+            <stop offset="0%" stopColor="#f1e9ff" />
+            <stop offset="55%" stopColor="#c9b3ff" />
+            <stop offset="100%" stopColor="#6a3fc9" />
           </linearGradient>
-          {/* Beard gradient */}
-          <linearGradient id="cg-beard" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2a1f17" />
-            <stop offset="100%" stopColor="#13090a" />
+          <linearGradient id="hair-tip" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#e91e9f" stopOpacity="0.7" />
+            <stop offset="100%" stopColor="#9b27d4" stopOpacity="0" />
           </linearGradient>
-          {/* Shirt gradient */}
-          <linearGradient id="cg-shirt" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.55" />
+          {/* Jacket — deep navy with cyan glow trim */}
+          <linearGradient id="jacket" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#1a1335" />
+            <stop offset="100%" stopColor="#0a0820" />
           </linearGradient>
-          {/* Glasses lens tint */}
-          <linearGradient id="cg-lens" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#0b1220" stopOpacity="0.78" />
-            <stop offset="100%" stopColor="#0b1220" stopOpacity="0.55" />
+          <linearGradient id="jacket-trim" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="hsl(190 95% 60%)" stopOpacity="0" />
+            <stop offset="50%" stopColor="hsl(190 95% 65%)" stopOpacity="1" />
+            <stop offset="100%" stopColor="hsl(190 95% 60%)" stopOpacity="0" />
           </linearGradient>
-          {/* Drop shadow under chin */}
-          <filter id="cg-shadow" x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="2" />
+          {/* Inner shirt — turtleneck */}
+          <linearGradient id="turtle" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2a1f4d" />
+            <stop offset="100%" stopColor="#1a1335" />
+          </linearGradient>
+          {/* Eye glow */}
+          <radialGradient id="eye-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#a3f0ff" stopOpacity="1" />
+            <stop offset="60%" stopColor="#3b9eff" stopOpacity="0.85" />
+            <stop offset="100%" stopColor="#5b2dff" stopOpacity="0" />
+          </radialGradient>
+          {/* Cheek bloom */}
+          <radialGradient id="bloom" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#ff8cc8" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#ff8cc8" stopOpacity="0" />
+          </radialGradient>
+          {/* Subtle inner-shadow under jaw */}
+          <filter id="soft-blur">
+            <feGaussianBlur stdDeviation="1.5" />
           </filter>
         </defs>
 
-        {/* Neck + shoulders / shirt */}
+        {/* ===== BODY ===== */}
+
+        {/* Behind-body soft glow */}
+        <ellipse cx="150" cy="350" rx="120" ry="100" fill="hsl(290 95% 65% / 0.18)" filter="url(#soft-blur)" />
+
+        {/* Jacket — outer silhouette */}
         <path
-          d="M 60 188 Q 100 158 140 188 L 145 200 L 55 200 Z"
-          fill="url(#cg-shirt)"
+          d="M 60 500 Q 60 350 110 300 L 130 285 Q 150 295 170 285 L 190 300 Q 240 350 240 500 Z"
+          fill="url(#jacket)"
         />
+        {/* Jacket collar V */}
         <path
-          d="M 78 168 Q 100 178 122 168 L 122 182 Q 100 192 78 182 Z"
-          fill="#1a0f17"
-          opacity="0.6"
+          d="M 120 295 L 150 360 L 180 295 L 175 290 L 150 345 L 125 290 Z"
+          fill="#0a0820"
+        />
+        {/* Glowing trim on jacket edges */}
+        <path
+          d="M 120 295 L 150 360 L 180 295"
+          stroke="hsl(190 95% 65%)" strokeWidth="1.5" fill="none" opacity="0.85"
+          strokeLinecap="round"
+        />
+        {/* Shoulder trim accents */}
+        <path d="M 70 360 Q 75 340 90 330" stroke="url(#jacket-trim)" strokeWidth="1.4" fill="none" />
+        <path d="M 230 360 Q 225 340 210 330" stroke="url(#jacket-trim)" strokeWidth="1.4" fill="none" />
+
+        {/* Turtleneck */}
+        <path
+          d="M 125 295 Q 150 305 175 295 L 175 270 Q 150 260 125 270 Z"
+          fill="url(#turtle)"
+        />
+        {/* Turtleneck top edge */}
+        <path
+          d="M 125 270 Q 150 264 175 270"
+          stroke="hsl(290 95% 75% / 0.4)" strokeWidth="1" fill="none"
         />
 
-        {/* Back of head / hair silhouette */}
-        <path
-          d="M 56 80 Q 50 30 100 28 Q 150 30 144 80 L 148 132 Q 100 158 52 132 Z"
-          fill="url(#cg-hair)"
+        {/* Holographic data line across chest */}
+        <motion.path
+          d="M 95 380 Q 150 372 205 380"
+          stroke="hsl(190 95% 65%)" strokeWidth="0.8" fill="none" strokeDasharray="2 3"
+          animate={{ strokeDashoffset: [0, -10] }}
+          transition={{ duration: 1.4, repeat: Infinity, ease: "linear" }}
+          opacity="0.7"
+        />
+        <motion.path
+          d="M 90 410 Q 150 400 210 410"
+          stroke="hsl(290 95% 70%)" strokeWidth="0.6" fill="none" strokeDasharray="1 2"
+          animate={{ strokeDashoffset: [0, 10] }}
+          transition={{ duration: 2.2, repeat: Infinity, ease: "linear" }}
+          opacity="0.5"
         />
 
-        {/* Face oval */}
-        <ellipse
-          cx="100" cy="98" rx="42" ry="50"
-          fill="url(#cg-skin)"
-        />
-        {/* Cheek subtle warmth */}
-        <ellipse cx="80" cy="115" rx="8" ry="5" fill="#d77a5a" opacity="0.25" />
-        <ellipse cx="120" cy="115" rx="8" ry="5" fill="#d77a5a" opacity="0.25" />
+        {/* ===== HAND — visible at lower-right, raises on excited/thinking ===== */}
+        <motion.g
+          animate={handRaised ? { rotate: -18, y: -28, x: -4 } : { rotate: 0, y: 0, x: 0 }}
+          transition={{ type: "spring", stiffness: 140, damping: 16 }}
+          style={{ transformOrigin: "210px 410px" }}
+        >
+          {/* Sleeve */}
+          <path
+            d="M 200 410 Q 220 420 230 450 L 220 460 Q 210 440 195 425 Z"
+            fill="url(#jacket)"
+          />
+          {/* Palm */}
+          <ellipse cx="225" cy="455" rx="14" ry="11" fill="url(#skin)" />
+          {/* Fingers */}
+          <path d="M 215 460 Q 213 470 218 472" stroke="#c89cd6" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M 222 462 Q 220 473 226 475" stroke="#c89cd6" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M 230 461 Q 230 472 235 472" stroke="#c89cd6" strokeWidth="2" fill="none" strokeLinecap="round" />
+          {/* Thumb */}
+          <path d="M 234 452 Q 240 450 240 446" stroke="#c89cd6" strokeWidth="2" fill="none" strokeLinecap="round" />
+        </motion.g>
 
-        {/* Beard (full, well-groomed) */}
+        {/* ===== NECK ===== */}
+        <path d="M 134 268 Q 150 275 166 268 L 168 285 Q 150 290 132 285 Z" fill="url(#skin)" />
+        <path d="M 134 285 Q 150 290 166 285" stroke="#b58cc7" strokeWidth="0.6" fill="none" opacity="0.5" />
+
+        {/* ===== HEAD ===== */}
+
+        {/* Back hair silhouette */}
         <path
-          d="M 64 108 Q 70 150 100 158 Q 130 150 136 108
-             Q 132 138 100 144 Q 68 138 64 108 Z"
-          fill="url(#cg-beard)"
+          d="M 95 165 Q 90 90 150 80 Q 210 90 205 165 L 215 230 Q 150 260 85 230 Z"
+          fill="url(#hair-main)"
         />
-        {/* Mustache */}
+        {/* Hair tip glow */}
         <path
-          d="M 80 118 Q 100 124 120 118 Q 116 125 100 126 Q 84 125 80 118 Z"
-          fill="url(#cg-beard)"
+          d="M 95 165 Q 90 90 150 80 Q 210 90 205 165"
+          fill="url(#hair-tip)"
+          opacity="0.7"
         />
-        {/* Sideburns */}
-        <path d="M 60 92 Q 64 110 70 118 L 64 118 Q 58 105 60 92 Z" fill="url(#cg-beard)" />
-        <path d="M 140 92 Q 136 110 130 118 L 136 118 Q 142 105 140 92 Z" fill="url(#cg-beard)" />
+
+        {/* Face shape */}
+        <ellipse cx="150" cy="190" rx="52" ry="62" fill="url(#skin)" />
+
+        {/* Subtle cheek bloom */}
+        <ellipse cx="118" cy="215" rx="14" ry="9" fill="url(#bloom)" />
+        <ellipse cx="182" cy="215" rx="14" ry="9" fill="url(#bloom)" />
+
+        {/* Holographic cheek tech-line — faint glowing geometric accent */}
+        <path d="M 100 200 L 95 195 M 100 200 L 105 205" stroke="hsl(190 95% 65%)" strokeWidth="0.8" opacity="0.7" strokeLinecap="round" />
+        <circle cx="100" cy="200" r="1.5" fill="hsl(190 95% 70%)" opacity="0.9" />
 
         {/* Eyebrows */}
         <motion.path
-          d="M 70 80 Q 80 76 90 80"
-          stroke="#1a0f0a"
-          strokeWidth="3"
-          strokeLinecap="round"
-          fill="none"
-          animate={{ y: browLift }}
-          transition={{ type: "spring", stiffness: 180, damping: 14 }}
+          d="M 115 175 Q 128 170 138 175"
+          stroke="#4a3a7c" strokeWidth="2.5" fill="none" strokeLinecap="round"
+          animate={{ y: browY }}
+          transition={{ type: "spring", stiffness: 200, damping: 14 }}
         />
         <motion.path
-          d="M 110 80 Q 120 76 130 80"
-          stroke="#1a0f0a"
-          strokeWidth="3"
-          strokeLinecap="round"
-          fill="none"
-          animate={{ y: browLift }}
-          transition={{ type: "spring", stiffness: 180, damping: 14 }}
+          d="M 162 175 Q 172 170 185 175"
+          stroke="#4a3a7c" strokeWidth="2.5" fill="none" strokeLinecap="round"
+          animate={{ y: browY }}
+          transition={{ type: "spring", stiffness: 200, damping: 14 }}
         />
 
-        {/* Eyes (behind glasses — visible) */}
+        {/* ===== EYES — large, expressive, luminous ===== */}
+        {/* Eye sockets (subtle shadow under eye) */}
+        <ellipse cx="125" cy="192" rx="12" ry="3" fill="#a37cb8" opacity="0.25" />
+        <ellipse cx="175" cy="192" rx="12" ry="3" fill="#a37cb8" opacity="0.25" />
+
+        {/* Left eye */}
         <g>
-          {/* Left eye */}
-          <ellipse cx="80" cy="92" rx="5" ry={blink ? 0.5 : 3.2} fill="#fff" />
-          <circle cx="80" cy="92" r={blink ? 0 : 2} fill="#2c1810" />
-          {/* Right eye */}
-          <ellipse cx="120" cy="92" rx="5" ry={blink ? 0.5 : 3.2} fill="#fff" />
-          <circle cx="120" cy="92" r={blink ? 0 : 2} fill="#2c1810" />
+          {/* White sclera */}
+          <ellipse cx="125" cy="190" rx="10" ry={blink ? 0.6 : 7} fill="#fff" />
+          {/* Outer iris glow */}
+          {!blink && (
+            <>
+              <circle cx="125" cy="190" r="6.5" fill="url(#eye-glow)" />
+              {/* Pupil */}
+              <circle cx="125" cy="190" r="3.2" fill="#0a0820" />
+              {/* Inner highlight */}
+              <circle cx="123.5" cy="188" r="1.4" fill="#fff" opacity="0.95" />
+              {/* Tiny secondary catch-light */}
+              <circle cx="127" cy="192" r="0.7" fill="#fff" opacity="0.6" />
+            </>
+          )}
         </g>
 
-        {/* Glasses — slim modern wire frames */}
-        <g stroke="#1a1a1a" strokeWidth="1.6" fill="none" strokeLinecap="round">
-          {/* Lenses */}
-          <rect x="66" y="83" width="28" height="18" rx="6" fill="url(#cg-lens)" opacity="0.32" />
-          <rect x="66" y="83" width="28" height="18" rx="6" />
-          <rect x="106" y="83" width="28" height="18" rx="6" fill="url(#cg-lens)" opacity="0.32" />
-          <rect x="106" y="83" width="28" height="18" rx="6" />
-          {/* Bridge */}
-          <path d="M 94 90 L 106 90" />
-          {/* Temples */}
-          <path d="M 66 88 L 58 92" />
-          <path d="M 134 88 L 142 92" />
+        {/* Right eye */}
+        <g>
+          <ellipse cx="175" cy="190" rx="10" ry={blink ? 0.6 : 7} fill="#fff" />
+          {!blink && (
+            <>
+              <circle cx="175" cy="190" r="6.5" fill="url(#eye-glow)" />
+              <circle cx="175" cy="190" r="3.2" fill="#0a0820" />
+              <circle cx="173.5" cy="188" r="1.4" fill="#fff" opacity="0.95" />
+              <circle cx="177" cy="192" r="0.7" fill="#fff" opacity="0.6" />
+            </>
+          )}
         </g>
 
-        {/* Nose */}
-        <path d="M 100 96 Q 96 110 100 116 Q 104 110 100 96" fill="#a36b48" opacity="0.5" />
-        <ellipse cx="100" cy="117" rx="3" ry="1.5" fill="#7a4a30" opacity="0.4" />
+        {/* Pupil emissive glow (when listening or speaking) */}
+        {(listening || speaking) && !blink && (
+          <>
+            <motion.circle
+              cx="125" cy="190" r="3.2" fill="hsl(190 95% 70%)"
+              animate={{ opacity: [0.3, 0.7, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+            />
+            <motion.circle
+              cx="175" cy="190" r="3.2" fill="hsl(190 95% 70%)"
+              animate={{ opacity: [0.3, 0.7, 0.3] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+            />
+          </>
+        )}
 
-        {/* Mouth — driven by amplitude (lipsync) */}
+        {/* ===== NOSE — minimal, just two soft contour lines ===== */}
+        <path d="M 148 200 Q 146 215 150 222 Q 154 215 152 200" fill="#c89cd6" opacity="0.35" />
+        <ellipse cx="150" cy="224" rx="3" ry="1" fill="#a07bb8" opacity="0.5" />
+
+        {/* ===== MOUTH — lipsync-driven ===== */}
         <motion.g
-          animate={{ scaleY: speaking ? 1 + amplitude * 0.15 : 1 }}
+          animate={{ scaleY: speaking ? 1 + amplitude * 0.2 : 1 }}
           transition={{ duration: 0.04 }}
           style={{ transformBox: "fill-box", transformOrigin: "center" }}
         >
-          {/* Lower lip (the surface that moves with jaw) */}
-          <motion.path
-            d={`M ${100 - mouthWidth / 2} 134
-                Q 100 ${134 + lipCurve} ${100 + mouthWidth / 2} 134
-                Q 100 ${134 + mouthOpen} ${100 - mouthWidth / 2} 134 Z`}
-            fill="#5a1f1a"
-          />
-          {/* Upper lip line */}
+          {/* Lip shadow */}
           <path
-            d={`M ${100 - mouthWidth / 2} 134 Q 100 132 ${100 + mouthWidth / 2} 134`}
-            stroke="#3a1410"
-            strokeWidth="1.4"
-            fill="none"
-            strokeLinecap="round"
+            d={`M ${150 - 14} 240 Q 150 ${240 + mouthCurve} ${150 + 14} 240 Q 150 ${240 + mouthOpen + 1} ${150 - 14} 240 Z`}
+            fill="#7b2d5e"
+          />
+          {/* Top lip line */}
+          <path
+            d={`M ${150 - 14} 240 Q 150 238 ${150 + 14} 240`}
+            stroke="#5b1f48" strokeWidth="1.2" fill="none" strokeLinecap="round"
           />
         </motion.g>
 
-        {/* Forehead highlight for dimension */}
-        <ellipse cx="95" cy="62" rx="20" ry="8" fill="#fff" opacity="0.07" />
-
-        {/* Hair-front strands sweeping right (gives the look character) */}
+        {/* ===== FRONT HAIR strands — modern asymmetric sweep ===== */}
         <path
-          d="M 64 70 Q 80 38 110 36 Q 138 40 144 70 Q 138 56 120 54 Q 96 58 86 70 Q 76 64 64 70 Z"
-          fill="url(#cg-hair)"
+          d="M 95 165 Q 100 110 150 102 Q 200 110 205 165
+             Q 200 135 165 130 Q 130 135 115 155 Q 105 145 95 165 Z"
+          fill="url(#hair-main)"
         />
-      </motion.svg>
+        {/* Hair shine */}
+        <path
+          d="M 110 130 Q 145 115 175 122"
+          stroke="#fff" strokeWidth="2" fill="none" opacity="0.45" strokeLinecap="round"
+        />
+        {/* Side bang */}
+        <path
+          d="M 195 130 Q 215 155 215 195 Q 208 165 196 145 Z"
+          fill="url(#hair-main)"
+        />
+        {/* Bottom hair tips behind shoulder */}
+        <path
+          d="M 90 220 Q 80 260 95 285 Q 100 250 108 230 Z"
+          fill="url(#hair-main)"
+        />
+        <path
+          d="M 210 220 Q 220 260 205 285 Q 200 250 192 230 Z"
+          fill="url(#hair-main)"
+        />
 
-      {/* Status ring overlays */}
-      {isListening && (
-        <motion.div
-          className="absolute -inset-1 rounded-full pointer-events-none"
-          style={{ border: "2px solid hsl(var(--primary))" }}
-          animate={{ scale: [1, 1.12, 1], opacity: [0.7, 0, 0.7] }}
-          transition={{ duration: 1.4, repeat: Infinity }}
+        {/* ===== AR Visor accent — subtle glowing arc above one eye ===== */}
+        <motion.path
+          d="M 110 180 Q 130 173 145 178"
+          stroke="hsl(190 95% 70%)" strokeWidth="1.2" fill="none" strokeLinecap="round"
+          animate={{ opacity: [0.6, 1, 0.6] }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
         />
-      )}
-      {isThinking && (
-        <div className="absolute bottom-2 right-2 flex gap-1 z-20">
-          {[0, 1, 2].map((i) => (
-            <motion.div
-              key={i}
-              className="w-1.5 h-1.5 rounded-full bg-primary"
-              animate={{ y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-              transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15 }}
+        <motion.circle
+          cx="146" cy="178" r="1.6" fill="hsl(190 95% 70%)"
+          animate={{ opacity: [0.7, 1, 0.7] }}
+          transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
+        />
+
+        {/* ===== Listening ripple - emanates from chest mic ===== */}
+        {listening && (
+          <>
+            <motion.circle
+              cx="150" cy="380" r="6" fill="none" stroke="hsl(190 95% 65%)" strokeWidth="1.5"
+              animate={{ r: [6, 36], opacity: [1, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut" }}
             />
-          ))}
-        </div>
-      )}
+            <motion.circle
+              cx="150" cy="380" r="6" fill="none" stroke="hsl(290 95% 70%)" strokeWidth="1.2"
+              animate={{ r: [6, 30], opacity: [1, 0] }}
+              transition={{ duration: 1.4, repeat: Infinity, ease: "easeOut", delay: 0.4 }}
+            />
+          </>
+        )}
+
+        {/* ===== Thinking dots on AR visor ===== */}
+        {thinking && (
+          <g transform="translate(115, 152)">
+            {[0, 1, 2].map((i) => (
+              <motion.circle
+                key={i}
+                cx={i * 6}
+                cy={0}
+                r={1.5}
+                fill="hsl(190 95% 70%)"
+                animate={{ opacity: [0.3, 1, 0.3], y: [0, -3, 0] }}
+                transition={{ duration: 0.7, repeat: Infinity, delay: i * 0.18 }}
+              />
+            ))}
+          </g>
+        )}
+      </motion.svg>
     </div>
   );
 }

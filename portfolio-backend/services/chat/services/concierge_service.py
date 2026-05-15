@@ -22,7 +22,8 @@ import re
 from typing import List, Dict, Optional, Any
 
 from utils.datadog_metrics import dd_metric, dd_span
-from .chat_service import PORTFOLIO_CONTEXT
+# Absolute import path — `services/` is not configured as a package on Lambda.
+from services.chat_service import PORTFOLIO_CONTEXT
 
 logger = logging.getLogger(__name__)
 

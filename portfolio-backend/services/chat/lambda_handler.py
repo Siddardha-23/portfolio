@@ -109,9 +109,13 @@ def handler(event, context):
         # ── API Gateway WebSocket request (Concierge low-latency channel) ──
         # Detected by the presence of routeKey + connectionId in requestContext.
         # Routes $connect, $disconnect, $default → websocket_handler.handle.
-        from websocket_handler import is_websocket_event, handle as ws_handle
-        if is_websocket_event(event):
-            return ws_handle(event, context)
+        # Wrapped defensively so a missing dep / boto3 hiccup can't kill HTTP.
+        try:
+            from websocket_handler import is_websocket_event, handle as ws_handle
+            if is_websocket_event(event):
+                return ws_handle(event, context)
+        except Exception as ws_err:
+            logger.warning(f"WS dispatch failed (falling through to HTTP): {ws_err}")
 
         # ── Normal API Gateway HTTP request ──
         if os.getenv('ENVIRONMENT') != 'prod':

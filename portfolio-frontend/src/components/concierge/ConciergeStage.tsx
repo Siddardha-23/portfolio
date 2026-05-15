@@ -42,6 +42,9 @@ interface StageProps {
   micSupported: boolean;
   micActive: boolean;
   micError: string | null;
+  /** Real RMS audio level from the live mic stream (0..1) — proves the mic
+   *  is actually hearing audio even if Web Speech transcription is silent. */
+  audioLevel: number;
   ttsMuted: boolean;
   ttsAmplitude: number;
   onToggleMic: () => void;
@@ -53,31 +56,61 @@ interface StageProps {
   emotion: AvatarEmotion;
 }
 
-/** Compact audio-amplitude bar viz (synthesizes a visual while no real
- *  PCM stream is hooked up to the AnalyserNode). */
-function VoiceWaveform({ active }: { active: boolean }) {
-  const bars = 24;
+/** Real audio-level meter driven by the AnalyserNode on the live mic stream.
+ *  Each bar height is derived from the RMS amplitude with a per-bar offset
+ *  so the wave looks alive even at a steady level. If `level` is 0 the bars
+ *  flatten — confirms the mic isn't actually hearing anything. */
+function VoiceMeter({ level, active }: { level: number; active: boolean }) {
+  const bars = 28;
   return (
-    <div className="flex items-end justify-center gap-1 h-10">
-      {Array.from({ length: bars }).map((_, i) => (
-        <motion.span
-          key={i}
-          className="w-1 rounded-full bg-primary"
-          initial={{ height: 6 }}
-          animate={{
-            height: active
-              ? [4, 8 + Math.random() * 22, 4 + Math.random() * 8, 14, 4]
-              : 4,
-          }}
-          transition={{
-            duration: 0.8 + Math.random() * 0.6,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: i * 0.04,
-          }}
-        />
-      ))}
+    <div className="flex items-end justify-center gap-1 h-12">
+      {Array.from({ length: bars }).map((_, i) => {
+        // Wave shape: tallest in middle, lower at edges
+        const positional = 0.55 + 0.45 * Math.sin((i / bars) * Math.PI);
+        // Per-bar oscillation seeded by index
+        const phase = (Date.now() / 120 + i * 0.4) % (Math.PI * 2);
+        const wobble = (Math.sin(phase) + 1) * 0.25;
+        const target = active
+          ? Math.max(4, Math.min(46, 4 + level * 70 * positional * (0.6 + wobble)))
+          : 4;
+        return (
+          <motion.span
+            key={i}
+            className="w-[3px] rounded-full bg-gradient-to-t from-primary/40 to-primary"
+            animate={{ height: target }}
+            transition={{ duration: 0.12, ease: "easeOut" }}
+          />
+        );
+      })}
     </div>
+  );
+}
+
+/** Typewriter that types `text` into view character-by-character. */
+function Typewriter({ text, speed = 14 }: { text: string; speed?: number }) {
+  const [shown, setShown] = useState("");
+  useEffect(() => {
+    setShown("");
+    if (!text) return;
+    let i = 0;
+    const id = window.setInterval(() => {
+      i += 1;
+      setShown(text.slice(0, i));
+      if (i >= text.length) window.clearInterval(id);
+    }, speed);
+    return () => window.clearInterval(id);
+  }, [text, speed]);
+  return (
+    <span>
+      {shown}
+      {shown.length < text.length && (
+        <motion.span
+          className="inline-block w-[2px] h-[1.1em] bg-primary ml-[2px] align-middle"
+          animate={{ opacity: [1, 0, 1] }}
+          transition={{ duration: 0.8, repeat: Infinity }}
+        />
+      )}
+    </span>
   );
 }
 
@@ -85,7 +118,7 @@ export default function ConciergeStage(props: StageProps) {
   const {
     open, minimized, onClose, onMinimize, onRestore,
     transcript, pending, partial, inputValue, setInputValue, onSubmit,
-    micSupported, micActive, micError, ttsMuted, ttsAmplitude,
+    micSupported, micActive, micError, audioLevel, ttsMuted, ttsAmplitude,
     onToggleMic, onToggleMute, suggestions, onSuggestion, recruiterMode,
     avatarState, emotion,
   } = props;
@@ -227,7 +260,7 @@ export default function ConciergeStage(props: StageProps) {
                     <div className="min-w-0">
                       <div className="text-sm font-semibold truncate">The Concierge</div>
                       <div className="text-[10px] text-muted-foreground truncate">
-                        {recruiterMode ? "Recruiter mode active" : "Aris · ask anything"}
+                        {recruiterMode ? "Recruiter mode active" : "Nimbus · ask anything"}
                       </div>
                     </div>
                   </div>
@@ -303,7 +336,7 @@ export default function ConciergeStage(props: StageProps) {
                         Ask me anything.
                       </div>
                       <p className="text-sm text-muted-foreground max-w-sm">
-                        I'm Aris — Harshith's AI Concierge.
+                        I'm Nimbus — Harshith's AI Concierge.
                         Speak or type and I'll show you his work.
                       </p>
                     </motion.div>
@@ -367,9 +400,14 @@ export default function ConciergeStage(props: StageProps) {
                           )}
                         </div>
 
-                        {/* Waveform */}
-                        <div className="mt-6">
-                          <VoiceWaveform active={micActive} />
+                        {/* Real audio-level meter — proves the mic is hearing audio */}
+                        <div className="mt-6 w-full max-w-md">
+                          <VoiceMeter level={audioLevel} active={micActive} />
+                          <div className="mt-2 text-[10px] uppercase tracking-wider text-muted-foreground text-center">
+                            {audioLevel > 0.04
+                              ? `Hearing you · ${Math.round(audioLevel * 100)}%`
+                              : "Not picking up sound yet — speak louder or check your mic"}
+                          </div>
                         </div>
 
                         {/* Stop button */}
@@ -415,21 +453,34 @@ export default function ConciergeStage(props: StageProps) {
                     >
                       {/* Aris label + answer */}
                       <div className="flex items-start gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center shrink-0 mt-0.5">
+                        <motion.div
+                          className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary/30 to-accent/20 flex items-center justify-center shrink-0 mt-0.5"
+                          animate={{ rotate: [0, 360] }}
+                          transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
+                        >
                           <Sparkles className="h-4 w-4 text-primary" />
-                        </div>
+                        </motion.div>
                         <div className="flex-1">
                           <div className="text-[10px] uppercase tracking-wider font-semibold text-primary mb-1">
-                            Aris
+                            Nimbus
                           </div>
                           <div className="text-base md:text-lg leading-relaxed text-foreground/90 whitespace-pre-wrap">
-                            {lastModelTurn.caption || lastModelTurn.text}
+                            {/* Typewriter on the latest answer (re-keys on each new turn) */}
+                            <Typewriter text={lastModelTurn.caption || lastModelTurn.text} />
                           </div>
                         </div>
                       </div>
 
-                      {/* Active visual card */}
-                      {activeCard && <CardRenderer card={activeCard} />}
+                      {/* Active visual card — materializes with a scale-up entry */}
+                      {activeCard && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
+                        >
+                          <CardRenderer card={activeCard} />
+                        </motion.div>
+                      )}
                     </motion.div>
                   )}
 
@@ -486,7 +537,7 @@ export default function ConciergeStage(props: StageProps) {
                       className="w-full flex items-center justify-center gap-2 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors px-4 py-2.5 text-xs font-medium text-primary group"
                     >
                       <Mic className="h-4 w-4" />
-                      Tap to speak with Aris
+                      Tap to speak with Nimbus
                       <span className="text-[10px] text-muted-foreground font-normal hidden sm:inline">
                         · live transcript appears as you talk
                       </span>

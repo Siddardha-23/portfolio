@@ -94,8 +94,8 @@ export default function ConciergeRoot() {
     if (!open || hasGreeted) return;
     setHasGreeted(true);
     const greetSpoken = recruiterMode
-      ? "Hi, I'm Aria — Harshith's AI Concierge. Want the 30-second pitch, or should I show you his best work?"
-      : "Hi, I'm Aria — Harshith's AI Concierge. Ask me anything, or I can give you the tour.";
+      ? "Hey, I'm Nimbus — Harshith's AI Concierge. Want the 30-second pitch, or should I show you his best work?"
+      : "Hey, I'm Nimbus — Harshith's AI Concierge. Ask me anything, or I can give you the tour.";
     const greeting: TranscriptEntry = {
       id: `model-${Date.now()}`,
       role: "model",
@@ -270,6 +270,7 @@ export default function ConciergeRoot() {
         micSupported={mic.supported}
         micActive={mic.listening}
         micError={mic.error}
+        audioLevel={mic.audioLevel}
         ttsMuted={tts.muted}
         ttsAmplitude={tts.amplitude}
         onToggleMic={onToggleMic}

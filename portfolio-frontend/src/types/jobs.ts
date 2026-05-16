@@ -127,6 +127,7 @@ export interface DailyPipelineResult {
   raw_counts: {
     linkedin: number;
     workday: number;
+    workday_direct?: number;
     indeed?: number;
     ats_direct?: number;
     total: number;
@@ -136,6 +137,7 @@ export interface DailyPipelineResult {
   source_breakdown?: {
     linkedin: DailyPipelineSourceCounts;
     workday: DailyPipelineSourceCounts;
+    workday_direct?: DailyPipelineSourceCounts;
     indeed?: DailyPipelineSourceCounts;
     ats_direct?: DailyPipelineSourceCounts;
   };

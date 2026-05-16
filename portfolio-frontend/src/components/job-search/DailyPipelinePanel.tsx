@@ -2523,7 +2523,7 @@ export function DailyPipelinePanel({
 
           {/* Summary strip */}
           <Card className="border-border/60 bg-card/60">
-            <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
+            <CardContent className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-6">
               <SummaryBlock
                 label="LinkedIn (kept / raw)"
                 value={
@@ -2533,13 +2533,19 @@ export function DailyPipelinePanel({
                 }
               />
               <SummaryBlock
-                label="Workday (kept / raw)"
+                label="Workday Apify (kept / raw)"
                 value={
                   result.source_breakdown
                     ? `${result.source_breakdown.workday.apply_now + result.source_breakdown.workday.verify} / ${result.source_breakdown.workday.raw}`
                     : result.raw_counts.workday
                 }
               />
+              {result.source_breakdown?.workday_direct && result.source_breakdown.workday_direct.raw > 0 && (
+                <SummaryBlock
+                  label="Workday Direct (kept / raw)"
+                  value={`${result.source_breakdown.workday_direct.apply_now + result.source_breakdown.workday_direct.verify} / ${result.source_breakdown.workday_direct.raw}`}
+                />
+              )}
               {result.source_breakdown?.indeed && result.source_breakdown.indeed.raw > 0 && (
                 <SummaryBlock
                   label="Indeed (kept / raw)"

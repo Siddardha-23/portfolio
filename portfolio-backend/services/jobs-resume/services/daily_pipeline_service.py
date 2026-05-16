@@ -2122,6 +2122,12 @@ def run_pipeline(
             "verify": _by_src(verify, "Workday"),
             "excluded": _by_src(excluded, "Workday"),
         },
+        "workday_direct": {
+            "raw": len(raw_wd_direct),
+            "apply_now": _by_src(apply_now, "Workday Direct"),
+            "verify": _by_src(verify, "Workday Direct"),
+            "excluded": _by_src(excluded, "Workday Direct"),
+        },
         "indeed": {
             "raw": len(raw_in),
             "apply_now": _by_src(apply_now, "Indeed"),
@@ -2147,6 +2153,7 @@ def run_pipeline(
         "raw_counts": {
             "linkedin": len(raw_li),
             "workday": len(raw_wd),
+            "workday_direct": len(raw_wd_direct),
             "indeed": len(raw_in),
             "ats_direct": len(raw_ats),
             "total": len(all_raw),

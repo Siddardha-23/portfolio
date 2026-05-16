@@ -998,6 +998,29 @@ export function DailyPipelinePanel({
   // slicer to "all" so the user sees the full set first.
   type PostRunDateFilter = 'all' | 'today' | 'yesterday' | '3d' | '7d';
   const [dateFilter, setDateFilter] = useState<PostRunDateFilter>('all');
+  // Source filter — narrows the visible rows to one origin (LinkedIn /
+  // Workday Apify / Workday Direct / Indeed / ATS direct). Lets the user
+  // chew through one board at a time before moving to the next so they
+  // don't lose context-switching to "where was that LinkedIn job again?"
+  type PostRunSourceFilter = 'all' | 'linkedin' | 'workday' | 'workday_direct' | 'indeed' | 'ats_direct';
+  const [sourceFilter, setSourceFilter] = useState<PostRunSourceFilter>('all');
+  // record.source is one of: "LinkedIn", "Workday", "Workday Direct",
+  // "Indeed", "Greenhouse", "Lever", "Ashby". Map them onto the filter
+  // buckets the chip set offers.
+  const _ATS_SOURCE_LABELS = new Set(['Greenhouse', 'Lever', 'Ashby']);
+  const _sourceMatches = useCallback(
+    (r: DailyPipelineRecord) => {
+      if (sourceFilter === 'all') return true;
+      const s = r.source || '';
+      if (sourceFilter === 'linkedin') return s === 'LinkedIn';
+      if (sourceFilter === 'workday') return s === 'Workday';
+      if (sourceFilter === 'workday_direct') return s === 'Workday Direct';
+      if (sourceFilter === 'indeed') return s === 'Indeed';
+      if (sourceFilter === 'ats_direct') return _ATS_SOURCE_LABELS.has(s);
+      return true;
+    },
+    [sourceFilter],
+  );
   // JD-vs-resume match scores — populated after each pipeline run by an async
   // batch call to /pipeline/match-scores. Deterministic (regex against resume
   // skills) so it's safe to overlay on every row without burning LLM quota.
@@ -1716,33 +1739,41 @@ export function DailyPipelinePanel({
   const _notSnoozed = (r: DailyPipelineRecord) => !snoozedSet.has(_recordId(r));
 
   // Date-filter chip ("Today" / "Yesterday" / "Last 3d" / "Last 7d" / "All").
-  // Rows without a parseable posted date pass the "all" filter and the wider
-  // 3d/7d windows, but get dropped from the strict Today/Yesterday slices —
-  // we shouldn't lie about freshness when we don't know.
-  const _todayIsoStr = new Date().toISOString().slice(0, 10);
-  const _yesterdayIsoStr = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  // Bucketed by HOURS-AGO from now rather than UTC date string equality —
+  // strict equality dropped local-today posts whose UTC date was yesterday
+  // (and vice versa) for any timezone offset from UTC. The 30h "today"
+  // window matches the backend's 36h recency grace and absorbs most of
+  // the local-vs-UTC boundary mismatches.
+  const _hoursAgo = (postedYMD: string): number => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(postedYMD);
+    if (!m) return Number.POSITIVE_INFINITY;
+    // Anchor each posted date at 12:00 UTC to minimise timezone-edge
+    // misclassification — a row stamped 2026-05-14 is treated as ~mid-day
+    // May 14 UTC, so it sits ~12-36h before any local "now" on May 15.
+    const ts = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+    return Math.max(0, (Date.now() - ts) / 3_600_000);
+  };
+  const _matchesFilter = (postedYMD: string, filt: PostRunDateFilter): boolean => {
+    if (filt === 'all') return true;
+    const h = _hoursAgo(postedYMD);
+    if (filt === 'today') return h < 30;
+    if (filt === 'yesterday') return h >= 30 && h < 54;
+    if (filt === '3d') return h < 84;
+    if (filt === '7d') return h < 192;
+    return true;
+  };
   const _dateMatches = useCallback(
-    (r: DailyPipelineRecord) => {
-      if (dateFilter === 'all') return true;
-      const posted = (r.posted || '').slice(0, 10);
-      const parseable = /^\d{4}-\d{2}-\d{2}$/.test(posted);
-      if (!parseable) return dateFilter === '3d' || dateFilter === '7d';
-      if (dateFilter === 'today') return posted === _todayIsoStr;
-      if (dateFilter === 'yesterday') return posted === _yesterdayIsoStr;
-      const cutoffDays = dateFilter === '3d' ? 3 : 7;
-      const cutoffIso = new Date(Date.now() - cutoffDays * 86_400_000).toISOString().slice(0, 10);
-      return posted >= cutoffIso;
-    },
-    [dateFilter, _todayIsoStr, _yesterdayIsoStr],
+    (r: DailyPipelineRecord) => _matchesFilter((r.posted || '').slice(0, 10), dateFilter),
+    [dateFilter],
   );
 
-  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1' && _notSnoozed(r) && _dateMatches(r));
-  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2' && _notSnoozed(r) && _dateMatches(r));
-  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3' && _notSnoozed(r) && _dateMatches(r));
+  const tier1 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 1' && _notSnoozed(r) && _dateMatches(r) && _sourceMatches(r));
+  const tier2 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 2' && _notSnoozed(r) && _dateMatches(r) && _sourceMatches(r));
+  const tier3 = (result?.apply_now || []).filter((r) => r.tier === 'Tier 3' && _notSnoozed(r) && _dateMatches(r) && _sourceMatches(r));
   const allApplyNow = (result?.apply_now || []).filter(_notSnoozed);
   // Verify-dates list also respects the chip — interns from 5 days ago
   // shouldn't surface under "Today".
-  const filteredVerifyDates = (result?.verify_dates || []).filter(_dateMatches);
+  const filteredVerifyDates = (result?.verify_dates || []).filter((r) => _dateMatches(r) && _sourceMatches(r));
   const remainingApply = allApplyNow.filter((r) => !appliedSet.has(_recordId(r))).length;
 
   // "New since last check" — anything in the current result that the user
@@ -2839,19 +2870,10 @@ export function DailyPipelinePanel({
               how many rows survive the filter so the user can pick wisely. */}
           {result && (allApplyNow.length > 0 || result.verify_dates.length > 0) && (() => {
             const _all = [...(result.apply_now || []), ...(result.verify_dates || [])].filter(_notSnoozed);
-            const _count = (filt: PostRunDateFilter) => {
-              if (filt === 'all') return _all.length;
-              return _all.filter((r) => {
-                const posted = (r.posted || '').slice(0, 10);
-                const parseable = /^\d{4}-\d{2}-\d{2}$/.test(posted);
-                if (!parseable) return filt === '3d' || filt === '7d';
-                if (filt === 'today') return posted === _todayIsoStr;
-                if (filt === 'yesterday') return posted === _yesterdayIsoStr;
-                const cutoffDays = filt === '3d' ? 3 : 7;
-                const cutoffIso = new Date(Date.now() - cutoffDays * 86_400_000).toISOString().slice(0, 10);
-                return posted >= cutoffIso;
-              }).length;
-            };
+            const _count = (filt: PostRunDateFilter) =>
+              filt === 'all'
+                ? _all.length
+                : _all.filter((r) => _matchesFilter((r.posted || '').slice(0, 10), filt)).length;
             const chips: { id: PostRunDateFilter; label: string }[] = [
               { id: 'all', label: 'All' },
               { id: 'today', label: 'Today' },
@@ -2888,6 +2910,71 @@ export function DailyPipelinePanel({
                     type="button"
                     onClick={() => setDateFilter('all')}
                     className="ml-auto text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Source filter — quieter strip than the date one (smaller chips,
+              no border) so it reads as a secondary slicer. Lets the user
+              chew through one board at a time. */}
+          {result && (allApplyNow.length > 0 || result.verify_dates.length > 0) && (() => {
+            const _all = [...(result.apply_now || []), ...(result.verify_dates || [])].filter(_notSnoozed);
+            const _ATS_SOURCES_LOCAL = new Set(['Greenhouse', 'Lever', 'Ashby']);
+            const _sourceCount = (id: PostRunSourceFilter) => {
+              if (id === 'all') return _all.length;
+              return _all.filter((r) => {
+                const s = r.source || '';
+                if (id === 'linkedin') return s === 'LinkedIn';
+                if (id === 'workday') return s === 'Workday';
+                if (id === 'workday_direct') return s === 'Workday Direct';
+                if (id === 'indeed') return s === 'Indeed';
+                if (id === 'ats_direct') return _ATS_SOURCES_LOCAL.has(s);
+                return false;
+              }).length;
+            };
+            const allChips: { id: PostRunSourceFilter; label: string }[] = [
+              { id: 'all', label: 'All' },
+              { id: 'linkedin', label: 'LinkedIn' },
+              { id: 'workday', label: 'Workday Apify' },
+              { id: 'workday_direct', label: 'Workday Direct' },
+              { id: 'indeed', label: 'Indeed' },
+              { id: 'ats_direct', label: 'ATS' },
+            ];
+            const chips = allChips.filter((c) => c.id === 'all' || _sourceCount(c.id) > 0);
+            if (chips.length <= 1) return null;
+            return (
+              <div className="flex flex-wrap items-center gap-1 px-1 text-[10px] text-muted-foreground">
+                <span className="mr-1">Source:</span>
+                {chips.map((c) => {
+                  const active = sourceFilter === c.id;
+                  const n = _sourceCount(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setSourceFilter(c.id)}
+                      className={
+                        'rounded-full px-2 py-0.5 transition-colors ' +
+                        (active
+                          ? 'bg-purple-600/90 text-white'
+                          : 'text-foreground/70 hover:bg-muted/60 hover:text-foreground')
+                      }
+                      title={`${c.label} — ${n} posting${n === 1 ? '' : 's'}`}
+                    >
+                      {c.label}
+                      <span className={'ml-1 ' + (active ? 'opacity-90' : 'opacity-50')}>· {n}</span>
+                    </button>
+                  );
+                })}
+                {sourceFilter !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setSourceFilter('all')}
+                    className="ml-auto underline-offset-2 hover:underline"
                   >
                     Clear
                   </button>

@@ -1674,7 +1674,8 @@ class JobService:
         # senior engineers" on a junior role, which would false-positive.
         if any(marker in title for marker in (
             "senior", "sr.", "principal", "staff", "lead", "manager",
-            "director", "head of", "vp ", "architect",
+            "director", "head of", "vp ", "architect", "distinguished",
+            "fellow ", " fellow", "chief ",
         )):
             return "senior"
         if any(marker in text for marker in senior_markers):

@@ -339,7 +339,8 @@ HEALTHCARE_NOISE_TITLE = re.compile(
 )
 SENIORITY_BAD = re.compile(
     r"\b(senior|sr\.?|principal|staff|lead|manager|director|"
-    r"head of|vp\b|vice president|chief)\b",
+    r"head of|vp\b|vice president|chief|distinguished|fellow|"
+    r"architect|architect\s+(?:i|ii|iii))\b",
     re.IGNORECASE,
 )
 GOOD_TITLE = re.compile(
@@ -1674,6 +1675,46 @@ def _filter_and_score(
     # Employment-type post-filter — same reason.
     emp_type = (employment_type or "").upper()
 
+    # Experience-level hard-drop. Previously the scorer subtracted 25 points
+    # for SENIORITY_BAD matches but kept the row, so "Distinguished Product
+    # Software Engineer" / "Senior AI Engineer" surfaced in Tier 3 with a
+    # "senior-ish" flag even when the user picked entry-level. Workday Direct
+    # rows arrive description-less from CXS list-view, so the title is the
+    # only signal we have for them — but in practice senior-level postings
+    # almost always announce themselves in the title (Senior / Staff / Lead /
+    # Principal / Distinguished / Manager / Architect), which is exactly what
+    # SENIORITY_BAD catches. We also drop when GOOD_TITLE is missing AND the
+    # title contains an explicit non-entry numeric (e.g. "II/III" suffix on a
+    # role series).
+    requires_entry = (experience_level or "").lower() in {"entry", "internship", "associate", "new_grad"}
+    _NON_ENTRY_SUFFIX = re.compile(r"\b(engineer|developer|swe|sde)\s+(?:ii|iii|iv|2|3|4)\b", re.IGNORECASE)
+    # Minimum-years-of-experience matchers. We accept the FIRST integer they
+    # quote (so "4-6 years" → 4, "5+ years" → 5) and drop the row when that
+    # floor is >= ENTRY_YEARS_MAX. ENTRY_YEARS_MAX = 4 because most
+    # legitimate entry roles cap their phrasing at "0-3 years" or "2+ years";
+    # once a JD says "4+ years" it's targeting mid-level and above.
+    _MIN_YEARS_PATTERNS = (
+        re.compile(r"\b(\d+)\s*\+\s*years?\s+(?:of\s+)?(?:professional\s+|relevant\s+|industry\s+)?experience", re.IGNORECASE),
+        re.compile(r"\bminimum\s+(?:of\s+)?(\d+)\s+years?", re.IGNORECASE),
+        re.compile(r"\bat\s+least\s+(\d+)\s+years?", re.IGNORECASE),
+        re.compile(r"\b(\d+)\s*-\s*\d+\s+years?\s+(?:of\s+)?experience", re.IGNORECASE),
+        re.compile(r"\b(\d+)\+\s+years?\s+(?:of\s+)?(?:hands[-\s]?on|industry|software|engineering)", re.IGNORECASE),
+    )
+    ENTRY_YEARS_MAX = 4
+
+    def _min_years_required(text: str) -> int:
+        """Return the lowest 'N+ years' the JD demands, or 0 if none stated."""
+        best = 0
+        for rx in _MIN_YEARS_PATTERNS:
+            for m in rx.finditer(text or ""):
+                try:
+                    n = int(m.group(1))
+                except (TypeError, ValueError):
+                    continue
+                if n > best:
+                    best = n
+        return best
+
     for r in deduped:
         # Only drop on date when we *know* it's older than the cutoff.
         # Workday entries often have no parseable date_posted; the actor
@@ -1710,6 +1751,30 @@ def _filter_and_score(
             elif arrangement == "onsite":
                 if "remote" in blob or "hybrid" in blob:
                     excluded.append({**r, "reason": "not on-site",
+                                     "tier": "Skip", "score": 0, "flags": ""}); continue
+
+        # Experience-level hard-drop (only when user opted into a tight
+        # bracket). Senior title → drop. "Engineer II/III" without a
+        # new-grad phrase → drop. JD that demands 4+ years experience → drop.
+        # Otherwise keep — the scorer still de-ranks junior-ambiguous rows
+        # below confirmed-entry titles.
+        if requires_entry:
+            title_only = (r.get("title") or "")
+            if SENIORITY_BAD.search(title_only):
+                excluded.append({**r, "reason": f"senior title ({title_only.strip()})",
+                                 "tier": "Skip", "score": 0, "flags": ""}); continue
+            if _NON_ENTRY_SUFFIX.search(title_only) and not GOOD_TITLE.search(title_only):
+                excluded.append({**r, "reason": f"mid/senior numeric tier ({title_only.strip()})",
+                                 "tier": "Skip", "score": 0, "flags": ""}); continue
+            # JD-based years floor — only meaningful when we actually have a
+            # description (Workday CXS list-view rows have none, so they
+            # pass this check on title alone). Catches things like
+            # "Requires 6+ years of experience" / "Minimum 8 years".
+            desc_text = r.get("description") or ""
+            if desc_text:
+                min_yrs = _min_years_required(desc_text)
+                if min_yrs >= ENTRY_YEARS_MAX:
+                    excluded.append({**r, "reason": f"JD requires {min_yrs}+ years",
                                      "tier": "Skip", "score": 0, "flags": ""}); continue
 
         # Employment-type post-filter — primarily catches Contract postings

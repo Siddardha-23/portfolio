@@ -1091,7 +1091,15 @@ class JobService:
             source_counts = fallback_source_counts
         returned_jobs = self._prepare_jobs_for_response(matched)
         return {
+            # UI-trimmed, source-balanced top-N for immediate display.
             "jobs": returned_jobs,
+            # Full scored list — survives caching so _apply_post_filters can
+            # work against every row that came back from every source, not
+            # just the UI-trimmed top. Without this, post-filter would only
+            # see the 80 highest-scored rows (typically dominated by ATS
+            # entries with long descriptions) and never surface Workday
+            # Direct rows whose CXS list view omits the JD text.
+            "_raw_jobs": list(matched),
             "total": len(matched),
             "page": 1,
             "total_pages": 1,
@@ -1502,8 +1510,46 @@ class JobService:
 
     @staticmethod
     def _prepare_jobs_for_response(jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Source-balanced top-N trim.
+
+        Pure top-N by match_score has a failure mode: sources that return long
+        JD text (Greenhouse/Lever/Ashby) get higher skill-overlap scores than
+        sources that only return list-view rows (Workday CXS, where the
+        description is empty). Result: the UI was filling with Anthropic /
+        Stripe / Scale AI postings and pushing Yahoo / Mastercard / Adobe
+        below the visible cut. We now reserve a per-source share of the top
+        slots, then fill the remainder by global score. Within each source
+        the order is still match_score-descending.
+        """
+        if not jobs:
+            return []
+        per_source_cap = max(8, MAX_RETURNED_JOBS // 6)  # ~13 per source for 80 total
+        by_source: Dict[str, List[Dict[str, Any]]] = {}
+        for job in jobs:
+            by_source.setdefault(job.get("source", "?"), []).append(job)
+        balanced: List[Dict[str, Any]] = []
+        seen_ids = set()
+        for src, src_jobs in by_source.items():
+            for job in src_jobs[:per_source_cap]:
+                jid = id(job)
+                if jid in seen_ids:
+                    continue
+                seen_ids.add(jid)
+                balanced.append(job)
+        # Fill remainder with the highest-scoring jobs we haven't taken yet.
+        for job in jobs:
+            if len(balanced) >= MAX_RETURNED_JOBS:
+                break
+            if id(job) in seen_ids:
+                continue
+            seen_ids.add(id(job))
+            balanced.append(job)
+        balanced.sort(
+            key=lambda j: j.get("match_score", 0),
+            reverse=True,
+        )
         prepared: List[Dict[str, Any]] = []
-        for job in jobs[:MAX_RETURNED_JOBS]:
+        for job in balanced[:MAX_RETURNED_JOBS]:
             item = dict(job)
             description = str(item.get("description") or "")
             if len(description) > JOB_DESCRIPTION_MAX_CHARS:

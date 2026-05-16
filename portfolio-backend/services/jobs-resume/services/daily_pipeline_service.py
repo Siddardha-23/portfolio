@@ -1148,6 +1148,52 @@ def _linkedin_to_record(j: dict) -> dict:
     }
 
 
+def _scrape_workday_direct(search_text: str, location: str) -> List[Dict[str, Any]]:
+    """Direct Workday CXS scrape — free, no Apify, ~10s overall.
+
+    Returns the raw shape produced by services.workday_cxs_fetcher; the caller
+    runs each item through _workday_direct_to_record to get the daily-pipeline
+    record shape (source/company/title/location/posted/url/description) that
+    _filter_and_score expects.
+    """
+    try:
+        from services.workday_cxs_fetcher import fetch_workday_direct
+        items = fetch_workday_direct(
+            search_text=search_text,
+            location=location,
+            overall_timeout=15,
+            max_workers=32,
+        )
+        logger.info("[workday-direct] pipeline scrape returned %d postings", len(items))
+        return items
+    except Exception as e:
+        logger.warning("Workday-direct pipeline scrape failed: %s", e)
+        return []
+
+
+def _workday_direct_to_record(j: dict) -> dict:
+    """Adapt a workday_cxs_fetcher output dict to the pipeline record shape.
+
+    The CXS list view omits descriptions; we leave the field empty and rely
+    on the existing on-demand JD fetch (the Tailor flow already handles this
+    for LinkedIn / Workday rows that lack a description).
+    """
+    return {
+        "source": "Workday Direct",
+        "company": _clean_str(j.get("company")),
+        "title": _clean_str(j.get("title")),
+        "location": _clean_str(j.get("location")),
+        # workday_cxs_fetcher already gave us an ISO datetime in `date_posted`
+        # (derived from "Posted N Days Ago"). _normalize_posted produces the
+        # YYYY-MM-DD string _filter_and_score's cutoff comparison expects.
+        "posted": _normalize_posted(j.get("date_posted")),
+        "salary": _clean_str(j.get("salary")) or "—",
+        "applicants": "",
+        "url": _clean_str(j.get("apply_link")),
+        "description": _clean_str(j.get("description")),
+    }
+
+
 def _workday_to_record(j: dict) -> dict:
     loc_raw = j.get("locations_alt_raw") or ""
     locs: List[str] = []
@@ -1937,7 +1983,7 @@ def run_pipeline(
     ats_enabled = True
     indeed_enabled = include_indeed
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
+    with ThreadPoolExecutor(max_workers=4) as pool:
         f_apify = pool.submit(
             _scrape_in_parallel,
             token=token,
@@ -1958,9 +2004,20 @@ def run_pipeline(
             location=location,
         ) if indeed_enabled else None
         f_ats = pool.submit(_scrape_ats_direct) if ats_enabled else None
+        # Direct Workday CXS — free, no Apify, covers tenants the Apify
+        # actor's index misses (Yahoo / Adobe / NVIDIA / Mastercard / ...).
+        # This is the whole reason the direct fetcher exists; without it
+        # the pipeline would silently lose Yahoo's postings whenever the
+        # Apify Workday actor's daily index didn't include them.
+        f_wd_direct = pool.submit(
+            _scrape_workday_direct,
+            search_text="software engineer",
+            location=location,
+        )
         linkedin_items, workday_items, errors, actor_diagnostics = f_apify.result()
         indeed_items = f_indeed.result() if f_indeed is not None else []
         ats_items = f_ats.result() if f_ats is not None else []
+        wd_direct_items = f_wd_direct.result()
 
     # Source-4 fallback: only fire for companies that returned 0 postings from
     # Source 5 (direct API). When APIFY_ATS_ACTOR is unset, _ats_apify_fallback
@@ -1988,7 +2045,8 @@ def run_pipeline(
     raw_wd = [_workday_to_record(x) for x in workday_items]
     raw_in = indeed_items   # already normalized by _scrape_indeed
     raw_ats = ats_items     # already normalized by the ATS fetchers
-    all_raw = raw_li + raw_wd + raw_in + raw_ats
+    raw_wd_direct = [_workday_direct_to_record(x) for x in wd_direct_items]
+    all_raw = raw_li + raw_wd + raw_in + raw_ats + raw_wd_direct
 
     # Resume profile (intent + weighted skills) — pulled from the user's
     # stored resume + recent feedback signals. None for anonymous runs;

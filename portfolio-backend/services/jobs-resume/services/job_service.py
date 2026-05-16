@@ -203,7 +203,18 @@ class JobService:
         "company": "",
         "jobright": "",
     }
-    CACHE_TTL_SECONDS = 6 * 3600  # 6 hours
+    CACHE_TTL_SECONDS = 6 * 3600  # 6 hours (Mongo TTL index — outer ceiling)
+
+    # Logical TTL applied at read time, bucketed by date_posted. Fresh queries
+    # ("today") expire after 30 minutes so newly-posted jobs surface quickly;
+    # broad windows ("month") can stay cached longer because they don't churn.
+    CACHE_TTL_BY_DATE = {
+        "today": 30 * 60,
+        "3days": 60 * 60,
+        "week": 3 * 3600,
+        "month": 6 * 3600,
+        "all": 6 * 3600,
+    }
 
     def __init__(self):
         self.db = DBConnect().get_db()
@@ -325,57 +336,78 @@ class JobService:
         user_email: str = "",
         partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        params = {
+        # Cache key is built from FETCH-affecting params only (what changes
+        # which jobs come back from each source). date_posted / h1b_only /
+        # visa_or_contract / experience_level are POST-filters — applied to
+        # the cached raw set so switching filters is instant.
+        wide_params = {
             "query": query,
-            "page": page,
             "location": location,
-            "date_posted": date_posted,
             "remote_only": remote_only,
             "employment_type": employment_type,
-            "h1b_only": h1b_only,
-            "visa_or_contract": visa_or_contract,
-            "experience_level": experience_level,
             "source": source,
             "include_company_careers": include_company_careers,
             "use_resume_recommendations": use_resume_recommendations,
-            # Cache results per-user because match_score is resume-specific.
             "user_email": user_email if use_resume_recommendations else "",
         }
-        cache_key = _make_cache_key(params)
+        cache_key = _make_cache_key(wide_params)
 
-        # Check cache unless the user explicitly requests a live refresh.
-        if not force_refresh:
+        result: Optional[Dict[str, Any]] = None
+        if not force_refresh and self._cached_result_is_fresh(cache_key, date_posted):
             cached = self.jobs_cache.find_one({"query_hash": cache_key})
             if cached:
                 cached.pop("_id", None)
                 result = dict(cached["result"])
                 result["cache_hits"] = max(1, result.get("cache_hits", 0) or 0)
                 result["cache_bypassed"] = False
-                return self._prepare_result_for_response(result)
 
-        if not self._get_apify_token() and not self._get_jsearch_key():
-            raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
+        if result is None:
+            if not self._get_apify_token() and not self._get_jsearch_key():
+                raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
+            # Fetch the WIDEST sensible window from every source so the cached
+            # set covers every filter combination the user might toggle.
+            result = self._search_apify_jobs(
+                queries=[query],
+                location=location,
+                date_posted="month",
+                remote_only=remote_only,
+                employment_type=employment_type,
+                h1b_only=False,
+                visa_or_contract=False,
+                experience_level="",
+                source=source,
+                include_company_careers=include_company_careers,
+                user_email=user_email if use_resume_recommendations else "",
+                force_refresh=force_refresh,
+                partial_cb=partial_cb,
+            )
+            result["cache_bypassed"] = bool(force_refresh)
+            self._write_cache(cache_key, result)
 
-        result = self._search_apify_jobs(
-            queries=[query],
-            location=location,
+        # Apply the user's requested filters in-memory on the cached raw set.
+        result = self._apply_post_filters(
+            result,
             date_posted=date_posted,
-            remote_only=remote_only,
-            employment_type=employment_type,
             h1b_only=h1b_only,
             visa_or_contract=visa_or_contract,
             experience_level=experience_level,
-            source=source,
-            include_company_careers=include_company_careers,
-            user_email=user_email if use_resume_recommendations else "",
-            force_refresh=force_refresh,
-            partial_cb=partial_cb,
         )
         result["page"] = page
         result.setdefault("total_pages", 1)
-        result["cache_bypassed"] = bool(force_refresh)
-        self._write_cache(cache_key, result)
         return result
+
+    def _cached_result_is_fresh(self, cache_key: str, date_posted: str) -> bool:
+        """Logical TTL check on top of Mongo's hard TTL index."""
+        ttl = self.CACHE_TTL_BY_DATE.get(date_posted, self.CACHE_TTL_BY_DATE["week"])
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=ttl)
+        try:
+            doc = self.jobs_cache.find_one(
+                {"query_hash": cache_key, "cached_at": {"$gte": cutoff}},
+                {"_id": 1},
+            )
+            return doc is not None
+        except Exception:
+            return False
 
     @staticmethod
     def _get_jsearch_key() -> str:
@@ -462,53 +494,112 @@ class JobService:
         user_email: str = "",
         partial_cb: Optional[Any] = None,
     ) -> Dict[str, Any]:
-        """Run multiple search queries in parallel, deduplicate, and re-score."""
-        params = {
+        """Run multiple search queries in parallel, deduplicate, and re-score.
+
+        Same two-tier caching shape as search_jobs: the wide fetch is cached by
+        the fetch-affecting params (queries, location, source, employment_type,
+        remote_only, include_company_careers, user_email), and the user's
+        date_posted / h1b_only / visa_or_contract / experience_level toggles
+        apply as fast in-memory post-filters on the cached set.
+        """
+        wide_params = {
             "queries": queries,
             "location": location,
-            "date_posted": date_posted,
             "remote_only": remote_only,
             "employment_type": employment_type,
-            "h1b_only": h1b_only,
-            "visa_or_contract": visa_or_contract,
-            "experience_level": experience_level,
             "source": source,
             "include_company_careers": include_company_careers,
             "user_email": user_email if use_resume_recommendations else "",
         }
-        cache_key = _make_cache_key(params)
-        if not force_refresh:
+        cache_key = _make_cache_key(wide_params)
+        result: Optional[Dict[str, Any]] = None
+        if not force_refresh and self._cached_result_is_fresh(cache_key, date_posted):
             cached = self.jobs_cache.find_one({"query_hash": cache_key})
             if cached:
                 cached.pop("_id", None)
                 result = dict(cached["result"])
                 result["cache_hits"] = result.get("queries_executed", len(queries))
                 result["cache_bypassed"] = False
-                return self._prepare_result_for_response(result)
 
-        if not self._get_apify_token() and not self._get_jsearch_key():
-            raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
+        if result is None:
+            if not self._get_apify_token() and not self._get_jsearch_key():
+                raise RuntimeError("APIFY_API_KEY/APIFY_TOKEN or JSEARCH_API_KEY is not configured")
+            result = self._search_apify_jobs(
+                queries=queries[:6],
+                location=location,
+                date_posted="month",
+                remote_only=remote_only,
+                employment_type=employment_type,
+                h1b_only=False,
+                visa_or_contract=False,
+                experience_level="",
+                source=source,
+                include_company_careers=include_company_careers,
+                user_email=user_email if use_resume_recommendations else "",
+                force_refresh=force_refresh,
+                partial_cb=partial_cb,
+            )
+            result["queries_executed"] = min(len(queries), 6)
+            result["cache_hits"] = 0
+            result["cache_bypassed"] = bool(force_refresh)
+            self._write_cache(cache_key, result)
 
-        result = self._search_apify_jobs(
-            queries=queries[:6],
-            location=location,
+        return self._apply_post_filters(
+            result,
             date_posted=date_posted,
-            remote_only=remote_only,
-            employment_type=employment_type,
             h1b_only=h1b_only,
             visa_or_contract=visa_or_contract,
             experience_level=experience_level,
-            source=source,
-            include_company_careers=include_company_careers,
-            user_email=user_email if use_resume_recommendations else "",
-            force_refresh=force_refresh,
-            partial_cb=partial_cb,
         )
-        result["queries_executed"] = min(len(queries), 6)
-        result["cache_hits"] = 0
-        result["cache_bypassed"] = bool(force_refresh)
-        self._write_cache(cache_key, result)
-        return result
+
+    def _apply_post_filters(
+        self,
+        result: Dict[str, Any],
+        date_posted: str,
+        h1b_only: bool,
+        visa_or_contract: bool,
+        experience_level: str,
+    ) -> Dict[str, Any]:
+        """Re-filter a cached wide result against the user's current filter set.
+
+        Cheap (regex + dict access only) so toggling filters in the UI doesn't
+        kick off a fresh actor run. Preserves the original 'jobs' field on the
+        result so multiple filter calls against the same cache are idempotent.
+        """
+        out = dict(result)
+        raw_jobs = out.get("_raw_jobs")
+        if raw_jobs is None:
+            raw_jobs = out.get("jobs") or []
+            # Stash a copy so subsequent post-filter calls work from the wide
+            # set rather than the most-recent filtered view.
+            out["_raw_jobs"] = list(raw_jobs)
+        filtered: List[Dict[str, Any]] = []
+        rejected_reasons = dict(out.get("filtered_reasons") or {})
+        for job in raw_jobs:
+            reason = self._job_filter_rejection_reason(
+                job=job,
+                query_terms=[],
+                location="",
+                date_posted=date_posted,
+                h1b_only=h1b_only,
+                visa_or_contract=visa_or_contract,
+                experience_level=experience_level,
+            )
+            if reason:
+                rejected_reasons[reason] = rejected_reasons.get(reason, 0) + 1
+                continue
+            filtered.append(job)
+        # Maintain the original match_score sort order from the wide cache.
+        out["jobs"] = self._prepare_jobs_for_response(filtered)
+        out["total"] = len(out["jobs"])
+        out["filtered_reasons"] = rejected_reasons
+        out["applied_filters"] = {
+            "date_posted": date_posted,
+            "h1b_only": h1b_only,
+            "visa_or_contract": visa_or_contract,
+            "experience_level": experience_level,
+        }
+        return out
 
     def _write_cache(self, cache_key: str, result: Dict[str, Any]) -> None:
         try:
@@ -670,7 +761,10 @@ class JobService:
         partial result dict after each source completes, so the caller can
         stream progress to the client.
         """
-        supported = {"all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch"}
+        supported = {
+            "all", "linkedin", "workday", "indeed", "google", "company",
+            "jobright", "jsearch", "workday_direct", "ats_direct",
+        }
         source = source if source in supported else "all"
 
         apify_token = self._get_apify_token()
@@ -679,6 +773,9 @@ class JobService:
         # Pick which sources to fan out to. JSearch is first so the UI can
         # render useful results while optional Apify actors are still running.
         # An Apify source only joins if its actor ID is explicitly configured.
+        # workday_direct + ats_direct are FREE (no Apify, no RapidAPI key) and
+        # always run when source == "all" — they fill the gap when the Apify
+        # Workday actor's index doesn't include a tenant (e.g. Yahoo).
         selected: List[str] = []
         skipped_sources: Dict[str, str] = {}
         if source == "all":
@@ -686,6 +783,10 @@ class JobService:
                 selected.append("jsearch")
             else:
                 skipped_sources["jsearch"] = "JSEARCH_API_KEY not configured"
+            # Free direct sources — always on for "all" searches.
+            if include_company_careers:
+                selected.append("workday_direct")
+                selected.append("ats_direct")
             if apify_token:
                 for src in ("linkedin", "indeed", "google", "jobright"):
                     if self._actor_id(src):
@@ -704,6 +805,16 @@ class JobService:
             else:
                 for src in ("linkedin", "workday", "company"):
                     skipped_sources[src] = "APIFY_API_KEY/APIFY_TOKEN not configured"
+        elif source == "workday_direct":
+            if include_company_careers:
+                selected = ["workday_direct"]
+            else:
+                skipped_sources["workday_direct"] = "Workday/company sites disabled"
+        elif source == "ats_direct":
+            if include_company_careers:
+                selected = ["ats_direct"]
+            else:
+                skipped_sources["ats_direct"] = "Workday/company sites disabled"
         elif source == "jsearch":
             if jsearch_key:
                 selected = ["jsearch"]
@@ -813,6 +924,19 @@ class JobService:
             )
             return result
 
+        def _collect_workday_direct(q: str) -> List[Dict[str, Any]]:
+            """Hit each curated Workday tenant's public CXS endpoint in parallel."""
+            from services.workday_cxs_fetcher import fetch_workday_direct
+            return fetch_workday_direct(
+                search_text=_simplify_jsearch_query(q),
+                location=location,
+            )
+
+        def _collect_ats_direct(q: str) -> List[Dict[str, Any]]:
+            """Public Greenhouse/Lever/Ashby board JSONs — free, no auth."""
+            from services.ats_direct_fetcher import fetch_ats_direct
+            return fetch_ats_direct(query=q)
+
         queries = [q for q in (queries or []) if q] or [""]
 
         tasks = []
@@ -836,6 +960,23 @@ class JobService:
                         fut = pool.submit(_collect_jsearch, q)
                         tasks.append(fut)
                         task_meta[fut] = src
+                    continue
+                if src == "workday_direct":
+                    # Tenant fan-out is internal to the fetcher; submit one task
+                    # per query, capped by _max_queries_for_source to keep noise
+                    # down on big batch searches.
+                    for q in src_queries:
+                        fut = pool.submit(_collect_workday_direct, q)
+                        tasks.append(fut)
+                        task_meta[fut] = src
+                    continue
+                if src == "ats_direct":
+                    # ATS boards don't take a query — one call returns the
+                    # union of every configured company, then we keyword-filter
+                    # in the fetcher. One submission is enough per batch.
+                    fut = pool.submit(_collect_ats_direct, src_queries[0] if src_queries else "")
+                    tasks.append(fut)
+                    task_meta[fut] = src
                     continue
                 for q in src_queries:
                     fut = pool.submit(_collect_apify, src, q)
@@ -974,6 +1115,12 @@ class JobService:
             return min(total_queries, 2)
         if src in ("company", "workday"):
             return 1  # company scraper is URL-driven, not query-driven
+        if src == "workday_direct":
+            # Free per-tenant fan-out internally; one query is enough per batch
+            # because each tenant returns up to 20 rows for that searchText.
+            return min(total_queries, 2)
+        if src == "ats_direct":
+            return 1  # board APIs don't take a query — one pass is enough
         return min(total_queries, MAX_QUERIES_PER_APIFY_SOURCE)
 
     def _actor_id(self, source: str) -> str:
@@ -1085,6 +1232,11 @@ class JobService:
                 "INTERN": "INTERN",
                 "CONTRACTOR": "CONTRACTOR",
             }.get(employment_type, "")
+            # Cast the widest sensible net at the actor: skip aiExperienceLevelFilter
+            # entirely so we don't lose "Software Engineer" postings that the
+            # actor's AI labeller never tagged 0-2. Seniority is applied in
+            # _entry_level_signal during re-rank, which preserves listings
+            # without explicit seniority phrasing instead of dropping them.
             payload: Dict[str, Any] = {
                 "limit": 200,
                 "includeAi": True,
@@ -1098,8 +1250,6 @@ class JobService:
                 payload["aiEmploymentTypeFilter"] = [workday_type]
             if remote_only:
                 payload["aiWorkArrangementFilter"] = ["Remote OK", "Remote Solely"]
-            if experience_level in ("entry", "internship", "associate"):
-                payload["aiExperienceLevelFilter"] = ["0-2"]
             return payload
         if source == "indeed":
             return {
@@ -1412,8 +1562,11 @@ class JobService:
             return "h1b"
         if visa_or_contract and not (job.get("h1b_sponsor") or job.get("contract_friendly")):
             return "visa_or_contract"
-        if experience_level in ("entry", "internship", "associate") and not self._is_entry_level(job):
-            return "experience"
+        # Soft-reject: only drop jobs with EXPLICIT senior signal. Postings with
+        # no seniority marker pass through and are sorted lower by match_jobs.
+        if experience_level in ("entry", "internship", "associate"):
+            if self._entry_level_signal(job) == "senior":
+                return "experience"
         if location and location.lower() not in {"united states", "usa", "us"}:
             loc = (job.get("location") or "").lower()
             if location.lower() not in loc and "remote" not in loc:
@@ -1440,8 +1593,17 @@ class JobService:
         }.get(date_posted, 1)
 
     def _is_recent_job(self, job: Dict[str, Any], date_posted: str) -> bool:
-        days = self._date_posted_days(date_posted)
-        if not days:
+        """True if the job's posted-date falls inside the requested window.
+
+        Uses an hour-grain budget instead of a strict calendar-day cutoff so that
+        a job posted 25h ago doesn't disappear when the user clicks "today" in
+        their local timezone (the underlying actors return UTC timestamps). The
+        grace windows are: today=36h, 3days=84h, week=192h, month=720h. Posts
+        with no parseable date keep the previous fail-open behavior because most
+        Workday/ATS feeds omit `postedAt` on roles updated less than 24h ago.
+        """
+        hours = self._date_posted_hours(date_posted)
+        if hours is None:
             return True
         raw_date = str(job.get("date_posted") or "")
         posted_text = str(job.get("posted_text") or "").lower()
@@ -1450,11 +1612,11 @@ class JobService:
                 return True
             match = re.search(r"(\d+)\s+day", posted_text)
             if match:
-                return int(match.group(1)) <= days
+                return int(match.group(1)) * 24 <= hours
             if "week" in posted_text:
-                return days >= 7
+                return hours >= 7 * 24
             if "month" in posted_text:
-                return days >= 30
+                return hours >= 30 * 24
         if not raw_date:
             return True
         candidates = [raw_date, raw_date[:10]]
@@ -1464,10 +1626,23 @@ class JobService:
                 dt = datetime.fromisoformat(normalized)
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                return dt >= datetime.now(timezone.utc) - timedelta(days=days)
+                return dt >= datetime.now(timezone.utc) - timedelta(hours=hours)
             except Exception:
                 continue
         return True
+
+    @staticmethod
+    def _date_posted_hours(date_posted: str) -> Optional[int]:
+        """Window in hours used by the post-filter. Adds a 12h grace to each
+        bucket so a job posted in a different timezone, or backdated when the
+        actor first indexed it, doesn't get silently dropped at the boundary."""
+        return {
+            "today": 36,
+            "3days": 84,
+            "week": 192,
+            "month": 30 * 24,
+            "all": None,
+        }.get(date_posted, 36)
 
     @staticmethod
     def _is_contract_friendly(job: Dict[str, Any]) -> bool:
@@ -1475,12 +1650,46 @@ class JobService:
         return any(keyword in text for keyword in CONTRACT_KEYWORDS)
 
     @staticmethod
-    def _is_entry_level(job: Dict[str, Any]) -> bool:
-        text = f"{job.get('title', '')} {job.get('description', '')} {job.get('employment_type', '')}".lower()
-        senior_markers = ["senior", "sr.", "principal", "staff", "lead", "manager", "director", "architect"]
+    def _entry_level_signal(job: Dict[str, Any]) -> str:
+        """Three-state seniority read: 'entry' | 'unknown' | 'senior'.
+
+        The old _is_entry_level required a NEW_GRAD_KEYWORDS match. That dropped
+        the majority of real entry roles whose title is "Software Engineer" with
+        nothing else qualifying. The new signal only rejects on EXPLICIT senior
+        markers; everything else (most postings) lands in 'unknown' and is kept,
+        but match_jobs() de-ranks it relative to confirmed 'entry' titles so
+        explicit new-grad listings still bubble up first.
+        """
+        title = (job.get("title") or "").lower()
+        desc = (job.get("description") or "").lower()
+        emp = (job.get("employment_type") or "").lower()
+        text = f"{title} {desc} {emp}"
+        senior_markers = [
+            "senior", "sr.", "sr ", "principal", "staff engineer", "staff swe",
+            "lead engineer", "lead developer", "tech lead", "team lead",
+            "engineering manager", "director", "head of", "vp ", "vice president",
+            " architect ", "architect i", "architect ii",
+        ]
+        # Title is most reliable — description sometimes mentions "you'll mentor
+        # senior engineers" on a junior role, which would false-positive.
+        if any(marker in title for marker in (
+            "senior", "sr.", "principal", "staff", "lead", "manager",
+            "director", "head of", "vp ", "architect",
+        )):
+            return "senior"
         if any(marker in text for marker in senior_markers):
-            return False
-        return any(kw in text for kw in NEW_GRAD_KEYWORDS)
+            return "senior"
+        if any(kw in text for kw in NEW_GRAD_KEYWORDS):
+            return "entry"
+        # Common entry-level title patterns even when no new-grad phrase is present.
+        if re.search(r"\b(swe|sde|software engineer|developer)\s*(i|1|i{1,3})\b", title):
+            return "entry"
+        return "unknown"
+
+    @staticmethod
+    def _is_entry_level(job: Dict[str, Any]) -> bool:
+        """Legacy boolean kept for callers that don't need the 3-state result."""
+        return JobService._entry_level_signal(job) == "entry"
 
     def _normalize_job(self, raw: dict) -> Dict[str, Any]:
         company = (raw.get("employer_name") or "Unknown").strip()

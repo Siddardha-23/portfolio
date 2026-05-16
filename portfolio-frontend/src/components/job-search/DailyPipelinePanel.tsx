@@ -4,7 +4,7 @@ import {
   Zap, Building2, MapPin, ExternalLink, Sparkles, AlertCircle,
   Trophy, Medal, Award, Calendar, RotateCcw, Clock, Globe, Briefcase,
   Tag, CheckCircle2, Eye, EyeOff, Cloud, Server, Layers, Brain, Code2,
-  Wand2, Save, Trash2, Check, ChevronDown, BookmarkPlus, Filter, ShieldCheck,
+  Wand2, Save, Trash2, Check, ChevronDown, BookmarkPlus, ShieldCheck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -268,12 +268,6 @@ interface PersistedState {
    *  workdayTitles / customRoles. When this lags FILTERS_DERIVED_VERSION we
    *  drop those fields so the next mount re-fetches from /suggest-filters. */
   filtersDerivedVersion?: number;
-  /** Per-source filter overrides — each source key holds an optional
-   *  enabled/past_days/experience override. Missing = use global filter. */
-  sourceOverrides?: Record<
-    'linkedin' | 'workday' | 'indeed' | 'ats',
-    { enabled: boolean; pastDays?: number; experience?: PipelineExperienceLevel }
-  >;
 }
 
 let _memoryCache: PersistedState | null = null;
@@ -993,34 +987,11 @@ export function DailyPipelinePanel({
   // tighter/looser past_days / experience_level just for that source. All
   // boards default to "enabled with global filters", which reproduces the
   // pre-feature behavior exactly.
-  type SourceId = 'linkedin' | 'workday' | 'indeed' | 'ats';
-  type SourceOverride = {
-    enabled: boolean;
-    pastDays?: number;
-    experience?: PipelineExperienceLevel;
-  };
-  type SourceOverridesMap = Record<SourceId, SourceOverride>;
-  const _DEFAULT_SRC_OVR: SourceOverridesMap = {
-    linkedin: { enabled: true },
-    workday: { enabled: true },
-    indeed: { enabled: true },
-    ats: { enabled: true },
-  };
-  const [sourceOverrides, setSourceOverrides] = useState<SourceOverridesMap>(
-    (persisted as { sourceOverrides?: SourceOverridesMap })?.sourceOverrides ?? _DEFAULT_SRC_OVR,
-  );
-  const buildSourceOverridesPayload = useCallback((): DailyPipelineParams['source_overrides'] => {
-    const out: NonNullable<DailyPipelineParams['source_overrides']> = {};
-    (Object.keys(sourceOverrides) as SourceId[]).forEach((src) => {
-      const o = sourceOverrides[src];
-      const node: { enabled?: boolean; past_days?: number; experience_level?: PipelineExperienceLevel } = {};
-      if (o.enabled === false) node.enabled = false;
-      if (typeof o.pastDays === 'number') node.past_days = o.pastDays;
-      if (o.experience) node.experience_level = o.experience;
-      if (Object.keys(node).length > 0) out[src] = node;
-    });
-    return Object.keys(out).length > 0 ? out : undefined;
-  }, [sourceOverrides]);
+  // Per-source filter overrides have been removed. Every source now fetches
+  // at the widest sensible window and the global filters above apply once
+  // on the merged result. The actor-side experience filter was the exact
+  // reason Yahoo's Workday postings were being hidden, so even when the user
+  // selects "entry" we send the wide payload and de-rank instead of dropping.
   // Post-run date slicer — pure client-side filter over the existing
   // `result.apply_now` / `verify_dates` lists. Doesn't re-fetch from the
   // server. Ephemeral on purpose: a refresh restores results but resets the
@@ -1076,7 +1047,6 @@ export function DailyPipelinePanel({
       hideCompanies,
       hideTitlePatterns,
       maxPerCompany,
-      sourceOverrides,
       filtersDerivedVersion: FILTERS_DERIVED_VERSION,
     }, userEmail);
   }, [
@@ -1085,7 +1055,7 @@ export function DailyPipelinePanel({
     location, experienceLevel, employmentType, workArrangement, domainStrict,
     h1bOnly, excludeNoSponsorship, openedIds, seenIds, snoozedUntil, dailyGoal, dailyApplied,
     batchSelectedIds, hideCompanies, hideTitlePatterns, maxPerCompany,
-    sourceOverrides, userEmail,
+    userEmail,
   ]);
 
   // Manual "↻ Re-suggest from resume" trigger — bypasses prefilledRef so the
@@ -1313,7 +1283,6 @@ export function DailyPipelinePanel({
       hide_companies: hideCompanies,
       hide_title_patterns: hideTitlePatterns,
       max_per_company: maxPerCompany,
-      source_overrides: buildSourceOverridesPayload(),
     };
 
     const resp = await apiService.runDailyPipeline(params);
@@ -2480,117 +2449,10 @@ export function DailyPipelinePanel({
                   helperText="Anchor each title to a software domain word so 'New Grad' doesn't pull non-tech roles."
                 />
               </div>
-              {/* Per-source filter overrides — give the user fine control over
-                  each board independently. Defaults to "use global", which is
-                  the same as not setting anything. Common use cases:
-                    • Mute a noisy board for a day (enabled = off)
-                    • Tighten LinkedIn to past 1d but let ATS/Workday catch up at 7d
-                    • Run "intern" experience on Indeed only (without polluting
-                      the LinkedIn results that already filter by entry-level). */}
-              <div className="space-y-1.5 lg:col-span-2 xl:col-span-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    <Filter className="mr-1 inline h-3 w-3" />
-                    Per-source filter overrides
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setSourceOverrides(_DEFAULT_SRC_OVR)}
-                    className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
-                  >
-                    Reset all to global
-                  </button>
-                </div>
-                <div className="overflow-hidden rounded-lg border border-border/60">
-                  <table className="w-full text-[11px]">
-                    <thead className="bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <tr>
-                        <th className="px-2 py-1.5 text-left">Source</th>
-                        <th className="px-2 py-1.5 text-left">Enabled</th>
-                        <th className="px-2 py-1.5 text-left">Past days (override)</th>
-                        <th className="px-2 py-1.5 text-left">Experience (override)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {([
-                        { id: 'linkedin' as const, label: 'LinkedIn' },
-                        { id: 'workday' as const, label: 'Workday' },
-                        { id: 'indeed' as const, label: 'Indeed' },
-                        { id: 'ats' as const, label: 'ATS direct (Greenhouse / Lever / Ashby)' },
-                      ]).map((src) => {
-                        const ov = sourceOverrides[src.id];
-                        const updateOv = (patch: Partial<SourceOverride>) => {
-                          setSourceOverrides((prev) => ({
-                            ...prev,
-                            [src.id]: { ...prev[src.id], ...patch },
-                          }));
-                        };
-                        return (
-                          <tr key={src.id} className="border-t border-border/40">
-                            <td className="px-2 py-1.5 font-medium">{src.label}</td>
-                            <td className="px-2 py-1.5">
-                              <label className="inline-flex cursor-pointer items-center gap-1.5">
-                                <input
-                                  type="checkbox"
-                                  checked={ov.enabled !== false}
-                                  onChange={(e) => updateOv({ enabled: e.target.checked })}
-                                  className="h-3.5 w-3.5 accent-purple-600"
-                                />
-                                <span className="text-[10px] text-muted-foreground">
-                                  {ov.enabled === false ? 'Muted' : 'Active'}
-                                </span>
-                              </label>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <select
-                                className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px] disabled:opacity-50"
-                                value={ov.pastDays === undefined ? '' : String(ov.pastDays)}
-                                onChange={(e) => {
-                                  const v = e.target.value;
-                                  updateOv({ pastDays: v === '' ? undefined : Number(v) });
-                                }}
-                                disabled={ov.enabled === false}
-                                title="Override the global Past days for this source only. Empty = use global."
-                              >
-                                <option value="">Use global ({pastDays}d)</option>
-                                <option value="0">Today only</option>
-                                <option value="1">1 day</option>
-                                <option value="3">3 days</option>
-                                <option value="7">7 days</option>
-                                <option value="14">14 days</option>
-                                <option value="30">30 days</option>
-                              </select>
-                            </td>
-                            <td className="px-2 py-1.5">
-                              <select
-                                className="h-7 rounded-md border border-border/60 bg-background px-1.5 text-[11px] disabled:opacity-50"
-                                value={ov.experience ?? ''}
-                                onChange={(e) => {
-                                  const v = e.target.value as PipelineExperienceLevel | '';
-                                  updateOv({ experience: v === '' ? undefined : v });
-                                }}
-                                disabled={ov.enabled === false}
-                                title="Override the global Experience level for this source only. Empty = use global."
-                              >
-                                <option value="">Use global ({experienceLevel})</option>
-                                <option value="any">Any</option>
-                                <option value="internship">Internship</option>
-                                <option value="entry">Entry-level</option>
-                                <option value="associate">Associate</option>
-                                <option value="mid">Mid-level</option>
-                                <option value="senior">Senior</option>
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Empty cells inherit the global filters above. Muting a source skips its scrape entirely — useful when one board floods you with noise.
-                </p>
-              </div>
+              {/* Per-source filter overrides were removed by design: every
+                  source now fetches the widest sensible window and your
+                  filters above apply once on the merged result set, so
+                  changing them is instant and consistent across boards. */}
             </div>
           )}
         </CardContent>

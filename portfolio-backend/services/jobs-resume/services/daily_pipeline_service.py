@@ -935,33 +935,25 @@ def _scrape_in_parallel(
     workday_limit: int = 200,
     *,
     location: str = "United States",
+    # NOTE: experience_level / employment_type / work_arrangement are accepted
+    # for API compatibility but are NO LONGER passed to the actors. Every
+    # narrowing happens in _filter_and_score on the merged result so a single
+    # cached fetch can serve every filter combination.
     experience_level: str = "entry",
     employment_type: str = "FULLTIME",
     work_arrangement: str = "any",
-    # Per-source override hooks — when None, the global args above apply to
-    # every source (existing behavior). When set, each dict can override
-    # past_days / experience_level for that one source and `enabled=False`
-    # short-circuits the scrape so the user can mute one board for the day.
-    linkedin_override: Optional[Dict[str, Any]] = None,
-    workday_override: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
     errors: List[str] = []
-
-    li_pd = int((linkedin_override or {}).get("past_days") or past_days)
-    li_exp = str((linkedin_override or {}).get("experience_level") or experience_level)
-    li_enabled = bool((linkedin_override or {}).get("enabled", True))
-    wd_pd = int((workday_override or {}).get("past_days") or past_days)
-    wd_exp = str((workday_override or {}).get("experience_level") or experience_level)
-    wd_enabled = bool((workday_override or {}).get("enabled", True))
 
     linkedin_input = {
         "urls": [
             _build_linkedin_url(
-                k, li_pd,
+                k, past_days,
                 location=location,
-                experience_level=li_exp,
-                employment_type=employment_type,
-                work_arrangement=work_arrangement,
+                # Force wide on the actor side — post-filter handles narrowing.
+                experience_level="any",
+                employment_type="ANY",
+                work_arrangement="any",
             )
             for k in linkedin_keywords
         ],
@@ -969,13 +961,12 @@ def _scrape_in_parallel(
         "scrapeCompany": False,
     }
 
-    # Workday actor — its locationSearch field is strict about format
-    # (country / state names from a closed vocab), so we always pass the
-    # safe "United States" baseline that the original pipeline used and let
-    # the post-filter narrow by user location. Cap titleSearch to 50 — the
-    # actor rejects oversized payloads with 400 Bad Request, and stacking
-    # multiple Smart-Filter groups can easily push past that. Defaults
-    # below reproduce the original pipeline behavior exactly.
+    # Workday actor — fetch with the widest filters the actor accepts. We used
+    # to send aiExperienceLevelFilter / aiEmploymentTypeFilter /
+    # aiWorkArrangementFilter so the actor pre-narrowed, but that's exactly
+    # what was hiding Yahoo postings: the actor's AI labeller never tagged
+    # them as 0-2, so they were dropped before we saw them. titleSearch is
+    # still capped at 50 because the actor 400s on oversized payloads.
     safe_workday_titles = (workday_titles or [])[:50]
     workday_input: Dict[str, Any] = {
         "descriptionType": "text",
@@ -985,19 +976,6 @@ def _scrape_in_parallel(
         "removeAgency": True,
         "titleSearch": safe_workday_titles,
     }
-    exp_key = (wd_exp or "").lower()
-    if exp_key and exp_key != "any":
-        wd_experience = _WORKDAY_EXPERIENCE_MAP.get(exp_key)
-        if wd_experience:
-            workday_input["aiExperienceLevelFilter"] = wd_experience
-    emp_key = (employment_type or "").upper()
-    if emp_key and emp_key != "ANY":
-        wd_employment = _WORKDAY_EMPLOYMENT_MAP.get(emp_key)
-        if wd_employment:
-            workday_input["aiEmploymentTypeFilter"] = [wd_employment]
-    wd_arrangement = _WORKDAY_ARRANGEMENT_MAP.get((work_arrangement or "").lower())
-    if wd_arrangement:
-        workday_input["aiWorkArrangementFilter"] = wd_arrangement
 
     def _safe_run(actor: str, payload: dict) -> List[Dict[str, Any]]:
         try:
@@ -1032,14 +1010,10 @@ def _scrape_in_parallel(
             return []
 
     with ThreadPoolExecutor(max_workers=2) as ex:
-        f_li = ex.submit(_safe_run, LINKEDIN_ACTOR, linkedin_input) if li_enabled else None
-        f_wd = ex.submit(_safe_run, WORKDAY_ACTOR, workday_input) if wd_enabled else None
-        linkedin = f_li.result() if f_li is not None else []
-        workday = f_wd.result() if f_wd is not None else []
-    if not li_enabled:
-        logger.info("[pipeline] LinkedIn skipped per user override")
-    if not wd_enabled:
-        logger.info("[pipeline] Workday skipped per user override")
+        f_li = ex.submit(_safe_run, LINKEDIN_ACTOR, linkedin_input)
+        f_wd = ex.submit(_safe_run, WORKDAY_ACTOR, workday_input)
+        linkedin = f_li.result()
+        workday = f_wd.result()
 
     # Silent-zero detection — when an actor returns [] with HTTP 200 and no
     # entry was added to the errors list, we can't tell from the result
@@ -1933,10 +1907,6 @@ def run_pipeline(
     hide_companies: Optional[List[str]] = None,
     hide_title_patterns: Optional[List[str]] = None,
     max_per_company: int = 4,
-    # Per-source overrides. Shape: {"linkedin": {"enabled": bool, "past_days":
-    # int, "experience_level": str}, "workday": ...,  "indeed": ..., "ats": ...}
-    # All keys optional — anything missing falls back to the global args.
-    source_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Run the full daily pipeline and return tier-grouped JSON.
 
@@ -1960,19 +1930,12 @@ def run_pipeline(
     # parallel. ATS APIs have no Apify dependency so they keep delivering even
     # when the Apify token is missing or an actor is rate-limited. Indeed is
     # opt-in (include_indeed=True) — its date reliability is poor and its
-    # listings are dominated by body-shop reposts.
-    # Pre-resolve per-source overrides — each dict is safe to pass straight
-    # through to the scrapers (missing/empty keys mean "use global").
-    so = source_overrides or {}
-    so_linkedin = (so.get("linkedin") or {}) if isinstance(so.get("linkedin"), dict) else {}
-    so_workday = (so.get("workday") or {}) if isinstance(so.get("workday"), dict) else {}
-    so_indeed = (so.get("indeed") or {}) if isinstance(so.get("indeed"), dict) else {}
-    so_ats = (so.get("ats") or {}) if isinstance(so.get("ats"), dict) else {}
-
-    indeed_enabled = bool(so_indeed.get("enabled", True)) and include_indeed
-    indeed_pd = int(so_indeed.get("past_days") or past_days)
-    indeed_exp = str(so_indeed.get("experience_level") or experience_level)
-    ats_enabled = bool(so_ats.get("enabled", True))
+    # listings are dominated by body-shop reposts. Every source fetches at the
+    # widest sensible window; the user's filters (experience_level,
+    # employment_type, work_arrangement, location, h1b_only, ...) apply once
+    # downstream in _filter_and_score on the merged set.
+    ats_enabled = True
+    indeed_enabled = include_indeed
 
     with ThreadPoolExecutor(max_workers=3) as pool:
         f_apify = pool.submit(
@@ -1984,17 +1947,14 @@ def run_pipeline(
             linkedin_count=linkedin_count,
             workday_limit=workday_limit,
             location=location,
-            experience_level=experience_level,
-            employment_type=employment_type,
-            work_arrangement=work_arrangement,
-            linkedin_override=so_linkedin,
-            workday_override=so_workday,
         )
         f_indeed = pool.submit(
             _scrape_indeed, token,
-            past_days=indeed_pd,
-            experience_level=indeed_exp,
-            employment_type=employment_type,
+            past_days=past_days,
+            # Indeed actor accepts a coarse experience filter but we honor
+            # the "wide fetch / post-filter" pattern: fetch every level.
+            experience_level="any",
+            employment_type="",
             location=location,
         ) if indeed_enabled else None
         f_ats = pool.submit(_scrape_ats_direct) if ats_enabled else None

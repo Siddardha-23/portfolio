@@ -286,7 +286,9 @@ export function JobSearchPanel({
                   <SelectContent>
                     <SelectItem value="all">All sources</SelectItem>
                     <SelectItem value="linkedin">LinkedIn</SelectItem>
-                    <SelectItem value="workday">Workday</SelectItem>
+                    <SelectItem value="workday">Workday (Apify)</SelectItem>
+                    <SelectItem value="workday_direct">Workday (direct, free)</SelectItem>
+                    <SelectItem value="ats_direct">Greenhouse / Lever / Ashby</SelectItem>
                     <SelectItem value="indeed">Indeed</SelectItem>
                     <SelectItem value="google">Google Jobs</SelectItem>
                     <SelectItem value="jsearch">JSearch (RapidAPI)</SelectItem>

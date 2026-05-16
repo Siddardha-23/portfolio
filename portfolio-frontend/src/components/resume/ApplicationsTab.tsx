@@ -27,6 +27,20 @@ const STATUS_LOOKUP: Record<string, typeof COLUMNS[number]> = COLUMNS.reduce(
   {} as Record<string, typeof COLUMNS[number]>,
 );
 
+// Some backend services emit "interview" (singular) where the dashboard uses
+// "interviewing". Other unknown statuses (e.g. legacy rows from migrations)
+// would otherwise crash the row renderer when we access meta.dot / meta.chip.
+const STATUS_ALIASES: Record<string, string> = {
+  interview: "interviewing",
+  interested: "draft",
+  in_review: "applied",
+  in_progress: "applied",
+};
+function statusMeta(status?: string | null): typeof COLUMNS[number] {
+  const key = (status || "draft").toLowerCase();
+  return STATUS_LOOKUP[key] || STATUS_LOOKUP[STATUS_ALIASES[key] || "draft"] || COLUMNS[0];
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────
 function daysUntil(iso?: string | null): number | null {
   if (!iso) return null;
@@ -633,7 +647,7 @@ export default function ApplicationsTab() {
               {searched.map(r => {
                 const co = r.jd_analysis?.company && r.jd_analysis.company !== "Not specified" ? r.jd_analysis.company : "";
                 const st = r.application?.status || "draft";
-                const meta = STATUS_LOOKUP[st];
+                const meta = statusMeta(st);
                 const ats = r.ats_scores?.overall;
                 const d = daysUntil(r.application?.next_action_date);
                 return (
@@ -714,7 +728,7 @@ function ApplicationCard({
   const title = record.jd_analysis?.job_title || "Untitled";
   const company = record.jd_analysis?.company && record.jd_analysis.company !== "Not specified" ? record.jd_analysis.company : null;
   const ats = record.ats_scores?.overall;
-  const meta = STATUS_LOOKUP[app.status || "draft"];
+  const meta = statusMeta(app.status);
 
   const save = () => {
     onPatch({

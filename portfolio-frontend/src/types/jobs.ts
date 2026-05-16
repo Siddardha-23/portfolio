@@ -61,13 +61,6 @@ export interface DailyPipelineParams {
   hide_companies?: string[];
   hide_title_patterns?: string[];
   max_per_company?: number;
-  // Per-source overrides — partial filter dicts keyed by source. Missing keys
-  // fall back to the global args above. `enabled: false` skips the source
-  // scrape entirely for this run.
-  source_overrides?: Partial<Record<
-    'linkedin' | 'workday' | 'indeed' | 'ats',
-    { enabled?: boolean; past_days?: number; experience_level?: PipelineExperienceLevel }
-  >>;
 }
 
 export interface PipelinePreset {
@@ -232,7 +225,7 @@ export interface JobSearchFilters {
   h1b_only: boolean;
   visa_or_contract: boolean;
   experience_level: '' | 'entry' | 'internship' | 'associate' | 'mid';
-  source: 'all' | 'linkedin' | 'workday' | 'indeed' | 'google' | 'company' | 'jobright' | 'jsearch';
+  source: 'all' | 'linkedin' | 'workday' | 'indeed' | 'google' | 'company' | 'jobright' | 'jsearch' | 'workday_direct' | 'ats_direct';
   include_company_careers: boolean;
   use_resume_recommendations: boolean;
 }

@@ -60,7 +60,7 @@ def _sanitize_job_filters(data):
     filters["experience_level"] = experience_level if experience_level in ("", "entry", "internship", "associate", "mid") else "entry"
 
     source = raw.get("source", DEFAULT_JOB_FILTERS["source"])
-    filters["source"] = source if source in ("all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch") else "all"
+    filters["source"] = source if source in ("all", "linkedin", "workday", "indeed", "google", "company", "jobright", "jsearch", "workday_direct", "ats_direct") else "all"
     return filters
 
 
@@ -541,32 +541,12 @@ def daily_pipeline():
         max_per_company = 4
     max_per_company = max(1, min(max_per_company, 20))
 
-    # Per-source filter overrides — each key under source_overrides is a partial
-    # filter dict that takes precedence over the matching global field. Unknown
-    # source names are dropped silently; the source whitelist matches what the
-    # backend actually fans out to.
-    so_raw = data.get("source_overrides") if isinstance(data.get("source_overrides"), dict) else {}
-    _allowed_sources = {"linkedin", "workday", "indeed", "ats"}
-    _allowed_exp = ("any", "internship", "entry", "associate", "mid", "senior")
-    source_overrides: dict = {}
-    for src in _allowed_sources:
-        node = so_raw.get(src) if isinstance(so_raw.get(src), dict) else None
-        if not node:
-            continue
-        cleaned: dict = {}
-        if "enabled" in node:
-            cleaned["enabled"] = bool(node.get("enabled"))
-        if "past_days" in node:
-            try:
-                cleaned["past_days"] = max(0, min(int(node.get("past_days")), 30))
-            except (TypeError, ValueError):
-                pass
-        if "experience_level" in node:
-            ev = str(node.get("experience_level") or "").lower()
-            if ev in _allowed_exp:
-                cleaned["experience_level"] = ev
-        if cleaned:
-            source_overrides[src] = cleaned
+    # Per-source filter overrides used to be a knob here (LinkedIn / Workday /
+    # Indeed / ATS each with its own enabled/past_days/experience_level). They
+    # were removed because they encoded filters BEFORE the fetch, which is the
+    # exact pattern that was hiding Yahoo's Workday postings from us. Today
+    # every source fetches the widest sensible window and the user's filters
+    # apply once on the merged result inside _filter_and_score.
 
     payload = {
         "linkedin_keywords": linkedin_keywords or None,
@@ -587,7 +567,6 @@ def daily_pipeline():
         "hide_companies": hide_companies,
         "hide_title_patterns": hide_title_patterns,
         "max_per_company": max_per_company,
-        "source_overrides": source_overrides or None,
     }
 
     try:

@@ -858,7 +858,6 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 hide_companies=payload.get("hide_companies") or [],
                 hide_title_patterns=payload.get("hide_title_patterns") or [],
                 max_per_company=int(payload.get("max_per_company", 4) or 4),
-                source_overrides=payload.get("source_overrides") or None,
             )
             # Surface which token tier was used so the UI can display it.
             result["used_user_apify_key"] = bool(user_key)

@@ -272,6 +272,32 @@ interface PersistedState {
 
 let _memoryCache: PersistedState | null = null;
 
+/**
+ * Render a backend "posted" YYYY-MM-DD (UTC date) in a form that matches the
+ * viewer's local day intuition. Backend stamps "Posted Today" as `now()` in
+ * UTC — for a viewer in PST that becomes tomorrow's UTC date and the raw
+ * string lies about which day it was. We anchor each posted date at 12:00
+ * UTC of that day so any local timezone within ±12h reads as the same calendar
+ * day, then label "Today" / "Yesterday" / "N days ago" for fresh rows and
+ * fall through to a local-tz date string for older ones.
+ */
+function formatPostedLocal(postedYMD: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(postedYMD || '');
+  if (!m) return postedYMD;
+  const ts = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+  const hours = Math.max(0, (Date.now() - ts) / 3_600_000);
+  if (hours < 30) return 'Today';
+  if (hours < 54) return 'Yesterday';
+  if (hours < 7 * 24) return `${Math.round(hours / 24)}d ago`;
+  // Older — show local-tz calendar date in YYYY-MM-DD so the label still
+  // matches what the user sees on a calendar.
+  const local = new Date(ts);
+  const y = local.getFullYear();
+  const mm = String(local.getMonth() + 1).padStart(2, '0');
+  const dd = String(local.getDate()).padStart(2, '0');
+  return `${y}-${mm}-${dd}`;
+}
+
 function _recordId(rec: DailyPipelineRecord) {
   return rec.url || `${rec.source}-${rec.company}-${rec.title}`;
 }
@@ -642,9 +668,12 @@ function PipelineRow({
               </span>
             )}
             {rec.posted && (
-              <span className="inline-flex items-center gap-1">
+              <span
+                className="inline-flex items-center gap-1"
+                title={`Source-reported date: ${rec.posted}`}
+              >
                 <Clock className="h-3 w-3" />
-                {rec.posted}
+                {formatPostedLocal(rec.posted)}
               </span>
             )}
             {rec.salary && rec.salary !== '—' && <span>{rec.salary}</span>}

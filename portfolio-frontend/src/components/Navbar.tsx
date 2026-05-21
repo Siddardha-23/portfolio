@@ -16,6 +16,7 @@ const navItems = [
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },
   { label: 'Projects', href: '/home#projects', shortLabel: 'Projects' },
   { label: 'Cloud Lab', href: '/cloud-lab', shortLabel: 'Lab' },
+  { label: 'Toolkit', href: '/resume-parser', shortLabel: 'Toolkit' },
   { label: 'Contact', href: '/home#contact', shortLabel: 'Contact' },
 ];
 
@@ -171,8 +172,9 @@ export default function Navbar() {
             <nav role="navigation" aria-label="Main navigation" className="flex items-center bg-secondary/40 backdrop-blur-sm rounded-full p-1 mr-3 border border-border/40">
               {navItems.map((item, index) => {
                 const itemSection = item.href.split('#')[1];
-                const isActive = item.href === '/cloud-lab'
-                  ? location.pathname === '/cloud-lab'
+                const isRoute = item.href === '/cloud-lab' || item.href === '/resume-parser';
+                const isActive = isRoute
+                  ? location.pathname === item.href
                   : activeSection === itemSection ||
                     (item.href === '/home' && !activeSection && location.pathname === '/home');
 
@@ -290,8 +292,9 @@ export default function Navbar() {
               <ul className="space-y-2">
                 {navItems.map((item) => {
                   const itemSection = item.href.split('#')[1];
-                  const isActive = item.href === '/cloud-lab'
-                    ? location.pathname === '/cloud-lab'
+                  const isRoute = item.href === '/cloud-lab' || item.href === '/resume-parser';
+                  const isActive = isRoute
+                    ? location.pathname === item.href
                     : activeSection === itemSection;
                   return (
                     <motion.li key={item.label} variants={mobileItemVariants}>

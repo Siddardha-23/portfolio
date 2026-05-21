@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Flame, Activity } from 'lucide-react';
+import { ChevronDown, Cloud, Code, Server, Database, GitBranch, Download, Mail, Sparkles, ArrowRight, Briefcase, MapPin, Search, Building2, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -566,29 +566,31 @@ export default function Hero() {
           <div className="hidden lg:block space-y-4">
             {/* Floating Tool Cards */}
             <div className="flex gap-3">
-              <motion.button
-                onClick={() => navigate('/resume-parser')}
+              <motion.a
+                href="https://aithrex.tech"
+                target="_blank"
+                rel="noopener noreferrer"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.8, duration: 0.5 }}
-                className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all cursor-pointer text-left"
+                className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-indigo-500/20 hover:border-indigo-500/40 transition-all cursor-pointer text-left"
                 whileHover={{ scale: 1.03, y: -2 }}
                 whileTap={{ scale: 0.98 }}
               >
                 <div className="relative flex-shrink-0">
-                  <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
-                    <Flame className="h-4 w-4 text-orange-400" />
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-indigo-500/30">
+                    <Sparkles className="h-4 w-4 text-indigo-400" />
                   </div>
-                  <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
-                    New
+                  <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white leading-none">
+                    Live
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">AI Resume Parser</div>
-                  <div className="text-xs text-muted-foreground">Tailor & get ATS scores</div>
+                  <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
+                  <div className="text-xs text-muted-foreground">Autonomous AI for cloud infra</div>
                 </div>
-                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 group-hover:translate-x-0.5 transition-all" />
-              </motion.button>
+                <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
+              </motion.a>
 
               <motion.button
                 onClick={() => {
@@ -627,29 +629,31 @@ export default function Hero() {
         <div className="lg:hidden mt-12 space-y-4">
           {/* Mobile Tool Cards */}
           <div className="flex flex-col sm:flex-row gap-3">
-            <motion.button
-              onClick={() => navigate('/resume-parser')}
+            <motion.a
+              href="https://aithrex.tech"
+              target="_blank"
+              rel="noopener noreferrer"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.8, duration: 0.5 }}
-              className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-orange-500/20 hover:border-orange-500/40 transition-all cursor-pointer text-left"
+              className="group flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl bg-secondary/50 backdrop-blur-sm border border-indigo-500/20 hover:border-indigo-500/40 transition-all cursor-pointer text-left"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
               <div className="relative flex-shrink-0">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 border border-orange-500/30">
-                  <Flame className="h-4 w-4 text-orange-400" />
+                <div className="p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/20 border border-indigo-500/30">
+                  <Sparkles className="h-4 w-4 text-indigo-400" />
                 </div>
-                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-orange-500 to-red-500 text-white leading-none">
-                  New
+                <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white leading-none">
+                  Live
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-foreground">AI Resume Parser</div>
-                <div className="text-xs text-muted-foreground">Tailor & get ATS scores</div>
+                <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
+                <div className="text-xs text-muted-foreground">Autonomous AI for cloud infra</div>
               </div>
-              <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-orange-400 transition-all" />
-            </motion.button>
+              <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-all" />
+            </motion.a>
 
             <motion.button
               onClick={() => {

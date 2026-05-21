@@ -16,7 +16,7 @@ const navItems = [
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },
   { label: 'Projects', href: '/home#projects', shortLabel: 'Projects' },
   { label: 'Cloud Lab', href: '/cloud-lab', shortLabel: 'Lab' },
-  { label: 'Toolkit', href: '/resume-parser', shortLabel: 'Toolkit' },
+  { label: 'Resume AI', href: '/resume-parser', shortLabel: 'Resume AI' },
   { label: 'Contact', href: '/home#contact', shortLabel: 'Contact' },
 ];
 

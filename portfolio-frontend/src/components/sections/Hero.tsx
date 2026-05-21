@@ -582,12 +582,12 @@ export default function Hero() {
                     <Sparkles className="h-4 w-4 text-indigo-400" />
                   </div>
                   <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white leading-none">
-                    Live
+                    Mine
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
-                  <div className="text-xs text-muted-foreground">Autonomous AI for cloud infra</div>
+                  <div className="text-sm font-semibold text-foreground">Aithrex · my venture</div>
+                  <div className="text-xs text-muted-foreground">AI agents for cloud infra · Infratrix in POC</div>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
               </motion.a>
@@ -645,12 +645,12 @@ export default function Hero() {
                   <Sparkles className="h-4 w-4 text-indigo-400" />
                 </div>
                 <span className="absolute -top-1.5 -right-1.5 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-full bg-gradient-to-r from-indigo-500 to-fuchsia-500 text-white leading-none">
-                  Live
+                  Mine
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
-                <div className="text-xs text-muted-foreground">Autonomous AI for cloud infra</div>
+                <div className="text-sm font-semibold text-foreground">Aithrex · my venture</div>
+                <div className="text-xs text-muted-foreground">AI agents for cloud infra · Infratrix in POC</div>
               </div>
               <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-all" />
             </motion.a>

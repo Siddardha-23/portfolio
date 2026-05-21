@@ -586,8 +586,8 @@ export default function Hero() {
                   </span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-foreground">Aithrex · my venture</div>
-                  <div className="text-xs text-muted-foreground">AI agents for cloud infra · Infratrix in POC</div>
+                  <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
+                  <div className="text-xs text-muted-foreground">AI agents for cloud infra · in POC</div>
                 </div>
                 <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 group-hover:translate-x-0.5 transition-all" />
               </motion.a>
@@ -649,8 +649,8 @@ export default function Hero() {
                 </span>
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-foreground">Aithrex · my venture</div>
-                <div className="text-xs text-muted-foreground">AI agents for cloud infra · Infratrix in POC</div>
+                <div className="text-sm font-semibold text-foreground">Aithrex · Infratrix</div>
+                <div className="text-xs text-muted-foreground">AI agents for cloud infra · in POC</div>
               </div>
               <ArrowRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-indigo-400 transition-all" />
             </motion.a>

@@ -4,70 +4,70 @@
 
 @layer base {
   :root {
-    /* Light Mode - Blushing Indigo Theme */
-    --background: 0 0% 98%;
+    /* Light Mode — soft purple-indigo (aligns with Resume Parser palette) */
+    --background: 250 30% 98%;
     --foreground: 240 10% 15%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 15%;
     --popover: 0 0% 100%;
     --popover-foreground: 240 10% 15%;
-    --primary: 260 80% 55%;
+    --primary: 262 72% 60%;            /* refined purple — smooth, not neon */
     --primary-foreground: 0 0% 100%;
-    --secondary: 250 20% 95%;
+    --secondary: 250 25% 96%;
     --secondary-foreground: 250 15% 25%;
-    --muted: 240 10% 94%;
-    --muted-foreground: 240 10% 45%;
-    --accent: 270 70% 50%;
+    --muted: 250 15% 95%;
+    --muted-foreground: 240 8% 45%;
+    --accent: 245 75% 62%;             /* indigo bridge for gradients */
     --accent-foreground: 0 0% 100%;
     --destructive: 0 85% 55%;
     --destructive-foreground: 0 0% 100%;
-    --border: 240 10% 88%;
-    --input: 240 10% 88%;
-    --ring: 260 80% 55%;
+    --border: 250 15% 90%;
+    --input: 250 15% 90%;
+    --ring: 262 72% 60%;
     --radius: 0.625rem;
 
     /* Sidebar variables for light mode */
-    --sidebar-background: 250 15% 97%;
+    --sidebar-background: 250 25% 97%;
     --sidebar-foreground: 240 10% 20%;
-    --sidebar-primary: 260 80% 55%;
+    --sidebar-primary: 262 72% 60%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 270 70% 50%;
+    --sidebar-accent: 245 75% 62%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 240 10% 90%;
-    --sidebar-ring: 260 80% 55%;
+    --sidebar-border: 250 15% 91%;
+    --sidebar-ring: 262 72% 60%;
   }
 
   .dark {
-    /* Dark Mode - Neutral grays matching Tailwind gray-900/950 */
-    --background: 222 14% 4%;
-    --foreground: 210 10% 95%;
-    --card: 222 12% 7%;
-    --card-foreground: 210 10% 95%;
-    --popover: 222 12% 6%;
-    --popover-foreground: 210 10% 95%;
-    --primary: 260 80% 60%;
+    /* Dark Mode — soft violet-tinted dark (not crushed black) */
+    --background: 240 12% 8%;
+    --foreground: 240 6% 94%;
+    --card: 240 12% 11%;
+    --card-foreground: 240 6% 94%;
+    --popover: 240 12% 10%;
+    --popover-foreground: 240 6% 94%;
+    --primary: 265 78% 70%;            /* lifted purple, smooth on dark */
     --primary-foreground: 0 0% 100%;
-    --secondary: 217 10% 13%;
-    --secondary-foreground: 210 10% 90%;
-    --muted: 217 8% 15%;
-    --muted-foreground: 215 10% 65%;
-    --accent: 260 70% 50%;
+    --secondary: 240 8% 16%;
+    --secondary-foreground: 240 6% 92%;
+    --muted: 240 8% 14%;
+    --muted-foreground: 240 6% 65%;
+    --accent: 245 75% 68%;             /* indigo bridge */
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 90% 55%;
+    --destructive: 0 85% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 217 8% 15%;
-    --input: 217 8% 15%;
-    --ring: 260 80% 60%;
+    --border: 240 8% 18%;
+    --input: 240 8% 18%;
+    --ring: 265 78% 70%;
 
     /* Sidebar variables for dark mode */
-    --sidebar-background: 222 14% 3%;
-    --sidebar-foreground: 210 10% 95%;
-    --sidebar-primary: 260 80% 60%;
+    --sidebar-background: 240 12% 7%;
+    --sidebar-foreground: 240 6% 94%;
+    --sidebar-primary: 265 78% 70%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 260 70% 50%;
+    --sidebar-accent: 245 75% 68%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 217 8% 12%;
-    --sidebar-ring: 260 80% 60%;
+    --sidebar-border: 240 8% 16%;
+    --sidebar-ring: 265 78% 70%;
   }
 
 

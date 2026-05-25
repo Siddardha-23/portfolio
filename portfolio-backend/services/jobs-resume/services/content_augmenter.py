@@ -164,20 +164,29 @@ class ContentAugmenter:
         original: Dict[str, Any],
         jd_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Generate projects via batch call (single Gemini request for all needed projects)."""
+        """ALWAYS generate up to _MAX_PROJECTS aligned projects, regardless
+        of current fill. The tailor produces dense content by design; if we
+        gated project generation on the fill check, projects would almost
+        never be added. Phase 4 _overflow_trim handles excess content later
+        and is configured to prefer trimming experience bullets over
+        removing projects."""
         projects = tailored.get("projects", [])
         tailored.setdefault("projects", projects)
 
         needed = _MAX_PROJECTS - len(projects)
         if needed <= 0:
+            logger.warning(
+                "ContentAugmenter: %d projects already present (max %d) — skipping generation",
+                len(projects), _MAX_PROJECTS,
+            )
             return tailored
 
-        # Check fill before generating — if already full, skip
-        if self._measure_fill(tailored) >= _TARGET_FILL:
-            logger.info("ContentAugmenter: fill >= 90%% — skipping project generation")
-            return tailored
+        logger.warning(
+            "ContentAugmenter Phase 1: generating %d aligned projects (have %d)",
+            needed, len(projects),
+        )
 
-        # Batch generate all needed projects in ONE Gemini call
+        # Batch generate all needed projects in ONE LLM call
         generated = self.project_generator.generate_batch(
             count=needed,
             original_resume=original,
@@ -187,14 +196,10 @@ class ContentAugmenter:
 
         for proj in generated:
             projects.append(proj)
-            logger.info(
+            logger.warning(
                 "ContentAugmenter: injected project '%s' (%d total)",
                 proj.get("name", "?"), len(projects),
             )
-            # Stop if we've hit the fill target
-            if self._measure_fill(tailored) >= _TARGET_FILL:
-                logger.info("ContentAugmenter: fill >= 90%% — stopping project injection")
-                break
 
         tailored["projects"] = projects
         return tailored

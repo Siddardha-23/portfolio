@@ -265,7 +265,19 @@ class ResumeTailor:
         return (
             "You are a senior resume tailoring agent and ATS optimization specialist. Your job is to "
             "produce a complete, one-page-fillable, ATS-optimized tailored resume as JSON using ONLY "
-            "real experience evidenced in the candidate's original resume. Never fabricate.\n\n"
+            "real experience evidenced in the candidate's original resume. Never fabricate facts in "
+            "experience, education, or certifications. Target ATS score: 95+ via keyword coverage,\n"
+            "JD-verbatim phrasing where evidenced, action-verb diversity, and clean ATS-safe formatting.\n\n"
+
+            "⚠️ FABRICATION POLICY — IMPORTANT NUANCE\n"
+            "  • Experience entries (company, title, dates, bullets): NEVER fabricate. Reframe only.\n"
+            "  • Education / certifications: NEVER fabricate. Copy verbatim.\n"
+            "  • Metrics and numbers: NEVER invent. Reuse only what's in the original bullets.\n"
+            "  • Skills section: only include skills with STRONG or MODERATE evidence from Phase A.\n"
+            "  • Projects section: leave projects mostly EMPTY or include only original projects.\n"
+            "    The BACKEND pipeline generates additional aligned creative projects AFTER tailoring\n"
+            "    (those are explicitly allowed to be portfolio-style projects the candidate could\n"
+            "    plausibly build, not work experience). Don't try to pre-fill that slot.\n\n"
 
             "⚠️ BANNED WORDS — FORBIDDEN in the summary AND every other field. If you use ANY of "
             "them you have failed the task and must rewrite. Verify the summary against this list "
@@ -454,6 +466,16 @@ class ResumeTailor:
             "4. Education: Institution, degree, and dates.\n"
             "5. Projects: Provide 3-4 detailed bullets per project. If there are no projects, compensate by adding more experience bullets.\n"
             "6. IMPORTANT: Do NOT rely on empty whitespace to fill the page. Generate robust, detailed content for every single bullet and summary sentence to naturally fill the available space.\n\n"
+            "⚠️ CRITICAL FIELD TYPES — read carefully before producing output:\n"
+            "  • `summary`: a PLAIN STRING (text only). NOT a JSON object. NOT wrapped in braces.\n"
+            "      ❌ BAD:  \"summary\": \"{\\\"summary\\\": \\\"Software Engineer with...\\\"}\"\n"
+            "      ✅ GOOD: \"summary\": \"Software Engineer with 4+ years building backend systems...\"\n"
+            "  • `skills`: an object keyed by category, each value a string ARRAY.\n"
+            "      ❌ BAD:  \"skills\": \"Python, AWS, Docker\"  (string instead of object)\n"
+            "      ✅ GOOD: \"skills\": {\"Languages\": [\"Python\"], \"Cloud\": [\"AWS\"]}\n"
+            "  • `experience[].bullets`: an array of STRINGS (each bullet a plain sentence).\n"
+            "  • `certifications`: an array of STRINGS, copied verbatim from the original.\n\n"
+
             "Return a JSON object with EXACTLY this structure:\n"
             "{\n"
             '  "contact": {\n'

@@ -855,26 +855,48 @@ class ContentAugmenter:
             "5. BANNED WORDS: 'Versatile', 'Proficient', 'Leverages', 'extensive experience', "
             "'proven track record', 'results-driven', 'passionate', 'detail-oriented', "
             "'highly skilled', 'seasoned', 'cutting-edge', 'innovative', 'dynamic', "
-            "'self-motivated', 'Adept', 'dedicated', 'committed to excellence', 'strong foundation'.\n"
-            "6. Do NOT start with an adjective.\n\n"
+            "'self-motivated', 'Adept', 'dedicated', 'committed to excellence', 'strong foundation', "
+            "'strong record', 'strong background', 'robust experience'.\n"
+            "6. Do NOT start with an adjective.\n"
+            "7. Do NOT start with 'I'.\n\n"
             f"Target role: {jd_analysis.get('job_title', '')}\n"
             f"Required skills: {', '.join(jd_analysis.get('required_skills', [])[:5])}\n"
             f"Candidate background: {exp_context}\n"
             f"Current summary: {summary}\n\n"
-            'Return a JSON object: {"summary": "The rewritten summary"}\n'
+            "Return ONLY the rewritten summary as a JSON object with one key named "
+            "\"summary\" whose value is the new summary string. The string value must be "
+            "plain prose — NEVER another JSON object, NEVER wrapped in braces, NEVER "
+            "containing the word \"summary\" as a JSON key inside itself. Just the prose.\n"
         )
 
         try:
+            # NOTE: do NOT pass schema= here. Earlier we used schema={"summary": str}
+            # which triggered Claude's tool-use mode; combined with the prompt's
+            # JSON example, Claude returned `{"summary": "{\"summary\": \"...\"}"}`
+            # — a nested envelope — which got stored verbatim as the summary string
+            # and showed in the rendered PDF as `{"summary": "I build..."}`. Plain
+            # prompt + JSON parse + envelope unwrap below is the safe path.
             result = gemini_json(
                 prompt, max_tokens=6000, temperature=0.3,
-                model=GEMINI_FLASH, schema={"summary": str},
+                model=GEMINI_FLASH,
             )
-            new_summary = result.get("summary", "")
+            new_summary = result.get("summary", "") if isinstance(result, dict) else ""
+            # Defensive unwrap: if the model still nests {"summary": "..."} inside
+            # the value, peel one layer.
+            if isinstance(new_summary, str) and new_summary.strip().startswith("{"):
+                try:
+                    import json as _json
+                    parsed = _json.loads(new_summary)
+                    if isinstance(parsed, dict) and isinstance(parsed.get("summary"), str):
+                        new_summary = parsed["summary"]
+                        logger.warning("ContentAugmenter ATS: peeled nested {summary:...} envelope")
+                except Exception:
+                    pass
             if new_summary and len(new_summary) > 50:
                 tailored["summary"] = new_summary
-                logger.info("ContentAugmenter ATS: summary rewritten for alignment")
+                logger.warning("ContentAugmenter ATS: summary rewritten for alignment")
         except Exception as e:
-            logger.error("ContentAugmenter ATS summary alignment: Gemini failed: %s", e)
+            logger.error("ContentAugmenter ATS summary alignment failed: %s", e)
 
         return tailored
 

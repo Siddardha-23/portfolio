@@ -39,15 +39,12 @@ locals {
       # API Gateway requests still return in <30s thanks to the 202 + poll pattern.
       timeout = 900
       env_vars = {
-        # LLM provider selection — `claude` (default) routes through AWS Bedrock,
-        # `gemini` falls back to Google AI Studio via SSM_GEMINI_API_KEY.
-        LLM_PROVIDER                 = "claude"
+        # LLM access is via AWS Bedrock + Claude (boto3); no Gemini env var.
         SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
         SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name
         SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
         SSM_APIFY_API_KEY            = var.apify_api_key != "" ? aws_ssm_parameter.apify_api_key[0].name : ""
         SSM_JOB_SEARCH_PASSWORD_HASH = var.job_search_password_hash != "" ? aws_ssm_parameter.job_search_password_hash[0].name : ""
-        SSM_GEMINI_API_KEY           = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
         # Gmail integration — empty strings when not configured so the feature self-disables.
         SSM_GOOGLE_OAUTH_CLIENT_ID     = var.google_oauth_client_id != "" ? aws_ssm_parameter.google_oauth_client_id[0].name : ""
         SSM_GOOGLE_OAUTH_CLIENT_SECRET = var.google_oauth_client_secret != "" ? aws_ssm_parameter.google_oauth_client_secret[0].name : ""
@@ -69,15 +66,9 @@ locals {
       memory      = 320
       timeout     = 60
       env_vars = {
-        # LLM provider selection — user-facing chat features (3D concierge,
-        # /api/chat, Cloud Diary cron) now route through AWS Bedrock + Claude.
-        # The SSE multi-agent orchestrator (`/api/chat/agent`) still uses the
-        # raw google-genai client because its streaming tool-calling loop
-        # hasn't been ported yet — that's why SSM_GEMINI_API_KEY is still
-        # populated below.
-        LLM_PROVIDER       = "claude"
-        SSM_MONGODB_URI    = aws_ssm_parameter.mongodb_uri.name
-        SSM_GEMINI_API_KEY = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
+        # LLM access for all chat features (concierge, /api/chat, Cloud Diary,
+        # SSE multi-agent orchestrator) is via AWS Bedrock + Claude (boto3).
+        SSM_MONGODB_URI = aws_ssm_parameter.mongodb_uri.name
         # GITHUB_PAT lifts the GitHub API rate limit and unlocks private-repo metadata
         # for the Cloud Diary + Builder specialist's `whats_new` tool.
         SSM_GITHUB_PAT = var.github_pat != "" ? aws_ssm_parameter.github_pat[0].name : ""

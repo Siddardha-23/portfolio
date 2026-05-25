@@ -1,18 +1,16 @@
-"""
-Multi-agent orchestrator with Gemini native function calling.
+"""Multi-agent orchestrator on Claude (AWS Bedrock) tool use.
 
-The orchestrator runs a small ReAct-style loop:
-
-    1. Send the user's message + tool declarations to Gemini.
-    2. If the model returns function calls, dispatch them in parallel-safe order,
-       feed results back as tool responses, loop again (max 4 rounds).
-    3. When the model returns plain text, that's the final answer — emit it.
+ReAct-style loop:
+  1. Send the user message + tool declarations to Claude via Bedrock InvokeModel.
+  2. If the model returns tool_use blocks, dispatch each tool, append a
+     tool_result block to messages, and loop (max 4 rounds).
+  3. When the model returns no tool_use (stop_reason != "tool_use"), the text
+     blocks form the final answer — emit them in chunks for typewriter UX.
 
 The visible "multi-agent" framing comes from tool→specialist tagging:
 each tool is owned by one of four specialist agents (Curator, Builder,
 Analyst, Concierge). The frontend renders specialist badges that pulse
-while their tools are running, which is what makes the UX feel like
-several agents collaborating instead of one chatbot.
+while their tools are running.
 
 Output is a generator of (event_name, payload_dict) tuples. The blueprint
 turns those into Server-Sent Events for the browser.
@@ -21,18 +19,21 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 import uuid
-from typing import Dict, Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
-from tools import dispatch, get_tool_meta, gemini_tools
-from tools.registry import SPECIALIST_META
+from tools import dispatch, get_tool_meta
+from tools.registry import SPECIALIST_META, TOOL_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "gemini-2.5-flash"
+# Cross-region inference profile (supports on-demand throughput).
+MODEL_NAME = os.getenv("BEDROCK_FLASH_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 MAX_ROUNDS = 4
 MAX_HISTORY_TURNS = 12
+_BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31"
 
 ORCHESTRATOR_PROMPT = """You are the Orchestrator of a multi-agent team that represents Harshith Siddardha Manne — an MS-IT student at ASU and Cloud/DevOps + AI engineer — to recruiters and curious visitors landing on his portfolio.
 
@@ -55,25 +56,93 @@ How to behave:
 """
 
 
-def _gemini_client():
-    from services.gemini_client import get_gemini_client
-    return get_gemini_client()
+_bedrock_client = None
 
 
-def _build_contents(message: str, history: Optional[List[Dict]]):
-    from google.genai import types
+def _bedrock():
+    """Lazy-load the Bedrock runtime client."""
+    global _bedrock_client
+    if _bedrock_client is None:
+        import boto3
+        region = os.getenv("BEDROCK_REGION") or os.getenv("AWS_REGION_NAME") or os.getenv("AWS_REGION") or "us-east-1"
+        _bedrock_client = boto3.client("bedrock-runtime", region_name=region)
+    return _bedrock_client
 
-    contents = []
+
+# ---------------------------------------------------------------------------
+# Tool declaration translation
+# ---------------------------------------------------------------------------
+# The tool registry was authored in Gemini OpenAPI format (uppercase types,
+# `parameters` key). Claude uses JSON Schema (lowercase types, `input_schema`
+# key). Translate at orchestrator startup so the registry stays untouched.
+
+def _translate_type(t: str) -> str:
+    return {
+        "OBJECT": "object",
+        "STRING": "string",
+        "INTEGER": "integer",
+        "NUMBER": "number",
+        "BOOLEAN": "boolean",
+        "ARRAY": "array",
+    }.get(t, t.lower())
+
+
+def _translate_schema(node: Any) -> Any:
+    """Recursively lowercase JSON Schema 'type' fields."""
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if k == "type" and isinstance(v, str):
+                out[k] = _translate_type(v)
+            else:
+                out[k] = _translate_schema(v)
+        return out
+    if isinstance(node, list):
+        return [_translate_schema(x) for x in node]
+    return node
+
+
+def _claude_tools() -> List[Dict[str, Any]]:
+    """Build the Claude `tools` array from the existing TOOL_REGISTRY."""
+    tools = []
+    for _, _, decl in TOOL_REGISTRY.values():
+        tools.append({
+            "name": decl["name"],
+            "description": decl["description"],
+            "input_schema": _translate_schema(decl.get("parameters") or {"type": "object", "properties": {}}),
+        })
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _build_messages(message: str, history: Optional[List[Dict]]) -> List[Dict[str, Any]]:
+    """Build the Claude messages array. History uses Gemini's role naming
+    ("model" for assistant) for backward compat with existing storage."""
+    messages: List[Dict[str, Any]] = []
     if history:
         for entry in history[-MAX_HISTORY_TURNS:]:
             role = entry.get("role")
             content = entry.get("content")
-            if role in ("user", "model") and isinstance(content, str) and content:
-                contents.append(
-                    types.Content(role=role, parts=[types.Part(text=content)])
-                )
-    contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
-    return contents
+            if not isinstance(content, str) or not content:
+                continue
+            if role in ("user",):
+                claude_role = "user"
+            elif role in ("model", "assistant"):
+                claude_role = "assistant"
+            else:
+                continue
+            messages.append({
+                "role": claude_role,
+                "content": [{"type": "text", "text": content[:8000]}],
+            })
+    messages.append({
+        "role": "user",
+        "content": [{"type": "text", "text": message}],
+    })
+    return messages
 
 
 def _emit(event: str, data: Dict) -> Tuple[str, Dict]:
@@ -160,6 +229,10 @@ def _suggest_actions(specialists_used: List[str], final_text: str) -> List[Dict]
     return actions[:3]
 
 
+# ---------------------------------------------------------------------------
+# Main orchestrator stream
+# ---------------------------------------------------------------------------
+
 def run_agent_stream(
     message: str,
     history: Optional[List[Dict]] = None,
@@ -176,8 +249,6 @@ def run_agent_stream(
       done        {round, latency_ms}
       error       {message}
     """
-    from google.genai import types
-
     started = time.time()
     session_id = uuid.uuid4().hex[:12]
 
@@ -189,103 +260,105 @@ def run_agent_stream(
     })
 
     try:
-        client = _gemini_client()
+        client = _bedrock()
+        tools = _claude_tools()
     except Exception as exc:
-        logger.error("Gemini client init failed: %s", exc)
+        logger.error("Bedrock client init failed: %s", exc)
         yield _emit("error", {"message": "AI service is not available right now."})
         return
 
-    contents = _build_contents(message, history)
-    config = types.GenerateContentConfig(
-        system_instruction=ORCHESTRATOR_PROMPT,
-        temperature=0.4,
-        max_output_tokens=1400,
-        tools=[types.Tool(function_declarations=[
-            types.FunctionDeclaration(**decl)
-            for _, _, decl in __import__("tools.registry", fromlist=["TOOL_REGISTRY"]).TOOL_REGISTRY.values()
-        ])],
-    )
-
+    messages = _build_messages(message, history)
     specialists_used: List[str] = []
     final_text = ""
 
     for round_idx in range(1, MAX_ROUNDS + 1):
         yield _emit("thinking", {"round": round_idx})
 
+        body = {
+            "anthropic_version": _BEDROCK_ANTHROPIC_VERSION,
+            "max_tokens": 1400,
+            "temperature": 0.4,
+            "system": ORCHESTRATOR_PROMPT,
+            "messages": messages,
+            "tools": tools,
+        }
+
         try:
-            response = client.models.generate_content(
-                model=MODEL_NAME, contents=contents, config=config,
+            resp = client.invoke_model(
+                modelId=MODEL_NAME,
+                body=json.dumps(body),
+                contentType="application/json",
+                accept="application/json",
             )
+            response = json.loads(resp["body"].read())
         except Exception as exc:
-            logger.exception("Gemini call failed in round %d", round_idx)
+            logger.exception("Bedrock InvokeModel failed in round %d", round_idx)
             yield _emit("error", {"message": "AI request failed. Please try again."})
             return
 
-        candidate = (response.candidates or [None])[0]
-        if not candidate or not candidate.content or not candidate.content.parts:
-            text = (response.text or "").strip()
-            if text:
-                final_text = text
-                yield _emit("delta", {"text": text})
-            break
+        content_blocks = response.get("content", []) or []
+        stop_reason = response.get("stop_reason")
 
-        # Inspect parts for function calls vs text
-        function_calls = []
-        text_parts: List[str] = []
-        for part in candidate.content.parts:
-            if getattr(part, "function_call", None) and part.function_call.name:
-                function_calls.append(part.function_call)
-            elif getattr(part, "text", None):
-                text_parts.append(part.text)
+        tool_use_blocks = [b for b in content_blocks if b.get("type") == "tool_use"]
+        text_blocks = [b for b in content_blocks if b.get("type") == "text"]
+        round_text = "\n".join((b.get("text") or "") for b in text_blocks).strip()
 
-        # Always echo back the model's content turn so subsequent turns see it
-        contents.append(candidate.content)
+        # Echo assistant turn so subsequent rounds reference tool_use IDs.
+        messages.append({"role": "assistant", "content": content_blocks})
 
-        if not function_calls:
-            text = "\n".join(t for t in text_parts if t).strip() or (response.text or "").strip()
-            final_text = text
-            if text:
-                # Stream in line-sized chunks for a "typing" feel without true streaming SDK
-                for chunk in _chunk_text(text):
+        if stop_reason != "tool_use" or not tool_use_blocks:
+            # Final answer path
+            final_text = round_text or final_text
+            if final_text:
+                for chunk in _chunk_text(final_text):
                     yield _emit("delta", {"text": chunk})
                     time.sleep(0.012)
             break
 
-        # Run every requested function and append the responses for the next round
-        tool_response_parts = []
-        for fc in function_calls:
+        # Dispatch every requested tool and post tool_result blocks back.
+        tool_result_blocks: List[Dict[str, Any]] = []
+        for block in tool_use_blocks:
             call_id = uuid.uuid4().hex[:8]
-            args = dict(fc.args or {})
-            meta = get_tool_meta(fc.name)
+            tool_name = block.get("name")
+            tool_args = block.get("input") or {}
+            tool_use_id = block.get("id")
+
+            meta = get_tool_meta(tool_name) or {}
             specialist = meta.get("specialist", "orchestrator")
             if specialist not in specialists_used:
                 specialists_used.append(specialist)
 
             yield _emit("dispatch", {
                 "call_id": call_id,
-                "tool": fc.name,
-                "args": args,
+                "tool": tool_name,
+                "args": tool_args,
                 "specialist": specialist,
                 "specialist_label": meta.get("specialist_label", specialist),
                 "specialist_tone": meta.get("specialist_tone", "slate"),
                 "description": meta.get("description", ""),
             })
 
-            result = dispatch(fc.name, args)
-            preview = _summarize_tool_result(fc.name, result)
+            try:
+                result = dispatch(tool_name, tool_args)
+            except Exception as exc:
+                logger.exception("Tool %s failed: %s", tool_name, exc)
+                result = {"ok": False, "error": str(exc)}
+
+            preview = _summarize_tool_result(tool_name, result)
             yield _emit("tool_result", {
                 "call_id": call_id,
-                "tool": fc.name,
+                "tool": tool_name,
                 "ok": result.get("ok", False),
                 "preview": preview,
             })
 
-            tool_response_parts.append(types.Part.from_function_response(
-                name=fc.name,
-                response={"result": _serialize_for_model(result)},
-            ))
+            tool_result_blocks.append({
+                "type": "tool_result",
+                "tool_use_id": tool_use_id,
+                "content": _serialize_for_model(result),
+            })
 
-        contents.append(types.Content(role="user", parts=tool_response_parts))
+        messages.append({"role": "user", "content": tool_result_blocks})
 
     yield _emit("actions", {"items": _suggest_actions(specialists_used, final_text)})
     yield _emit("done", {
@@ -299,11 +372,9 @@ def _chunk_text(text: str, chunk_size: int = 70):
     """Yield small chunks so the SSE stream feels alive without true model streaming."""
     if not text:
         return
-    # Prefer breaking on whitespace
     i = 0
     while i < len(text):
         end = min(len(text), i + chunk_size)
-        # Walk back to nearest space if we're mid-word
         if end < len(text):
             space = text.rfind(" ", i, end)
             if space != -1 and space > i:

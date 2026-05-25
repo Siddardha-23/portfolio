@@ -1,19 +1,11 @@
-"""LLM client facade — re-exports active provider's public surface.
+"""LLM client facade — re-exports the active provider's public surface.
 
-This file used to host all Gemini-specific logic. After the multi-provider
-migration, the implementation lives in `services/llm_providers/{gemini,claude}.py`
-and is selected at runtime by the `LLM_PROVIDER` env var (default: claude).
+This file historically hosted Gemini-specific logic. After the migration
+the implementation lives in `services/llm_providers/claude.py`. The file
+name is kept as `gemini_client.py` only because 9 caller modules import
+from it; renaming would be churn for no functional gain.
 
-All 9 dependent modules import from `services.gemini_client` so this shim
-keeps their import paths and call signatures unchanged:
-
-    from services.gemini_client import gemini_json, GEMINI_FLASH, GEMINI_PRO
-
-Switch providers without redeploying code:
-    LLM_PROVIDER=claude   (default) → AWS Bedrock + Claude Haiku 4.5
-    LLM_PROVIDER=gemini             → Google AI Studio (legacy path)
-
-Override individual model tiers (Bedrock only):
+Tier override via env (Bedrock):
     BEDROCK_FLASH_MODEL_ID, BEDROCK_PRO_MODEL_ID, BEDROCK_PREVIEW_MODEL_ID
 """
 from services.llm_providers import get_provider

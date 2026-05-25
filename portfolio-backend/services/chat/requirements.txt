@@ -1,2 +1,2 @@
 # Service-specific dependencies (common deps provided by Lambda Layer)
-google-genai>=1.0.0
+# boto3 (Bedrock runtime) is bundled with the AWS Lambda Python runtime

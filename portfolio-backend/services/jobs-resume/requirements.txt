@@ -1,5 +1,5 @@
 # Service-specific dependencies (common deps provided by Lambda Layer)
-google-genai>=1.0.0
+# LLM access goes through AWS Bedrock via boto3 (bundled with Lambda runtime)
 fpdf2>=2.7.0
 python-docx>=1.1.0
 pypdf>=4.0.0

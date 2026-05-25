@@ -261,10 +261,30 @@ def match_jd():
         return jsonify({'success': False, 'error': 'Job description too long (max 10K chars)'}), 400
 
     try:
-        from services.chat_service import _get_client, PORTFOLIO_CONTEXT
-        from google.genai import types
+        # Note: this previously imported from services.chat_service (a different
+        # Lambda's module) which doesn't exist in the infra bundle — the call
+        # would ImportError at runtime. Switched to a direct Bedrock + Claude
+        # invocation. PORTFOLIO_CONTEXT was a static blurb; inlined a
+        # minimal version below since the original didn't ship in this bundle.
+        import json as _json
+        import os as _os
+        import boto3
 
-        client = _get_client()
+        PORTFOLIO_CONTEXT = (
+            "Candidate: Harshith Siddardha Manne — MS-IT student at Arizona State "
+            "University; Cloud/DevOps + AI engineer. Strong evidence in AWS "
+            "(EC2, S3, Lambda, ECS, EKS, IAM, CloudWatch), Kubernetes, Docker, "
+            "Terraform, GitHub Actions, Jenkins, Python (Flask, FastAPI), "
+            "TypeScript/React, MongoDB Atlas, Datadog, Grafana, observability "
+            "(distributed tracing, golden-signal monitoring). Active projects: "
+            "Aurum (EKS cost optimization), Valytica/Gnanalytica (multi-tenant "
+            "SaaS), SmartClipboard, CloudMind, Standup AI, this portfolio. "
+            "Experience with CI/CD pipeline design, infrastructure-as-code, "
+            "code-review processes, and shipping production software."
+        )
+        bedrock_region = _os.getenv("BEDROCK_REGION") or _os.getenv("AWS_REGION_NAME") or _os.getenv("AWS_REGION") or "us-east-1"
+        bedrock = boto3.client("bedrock-runtime", region_name=bedrock_region)
+        model_id = _os.getenv("BEDROCK_FLASH_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
         match_prompt = f"""You are a professional recruiter analysis engine. Analyze the following job description against the candidate's profile and return a JSON response.
 
@@ -330,17 +350,24 @@ Analyze the match and return ONLY valid JSON (no markdown fences, no extra text)
 
 Be honest and accurate. Only mark skills as matched if the candidate truly has them based on their profile. Score each category based on how well the candidate's actual experience matches what the JD requires."""
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[types.Content(role="user", parts=[types.Part(text=match_prompt)])],
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=2048,
-            ),
+        body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 2048,
+            "temperature": 0.3,
+            "messages": [{"role": "user", "content": [{"type": "text", "text": match_prompt}]}],
+        }
+        resp = bedrock.invoke_model(
+            modelId=model_id,
+            body=_json.dumps(body),
+            contentType="application/json",
+            accept="application/json",
         )
+        bedrock_response = _json.loads(resp["body"].read())
+        text_chunks = [b.get("text") or "" for b in bedrock_response.get("content", []) if b.get("type") == "text"]
+        response_text_full = "".join(text_chunks).strip()
 
         import json
-        response_text = response.text.strip()
+        response_text = response_text_full
         # Strip markdown fences if present
         if response_text.startswith('```'):
             response_text = response_text.split('\n', 1)[1]

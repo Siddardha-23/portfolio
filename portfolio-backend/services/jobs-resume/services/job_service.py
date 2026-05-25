@@ -1979,10 +1979,11 @@ class JobService:
     # ------------------------------------------------------------------
 
     def analyze_job(self, job: Dict[str, Any], action: str, user_email: str = "") -> str:
-        from services.chat_service import _get_client, PORTFOLIO_CONTEXT
-        from google.genai import types
-
-        client = _get_client()
+        # Note: previously imported PORTFOLIO_CONTEXT from services.chat_service,
+        # which doesn't exist in this Lambda bundle (cross-service import was
+        # a long-standing bug — the call would ImportError at runtime). Dropping
+        # the cross-service dep and using the local Claude provider.
+        from services.llm_providers import get_provider
 
         resume = self.get_resume(user_email=user_email)
         resume_info = ""
@@ -2004,17 +2005,17 @@ class JobService:
             "summarize": (
                 f"Summarize this job posting concisely. Highlight key responsibilities, "
                 f"requirements, and what makes it a good or poor fit for the candidate.\n\n"
-                f"{job_info}\n{resume_info}\n{PORTFOLIO_CONTEXT[:2000]}"
+                f"{job_info}\n{resume_info}"
             ),
             "missing_skills": (
                 f"Analyze the gap between the candidate's skills and this job's requirements. "
                 f"List missing skills, suggest learning resources, and rate the gap (Low/Medium/High).\n\n"
-                f"{job_info}\n{resume_info}\n{PORTFOLIO_CONTEXT[:2000]}"
+                f"{job_info}\n{resume_info}"
             ),
             "cover_letter": (
                 f"Write a professional cover letter for this job tailored to the candidate. "
                 f"Highlight relevant projects and experience. Keep it under 400 words.\n\n"
-                f"{job_info}\n{resume_info}\n{PORTFOLIO_CONTEXT[:2000]}"
+                f"{job_info}\n{resume_info}"
             ),
         }
 
@@ -2022,15 +2023,11 @@ class JobService:
         if not prompt:
             raise ValueError(f"Unknown action: {action}")
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash-lite",
-            contents=[types.Content(role="user", parts=[types.Part(text=prompt)])],
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-                max_output_tokens=2048,
-            ),
+        return get_provider().text(
+            prompt=prompt,
+            temperature=0.7,
+            max_tokens=2048,
         )
-        return response.text
 
     # ------------------------------------------------------------------
     # Saved Jobs CRUD

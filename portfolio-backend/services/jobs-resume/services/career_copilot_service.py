@@ -1067,20 +1067,17 @@ def _run_orchestrator(
     jd_block: str,
     memory_notes: List[Dict[str, str]],
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """
-    ReAct-style tool-calling loop.
+    """ReAct-style tool-calling loop.
+
+    Delegates to the active LLM provider's `tool_call()` implementation so
+    the orchestrator works on both Gemini (function calling) and Claude
+    (tool use on Bedrock).
+
     Returns (final_reply_text, pipeline_log).
     """
-    from services.gemini_client import (
-        get_gemini_client, GEMINI_PRO, GEMINI_FLASH, LLMRetriesExhaustedError,
-    )
-    from google.genai import types
+    from services.gemini_client import get_active_provider
 
-    import time
-
-    client = get_gemini_client()
-    pipeline_log: List[Dict[str, Any]] = []
-    start_ts = time.time()
+    provider = get_active_provider()
 
     memory_block = ""
     if memory_notes:
@@ -1097,114 +1094,22 @@ def _run_orchestrator(
     )
 
     function_declarations = _build_function_declarations()
-    tool_config = types.Tool(function_declarations=function_declarations)
 
-    contents = [
-        types.Content(role="user", parts=[
-            types.Part.from_text(text=system_text),
-            types.Part.from_text(text=f"USER_MESSAGE:\n{message}"),
-        ]),
-    ]
+    # Bind user_email into the tool executor so the provider's tool loop
+    # can call (tool_name, args) without knowing about session identity.
+    def _exec(tool_name: str, args: Dict[str, Any]):
+        return _execute_tool(tool_name, args, user_email)
 
-    # Use Flash for orchestration latency; tools can still use Pro when needed.
-    model = GEMINI_FLASH
-
-    for round_num in range(_MAX_ORCHESTRATOR_ROUNDS):
-        if (time.time() - start_ts) > _ORCHESTRATOR_DEADLINE_SECONDS:
-            return (
-                "I started processing your request but hit a time limit. "
-                "Try a narrower follow-up (for example: 'draft cold email only' or 'generate PPT outline only').",
-                pipeline_log,
-            )
-
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=0.35,
-                    max_output_tokens=2800,
-                    tools=[tool_config],
-                ),
-            )
-        except Exception as e:
-            logger.exception("Orchestrator round %d failed: %s", round_num, e)
-            if model == GEMINI_FLASH:
-                model = GEMINI_PRO
-                try:
-                    response = client.models.generate_content(
-                        model=model,
-                        contents=contents,
-                        config=types.GenerateContentConfig(
-                            temperature=0.4,
-                            max_output_tokens=2200,
-                            tools=[tool_config],
-                        ),
-                    )
-                except Exception as e2:
-                    logger.exception("Orchestrator fallback also failed: %s", e2)
-                    return ("I could not generate a response — try again in a moment.", pipeline_log)
-            else:
-                return ("I could not generate a response — try again in a moment.", pipeline_log)
-
-        candidate = response.candidates[0] if response.candidates else None
-        if not candidate or not candidate.content or not candidate.content.parts:
-            return ("I could not generate a response — try again in a moment.", pipeline_log)
-
-        has_function_calls = False
-        text_parts = []
-        function_call_parts = []
-
-        for part in candidate.content.parts:
-            if part.function_call:
-                has_function_calls = True
-                function_call_parts.append(part)
-            elif part.text:
-                text_parts.append(part.text)
-
-        if not has_function_calls:
-            final_text = "\n".join(text_parts) if text_parts else "I could not generate a response."
-            return (final_text, pipeline_log)
-
-        contents.append(candidate.content)
-
-        function_response_parts = []
-        for part in function_call_parts:
-            if (time.time() - start_ts) > _ORCHESTRATOR_DEADLINE_SECONDS:
-                return (
-                    "I completed part of your request but hit a time limit while running tools. "
-                    "Please retry with a smaller step so I can finish quickly.",
-                    pipeline_log,
-                )
-
-            fc = part.function_call
-            tool_name = fc.name
-            tool_args = dict(fc.args) if fc.args else {}
-
-            logger.info("Orchestrator round %d: calling tool %s(%s)", round_num, tool_name, list(tool_args.keys()))
-
-            result, agent_tag = _execute_tool(tool_name, tool_args, user_email)
-
-            pipeline_log.append({
-                "agent": agent_tag,
-                "label": tool_name,
-                "summary": f"Called {tool_name} with {list(tool_args.keys())}",
-                "round": round_num,
-            })
-
-            result_str = json.dumps(result, default=str)[:8000]
-
-            function_response_parts.append(
-                types.Part.from_function_response(
-                    name=tool_name,
-                    response={"result": result_str},
-                )
-            )
-
-        contents.append(types.Content(role="user", parts=function_response_parts))
-
-    final_text = "\n".join(text_parts) if text_parts else "Reached maximum tool-calling rounds. Here's what I have so far."
-    return (final_text, pipeline_log)
+    return provider.tool_call(
+        system_text=system_text,
+        user_message=message,
+        tools=function_declarations,
+        execute_tool=_exec,
+        max_rounds=_MAX_ORCHESTRATOR_ROUNDS,
+        deadline_seconds=_ORCHESTRATOR_DEADLINE_SECONDS,
+        temperature=0.35,
+        max_tokens=2800,
+    )
 
 
 # ---------------------------------------------------------------------------

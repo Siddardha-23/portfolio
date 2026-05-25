@@ -39,6 +39,9 @@ locals {
       # API Gateway requests still return in <30s thanks to the 202 + poll pattern.
       timeout = 900
       env_vars = {
+        # LLM provider selection — `claude` (default) routes through AWS Bedrock,
+        # `gemini` falls back to Google AI Studio via SSM_GEMINI_API_KEY.
+        LLM_PROVIDER                 = "claude"
         SSM_MONGODB_URI              = aws_ssm_parameter.mongodb_uri.name
         SSM_JWT_SECRET               = aws_ssm_parameter.jwt_secret.name
         SSM_JSEARCH_API_KEY          = var.jsearch_api_key != "" ? aws_ssm_parameter.jsearch_api_key[0].name : ""
@@ -66,6 +69,9 @@ locals {
       memory      = 320
       timeout     = 60
       env_vars = {
+        # chat service still on Gemini — its concierge orchestrator uses
+        # the google-genai client directly (4 callsites), so the Claude
+        # migration is deferred to a follow-up. Lower traffic anyway.
         SSM_MONGODB_URI    = aws_ssm_parameter.mongodb_uri.name
         SSM_GEMINI_API_KEY = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
         # GITHUB_PAT lifts the GitHub API rate limit and unlocks private-repo metadata
@@ -292,6 +298,33 @@ resource "aws_iam_role_policy" "resume_s3_access" {
         Resource = [
           aws_s3_bucket.resumes.arn,
           "${aws_s3_bucket.resumes.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# Bedrock Runtime InvokeModel — used by Claude provider in gemini_client.py.
+# Both jobs-resume (resume parse/tailor/score) and chat (concierge) reach
+# Claude via this permission. Resource is wildcard across Anthropic models so
+# we can bump Haiku → Sonnet via BEDROCK_*_MODEL_ID env vars without a TF
+# change. Cross-region inference profiles (us.anthropic.*) are also covered.
+resource "aws_iam_role_policy" "bedrock_invoke" {
+  name = "${var.project_name}-bedrock-invoke-policy"
+  role = aws_iam_role.lambda.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream",
+        ]
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/anthropic.*",
+          "arn:aws:bedrock:*:*:inference-profile/*anthropic.*",
         ]
       }
     ]

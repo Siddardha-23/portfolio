@@ -357,11 +357,11 @@ class ResumeParser:
               - structured_dict: Resume data conforming to PARSED_RESUME_SCHEMA.
               - raw_text_str: Full plain-text transcription from Gemini (or input raw_text).
         """
-        from services.gemini_client import gemini_json, GEMINI_FLASH
+        from services.gemini_client import gemini_json, GEMINI_FLASH, get_active_provider
         import base64
         import time
-        from google.genai import types
 
+        provider = get_active_provider()
         t0 = time.perf_counter()
 
         # ---- Local pre-extraction (text layer + PDF /Annots / DOCX rels) ----
@@ -407,9 +407,10 @@ class ResumeParser:
         t_local = time.perf_counter()
         use_slim = bool(local_text)
 
-        # Build multi-modal or text-only parts for the API call
+        # Build provider-native parts (PDF + prompt for Claude/Gemini, or
+        # text-only fallback). Provider knows its own multimodal payload shape.
         parts = self._build_extraction_parts(
-            raw_text, file_base64, mime_type, types, base64, slim=use_slim
+            raw_text, file_base64, mime_type, provider, base64, slim=use_slim
         )
 
         # Call Gemini Flash. Slim path needs far fewer output tokens because
@@ -502,31 +503,35 @@ class ResumeParser:
 
     @staticmethod
     def _build_extraction_parts(
-        raw_text, file_base64, mime_type, types, base64, slim: bool = False
+        raw_text, file_base64, mime_type, provider, base64, slim: bool = False
     ) -> list:
-        """Build the Gemini API parts list based on available input.
+        """Build provider-native parts for the resume extraction call.
 
-        Multi-modal path (preferred): sends file bytes (PDF or DOCX) directly
-        to Gemini with the appropriate MIME type for visual document understanding.
+        Multi-modal path (preferred): delegates to `provider.build_pdf_parts`
+        which returns either Gemini `types.Part` objects or Claude content
+        blocks depending on the active provider.
 
-        Text-only path (fallback): sends raw text appended to prompt.
+        Text-only fallback: returns a single text part wrapping the prompt
+        with embedded raw text. The provider's `json()` accepts this shape
+        for both Gemini and Claude (both treat single text part as the
+        equivalent of a plain `prompt=` argument).
 
         Args:
             raw_text: Plain text from the resume (used for text-only fallback).
             file_base64: Optional base64-encoded file for multi-modal input.
             mime_type: MIME type of the file (e.g., application/pdf).
-            types: google.genai.types module (passed to avoid circular import).
+            provider: The active LLMProvider instance (Gemini or Claude).
             base64: base64 module (passed to avoid re-import).
             slim: If True, use the slim prompt (no raw_text / extracted_urls fields).
                 Caller is responsible for sourcing those locally.
 
         Returns:
-            List of types.Part objects for the Gemini API call.
+            Provider-native parts list — opaque to the caller, passed back to
+            `gemini_json(parts=...)` as-is.
         """
         prompt_template = _EXTRACTION_PROMPT_SLIM if slim else _EXTRACTION_PROMPT
 
         if file_base64:
-            # Multi-modal: send the original file for visual understanding
             file_bytes = base64.b64decode(file_base64)
             tail = (
                 "Extract from the attached document."
@@ -537,14 +542,22 @@ class ResumeParser:
                     "it in the extracted_urls array."
                 )
             )
-            return [
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                types.Part.from_text(text=prompt_template + tail),
-            ]
-        else:
-            # Text-only fallback: embed raw text in the prompt
-            prompt = prompt_template + f"=== RESUME TEXT ===\n{raw_text[:_MAX_TEXT_CHARS]}"
-            return [types.Part.from_text(text=prompt)]
+            return provider.build_pdf_parts(
+                prompt_text=prompt_template + tail,
+                pdf_bytes=file_bytes,
+                mime_type=mime_type,
+            )
+
+        # Text-only fallback: provider.json accepts None for `parts` so we
+        # could pass `prompt=` instead, but the caller path here always uses
+        # parts. Build a single text part using the provider's PDF helper
+        # with empty bytes — providers degrade to text-only when no PDF.
+        prompt = prompt_template + f"=== RESUME TEXT ===\n{raw_text[:_MAX_TEXT_CHARS]}"
+        return provider.build_pdf_parts(
+            prompt_text=prompt,
+            pdf_bytes=b"",
+            mime_type="text/plain",  # signals "no PDF, just text"
+        )
 
     @staticmethod
     def _normalize_skills(result: dict) -> dict:

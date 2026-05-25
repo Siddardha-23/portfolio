@@ -80,11 +80,16 @@ class ResumeTailor:
             keyword_list, gap_context, role_context, resume_payload, jd_json
         )
 
+        # Pass schema so Claude routes through forced tool-use (guaranteed
+        # JSON, no markdown fences, no preamble eating output budget). For
+        # Gemini path the schema is also passed; _to_openapi_schema handles
+        # _dict_of via additionalProperties best-effort.
         result = gemini_json(
-            prompt=prompt, 
-            max_tokens=24000, 
-            temperature=0.4, 
-            model=GEMINI_PRO
+            prompt=prompt,
+            max_tokens=24000,
+            temperature=0.4,
+            model=GEMINI_PRO,
+            schema=TAILORED_RESUME_SCHEMA,
         )
         # Type coercion remains to fill defaults for entirely missing sections
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
@@ -199,6 +204,7 @@ class ResumeTailor:
             max_tokens=24000,
             temperature=0.4,
             model=GEMINI_PRO,
+            schema=TAILORED_RESUME_SCHEMA,
         )
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
 
@@ -260,6 +266,20 @@ class ResumeTailor:
             "You are a senior resume tailoring agent and ATS optimization specialist. Your job is to "
             "produce a complete, one-page-fillable, ATS-optimized tailored resume as JSON using ONLY "
             "real experience evidenced in the candidate's original resume. Never fabricate.\n\n"
+
+            "⚠️ BANNED WORDS — these are FORBIDDEN in the summary AND every other field. If you use "
+            "ANY of them you have failed the task and must rewrite. Read this list before writing the "
+            "summary, and verify the summary against it before returning:\n"
+            "  Versatile, Proficient, Leverages, Leverage, extensive experience, proven track record,\n"
+            "  results-driven, passionate, detail-oriented, highly skilled, seasoned, cutting-edge,\n"
+            "  innovative, dynamic, self-motivated, Adept, dedicated, committed to excellence,\n"
+            "  STRONG FOUNDATION, seeking a challenging, strong background, robust experience,\n"
+            "  hands-on expertise (use 'hands-on experience' or just be specific).\n"
+            "Write like a real engineer describing their work — direct, specific, no buzzwords.\n\n"
+
+            "⚠️ SUMMARY LENGTH — exactly 3-4 sentences. NOT 5, NOT 6. Open by naming the target role "
+            "family from Step 2 (e.g. 'ADAS Software Engineer with ...', 'Backend Engineer with ...'). "
+            "Do NOT start with 'I' or with an adjective like 'Versatile' or 'Dedicated'.\n\n"
 
             "═══ PHASE A — SILENT PROFILE EXTRACTION ═══\n"
             "Before tailoring, mentally extract the candidate's structured profile from the original "

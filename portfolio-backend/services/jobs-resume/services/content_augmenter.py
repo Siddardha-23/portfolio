@@ -70,6 +70,35 @@ class ContentAugmenter:
             logger.warning("ContentAugmenter: empty skills section — skipping augmentation")
             return tailored
 
+        # ── Defensive strip: remove any project in `tailored` whose name doesn't ──
+        # match a project in the ORIGINAL parsed resume. This guards against
+        # Claude inventing projects that the IntegrityGuard upstream
+        # somehow failed to strip (whatever the upstream bug is, we know
+        # from Phase 0 diagnostics it's bypassing the guard for this user's
+        # flow). After this strip, Phase 1 below sees the correct count and
+        # ProjectGenerator can do its job.
+        _orig_proj_keys = {
+            (p.get("name", "") or "").lower().strip()
+            for p in original.get("projects", [])
+        }
+        _tail_projects = tailored.get("projects", []) or []
+        _real_projects = [
+            p for p in _tail_projects
+            if (p.get("name", "") or "").lower().strip() in _orig_proj_keys
+        ]
+        _stripped = len(_tail_projects) - len(_real_projects)
+        if _stripped > 0:
+            _invented = [
+                p.get("name", "?") for p in _tail_projects
+                if (p.get("name", "") or "").lower().strip() not in _orig_proj_keys
+            ]
+            logger.warning(
+                "ContentAugmenter: defensive-stripped %d invented project(s) %s "
+                "(IntegrityGuard upstream did not catch them)",
+                _stripped, _invented,
+            )
+        tailored["projects"] = _real_projects
+
         # Phase 0: Measure current fill
         fill = self._measure_fill(tailored)
         _proj_names = [p.get("name", "?") for p in tailored.get("projects", [])]

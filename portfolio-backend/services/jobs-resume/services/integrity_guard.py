@@ -300,22 +300,29 @@ class IntegrityGuard:
 
         tailored["experience"] = rebuilt_exp
 
-        # --- Projects: remove AI-hallucinated projects when original had projects.
-        # ContentAugmenter adds generated projects AFTER this guard runs
-        # (guard runs inside ResumeTailor.tailor(), augmenter runs after),
-        # so augmenter-generated projects are never stripped here. ---
+        # --- Projects: ALWAYS strip projects whose name doesn't match a name
+        # in the ORIGINAL resume. Previously this was gated on
+        # `if orig_projects:` — meaning candidates with zero parsed projects
+        # got ZERO stripping, and Claude's invented projects (3 per call)
+        # survived into ContentAugmenter, which then saw `len(projects)=3`
+        # and skipped Phase 1 project generation entirely. The downstream
+        # _overflow_trim removed 2 of the 3 invented projects to fit the
+        # page, leaving the user with 1 random invented project and zero
+        # backend-generated aligned ones.
+        # ContentAugmenter adds its generated projects AFTER this guard
+        # runs (guard runs inside ResumeTailor.tailor(), augmenter runs
+        # after), so augmenter-generated projects are never stripped here.
         hallucinated_proj: List[Dict] = []
         orig_projects = original.get("projects", [])
-        if orig_projects:
-            orig_proj_keys = {_proj_key(p) for p in orig_projects}
-            tail_projects = tailored.get("projects", [])
-            valid_projects = []
-            for p in tail_projects:
-                if _proj_key(p) in orig_proj_keys:
-                    valid_projects.append(p)
-                else:
-                    hallucinated_proj.append(p)
-            tailored["projects"] = valid_projects
+        orig_proj_keys = {_proj_key(p) for p in orig_projects}  # may be empty set
+        tail_projects = tailored.get("projects", [])
+        valid_projects = []
+        for p in tail_projects:
+            if _proj_key(p) in orig_proj_keys:
+                valid_projects.append(p)
+            else:
+                hallucinated_proj.append(p)
+        tailored["projects"] = valid_projects
 
         return tailored, hallucinated_exp, hallucinated_proj, missing_exp
 

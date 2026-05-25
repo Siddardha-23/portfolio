@@ -175,12 +175,11 @@ class ContentAugmenter:
     # ------------------------------------------------------------------
 
     def _measure_fill(self, tailored: Dict[str, Any]) -> float:
-        """Return page fill ratio 0.0-1.0 using the same font/line-height as generate_pdf().
-
-        generate_pdf() always renders at body_size=10.0, lh=3.8, lh_s=3.6
-        (it sets these before Pass 1 measurement regardless of overflow).
-        We must match those values here so fill estimates match the actual PDF.
-        """
+        """Return page fill ratio 0.0-1.0 using the same font/line-height as
+        generate_pdf()'s Pass 1 base settings. Must match the renderer
+        exactly so the augmenter's fill estimate aligns with the actual PDF.
+        Updated to mirror the renderer's tighter base (10pt body, lh=3.4)
+        introduced for the reference-matching density."""
         _, content_h = self.renderer._render_pdf(
             tailored,
             section_gap=self.renderer._MIN_SECTION_GAP,
@@ -188,9 +187,9 @@ class ContentAugmenter:
             post_header=self.renderer._MIN_POST_HEADER,
             header_gap=self.renderer._MIN_HEADER_GAP,
             skill_gap=self.renderer._MIN_SKILL_GAP,
-            body_size=10.0,  # matches generate_pdf() actual render size
-            lh=3.8,          # matches generate_pdf() actual line height
-            lh_s=3.6,        # matches generate_pdf() actual skill line height
+            body_size=10.0,
+            lh=3.4,
+            lh_s=3.2,
             measure_only=True,
         )
         return content_h / self.renderer._AVAIL_H

@@ -95,12 +95,14 @@ class ResumeRenderer:
     # PDF generation (fpdf2) — matches LaTeX resume.cls template
     # ------------------------------------------------------------------
 
-    # Layout constants — from LaTeX: \usepackage[left=0.5in, top=0.6in, right=0.5in, bottom=0.6in]{geometry}
+    # Layout constants — tightened to match reference resume's dense look
+    # (user requested: "borders are fine in reference, generated has too much
+    # white space"). Margins shrunk top + bottom; LR stays at 0.5in.
     _MARGIN_LR = 12.7          # 0.5 inch left/right in mm
-    _MARGIN_TOP = 7.62         # 0.3 inch top in mm (name starts near top)
-    _MARGIN_BOTTOM = 15.24     # 0.6 inch bottom in mm
+    _MARGIN_TOP = 6.35         # 0.25 inch top (was 0.3")
+    _MARGIN_BOTTOM = 10.16     # 0.4 inch bottom (was 0.6")
     _PAGE_H = 297.0            # A4 height mm
-    _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~274.1mm usable
+    _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~280.5mm usable (was ~274.1mm)
 
     # Font sizes — from LaTeX: \LoadClass[11pt]{article}, \fontsize commands
     _NAME_SIZE = 17.0          # \Large at 11pt base ≈ 17pt
@@ -500,10 +502,17 @@ class ResumeRenderer:
         slots = self._count_spacing_slots(tailored)
 
         # --- Pass 1: measure with minimum spacing at the base render font size (10pt) ---
-        # Always render at 10pt (not the 11pt default) so measurement matches actual output.
+        # User requested 10pt body to match reference resume's font size.
+        # Combined with tighter margins (0.25"/0.4" top/bottom) and lh=3.4
+        # (~96% of nominal 11.4pt-at-10pt-body line spacing — comparable to
+        # the reference LaTeX template's 0.92 linespread), the candidate's
+        # 5/3/3 experience + 5 project bullets + 5-6 skill categories fits
+        # at 10pt with a few mm of leftover. Auto-shrink fallback to 9.5pt
+        # → 9pt remains for cases where content grows (extra creative
+        # project, longer bullets, etc).
         body_size = 10.0
-        lh = 3.8
-        lh_s = 3.6
+        lh = 3.4
+        lh_s = 3.2
 
         _, min_height = self._render_pdf(
             tailored,

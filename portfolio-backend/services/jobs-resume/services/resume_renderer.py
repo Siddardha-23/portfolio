@@ -27,8 +27,15 @@ class ResumeRenderer:
             display = re.sub(r'^https?://', '', value)
             href = value if value.startswith("http") else f"https://{value}"
             return (display, href)
+        if key == "portfolio":
+            # Strip protocol for display, link to full URL
+            display = re.sub(r'^https?://', '', value).rstrip('/')
+            href = value if value.startswith("http") else f"https://{value}"
+            return (display, href)
         if key == "email":
             return (value, f"mailto:{value}")
+        if key == "location":
+            return (value, None)  # plain text, no link
         return (value, None)  # phone — no href
 
     @staticmethod
@@ -171,18 +178,19 @@ class ResumeRenderer:
         pdf.set_y(mt)
         w = pdf.w - 2 * ml  # usable width ≈ 184.6mm
 
-        # ── Name (centered, bold) — render exactly as parsed (Title Case
-        # via ResumeParser._normalize_name). The previous LaTeX template
-        # forced \MakeUppercase, but recruiters / users prefer the natural
-        # form. Section headers below remain uppercased.
+        # ── Name (centered, bold, ALL CAPS) — matches LaTeX template's
+        # \MakeUppercase{\textbf{...}} for the candidate name. Section
+        # headers below also use uppercase.
         pdf.set_font("Times", "B", self._NAME_SIZE)
-        pdf.cell(w, 6.5, name, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w, 6.5, name.upper(), align="C", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(0.5)  # \nameskip = \smallskip
 
         # ── Contact line (centered, pipe-separated, black text) ──
         # LaTeX: \fontsize{11}{13}\selectfont, pipe separator
+        # Order matches the LaTeX template's reference resume:
+        #   location | phone | email | portfolio | linkedin | github
         contact_fields = []
-        for key in ("phone", "email", "linkedin", "github"):
+        for key in ("location", "phone", "email", "portfolio", "linkedin", "github"):
             val = contact.get(key, "")
             if val:
                 display, href = self._contact_display(key, val)
@@ -241,13 +249,37 @@ class ResumeRenderer:
             pdf.multi_cell(w - indent - 2.5, lh, sanitize(text),
                            new_x="LMARGIN", new_y="NEXT")
 
-        # ── PROFESSIONAL SUMMARY ── (LaTeX: rSection{PROFESSIONAL SUMMARY})
+        # ── SUMMARY ── (LaTeX: rSection{SUMMARY})
+        # Reference template uses the short "SUMMARY" header (not
+        # "PROFESSIONAL SUMMARY"). First descriptor phrase rendered bold to
+        # match the LaTeX template's \textbf{...} opener (e.g.
+        # "**Cloud and DevOps Engineer** with hands-on...").
         summary = tailored.get("summary", "")
         if summary:
-            section_header("Professional Summary")
-            pdf.set_font("Times", "", body_size)  # not bold
-            pdf.multi_cell(w, lh, sanitize(summary),
-                           new_x="LMARGIN", new_y="NEXT")
+            section_header("Summary")
+            # Detect the lead descriptor phrase: noun chunks up to the first
+            # connective verb ("with", "who", "experienced in", "skilled at",
+            # "specializing in", "focused on", a comma, an em/en-dash). The
+            # lead is everything up to (but not including) the connector.
+            lead_match = re.match(
+                r'^(.+?)(?=\s+(?:with|who|experienced|skilled|specializing|focused|that|building|designing|building)\b|\s*[—\-,]\s*)',
+                summary.strip(),
+                flags=re.IGNORECASE,
+            )
+            lead = lead_match.group(1).strip() if lead_match else ""
+            # Only bold the lead if it looks like a role/title (≤ 60 chars,
+            # contains a noun-ish word). Otherwise render summary plain.
+            if lead and 3 < len(lead) <= 60:
+                rest = sanitize(summary[len(lead):].lstrip())
+                pdf.set_font("Times", "B", body_size)
+                pdf.write(lh, sanitize(lead) + " ")
+                pdf.set_font("Times", "", body_size)
+                pdf.write(lh, rest)
+                pdf.ln(lh)
+            else:
+                pdf.set_font("Times", "", body_size)
+                pdf.multi_cell(w, lh, sanitize(summary),
+                               new_x="LMARGIN", new_y="NEXT")
 
         # ── EXPERIENCE ── (LaTeX: rSection{EXPERIENCE})
         experience = tailored.get("experience", [])
@@ -367,18 +399,23 @@ class ResumeRenderer:
                         if cleaned:
                             degree = cleaned
 
-                    # Institution, Location | Degree | Date | GPA: X.XX
+                    # Reference layout:
+                    #   Institution[, Location] | Degree[, GPA: X.XX]   <date right-aligned>
                     inst_part = f"{inst}, {location}" if inst and location else inst
-                    parts = [p for p in [inst_part, degree] if p]
-                    if dates:
-                        parts.append(dates)
+                    left_parts = [p for p in [inst_part, degree] if p]
                     if gpa:
-                        parts.append(f"GPA: {gpa}")
-                    line_text = " | ".join(parts)
+                        left_parts.append(f"GPA: {gpa}")
+                    left_text = " | ".join(left_parts)
 
-                    pdf.set_font("Times", "", body_size)  # not bold
-                    pdf.multi_cell(w, lh_s, line_text,
-                                   new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_font("Times", "", body_size)
+                    if dates:
+                        date_w = pdf.get_string_width(dates) + 2
+                        pdf.cell(w - date_w, lh_s, left_text)
+                        pdf.cell(date_w, lh_s, dates, align="R",
+                                 new_x="LMARGIN", new_y="NEXT")
+                    else:
+                        pdf.multi_cell(w, lh_s, left_text,
+                                       new_x="LMARGIN", new_y="NEXT")
 
         content_h = pdf.get_y() - mt
         if measure_only:
@@ -531,7 +568,7 @@ class ResumeRenderer:
         # Name + contact + HR
         h += 17 * 1.15 + 2        # name
         contact = tailored.get("contact", {})
-        if any(contact.get(k) for k in ("phone", "email", "linkedin", "github")):
+        if any(contact.get(k) for k in ("location", "phone", "email", "portfolio", "linkedin", "github")):
             h += 10.5 * 1.15 + 1  # contact line
         h += 4                     # HR line
         h += header_gap
@@ -694,7 +731,7 @@ class ResumeRenderer:
         tight(p, before=0, after=1.0)
 
         contact_fields = []
-        for key in ("phone", "email", "linkedin", "github"):
+        for key in ("location", "phone", "email", "portfolio", "linkedin", "github"):
             val = contact.get(key, "")
             if val:
                 display, href = self._contact_display(key, val)

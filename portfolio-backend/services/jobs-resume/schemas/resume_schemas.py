@@ -24,6 +24,11 @@ PARSED_RESUME_SCHEMA = {
         "phone": str,
         "linkedin": str,
         "github": str,
+        # New ATS/recruiter-visible fields — match the LaTeX template's
+        # reference contact line (location first, portfolio URL between
+        # email and linkedin).
+        "location": str,
+        "portfolio": str,
     },
     "summary": str,
     "skills": {"_dict_of": [str]},  # Record<string, string[]>

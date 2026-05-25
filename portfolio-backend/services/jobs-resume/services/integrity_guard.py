@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Immutable field definitions
 # ---------------------------------------------------------------------------
 
-IMMUTABLE_CONTACT_FIELDS = ("name", "email", "phone", "linkedin", "github")
+IMMUTABLE_CONTACT_FIELDS = ("name", "email", "phone", "linkedin", "github", "location", "portfolio")
 IMMUTABLE_EXPERIENCE_FIELDS = ("company", "title", "dates", "location")
 IMMUTABLE_EDUCATION_FIELDS = ("degree", "institution", "dates", "location", "gpa", "coursework")
 

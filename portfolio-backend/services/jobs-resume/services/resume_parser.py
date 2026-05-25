@@ -91,7 +91,7 @@ _EXTRACTION_PROMPT = (
     "recruiter screening. Your ONLY job is to extract information explicitly present in "
     "the resume. NEVER infer, synthesize, or invent anything.\n\n"
     "CRITICAL MANDATORY FIELDS — you MUST extract these if they exist anywhere in the resume:\n"
-    "1. CONTACT: full name, email, phone, LinkedIn URL, GitHub URL.\n"
+    "1. CONTACT: full name, email, phone, LinkedIn URL, GitHub URL, location (City, ST), portfolio website URL.\n"
     "   - The name is almost ALWAYS the very first line or the largest text at the top of the resume.\n"
     "   - Look for email patterns like user@domain.com\n"
     "   - Look for phone patterns like (123) 456-7890 or +1-234-567-8901\n"
@@ -154,7 +154,9 @@ _EXTRACTION_PROMPT = (
     '    "email": "email@example.com",\n'
     '    "phone": "(123) 456-7890",\n'
     '    "linkedin": "linkedin.com/in/profile",\n'
-    '    "github": "github.com/username"\n'
+    '    "github": "github.com/username",\n'
+    '    "location": "City, ST (e.g. Tempe, AZ) — leave empty if not in resume",\n'
+    '    "portfolio": "personal website URL e.g. example.com — leave empty if not present"\n'
     "  },\n"
     '  "summary": "Professional summary if present, otherwise empty string",\n'
     '  "skills": {\n'
@@ -205,7 +207,7 @@ _EXTRACTION_PROMPT_SLIM = (
     "screening. Your ONLY job is to extract information explicitly present in the resume. "
     "NEVER infer, synthesize, or invent anything.\n\n"
     "CRITICAL MANDATORY FIELDS — you MUST extract these if they exist anywhere in the resume:\n"
-    "1. CONTACT: full name, email, phone, LinkedIn URL, GitHub URL.\n"
+    "1. CONTACT: full name, email, phone, LinkedIn URL, GitHub URL, location (City, ST), portfolio website URL.\n"
     "   - The name is almost ALWAYS the very first line or the largest text at the top of the resume.\n"
     "   - For linkedin and github, prefer the actual hyperlink URL target over display text.\n"
     "2. EDUCATION: institution/university name is NEVER optional. Also extract degree, location, "
@@ -249,7 +251,7 @@ _EXTRACTION_PROMPT_SLIM = (
     "- NEVER invent or infer certifications from skills, education, or job titles.\n\n"
     "Return a JSON object with EXACTLY this structure (ALL top-level keys REQUIRED):\n"
     "{\n"
-    '  "contact": {"name":"","email":"","phone":"","linkedin":"","github":""},\n'
+    '  "contact": {"name":"","email":"","phone":"","linkedin":"","github":"","location":"","portfolio":""},\n'
     '  "summary": "",\n'
     '  "skills": {"Category Name": ["Skill1", "Skill2"]},\n'
     '  "experience": [{"title":"","company":"","location":"","dates":"","type":"","bullets":[]}],\n'

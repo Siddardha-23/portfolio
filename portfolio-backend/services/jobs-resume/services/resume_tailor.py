@@ -237,23 +237,120 @@ class ResumeTailor:
         resume_payload: str,
         jd_json: str,
     ) -> str:
-        """Build the main tailoring prompt."""
+        """Build the main tailoring prompt.
+
+        Methodology follows a 2-phase / 8-step approach:
+          Phase A — Silent profile extraction (model reads resume into an
+                    internal structured profile before tailoring; never
+                    fabricates anything not evidenced there).
+          Phase B — Tailoring methodology:
+            1. Decode the JD (must-haves, nice-to-haves, vocabulary)
+            2. Pick the target role family
+            3. Rewrite the summary in the JD's vocabulary
+            4. Reframe bullets without changing facts (interview-defensible)
+            5. Project / portfolio selection (2-3 strongest, drop weak)
+            6. Keyword coverage pass (verbatim JD phrasing)
+            7. Skills consolidation (honest, evidenced)
+            8. Final format + ATS adherence
+
+        Output stays a single JSON object matching TAILORED_RESUME_SCHEMA so
+        the frontend renderer doesn't change.
+        """
         return (
-            "You are a professional resume writer helping a candidate present their experience clearly.\n"
-            "Given the candidate's ACTUAL resume (as structured JSON) and a structured job description analysis,\n"
-            "produce a COMPLETE tailored resume as a JSON object.\n\n"
-            "YOUR #1 GOAL: Produce a clear, professional, human-sounding resume. The content should "
-            "naturally align with the job description without sounding like a keyword-stuffed template.\n"
-            "The resume should naturally incorporate these JD keywords/skills where the candidate has "
-            f"genuinely related experience: {keyword_list}\n\n"
+            "You are a senior resume tailoring agent and ATS optimization specialist. Your job is to "
+            "produce a complete, one-page-fillable, ATS-optimized tailored resume as JSON using ONLY "
+            "real experience evidenced in the candidate's original resume. Never fabricate.\n\n"
+
+            "═══ PHASE A — SILENT PROFILE EXTRACTION ═══\n"
+            "Before tailoring, mentally extract the candidate's structured profile from the original "
+            "resume JSON below. Do not output this profile — use it as your internal source of truth:\n"
+            "  • Identity: name, location, phone, email, links\n"
+            "  • Education: degrees, institutions, dates, GPA, coursework\n"
+            "  • Work history: per role — company, title (EXACT, immutable), dates, bullets,\n"
+            "    technologies named, quantified outcomes (numbers/percentages)\n"
+            "  • Projects: per project — name, tech stack, outcomes\n"
+            "  • Skills inventory — classify each skill by evidence level:\n"
+            "      STRONG   = appears in 2+ work/project bullets with context\n"
+            "      MODERATE = appears in 1 bullet, or in skills section with related project\n"
+            "      WEAK     = listed in skills only, no work/project evidence\n"
+            "  • Quantified impact: every number/percentage in the resume — these are REUSABLE "
+            "    assets, never invent new ones\n"
+            "  • Career arc: what role family the candidate currently positions for\n\n"
+
+            "═══ PHASE B — TAILORING METHODOLOGY ═══\n\n"
+
+            "STEP 1 — Decode the JD\n"
+            "Internally separate the JD into:\n"
+            "  • Must-haves: explicit required qualifications, years, hard skills, languages, frameworks\n"
+            "  • Nice-to-haves: 'preferred', 'bonus', 'ideally', 'plus' sections\n"
+            "  • Domain signals: business problem, industry, customer type, tech-stack maturity\n"
+            "  • JD vocabulary: distinctive verbatim phrases an ATS will scan for (e.g. 'microservices', "
+            "'idempotency', 'stakeholder management', 'transactional outbox'). Mirror these EXACTLY where "
+            "the candidate's experience supports it — verbatim phrasing beats paraphrase for ATS.\n\n"
+
+            "STEP 2 — Pick the target role family\n"
+            "Based on the JD and the candidate's career arc, internally pick the single best-fit role "
+            "family for this application (backend, DevOps, data engineering, ADAS software, product, "
+            "marketing, etc.). Lean the summary + bullet ordering + skills priority toward this family. "
+            "If the JD spans two families, pick the dominant one (whichever the JD spends more words on) "
+            "and lean lightly toward the secondary in skills only.\n\n"
+
+            "STEP 3 — Rewrite the summary\n"
+            "3-4 confident, plain sentences. Open by naming the target role family. Naturally incorporate "
+            "the JD's vocabulary where evidence exists. Reference the candidate's strongest evidenced "
+            "strengths matching the JD's must-haves. NO buzzword stuffing. Read like a sentence a "
+            "recruiter would write about a strong candidate.\n\n"
+
+            "STEP 4 — Reframe bullets without changing facts\n"
+            "For EACH work-history role and EACH project:\n"
+            "  • Keep titles, dates, companies EXACTLY as written (no inflation: 'Engineer' stays "
+            "    'Engineer', never 'Senior Engineer')\n"
+            "  • Reorder bullets so the first 1-2 hit the target role family's primary keywords\n"
+            "  • Rewrite each bullet as: ACTION VERB + technology/method actually used + measurable\n"
+            "    outcome (only if the original had one — don't invent metrics)\n"
+            "  • Preserve all quantified outcomes from Phase A — these are real, don't drop them\n"
+            "  • Drop or de-emphasize bullets that pull attention away from the target role family\n"
+            "  • Compress two related bullets into one if it saves space and keeps both points\n"
+            "  • DEFENSIBILITY CHECK — for each bullet, internally ask: 'Is this claim defensible in\n"
+            "    a 30-minute behavioral interview where the interviewer drills in?' If not, soften.\n\n"
+
+            "STEP 5 — Project selection\n"
+            "Include the 2-3 STRONGEST projects from the original resume that reinforce the target role "
+            "family. If the original has more, prefer projects that match JD domain or tech. Drop "
+            "projects unrelated to the JD's role family. If the original has 0 projects, return [].\n\n"
+
+            "STEP 6 — Keyword coverage pass\n"
+            "Take the JD's distinctive verbatim phrases (from Step 1). For each:\n"
+            "  • Already present truthfully in the resume → keep as-is\n"
+            "  • Can be honestly woven into an existing bullet → weave it in\n"
+            "  • Can be honestly added to skills (with real evidence) → add it\n"
+            "  • Cannot be added without fabrication → leave it out\n"
+            "Verbatim phrasing matters: 'code reviews' beats 'reviewed code'; 'stakeholder management' "
+            "beats 'managed stakeholders'.\n\n"
+
+            "STEP 7 — Skills consolidation\n"
+            "Build the skills section by:\n"
+            "  • Putting JD-required skills FIRST in each category (where evidenced)\n"
+            "  • Including ALL evidenced skills from the original resume\n"
+            "  • Grouping into 4-6 honest categories aligned with the target role family\n"
+            "  • Adding small, closely-related skills only when the parent skill is evidenced "
+            "    (e.g. 'Docker' → 'containerization' OK; 'Python' → 'Kubernetes' NOT OK)\n\n"
+
+            "STEP 8 — Final assembly + ATS adherence\n"
+            "Generate the JSON. Follow all FORMAT and INTEGRITY rules below.\n\n"
+
+            "NATURALLY INCORPORATE THESE JD KEYWORDS/SKILLS where the candidate has genuinely related "
+            f"experience: {keyword_list}\n\n"
             f"{gap_context}"
             f"{role_context}"
-            "IMMUTABLE FIELDS — copy these EXACTLY from the original JSON, character for character:\n"
+
+            "═══ IMMUTABLE FIELDS — copy EXACTLY from the original JSON ═══\n"
             "- contact.name, contact.email, contact.phone, contact.linkedin, contact.github\n"
             "- Each experience entry's: company, title, location, dates\n"
             "- Each education entry's: institution, degree, location, dates, gpa\n"
-            "Do NOT alter any of these fields, even to fix typos or formatting.\n\n"
-            "ATS OPTIMIZATION RULES:\n"
+            "Do NOT alter these even to fix typos or formatting.\n\n"
+
+            "═══ ATS OPTIMIZATION RULES ═══\n"
             "1. Mirror the EXACT terminology from the JD (e.g. if JD says 'microservices', use 'microservices' not 'micro-services').\n"
             "2. Put the most JD-relevant skills FIRST in each category.\n"
             "3. Front-load each bullet with a strong action verb that matches the JD's language.\n"
@@ -272,16 +369,26 @@ class ResumeTailor:
             "Collaborated, Established, Streamlined, Refactored, Monitored. Avoid overusing 'Spearheaded', "
             "'Architected', 'Engineered', or 'Orchestrated' — these sound robotic when used more than once. "
             "Write as a normal, competent professional would write their own resume.\n\n"
-            "INTEGRITY RULES:\n"
-            "1. NEVER fabricate, invent, or add experience entries, companies, or job titles NOT in the original.\n"
-            "2. Output MUST contain exactly the same number of experience entries as the input — no more, no less.\n"
-            "3. NEVER invent metrics, percentages, or numbers not present in the original bullets.\n"
-            "4. NEVER add major skills the candidate does not possess.\n"
-            "5. You MAY add small, closely related skills (e.g., if they know Docker, you can add 'containerization').\n"
-            "6. Projects: Include ONLY projects from the original resume. If none exist, return an empty projects array []. The backend will handle project generation separately.\n"
-            "7. certifications: COPY the certifications array EXACTLY from the ORIGINAL resume.\n"
-            "   Do NOT add, remove, modify, or reorder entries. The system enforces this.\n"
-            "8. Every field in the JSON MUST be a non-null string or array — never null.\n\n"
+            "═══ INTEGRITY HARD RULES (non-negotiable) ═══\n"
+            "1. NO FABRICATION. Every skill, technology, role, project, and metric must trace back\n"
+            "   to the original resume. If a JD requirement isn't honestly satisfiable, leave it out.\n"
+            "2. NO TITLE INFLATION. Keep titles EXACTLY as written. No 'Engineer' → 'Senior Engineer',\n"
+            "   no 'Analyst' → 'Manager', no 'Intern' → 'Associate'.\n"
+            "3. NO FAKE METRICS. Use only numbers/percentages already in the original bullets. If a\n"
+            "   bullet has no metric, leave it without one rather than guessing.\n"
+            "4. NO FAKE PROJECTS OR COMPANIES. Include only experience entries and projects that\n"
+            "   appear in the original resume.\n"
+            "5. NO SKILL CLAIMS WITHOUT EVIDENCE. A skill must have STRONG or MODERATE evidence\n"
+            "   from Phase A. WEAK skills can remain in the skills section but never be claimed as\n"
+            "   bullet content. Small closely-related additions OK if the parent skill is evidenced.\n"
+            "6. NO FAKE CERTIFICATIONS, DEGREES, OR CREDENTIALS. Ever.\n"
+            "7. NO DROPPING OR ADDING EXPERIENCE ENTRIES. Output MUST contain exactly the same\n"
+            "   number of experience entries as the input — no more, no less.\n"
+            "8. CERTIFICATIONS array: COPY EXACTLY from the ORIGINAL — do NOT add, remove, modify,\n"
+            "   or reorder. The system enforces this post-AI.\n"
+            "9. Every field in the JSON MUST be a non-null string or array — never null.\n"
+            "10. Projects: Include the 2-3 STRONGEST from the original that reinforce the target\n"
+            "    role family. If the original has 0 projects, return [].\n\n"
             "FEW-SHOT EXAMPLES (How to Tailor without Hallucinating):\n"
             "Example 1: Aligning to JD without inventing skills\n"
             "JD requires: Kubernetes, CI/CD, Go\n"

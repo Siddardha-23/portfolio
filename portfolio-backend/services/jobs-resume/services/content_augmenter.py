@@ -582,26 +582,24 @@ class ContentAugmenter:
                     estimated_fill -= _EST_BULLET_FILL
             fill = self._measure_fill(tailored)
 
-        # Strategy 3 (NEW, before project removal): aggressively trim
-        # oldest experience bullets down to 2 per role. Projects are
-        # higher-value than the 3rd bullet on a 2021 intern role for ATS
-        # matching, so we shed experience density before deleting
-        # entire projects.
-        if fill > _OVERFLOW_SOFT:
-            estimated_fill = fill
-            for exp in reversed(experience):
-                bullets = exp.get("bullets", [])
-                while len(bullets) > 2 and estimated_fill > _OVERFLOW_SOFT:
-                    bullets.pop()
-                    estimated_fill -= _EST_BULLET_FILL
-                    logger.warning(
-                        "ContentAugmenter: trimmed bullet to %d on %s (preserving projects)",
-                        len(bullets), exp.get("company", "?"),
-                    )
+        # Strategy 3: trim ONLY the oldest experience role down to 2
+        # bullets if still overflowing. Don't strip recent/prior roles
+        # below 3 — that's where ATS and recruiters spend the most
+        # attention, and an earlier version of this code dropped EVERY
+        # role to 2 bullets which produced a sparse, undersized resume.
+        if fill > _OVERFLOW_SOFT and len(experience) > 0:
+            oldest = experience[-1]
+            bullets = oldest.get("bullets", [])
+            while len(bullets) > 2 and self._measure_fill(tailored) > _OVERFLOW_SOFT:
+                bullets.pop()
+                logger.warning(
+                    "ContentAugmenter: trimmed oldest-role bullet on %s (now %d)",
+                    oldest.get("company", "?"), len(bullets),
+                )
             fill = self._measure_fill(tailored)
 
         # Strategy 4: last resort — remove projects if STILL overflowing.
-        # Keeps at least 1 project (the original / first-injected one).
+        # Keeps at least 1 project.
         projects = tailored.get("projects", [])
         if fill > _OVERFLOW_SOFT and len(projects) > 1:
             while len(projects) > 1 and self._measure_fill(tailored) > _OVERFLOW_SOFT:
@@ -902,27 +900,53 @@ class ContentAugmenter:
         )
 
         prompt = (
-            "Rewrite this professional summary to naturally include the target role and key skills.\n\n"
-            "RULES:\n"
-            "1. Write 3-4 clear, confident sentences.\n"
+            "Rewrite this professional resume summary to naturally include the target role "
+            "and key skills. The summary belongs on the candidate's own resume, so it must "
+            "be written FROM the candidate's perspective (first-person-implied, no 'I' "
+            "pronoun) — never AS an outside observer describing the candidate.\n\n"
+            "VOICE — non-negotiable:\n"
+            "  • Write as the candidate's own self-description. Opening should describe what\n"
+            "    the candidate IS or DOES, e.g. 'Backend engineer with hands-on experience\n"
+            "    building...' / 'Cloud and DevOps engineer focused on...'.\n"
+            "  • NEVER use the words 'candidate', 'candidates', 'the candidate',\n"
+            "    'This candidate', 'Software Engineer X candidates should...', or any\n"
+            "    third-person framing. This is a resume summary, not a job description or\n"
+            "    a recruiter blurb.\n"
+            "  • NEVER open the summary with the JD's job title as a noun phrase being\n"
+            "    described (e.g. 'Software Engineer II Backend candidates should have...').\n"
+            "    The JD title can appear LATER in the summary as the candidate's target\n"
+            "    role, but not as the grammatical subject of the opening sentence.\n"
+            "\n"
+            "STYLE rules:\n"
+            "1. EXACTLY 3-4 sentences. Not 5, not 6.\n"
             "2. Naturally mention the target role title and at least 3 of the required skills.\n"
-            "3. Ground the summary in the candidate's actual experience.\n"
-            "4. Use plain, professional language.\n"
-            "5. BANNED WORDS: 'Versatile', 'Proficient', 'Leverages', 'extensive experience', "
-            "'proven track record', 'results-driven', 'passionate', 'detail-oriented', "
-            "'highly skilled', 'seasoned', 'cutting-edge', 'innovative', 'dynamic', "
-            "'self-motivated', 'Adept', 'dedicated', 'committed to excellence', 'strong foundation', "
-            "'strong record', 'strong background', 'robust experience'.\n"
+            "3. Ground every claim in the candidate's actual experience below.\n"
+            "4. Use plain, professional language. Direct, specific, no buzzwords.\n"
+            "5. BANNED WORDS — do NOT use ANY: 'Versatile', 'Proficient', 'Leverages',\n"
+            "   'extensive experience', 'proven track record', 'results-driven', 'passionate',\n"
+            "   'detail-oriented', 'highly skilled', 'seasoned', 'cutting-edge', 'innovative',\n"
+            "   'dynamic', 'self-motivated', 'Adept', 'dedicated', 'committed to excellence',\n"
+            "   'strong foundation', 'strong record', 'strong background', 'robust experience',\n"
+            "   'should have', 'candidates should'.\n"
             "6. Do NOT start with an adjective.\n"
-            "7. Do NOT start with 'I'.\n\n"
+            "7. Do NOT start with 'I' or with the JD's job title verbatim.\n\n"
+            "GOOD examples (match this voice):\n"
+            "  • 'Backend engineer with hands-on experience building Python microservices on\n"
+            "    AWS, designing RESTful APIs against PostgreSQL, and shipping CI/CD pipelines\n"
+            "    that span dev through production. Comfortable owning the full development\n"
+            "    lifecycle in fast-paced environments. Ready to apply this foundation to the\n"
+            "    Software Engineer II role on the Platform Team.'\n"
+            "  • 'Cloud and DevOps engineer skilled in Terraform-driven AWS infrastructure,\n"
+            "    Kubernetes workloads, and golden-signal observability across production\n"
+            "    systems. Background spans containerized backend services on ECS/EKS with\n"
+            "    Multi-AZ Postgres and SRE-aligned incident response.'\n\n"
             f"Target role: {jd_analysis.get('job_title', '')}\n"
             f"Required skills: {', '.join(jd_analysis.get('required_skills', [])[:5])}\n"
             f"Candidate background: {exp_context}\n"
             f"Current summary: {summary}\n\n"
             "Return ONLY the rewritten summary as a JSON object with one key named "
             "\"summary\" whose value is the new summary string. The string value must be "
-            "plain prose — NEVER another JSON object, NEVER wrapped in braces, NEVER "
-            "containing the word \"summary\" as a JSON key inside itself. Just the prose.\n"
+            "plain prose. Just the prose.\n"
         )
 
         try:
@@ -949,8 +973,33 @@ class ContentAugmenter:
                 except Exception:
                     pass
             if new_summary and len(new_summary) > 50:
-                tailored["summary"] = new_summary
-                logger.warning("ContentAugmenter ATS: summary rewritten for alignment")
+                # Defensive QC: reject the rewrite if the model slipped back
+                # into the third-person voice or opened with the JD title
+                # verbatim. Keep the original (tailor-produced) summary in
+                # that case — it's almost always better than a broken
+                # rewrite. The list below captures every red-flag pattern
+                # we've seen the model emit in production.
+                _new_lower = new_summary.lower()
+                _job_title = (jd_analysis.get("job_title") or "").strip().lower()
+                _bad_patterns = [
+                    " candidate ", " candidates ", "the candidate", "this candidate",
+                    "candidates should", "should have built",
+                    "i build ", "i have built ", "i'm a ", "i am a ",
+                ]
+                _opens_with_jd_title = (
+                    _job_title
+                    and len(_job_title) > 6
+                    and _new_lower.startswith(_job_title)
+                )
+                if any(p in _new_lower for p in _bad_patterns) or _opens_with_jd_title:
+                    logger.warning(
+                        "ContentAugmenter ATS: REJECTED alignment rewrite "
+                        "(third-person voice or JD-title opener) — keeping original. Rewrite was: %r",
+                        new_summary[:200],
+                    )
+                else:
+                    tailored["summary"] = new_summary
+                    logger.warning("ContentAugmenter ATS: summary rewritten for alignment")
         except Exception as e:
             logger.error("ContentAugmenter ATS summary alignment failed: %s", e)
 

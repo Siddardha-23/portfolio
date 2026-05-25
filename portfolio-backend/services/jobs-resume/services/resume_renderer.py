@@ -401,7 +401,15 @@ class ResumeRenderer:
 
                     # Reference layout:
                     #   Institution[, Location] | Degree[, GPA: X.XX]   <date right-aligned>
-                    inst_part = f"{inst}, {location}" if inst and location else inst
+                    # Skip location if it's already substring of institution
+                    # (e.g. "JNTU Kakinada" + location "Kakinada" → don't
+                    # render "JNTU Kakinada, Kakinada").
+                    if inst and location and location.lower() in inst.lower():
+                        inst_part = inst
+                    elif inst and location:
+                        inst_part = f"{inst}, {location}"
+                    else:
+                        inst_part = inst
                     left_parts = [p for p in [inst_part, degree] if p]
                     if gpa:
                         left_parts.append(f"GPA: {gpa}")

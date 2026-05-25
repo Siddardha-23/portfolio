@@ -313,6 +313,17 @@ class ResumeTailor:
             "    are portfolio-style projects the candidate could plausibly build. Don't pre-fill\n"
             "    that slot here.\n\n"
 
+            "⚠️ VOICE — the summary is the CANDIDATE'S self-description on THEIR resume.\n"
+            "  • Write in first-person-implied voice (no 'I' pronoun, but describing the\n"
+            "    candidate's own work). Example: 'Backend engineer with hands-on experience\n"
+            "    building Python microservices on AWS...'\n"
+            "  • NEVER write in third-person about 'the candidate' / 'this candidate' /\n"
+            "    'candidates should have...'. The summary is NOT a recruiter blurb or a\n"
+            "    job description — it's the candidate speaking through their resume.\n"
+            "  • The JD's job title can appear LATER in the summary as the target role,\n"
+            "    but it must NEVER be the grammatical subject of the opening sentence\n"
+            "    (e.g. NEVER: 'Software Engineer II Backend candidates should have...').\n\n"
+
             "⚠️ BANNED WORDS — FORBIDDEN in the summary AND every other field. If you use ANY of "
             "them you have failed the task and must rewrite. Verify the summary against this list "
             "before returning:\n"

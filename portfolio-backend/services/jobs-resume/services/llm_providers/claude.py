@@ -59,9 +59,9 @@ class ClaudeProvider(LLMProvider):
     Cross-region inference profiles work too (prefix with `us.`).
     """
 
-    FLASH = _model_id("BEDROCK_FLASH_MODEL_ID", "anthropic.claude-haiku-4-5-20251022-v1:0")
-    PRO = _model_id("BEDROCK_PRO_MODEL_ID", "anthropic.claude-haiku-4-5-20251022-v1:0")
-    PREVIEW = _model_id("BEDROCK_PREVIEW_MODEL_ID", "anthropic.claude-haiku-4-5-20251022-v1:0")
+    FLASH = _model_id("BEDROCK_FLASH_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    PRO = _model_id("BEDROCK_PRO_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    PREVIEW = _model_id("BEDROCK_PREVIEW_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
 
     def __init__(self):
         self._client = None

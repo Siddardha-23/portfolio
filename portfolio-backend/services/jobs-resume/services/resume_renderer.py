@@ -70,18 +70,24 @@ class ResumeRenderer:
         text = str(text)
         replacements = {
             "\u2022": "\xb7",  # bullet • → middle dot · (latin-1 compatible)
-            "\u2013": "-",   # en-dash –
-            "\u2014": "--",  # em-dash —
-            "\u2018": "'",   # left single quote
-            "\u2019": "'",   # right single quote / apostrophe
-            "\u201c": '"',   # left double quote
-            "\u201d": '"',   # right double quote
-            "\u2026": "...", # ellipsis …
-            "\u00a0": " ",   # non-breaking space
-            "\u200b": "",    # zero-width space
+            "\u2013": " - ",   # en-dash – → spaced hyphen
+            "\u2014": " - ",   # em-dash — → spaced hyphen
+            "\u2015": " - ",   # horizontal bar ―
+            "\u2212": "-",     # minus sign − (Latin-1 safe single hyphen)
+            "\u2018": "'",     # left single quote
+            "\u2019": "'",     # right single quote / apostrophe
+            "\u201c": '"',     # left double quote
+            "\u201d": '"',     # right double quote
+            "\u2026": "...",   # ellipsis …
+            "\u00a0": " ",     # non-breaking space
+            "\u200b": "",      # zero-width space
         }
         for char, repl in replacements.items():
             text = text.replace(char, repl)
+        # Collapse duplicate spaces that the spaced-hyphen replacement can
+        # introduce when the original already had a space (e.g. "x — y" →
+        # "x  -  y" → "x - y").
+        text = re.sub(r"  +", " ", text)
         # Fallback: strip any remaining non-latin-1 characters
         return text.encode("latin-1", errors="replace").decode("latin-1")
 

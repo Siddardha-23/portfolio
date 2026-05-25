@@ -132,6 +132,14 @@ class IntegrityGuard:
         report.original_experience_count = len(original.get("experience", []))
         report.tailored_experience_count = len(tailored.get("experience", []))
 
+        logger.warning(
+            "IntegrityGuard.enforce ENTRY: original_projects=%d %s, tailored_projects=%d %s",
+            len(original.get("projects", [])),
+            [p.get("name", "?") for p in original.get("projects", [])],
+            len(tailored.get("projects", [])),
+            [p.get("name", "?") for p in tailored.get("projects", [])],
+        )
+
         # Step 1: Force immutable fields
         tailored, overwrites = self.force_immutable_fields(original, tailored)
         report.immutable_overwrites = overwrites
@@ -165,6 +173,14 @@ class IntegrityGuard:
 
         # Determine severity
         report.severity = self._classify_severity(report)
+
+        logger.warning(
+            "IntegrityGuard.enforce EXIT: severity=%s, final_tailored_projects=%d %s, hallucinated_proj=%d",
+            report.severity,
+            len(tailored.get("projects", [])),
+            [p.get("name", "?") for p in tailored.get("projects", [])],
+            len(report.hallucinated_projects),
+        )
 
         if report.severity != "clean":
             logger.warning(

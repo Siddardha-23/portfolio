@@ -250,35 +250,34 @@ class ResumeRenderer:
                            new_x="LMARGIN", new_y="NEXT")
 
         # ── SUMMARY ── (LaTeX: rSection{SUMMARY})
-        # Reference template uses the short "SUMMARY" header (not
-        # "PROFESSIONAL SUMMARY"). First descriptor phrase rendered bold to
-        # match the LaTeX template's \textbf{...} opener (e.g.
-        # "**Cloud and DevOps Engineer** with hands-on...").
+        # Reference template uses the short "SUMMARY" header. First
+        # descriptor phrase rendered bold via multi_cell markdown — safer
+        # than pdf.write() which doesn't reset X reliably between
+        # font-weight switches.
         summary = tailored.get("summary", "")
         if summary:
             section_header("Summary")
-            # Detect the lead descriptor phrase: noun chunks up to the first
-            # connective verb ("with", "who", "experienced in", "skilled at",
-            # "specializing in", "focused on", a comma, an em/en-dash). The
-            # lead is everything up to (but not including) the connector.
+            pdf.set_font("Times", "", body_size)
+            safe_summary = sanitize(summary)
+            # Detect the lead descriptor phrase: everything up to the first
+            # connective ("with", "who", "experienced", "skilled",
+            # "specializing", "focused", "that", "building", "designing",
+            # comma, en/em-dash). Bold only if ≤ 60 chars and ≥ 4 chars.
             lead_match = re.match(
-                r'^(.+?)(?=\s+(?:with|who|experienced|skilled|specializing|focused|that|building|designing|building)\b|\s*[—\-,]\s*)',
-                summary.strip(),
+                r'^([^,—\-]+?)(?=\s+(?:with|who|experienced|skilled|specializing|focused|that|building|designing)\b|\s*[—,]\s*|\s+-\s+)',
+                safe_summary,
                 flags=re.IGNORECASE,
             )
             lead = lead_match.group(1).strip() if lead_match else ""
-            # Only bold the lead if it looks like a role/title (≤ 60 chars,
-            # contains a noun-ish word). Otherwise render summary plain.
-            if lead and 3 < len(lead) <= 60:
-                rest = sanitize(summary[len(lead):].lstrip())
-                pdf.set_font("Times", "B", body_size)
-                pdf.write(lh, sanitize(lead) + " ")
-                pdf.set_font("Times", "", body_size)
-                pdf.write(lh, rest)
-                pdf.ln(lh)
+            if lead and 3 < len(lead) <= 60 and "**" not in safe_summary:
+                # Wrap lead in markdown bold; multi_cell handles wrapping
+                # within `w` correctly, unlike pdf.write().
+                rest = safe_summary[len(lead):]
+                rendered = f"**{lead}**{rest}"
+                pdf.multi_cell(w, lh, rendered, markdown=True,
+                               new_x="LMARGIN", new_y="NEXT")
             else:
-                pdf.set_font("Times", "", body_size)
-                pdf.multi_cell(w, lh, sanitize(summary),
+                pdf.multi_cell(w, lh, safe_summary,
                                new_x="LMARGIN", new_y="NEXT")
 
         # ── EXPERIENCE ── (LaTeX: rSection{EXPERIENCE})

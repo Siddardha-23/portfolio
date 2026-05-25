@@ -228,23 +228,47 @@ class ResumeRenderer:
 
         if contact_fields:
             pdf.set_font("Times", "", self._CONTACT_SIZE)
-            pdf.set_text_color(0, 0, 0)  # black — per user request
+            pdf.set_text_color(0, 0, 0)
             sep = " | "
-            # Compute total width for centering
-            total_w = sum(pdf.get_string_width(d) for d, _ in contact_fields)
-            total_w += pdf.get_string_width(sep) * (len(contact_fields) - 1)
-            x_start = ml + (w - total_w) / 2
-            pdf.set_x(x_start)
-            for i, (display, href) in enumerate(contact_fields):
-                cell_w = pdf.get_string_width(display)
-                if href:
-                    pdf.cell(cell_w, self._LH_CONTACT, display, link=href)
+            sep_w = pdf.get_string_width(sep)
+
+            # Wrap-aware layout: distribute contact fields across multiple
+            # lines so the line never exceeds page width. Previously a single
+            # too-wide line produced a negative x_start, pushing most of the
+            # text off the page (only the right-most fragment showed up).
+            # Matches the reference template which wraps when total width
+            # exceeds the page (Tempe, AZ | phone | email | portfolio |
+            # linkedin |\n github).
+            lines: List[List[Tuple[str, Optional[str]]]] = []
+            current_line: List[Tuple[str, Optional[str]]] = []
+            current_width = 0.0
+            for display, href in contact_fields:
+                field_w = pdf.get_string_width(display)
+                added_w = field_w if not current_line else (sep_w + field_w)
+                if current_line and (current_width + added_w) > w:
+                    lines.append(current_line)
+                    current_line = [(display, href)]
+                    current_width = field_w
                 else:
-                    pdf.cell(cell_w, self._LH_CONTACT, display)
-                if i < len(contact_fields) - 1:
-                    sep_w = pdf.get_string_width(sep)
-                    pdf.cell(sep_w, self._LH_CONTACT, sep)
-            pdf.ln(self._LH_CONTACT)
+                    current_line.append((display, href))
+                    current_width += added_w
+            if current_line:
+                lines.append(current_line)
+
+            for line in lines:
+                line_w = sum(pdf.get_string_width(d) for d, _ in line)
+                line_w += sep_w * max(0, len(line) - 1)
+                x_start = ml + max(0.0, (w - line_w) / 2)
+                pdf.set_x(x_start)
+                for i, (display, href) in enumerate(line):
+                    cell_w = pdf.get_string_width(display)
+                    if href:
+                        pdf.cell(cell_w, self._LH_CONTACT, display, link=href)
+                    else:
+                        pdf.cell(cell_w, self._LH_CONTACT, display)
+                    if i < len(line) - 1:
+                        pdf.cell(sep_w, self._LH_CONTACT, sep)
+                pdf.ln(self._LH_CONTACT)
 
         pdf.ln(header_gap)
 

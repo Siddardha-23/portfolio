@@ -195,6 +195,25 @@ class ContentAugmenter:
         )
         return content_h / self.renderer._AVAIL_H
 
+    def _measure_fill_at_smallest_font(self, tailored: Dict[str, Any]) -> float:
+        """Same as _measure_fill but at generate_pdf's smallest auto-shrink
+        size (9pt body, 3.2 lh, 3.0 lh_s). overflow_trim should only fire
+        if content STILL doesn't fit even at this smallest size — otherwise
+        the renderer's auto-shrink handles density."""
+        _, content_h = self.renderer._render_pdf(
+            tailored,
+            section_gap=self.renderer._MIN_SECTION_GAP,
+            entry_gap=self.renderer._MIN_ENTRY_GAP,
+            post_header=self.renderer._MIN_POST_HEADER,
+            header_gap=self.renderer._MIN_HEADER_GAP,
+            skill_gap=self.renderer._MIN_SKILL_GAP,
+            body_size=9.0,
+            lh=3.2,
+            lh_s=3.0,
+            measure_only=True,
+        )
+        return content_h / self.renderer._AVAIL_H
+
     # ------------------------------------------------------------------
     # Phase 1: Project generation
     # ------------------------------------------------------------------
@@ -205,14 +224,27 @@ class ContentAugmenter:
         original: Dict[str, Any],
         jd_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """ALWAYS generate up to _MAX_PROJECTS aligned projects, regardless
-        of current fill. The tailor produces dense content by design; if we
-        gated project generation on the fill check, projects would almost
-        never be added. Phase 4 _overflow_trim handles excess content later
-        and is configured to prefer trimming experience bullets over
-        removing projects."""
+        """Generate aligned projects up to _MAX_PROJECTS — but skip if the
+        candidate already has a deep project (≥3 bullets).
+
+        Empirical finding: with 5/3/3 experience bullets + 1 deep project (5
+        bullets) + 5 skill categories, page fill at 10pt is ~109% and at 9pt
+        is ~75% — fits cleanly. Adding 2 more generated projects pushes 10pt
+        fill to ~131%, 9pt to ~109%, overflow_trim fires and DESTROYS the
+        deep original project's bullets. Net result: 3 shallow projects
+        rendered, worse than 1 deep one. The reference resume the user
+        wants to match has exactly 1 deep project. We honor that."""
         projects = tailored.get("projects", [])
         tailored.setdefault("projects", projects)
+
+        # If user already has at least one deep project, don't dilute it.
+        if projects and any(len(p.get("bullets", [])) >= 3 for p in projects):
+            logger.warning(
+                "ContentAugmenter Phase 1 SKIPPED: candidate has %d project(s) with "
+                "≥3 bullets — preserving depth without generating shallow extras",
+                len(projects),
+            )
+            return tailored
 
         needed = _MAX_PROJECTS - len(projects)
         if needed <= 0:
@@ -548,15 +580,31 @@ class ContentAugmenter:
     # ------------------------------------------------------------------
 
     def _overflow_trim(self, tailored: Dict[str, Any], fill: float) -> Dict[str, Any]:
-        """Trim content if page overflows.
-
-        Uses estimated per-bullet fill reduction to avoid calling _measure_fill
-        in tight loops. Only re-measures once per strategy to verify.
+        """Trim content ONLY if it overflows even at the renderer's smallest
+        auto-shrink size (9pt). The renderer's generate_pdf() can shrink
+        10pt → 9.5pt → 9pt before bailing. If our 10pt-measured fill says
+        we're "overflowing" but the renderer would fit fine at 9pt, trimming
+        here just destroys content for no reason. Reference resume the user
+        wants to match achieves its density via tight font, not via trimming.
         """
+        # Cheap early-out: 10pt fill < 95% means definitely no overflow.
         if fill <= _OVERFLOW_SOFT:
             return tailored
 
-        logger.warning("ContentAugmenter Phase 4: fill %.1f%% > 95%% — trimming", fill * 100)
+        # Expensive but accurate check: would 9pt rendering overflow?
+        fill_at_9pt = self._measure_fill_at_smallest_font(tailored)
+        if fill_at_9pt <= 1.0:
+            logger.warning(
+                "ContentAugmenter Phase 4: fill %.1f%% at 10pt would be %.1f%% at 9pt — "
+                "renderer auto-shrink will handle, NO trim.",
+                fill * 100, fill_at_9pt * 100,
+            )
+            return tailored
+
+        logger.warning(
+            "ContentAugmenter Phase 4: fill %.1f%% at 10pt / %.1f%% at 9pt — trimming",
+            fill * 100, fill_at_9pt * 100,
+        )
 
         # Estimate: each bullet ≈ 1.5-2% of page fill
         _EST_BULLET_FILL = 0.018

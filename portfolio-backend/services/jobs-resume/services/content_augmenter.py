@@ -72,8 +72,15 @@ class ContentAugmenter:
 
         # Phase 0: Measure current fill
         fill = self._measure_fill(tailored)
-        logger.warning("ContentAugmenter Phase 0: initial fill = %.1f%%, projects=%d, experience=%d",
-                       fill * 100, len(tailored.get("projects", [])), len(tailored.get("experience", [])))
+        _proj_names = [p.get("name", "?") for p in tailored.get("projects", [])]
+        _orig_proj_names = [p.get("name", "?") for p in original.get("projects", [])]
+        logger.warning(
+            "ContentAugmenter Phase 0: fill=%.1f%%, projects=%d %s, original_projects=%d %s, experience=%d",
+            fill * 100,
+            len(_proj_names), _proj_names,
+            len(_orig_proj_names), _orig_proj_names,
+            len(tailored.get("experience", [])),
+        )
 
         # Phase 1: ALWAYS try project generation if under cap, regardless of fill.
         # Uses batch generation (single LLM call for all needed projects).

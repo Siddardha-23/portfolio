@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Model routing constants
 # ---------------------------------------------------------------------------
-GEMINI_FLASH   = "gemini-3.5-flash"          # extraction / factual parsing (released May 2026)
-GEMINI_PRO     = "gemini-2.5-pro"            # JD-based tailoring (stay on 2.5-pro until 3.5-pro lands ~June 2026)
-GEMINI_PREVIEW = "gemini-3.5-flash"          # repair / correction — 3.5-flash outperforms prior 3.1-pro-preview here
+GEMINI_FLASH   = "gemini-2.5-flash"          # extraction / factual parsing — free-tier eligible
+GEMINI_PRO     = "gemini-2.5-pro"            # JD-based tailoring — free-tier eligible but tight quota (5 RPM, 50/day)
+GEMINI_PREVIEW = "gemini-2.5-flash"          # repair / correction — same as flash, free-tier eligible
 
 
 class LLMRetriesExhaustedError(Exception):

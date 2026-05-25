@@ -38,6 +38,30 @@ class ResumeRenderer:
             return (value, None)  # plain text, no link
         return (value, None)  # phone — no href
 
+    # Reference template uses 3-letter month abbreviations in date ranges
+    # ("Jan 2023 - Apr 2023"). Parsed resumes sometimes have full month
+    # names ("January 2023 - April 2023") which look uneven next to the
+    # short month entries. Normalize for visual consistency.
+    _MONTH_FULL_TO_ABBR = {
+        "January": "Jan", "February": "Feb", "March": "Mar",
+        "April": "Apr", "June": "Jun", "July": "Jul",
+        "August": "Aug", "September": "Sep", "October": "Oct",
+        "November": "Nov", "December": "Dec",
+        # May stays "May" — same length already. Sept→Sep handled below.
+        "Sept": "Sep",
+    }
+
+    @classmethod
+    def _normalize_dates(cls, date_str: str) -> str:
+        """Convert full month names to 3-letter abbreviations to match the
+        reference template's date format. Leaves dates already abbreviated
+        or otherwise non-standard untouched."""
+        if not date_str:
+            return date_str
+        for full, abbr in cls._MONTH_FULL_TO_ABBR.items():
+            date_str = re.sub(rf"\b{full}\b", abbr, date_str)
+        return date_str
+
     @staticmethod
     def _sanitize_text(text) -> str:
         """Replace Unicode chars unsupported by built-in PDF fonts with latin-1 equivalents."""
@@ -287,7 +311,7 @@ class ResumeRenderer:
             for i, exp in enumerate(experience):
                 company = sanitize(exp.get("company", ""))
                 location = sanitize(exp.get("location", ""))
-                dates = sanitize(exp.get("dates", ""))
+                dates = sanitize(self._normalize_dates(exp.get("dates", "")))
                 company_line = f"{company}, {location}" if location else company
 
                 # Company bold + dates right — LaTeX: \textbf{COMPANY} \hfill {dates}
@@ -382,7 +406,7 @@ class ResumeRenderer:
                     inst = sanitize(edu.get("institution", ""))
                     location = sanitize(edu.get("location", ""))
                     degree = sanitize(edu.get("degree", ""))
-                    dates = sanitize(edu.get("dates", ""))
+                    dates = sanitize(self._normalize_dates(edu.get("dates", "")))
                     gpa = sanitize(edu.get("gpa", ""))
 
                     # Strip date patterns baked into degree by AI

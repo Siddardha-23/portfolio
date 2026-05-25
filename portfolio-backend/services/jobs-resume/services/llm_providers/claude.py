@@ -59,9 +59,25 @@ class ClaudeProvider(LLMProvider):
     Cross-region inference profiles work too (prefix with `us.`).
     """
 
+    # Tier strategy:
+    #   FLASH   → Haiku 4.5  — cheap, fast, ≤8192 output. Used by parser + repair.
+    #   PRO     → Sonnet 4.6 — higher output budget (≥16k), better grounding.
+    #                          Used by tailor, JD analysis, scorer, intelligence.
+    #   PREVIEW → Haiku 4.5  — repair tier, small outputs, cheap is fine.
+    # Tailor calls request up to 24k output tokens; Haiku's 8k cap was
+    # truncating the response mid-JSON. Sonnet supports the larger budget.
     FLASH = _model_id("BEDROCK_FLASH_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
-    PRO = _model_id("BEDROCK_PRO_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+    PRO = _model_id("BEDROCK_PRO_MODEL_ID", "us.anthropic.claude-sonnet-4-6")
     PREVIEW = _model_id("BEDROCK_PREVIEW_MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+
+    # Per-model output token caps. The Bedrock API will reject a max_tokens
+    # value higher than the model's native ceiling, so we clamp defensively.
+    # These match Anthropic's documented native output limits as of 2026-05.
+    _MAX_OUTPUT_TOKENS = {
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0": 8192,
+        "us.anthropic.claude-sonnet-4-6": 16384,
+        "us.anthropic.claude-sonnet-4-5-20250929-v1:0": 16384,
+    }
 
     def __init__(self):
         self._client = None
@@ -85,8 +101,29 @@ class ClaudeProvider(LLMProvider):
     # Low-level invoke with retry
     # ------------------------------------------------------------------
 
+    def _clamp_max_tokens(self, requested: int, model: str) -> int:
+        """Clamp max_tokens to the model's native output ceiling.
+
+        Callers (resume tailor in particular) pass max_tokens up to 24000.
+        Haiku caps at 8192 and Sonnet 4.6 at 16384 — exceeding silently
+        truncates the JSON mid-stream and the repair logic can't recover
+        missing sections like projects or skills.
+        """
+        ceiling = self._MAX_OUTPUT_TOKENS.get(model, 8192)
+        if requested > ceiling:
+            logger.info(
+                "Clamping max_tokens %d → %d for model %s",
+                requested, ceiling, model,
+            )
+            return ceiling
+        return requested
+
     def _invoke(self, body: dict, model: str, max_retries: int = 2) -> dict:
         """Call bedrock-runtime InvokeModel and return the parsed response."""
+        # Defensive clamp — body may have come from json() or tool_call().
+        if "max_tokens" in body:
+            body["max_tokens"] = self._clamp_max_tokens(body["max_tokens"], model)
+
         last_error = None
         for attempt in range(max_retries + 1):
             try:

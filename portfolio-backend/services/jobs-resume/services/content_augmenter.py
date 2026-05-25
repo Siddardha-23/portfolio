@@ -561,7 +561,7 @@ class ContentAugmenter:
         # Estimate: each bullet ≈ 1.5-2% of page fill
         _EST_BULLET_FILL = 0.018
 
-        # Strategy 1: trim bullets from oldest experience entries
+        # Strategy 1: trim oldest experience bullets to 3 per role
         experience = tailored.get("experience", [])
         estimated_fill = fill
         for exp in reversed(experience):
@@ -569,14 +569,12 @@ class ContentAugmenter:
             while len(bullets) > 3 and estimated_fill > _OVERFLOW_SOFT:
                 bullets.pop()
                 estimated_fill -= _EST_BULLET_FILL
-                logger.debug("ContentAugmenter: trimmed bullet from %s", exp.get("company", "?"))
 
-        # Re-measure once after strategy 1
+        # Re-measure
         fill = self._measure_fill(tailored)
 
         # Strategy 2: trim project bullets (3 → 2)
         if fill > _OVERFLOW_SOFT:
-            estimated_fill = fill
             for proj in tailored.get("projects", []):
                 bullets = proj.get("bullets", [])
                 while len(bullets) > 2 and estimated_fill > _OVERFLOW_SOFT:
@@ -584,12 +582,34 @@ class ContentAugmenter:
                     estimated_fill -= _EST_BULLET_FILL
             fill = self._measure_fill(tailored)
 
-        # Strategy 3: remove last project if still overflowing
+        # Strategy 3 (NEW, before project removal): aggressively trim
+        # oldest experience bullets down to 2 per role. Projects are
+        # higher-value than the 3rd bullet on a 2021 intern role for ATS
+        # matching, so we shed experience density before deleting
+        # entire projects.
+        if fill > _OVERFLOW_SOFT:
+            estimated_fill = fill
+            for exp in reversed(experience):
+                bullets = exp.get("bullets", [])
+                while len(bullets) > 2 and estimated_fill > _OVERFLOW_SOFT:
+                    bullets.pop()
+                    estimated_fill -= _EST_BULLET_FILL
+                    logger.warning(
+                        "ContentAugmenter: trimmed bullet to %d on %s (preserving projects)",
+                        len(bullets), exp.get("company", "?"),
+                    )
+            fill = self._measure_fill(tailored)
+
+        # Strategy 4: last resort — remove projects if STILL overflowing.
+        # Keeps at least 1 project (the original / first-injected one).
         projects = tailored.get("projects", [])
         if fill > _OVERFLOW_SOFT and len(projects) > 1:
             while len(projects) > 1 and self._measure_fill(tailored) > _OVERFLOW_SOFT:
                 removed = projects.pop()
-                logger.debug("ContentAugmenter: removed project '%s'", removed.get("name", "?"))
+                logger.warning(
+                    "ContentAugmenter: removed project '%s' (last-resort trim)",
+                    removed.get("name", "?"),
+                )
 
         return tailored
 

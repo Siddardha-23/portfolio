@@ -72,17 +72,22 @@ class ContentAugmenter:
 
         # Phase 0: Measure current fill
         fill = self._measure_fill(tailored)
-        logger.info("ContentAugmenter Phase 0: initial fill = %.1f%%", fill * 100)
+        logger.warning("ContentAugmenter Phase 0: initial fill = %.1f%%, projects=%d, experience=%d",
+                       fill * 100, len(tailored.get("projects", [])), len(tailored.get("experience", [])))
 
         # Phase 1: ALWAYS try project generation if under cap, regardless of fill.
-        # Uses batch generation (single Gemini call for all needed projects).
+        # Uses batch generation (single LLM call for all needed projects).
         projects = tailored.get("projects", [])
         if len(projects) < _MAX_PROJECTS:
             t0 = time.time()
             tailored = self._augment_projects(tailored, original, jd_analysis)
             fill = self._measure_fill(tailored)
-            logger.info("ContentAugmenter Phase 1 (projects): fill = %.1f%% [%.1fs]",
-                        fill * 100, time.time() - t0)
+            logger.warning("ContentAugmenter Phase 1 (projects): fill = %.1f%% [%.1fs]",
+                           fill * 100, time.time() - t0)
+        else:
+            logger.warning("ContentAugmenter Phase 1 SKIPPED: tailor returned %d projects (cap %d) — "
+                           "no room for generated projects. This is usually a tailor-prompt issue.",
+                           len(projects), _MAX_PROJECTS)
 
         # Early exit for remaining phases (bullet expansion, impact) if fill is good
         if fill >= _TARGET_FILL:

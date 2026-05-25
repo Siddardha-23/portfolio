@@ -80,16 +80,27 @@ class ResumeTailor:
             keyword_list, gap_context, role_context, resume_payload, jd_json
         )
 
-        # Pass schema so Claude routes through forced tool-use (guaranteed
-        # JSON, no markdown fences, no preamble eating output budget). For
-        # Gemini path the schema is also passed; _to_openapi_schema handles
-        # _dict_of via additionalProperties best-effort.
+        # Intentionally DO NOT pass schema=. Schema-forced tool-use on Claude
+        # had two regressions we tracked down empirically:
+        #   1. Claude wrapped string fields in JSON envelopes — e.g.
+        #      `summary` came out as the literal string `{"summary": "..."}`
+        #      because the model treated the schema as "produce JSON-shaped
+        #      values" rather than "fill in plain strings".
+        #   2. The `projects: [...]` array schema acted as a hint to FILL it
+        #      up, so Claude returned 3 invented projects every time. That
+        #      broke the downstream pipeline: ContentAugmenter's Phase 1
+        #      runs only when `len(projects) < _MAX_PROJECTS=3`, so we
+        #      skipped project generation entirely and the user saw whatever
+        #      Claude had invented (and IntegrityGuard couldn't strip cleanly
+        #      because the model often gave invented projects realistic-
+        #      looking names).
+        # Plain prompt + multi-strategy JSON parse + validate_and_coerce is
+        # how the original Gemini flow worked; matches that behavior here.
         result = gemini_json(
             prompt=prompt,
             max_tokens=24000,
             temperature=0.4,
             model=GEMINI_PRO,
-            schema=TAILORED_RESUME_SCHEMA,
         )
         # Type coercion remains to fill defaults for entirely missing sections
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
@@ -199,12 +210,12 @@ class ResumeTailor:
             "Return the full regenerated resume as a JSON object with the same structure."
         )
 
+        # See main tailor call above for the rationale on omitting schema=.
         result = gemini_json(
             prompt=prompt,
             max_tokens=24000,
             temperature=0.4,
             model=GEMINI_PRO,
-            schema=TAILORED_RESUME_SCHEMA,
         )
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
 

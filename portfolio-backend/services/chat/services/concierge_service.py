@@ -251,13 +251,14 @@ _ACTION_HINTS = re.compile(
 
 
 def _pick_model(message: str, recruiter_mode: bool) -> str:
-    if recruiter_mode:
-        return "gemini-2.5-pro"
-    if _ACTION_HINTS.search(message or ""):
-        return "gemini-2.5-pro"
-    if len(message) > 240:
-        return "gemini-2.5-pro"
-    return "gemini-2.5-flash"
+    """Pick tier (FLASH vs PRO) based on heuristics. Returns provider-
+    native model ID through the active provider's constants — on Claude
+    that's Haiku 4.5 vs Sonnet 4.6; on Gemini that's 2.5-flash vs 2.5-pro."""
+    from services.llm_providers import get_provider
+    provider = get_provider()
+    if recruiter_mode or _ACTION_HINTS.search(message or "") or len(message) > 240:
+        return provider.PRO
+    return provider.FLASH
 
 
 # ---------------------------------------------------------------------------
@@ -275,22 +276,12 @@ def generate_concierge_turn(
     Returns the validated envelope:
       { spoken, caption, intents[], display|None, suggestions[], emotion, meta{} }
     """
-    from services.gemini_client import get_gemini_client
-    from google.genai import types
+    from services.llm_providers import get_provider
 
-    client = get_gemini_client()
+    provider = get_provider()
     model = _pick_model(message, recruiter_mode)
 
-    # Build conversation
-    contents = []
-    if history:
-        for entry in history[-16:]:
-            role = entry.get("role", "user")
-            content = entry.get("content", "")
-            if role in ("user", "model") and content:
-                contents.append(types.Content(role=role, parts=[types.Part(text=content[:2000])]))
-
-    # Add ambient context — what the user is looking at
+    # Build ambient context — what the user is looking at
     ambient_bits = []
     if current_section in ALLOWED_SECTIONS:
         ambient_bits.append(f"[Visitor is currently viewing the '{current_section}' section.]")
@@ -298,23 +289,32 @@ def generate_concierge_turn(
         ambient_bits.append("[Recruiter mode is ON — be concise, lead with impact metrics, offer the JD-match feature.]")
     ambient = " ".join(ambient_bits)
     user_text = f"{ambient}\n\n{message}" if ambient else message
-    contents.append(types.Content(role="user", parts=[types.Part(text=user_text)]))
+
+    # Trim history to last 16 turns; the provider abstraction handles role
+    # translation (Gemini "model" ↔ Claude "assistant").
+    trimmed_history = (history or [])[-16:]
+    # Append a JSON-only instruction so the model returns the envelope
+    # structure expected by _validate_response (we lost response_mime_type
+    # in the abstraction; the validator's repair logic handles fences).
+    user_text_json = (
+        user_text
+        + "\n\nReturn ONLY a valid JSON envelope with keys: spoken, caption, "
+          "intents, display, suggestions, emotion. No markdown fences, no preamble."
+    )
 
     base_tags = [f"model:{model}", "agent:concierge", f"recruiter:{str(recruiter_mode).lower()}"]
-    with dd_span("ai.gemini.generate", tags={"model": model, "agent": "concierge"}):
+    with dd_span("ai.chat.generate", tags={"model": model, "agent": "concierge"}):
         try:
-            response = client.models.generate_content(
+            raw_text = provider.text(
+                prompt=user_text_json,
+                system=CONCIERGE_SYSTEM,
+                history=trimmed_history,
+                temperature=0.55,
+                max_tokens=2048,
                 model=model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=CONCIERGE_SYSTEM,
-                    temperature=0.55,
-                    max_output_tokens=2048,
-                    response_mime_type="application/json",
-                ),
             )
         except Exception as e:
-            logger.error(f"Concierge Gemini error: {e}")
+            logger.error(f"Concierge LLM error: {e}")
             dd_metric("portfolio.concierge.errors", 1, tags=base_tags)
             return {
                 "spoken": "Something hiccuped on my end. Try that again?",
@@ -324,14 +324,8 @@ def generate_concierge_turn(
             }
 
     dd_metric("portfolio.concierge.replies", 1, tags=base_tags)
-    usage = getattr(response, "usage_metadata", None)
-    if usage is not None:
-        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
-        output_tokens = getattr(usage, "candidates_token_count", 0) or 0
-        dd_metric("portfolio.concierge.tokens.input", prompt_tokens, tags=base_tags)
-        dd_metric("portfolio.concierge.tokens.output", output_tokens, tags=base_tags)
 
-    envelope = _validate_response(response.text or "")
+    envelope = _validate_response(raw_text or "")
     envelope["meta"] = {"model": model, "recruiter_mode": recruiter_mode}
 
     # Per-intent telemetry

@@ -69,9 +69,13 @@ locals {
       memory      = 320
       timeout     = 60
       env_vars = {
-        # chat service still on Gemini — its concierge orchestrator uses
-        # the google-genai client directly (4 callsites), so the Claude
-        # migration is deferred to a follow-up. Lower traffic anyway.
+        # LLM provider selection — user-facing chat features (3D concierge,
+        # /api/chat, Cloud Diary cron) now route through AWS Bedrock + Claude.
+        # The SSE multi-agent orchestrator (`/api/chat/agent`) still uses the
+        # raw google-genai client because its streaming tool-calling loop
+        # hasn't been ported yet — that's why SSM_GEMINI_API_KEY is still
+        # populated below.
+        LLM_PROVIDER       = "claude"
         SSM_MONGODB_URI    = aws_ssm_parameter.mongodb_uri.name
         SSM_GEMINI_API_KEY = var.gemini_api_key != "" ? aws_ssm_parameter.gemini_api_key[0].name : ""
         # GITHUB_PAT lifts the GitHub API rate limit and unlocks private-repo metadata

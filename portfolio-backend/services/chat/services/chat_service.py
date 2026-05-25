@@ -130,58 +130,41 @@ Guidelines:
 {PORTFOLIO_CONTEXT}"""
 
 def _get_client():
-    """Delegate to shared Gemini client singleton."""
-    from services.gemini_client import get_gemini_client
-    return get_gemini_client()
+    """Backward-compat shim. Returns the active provider's raw client when
+    available (Gemini) or the Bedrock client (Claude). Most callers should
+    use `generate_response` rather than touching the client directly."""
+    from services.llm_providers import get_provider
+    return get_provider().lazy_client()
 
 
 def generate_response(message: str, history: Optional[List[Dict[str, str]]] = None) -> str:
+    """Generate a chat response via the active LLM provider.
+
+    `history` shape: [{"role": "user"|"model"|"assistant", "content": str}, ...]
+    The provider abstraction translates roles + history into the underlying
+    API's native format.
     """
-    Generate a chat response using Gemini.
+    from services.llm_providers import get_provider
+    provider = get_provider()
 
-    Args:
-        message: The user's current message.
-        history: Previous conversation turns, each with 'role' and 'content'.
-                 Roles: 'user' or 'model'.
+    # Trim history to last 20 turns to bound context cost.
+    trimmed_history = (history or [])[-20:]
 
-    Returns:
-        The model's response text.
-    """
-    client = _get_client()
-    from google.genai import types
-
-    # Build contents list: system instruction + history + current message
-    contents = []
-    if history:
-        trimmed = history[-20:]
-        for entry in trimmed:
-            role = entry.get("role", "user")
-            content = entry.get("content", "")
-            if role in ("user", "model") and content:
-                contents.append(types.Content(role=role, parts=[types.Part(text=content)]))
-
-    contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
-
-    model_name = "gemini-2.5-flash-lite"
-    with dd_span("ai.gemini.generate", tags={"model": model_name, "agent": "concierge"}):
-        response = client.models.generate_content(
+    agent_tag = "concierge"
+    model_name = provider.FLASH  # cheap text-tier (Haiku 4.5 on Claude, 2.5-flash on Gemini)
+    with dd_span("ai.chat.generate", tags={"model": model_name, "agent": agent_tag}):
+        reply = provider.text(
+            prompt=message,
+            system=SYSTEM_PROMPT,
+            history=trimmed_history,
+            temperature=0.7,
+            max_tokens=1024,
             model=model_name,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.7,
-                max_output_tokens=1024,
-            ),
         )
 
-    # Custom metrics: count chat replies + total tokens (input + output) per call.
-    # Usage data is on response.usage_metadata when the SDK populates it.
-    base_tags = [f"model:{model_name}", "agent:concierge"]
+    # Custom metrics: count chat replies. Token-level usage metrics are now
+    # provider-specific and we no longer surface them per-call (Bedrock returns
+    # usage on the response body; surface in a follow-up if needed).
+    base_tags = [f"model:{model_name}", f"agent:{agent_tag}"]
     dd_metric("portfolio.chat.replies", 1, tags=base_tags)
-    usage = getattr(response, "usage_metadata", None)
-    if usage is not None:
-        prompt_tokens = getattr(usage, "prompt_token_count", 0) or 0
-        output_tokens = getattr(usage, "candidates_token_count", 0) or 0
-        dd_metric("portfolio.chat.tokens.input", prompt_tokens, tags=base_tags)
-        dd_metric("portfolio.chat.tokens.output", output_tokens, tags=base_tags)
-    return response.text
+    return reply

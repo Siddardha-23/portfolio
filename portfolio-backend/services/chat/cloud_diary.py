@@ -161,8 +161,7 @@ def _group_by_repo(events: List[Dict], window_hours: int) -> Dict[str, List[str]
 def _summarize(grouped: Dict[str, List[str]], window_hours: int) -> Optional[Dict]:
     if not grouped:
         return None
-    from services.gemini_client import get_gemini_client
-    from google.genai import types
+    from services.llm_providers import get_provider
 
     bullets = []
     for repo, items in grouped.items():
@@ -170,24 +169,30 @@ def _summarize(grouped: Dict[str, List[str]], window_hours: int) -> Optional[Dic
         bullets.append(f"### {repo}\n" + "\n".join(f"- {x}" for x in head))
     payload = "\n\n".join(bullets)
 
+    # Append a JSON-only instruction to the prompt since the abstraction's
+    # text() method doesn't expose response_mime_type — Claude / Gemini both
+    # produce JSON reliably when asked plainly + parsed defensively below.
+    payload_with_hint = payload + "\n\nReturn ONLY valid JSON, no markdown fences, no preamble."
+
     try:
-        client = get_gemini_client()
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=[types.Content(role="user", parts=[types.Part(text=payload)])],
-            config=types.GenerateContentConfig(
-                system_instruction=DIARY_PROMPT.format(window_hours=window_hours),
-                temperature=0.5,
-                max_output_tokens=600,
-                response_mime_type="application/json",
-            ),
+        provider = get_provider()
+        text = provider.text(
+            prompt=payload_with_hint,
+            system=DIARY_PROMPT.format(window_hours=window_hours),
+            temperature=0.5,
+            max_tokens=600,
         )
-        text = (response.text or "").strip()
         if not text:
             return None
-        return json.loads(text)
+        # Strip markdown fences if the model wrapped the response.
+        t = text.strip()
+        if t.startswith("```"):
+            import re as _re
+            t = _re.sub(r"^```(?:json)?\s*\n?", "", t)
+            t = _re.sub(r"\n?```\s*$", "", t)
+        return json.loads(t)
     except Exception as exc:
-        logger.warning("Gemini diary summarization failed: %s", exc)
+        logger.warning("Diary summarization failed: %s", exc)
         return None
 
 

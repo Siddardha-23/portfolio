@@ -130,11 +130,15 @@ class ResumeRenderer:
     _PRE_BULLET_GAP = 1.0      # gap before first bullet after title
 
     # Spacing ceilings
-    _MAX_SECTION_GAP = 3.0
-    _MAX_ENTRY_GAP = 2.5
-    _MAX_POST_HEADER = 2.0
-    _MAX_HEADER_GAP = 2.5
-    _MAX_SKILL_GAP = 1.0
+    # Reference resume keeps tight spacing throughout (no Pass 2 inflation).
+    # Earlier caps allowed sections to grow by 5mm+ each on a sparse page,
+    # producing the "almost empty" look. Caps tightened so leftover
+    # whitespace stays small and density matches the LaTeX template.
+    _MAX_SECTION_GAP = 1.0
+    _MAX_ENTRY_GAP = 0.8
+    _MAX_POST_HEADER = 0.8
+    _MAX_HEADER_GAP = 0.8
+    _MAX_SKILL_GAP = 0.2
 
     def _count_spacing_slots(self, tailored: Dict[str, Any]) -> Dict[str, int]:
         """Count the number of each spacing slot type in the resume."""

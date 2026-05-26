@@ -91,16 +91,20 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   return (
     <FeedbackContext.Provider value={value}>
       {children}
-      {/* Floating launcher — only show when authenticated. */}
+      {/* Floating launcher — vertically rotated tab on the LEFT edge so it
+          never collides with the bottom-right cluster (Chatbot, Concierge,
+          BuilderAgent, ResumeParser's sticky action bar). Vertically
+          centered → always within thumb reach on desktop. */}
       {isAuthenticated && (
         <button
           type="button"
           onClick={() => handleOpen()}
-          className="fixed bottom-5 right-5 z-40 group inline-flex items-center gap-2 rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-purple-900/30 hover:shadow-purple-900/50 hover:scale-105 active:scale-95 transition-all"
+          className="fixed left-0 top-1/2 -translate-y-1/2 z-30 group inline-flex items-center gap-1.5 rounded-r-lg bg-gradient-to-br from-indigo-500 via-purple-500 to-fuchsia-500 px-2.5 py-3 text-[11px] font-semibold uppercase tracking-wider text-white shadow-lg shadow-purple-900/30 hover:shadow-purple-900/50 hover:px-3.5 active:scale-95 transition-all"
+          style={{ writingMode: 'vertical-rl', transform: 'translateY(-50%) rotate(180deg)' }}
           aria-label="Send feedback"
         >
           <ChatBubbleIcon />
-          <span className="hidden sm:inline">Feedback</span>
+          <span>Feedback</span>
         </button>
       )}
 

@@ -82,12 +82,17 @@ class ResumeTailor:
             t = self._strip_fabricated_langs(t, structured_resume)
             t = self._ensure_jd_skills_coverage(t, structured_resume, jd_analysis)
             t = self._cap_skills_per_category(t, structured_resume, jd_analysis)
+            t = self._cap_project_bullets(t)
             if target_role:
                 t["target_role"] = target_role
             return t
 
+        original_project_count = len(structured_resume.get("projects") or [])
+        target_project_bullets = self.bullets_per_project(original_project_count)
+
         prompt = self._build_tailor_prompt(
-            keyword_list, gap_context, role_context, resume_payload, jd_json
+            keyword_list, gap_context, role_context, resume_payload, jd_json,
+            target_project_bullets=target_project_bullets,
         )
 
         # Intentionally DO NOT pass schema=. Schema-forced tool-use on Claude
@@ -340,8 +345,58 @@ class ResumeTailor:
     # lines per category at 10pt with 11mm L/R margins. The LLM sometimes
     # produces categories with 20-25 items which overflows the page; the
     # ATS scorer reads from JSON, so the cap also applies to JSON for
-    # consistency between rendered PDF and structured data.
-    _MAX_SKILLS_PER_CATEGORY = 14
+    # consistency between rendered PDF and structured data. Tighter cap
+    # applies when there are 2+ projects to make room.
+    _MAX_SKILLS_PER_CATEGORY_BASE = 14
+    _MAX_SKILLS_PER_CATEGORY_DENSE = 10
+
+    @staticmethod
+    def bullets_per_project(project_count: int) -> int:
+        """Project bullets scale inversely with project count so total
+        project content stays within the one-page A4 budget at 10pt.
+
+        Mapping (verified locally — each row keeps body at 10pt):
+            1 project  -> 5 bullets
+            2 projects -> 3 bullets
+            3 projects -> 3 bullets
+
+        Applies to ANY user / any JD — the tailor prompt, the project
+        generator, and the final normalization all use this same rule.
+        """
+        if project_count <= 1:
+            return 5
+        return 3
+
+    @classmethod
+    def _max_skills_per_category(cls, project_count: int) -> int:
+        """Tighter skills cap when there are 2+ projects, to compensate
+        for the extra vertical space projects consume."""
+        if project_count <= 1:
+            return cls._MAX_SKILLS_PER_CATEGORY_BASE
+        return cls._MAX_SKILLS_PER_CATEGORY_DENSE
+
+    _MAX_SKILLS_PER_CATEGORY = _MAX_SKILLS_PER_CATEGORY_BASE  # legacy alias
+
+    @classmethod
+    def _cap_project_bullets(cls, tailored: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize every project's bullet count to `bullets_per_project`.
+
+        Trims overflow (keeps the first N bullets — these tend to be the
+        most JD-aligned since the tailor prompt is told to lead with the
+        most relevant). Never adds bullets (would risk fabrication).
+        Applies the same rule regardless of JD or user — the cap is a
+        function of project count only.
+        """
+        projects = tailored.get("projects") or []
+        target = cls.bullets_per_project(len(projects))
+        for p in projects:
+            if not isinstance(p, dict):
+                continue
+            bullets = p.get("bullets") or []
+            if len(bullets) > target:
+                p["bullets"] = bullets[:target]
+        tailored["projects"] = projects
+        return tailored
 
     @classmethod
     def _cap_skills_per_category(
@@ -356,6 +411,9 @@ class ResumeTailor:
         if not isinstance(skills, dict):
             return tailored
 
+        project_count = len(tailored.get("projects") or [])
+        cap = cls._max_skills_per_category(project_count)
+
         jd_terms_lower = set()
         for s in (jd_analysis.get("required_skills") or []):
             jd_terms_lower.add((normalize_single(s) or s).lower())
@@ -367,7 +425,7 @@ class ResumeTailor:
                 jd_terms_lower.add(f.lower())
 
         for cat, items in list(skills.items()):
-            if not isinstance(items, list) or len(items) <= cls._MAX_SKILLS_PER_CATEGORY:
+            if not isinstance(items, list) or len(items) <= cap:
                 continue
             # Stable partition: JD-aligned first, then originals. Preserve
             # input order within each group so the highest-relevance items
@@ -382,7 +440,7 @@ class ResumeTailor:
                     jd_aligned.append(s)
                 else:
                     rest.append(s)
-            skills[cat] = (jd_aligned + rest)[: cls._MAX_SKILLS_PER_CATEGORY]
+            skills[cat] = (jd_aligned + rest)[:cap]
         tailored["skills"] = skills
         return tailored
 
@@ -581,6 +639,7 @@ class ResumeTailor:
         role_context: str,
         resume_payload: str,
         jd_json: str,
+        target_project_bullets: int = 5,
     ) -> str:
         """Build the main tailoring prompt.
 
@@ -703,7 +762,10 @@ class ResumeTailor:
             "Also include JD-required skills where the candidate has related experience. "
             "Only omit skills that are completely irrelevant to both the JD and the candidate\'s work.\n"
             "4. Education: Institution, degree, and dates.\n"
-            "5. Projects: EXACTLY 5 bullets per project (each ~150-200 chars). If there are no projects, compensate by adding more experience bullets.\n"
+            f"5. Projects: EXACTLY {target_project_bullets} bullets per project (each ~150-200 chars). "
+            "Bullet count scales inversely with project count so the resume fits one page: "
+            "1 project -> 5 bullets, 2-3 projects -> 3 bullets each. If there are no projects, "
+            "compensate by adding more experience bullets.\n"
             "6. IMPORTANT: Do NOT rely on empty whitespace to fill the page. Generate robust, detailed content for every single bullet and summary sentence to naturally fill the available space.\n\n"
 
             "Return a JSON object with EXACTLY this structure:\n"

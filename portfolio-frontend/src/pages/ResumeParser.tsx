@@ -733,8 +733,10 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
         </h2>
         <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-1">
           {[
+            resume.contact?.location,
             resume.contact?.phone,
             resume.contact?.email,
+            resume.contact?.portfolio,
             resume.contact?.linkedin,
             resume.contact?.github,
           ]
@@ -747,8 +749,10 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
               [
                 resume.contact?.name,
                 [
+                  resume.contact?.location,
                   resume.contact?.phone,
                   resume.contact?.email,
+                  resume.contact?.portfolio,
                   resume.contact?.linkedin,
                   resume.contact?.github,
                 ]

@@ -525,28 +525,30 @@ class ResumeRenderer:
             measure_only=True,
         )
 
-        # --- Overflow protection: tiered fallback (10pt-tight → 9.5pt → 9pt) ---
-        # Before dropping the font, try a tighter line height at 10pt. The
-        # body font size is what recruiters notice most — keep it at 10pt
-        # whenever possible. Bands ~3% above the page budget recover into
-        # 10pt-tight; only >3% over forces a shrink to 9.5pt.
-        if min_height > avail and min_height <= avail + 10.0:
-            tight_lh = 3.25
-            tight_lhs = 3.05
-            _, retry_height = self._render_pdf(
-                tailored,
-                section_gap=self._MIN_SECTION_GAP,
-                entry_gap=self._MIN_ENTRY_GAP,
-                post_header=self._MIN_POST_HEADER,
-                header_gap=self._MIN_HEADER_GAP,
-                skill_gap=self._MIN_SKILL_GAP,
-                body_size=10.0, lh=tight_lh, lh_s=tight_lhs,
-                measure_only=True,
-            )
-            if retry_height <= avail:
-                lh = tight_lh
-                lh_s = tight_lhs
-                min_height = retry_height
+        # --- Overflow protection: tiered fallback (10pt-tight → 10pt-ultra → 9.5pt → 9pt) ---
+        # Body font size is what recruiters notice most — keep it at 10pt
+        # whenever possible. Two tight-lh tiers stack before any font drop:
+        #   Tier 1 (~3% over): lh=3.25 / lh_s=3.05 (~7-8mm recovered)
+        #   Tier 2 (~7% over): lh=3.10 / lh_s=2.95 (~13-15mm recovered;
+        #                       comfortable for 2-project resumes)
+        # Only >7% over forces a font drop to 9.5pt.
+        if min_height > avail:
+            for tier_lh, tier_lhs in ((3.25, 3.05), (3.10, 2.95)):
+                _, retry_height = self._render_pdf(
+                    tailored,
+                    section_gap=self._MIN_SECTION_GAP,
+                    entry_gap=self._MIN_ENTRY_GAP,
+                    post_header=self._MIN_POST_HEADER,
+                    header_gap=self._MIN_HEADER_GAP,
+                    skill_gap=self._MIN_SKILL_GAP,
+                    body_size=10.0, lh=tier_lh, lh_s=tier_lhs,
+                    measure_only=True,
+                )
+                if retry_height <= avail:
+                    lh = tier_lh
+                    lh_s = tier_lhs
+                    min_height = retry_height
+                    break
 
         if min_height > avail:
             # Still over budget → drop to 9.5pt

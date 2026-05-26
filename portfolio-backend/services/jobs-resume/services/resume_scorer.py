@@ -31,7 +31,9 @@ class ResumeScorer:
     def score(self, tailored: Dict[str, Any], jd_analysis: Dict[str, Any]) -> Dict[str, Any]:
         """Run full hybrid scoring pipeline. Returns validated ATS scores dict."""
         det = self._deterministic_scores(tailored, jd_analysis)
-        ai = self._ai_scores(tailored, jd_analysis)
+        # Pass the deterministic results into the AI scorer so the scanner
+        # scores reconcile with them rather than being independent guesses.
+        ai = self._ai_scores(tailored, jd_analysis, det_facts=det)
         return self._combine(det, ai)
 
     # ------------------------------------------------------------------
@@ -217,27 +219,68 @@ class ResumeScorer:
     # AI scoring (Gemini)
     # ------------------------------------------------------------------
 
-    def _ai_scores(self, tailored: Dict[str, Any], jd_analysis: Dict[str, Any]) -> dict:
-        """Call Gemini for semantic assessment that can't be computed deterministically."""
+    def _ai_scores(
+        self,
+        tailored: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        det_facts: dict | None = None,
+    ) -> dict:
+        """Call Gemini for semantic assessment that can't be computed
+        deterministically. `det_facts` carries the deterministic results so
+        the AI scanner scoring is grounded in what we already know to be
+        true (section completeness, keyword coverage, format).
+        """
         import json
         from services.gemini_client import gemini_json, GEMINI_PRO
 
         tailored_json = json.dumps(tailored, indent=2)[:6000]
         jd_json = json.dumps(jd_analysis, indent=2)[:3000]
 
+        # Build the deterministic-facts block. Scanner scores must be
+        # CONSISTENT with these facts — Claude was guessing wildly before,
+        # producing Workday=78 / Taleo=65 even though every fact ATSes
+        # actually parse for (sections, keywords, format) was at 95-100.
+        facts = det_facts or {}
+        facts_block = (
+            "=== DETERMINISTIC PARSING FACTS (use these as evidence) ===\n"
+            f"- Keyword Match score: {facts.get('keyword_match', '?')}/100\n"
+            f"- Keyword Frequency score: {facts.get('keyword_frequency', '?')}/100\n"
+            f"- Skills Alignment score: {facts.get('skills_alignment', '?')}/100\n"
+            f"- Section Completeness score: {facts.get('section_completeness', '?')}/100\n"
+            f"- Quantifiable Impact score: {facts.get('quantifiable_impact', '?')}/100\n"
+            f"- Bullet Quality score: {facts.get('bullet_quality', '?')}/100\n"
+            f"- Format: single-column, standard fonts, no tables/images/columns, "
+            "ATS-friendly section headers (SUMMARY, EXPERIENCE, PROJECTS, "
+            "TECHNICAL SKILLS, EDUCATION), bullets with Unicode standard •\n"
+            f"- Missing required keywords ({len(facts.get('missing_keywords', []))}): "
+            f"{', '.join(facts.get('missing_keywords', [])[:8]) or 'none'}\n\n"
+        )
+
         prompt = (
             "You are an ATS (Applicant Tracking System) and AI recruitment screener expert.\n"
             "Analyze the tailored resume against the job description.\n\n"
-            "You are scoring ONLY the following metrics (other metrics are computed separately):\n\n"
+            + facts_block +
+            "SCORING RUBRIC — scanner scores MUST track the deterministic facts above. "
+            "A resume with Format=ATS-friendly, Section Completeness=100, "
+            "Keyword Match≥90, Keyword Frequency≥90, Skills Alignment≥85 should score "
+            "85-95 across all six scanners. Lower scores only when there are concrete "
+            "issues you can point at (e.g. missing keywords, weak experience-role match).\n\n"
             "1. experience_relevance (0-100): How closely do the candidate's job titles, industries, "
             "and responsibilities match the target role. Consider career trajectory and transferable skills.\n\n"
-            "2. scanners — Simulate how different ATS systems would score this resume:\n"
-            "   - workday (0-100): Favors exact keyword matches in skills/experience sections\n"
-            "   - greenhouse (0-100): Weighs skills sections heavily, structured format\n"
-            "   - lever (0-100): Checks experience depth and career progression\n"
-            "   - icims (0-100): Strict keyword frequency analysis\n"
-            "   - taleo (0-100): Format-sensitive, penalizes non-standard sections\n"
-            "   - smartrecruiters (0-100): AI-based semantic matching\n\n"
+            "2. scanners — Score each per its known parsing model:\n"
+            "   - workday (0-100): Exact keyword matches in skills/experience. If "
+            "Keyword Match≥90 and Skills Alignment≥85, score 85-92.\n"
+            "   - greenhouse (0-100): Weighs Skills section heavily + structured format. "
+            "If Skills Alignment≥85 and format is ATS-friendly, score 85-92.\n"
+            "   - lever (0-100): Checks career progression + experience depth. Penalize "
+            "only if there's a real progression gap.\n"
+            "   - icims (0-100): Strict keyword frequency. If Keyword Frequency≥90, score 85-92.\n"
+            "   - taleo (0-100): Format-sensitive — penalizes tables, columns, fancy "
+            "headers. This resume is single-column with standard headers, so format "
+            "is not a penalty here. Score primarily on keyword coverage; 80-90 if "
+            "Keyword Match≥90.\n"
+            "   - smartrecruiters (0-100): Semantic + keyword. If Keyword Match≥90 "
+            "and Skills Alignment≥85, score 85-92.\n\n"
             "3. ai_screener — Simulate HireVue/Pymetrics-style screening:\n"
             "   - overall (0-100): Overall AI screening pass likelihood\n"
             "   - relevance (0-100): How relevant is the candidate's background\n"
@@ -245,7 +288,9 @@ class ResumeScorer:
             "   - culture_fit (0-100): Communication style and professional tone\n\n"
             "4. suggestions: List 3-5 specific, actionable improvements the candidate could make.\n\n"
             "5. strengths: List 2-4 strong points of this resume relative to the JD.\n\n"
-            "Be REALISTIC. If there are gaps between the candidate and the role, reflect that in scores.\n"
+            "Be REALISTIC but not punitive. Scanner scores must reconcile with the "
+            "deterministic facts: if every fact says 'this is ATS-friendly', no scanner "
+            "should score below 80 without a specific reason you can cite.\n"
             "All scores MUST be integers 0-100. All arrays MUST be non-empty.\n\n"
             "Return a JSON object with EXACTLY this structure:\n"
             "{\n"

@@ -5207,15 +5207,54 @@ function TailorTab() {
                       );
                     })()}
 
+                  {/* Quota-exhausted banner — shown ABOVE the button so the
+                      user knows why before they paste anything. */}
+                  {dailyUsage?.remaining === 0 && (
+                    <div className="mb-3 rounded-xl border border-amber-400/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-3">
+                      <div className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-200/60 dark:bg-amber-400/20 text-amber-700 dark:text-amber-300 text-xs font-bold">!</span>
+                        <div className="flex-1 text-sm">
+                          <p className="font-semibold text-amber-900 dark:text-amber-200">
+                            Daily limit reached — {dailyUsage.limit} of {dailyUsage.limit} used
+                          </p>
+                          <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80 leading-relaxed">
+                            I cap tailoring at {dailyUsage.limit} per UTC day so the AI stays free
+                            for everyone. Counter resets at midnight UTC. Need more for an active
+                            job-hunt push?
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setQuotaDialog(dailyUsage)}
+                            className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-200 underline underline-offset-2 hover:text-amber-700 dark:hover:text-amber-100"
+                          >
+                            Request more →
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <button
-                    onClick={handleTailoring}
-                    disabled={!jdText.trim() || analyzingJD || tailoring || (dailyUsage?.remaining === 0)}
+                    onClick={() => {
+                      // Don't silently no-op when out of quota — surface
+                      // the dialog so the user knows why and can act.
+                      if (dailyUsage?.remaining === 0) {
+                        setQuotaDialog(dailyUsage);
+                        return;
+                      }
+                      handleTailoring();
+                    }}
+                    disabled={!jdText.trim() || analyzingJD || tailoring}
                     className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 active:scale-[0.98] transition-all duration-200"
                   >
                     {analyzingJD || tailoring ? (
                       <>
                         <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                         Tailoring…
+                      </>
+                    ) : dailyUsage?.remaining === 0 ? (
+                      <>
+                        <SparklesIcon className="w-4 h-4" />
+                        Daily limit reached — see options
                       </>
                     ) : (
                       <>

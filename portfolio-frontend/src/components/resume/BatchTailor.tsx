@@ -535,16 +535,50 @@ export default function BatchTailor() {
                 <PlusIcon className="w-4 h-4" />Add Job Description
               </button>
             )}
-            <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting || (dailyUsage?.remaining === 0)}
+            <button type="button"
+              onClick={() => {
+                if (dailyUsage?.remaining === 0) {
+                  setQuotaDialog(dailyUsage);
+                  return;
+                }
+                handleSubmit();
+              }}
+              disabled={!canSubmit || submitting}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 dark:disabled:from-gray-800 dark:disabled:to-gray-800 dark:disabled:text-gray-600 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
               {submitting ? (
                 <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Submitting...</>
+              ) : dailyUsage?.remaining === 0 ? (
+                <>Daily limit reached — see options</>
               ) : (
                 <>Tailor All ({jdEntries.filter(e => e.text.trim().length > 50).length})</>
               )}
             </button>
             <DailyUsageBadge usage={dailyUsage} loading={usageLoading} className="ml-auto" />
           </div>
+          {dailyUsage?.remaining === 0 && (
+            <div className="rounded-xl border border-amber-400/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-3">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-amber-200/60 dark:bg-amber-400/20 text-amber-700 dark:text-amber-300 text-xs font-bold">!</span>
+                <div className="flex-1 text-sm">
+                  <p className="font-semibold text-amber-900 dark:text-amber-200">
+                    Daily limit reached — {dailyUsage.limit} of {dailyUsage.limit} used
+                  </p>
+                  <p className="mt-1 text-xs text-amber-800/80 dark:text-amber-200/80 leading-relaxed">
+                    I cap tailoring at {dailyUsage.limit} per UTC day so the AI stays free for
+                    everyone. Counter resets at midnight UTC. Need more for an active
+                    job-hunt push?
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQuotaDialog(dailyUsage)}
+                    className="mt-2 text-xs font-semibold text-amber-900 dark:text-amber-200 underline underline-offset-2 hover:text-amber-700 dark:hover:text-amber-100"
+                  >
+                    Request more →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
 

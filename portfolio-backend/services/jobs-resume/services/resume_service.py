@@ -777,7 +777,19 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             )
 
         elif job_type == "ats_scores":
-            result = svc.scorer.score(payload["tailored_resume"], payload["jd_analysis"])
+            # Render the PDF too so the scorer can run the parseability
+            # check — extracts text via pypdf and verifies real-ATS-style
+            # parsing (contact, sections, glyph integrity).
+            try:
+                pdf_bytes = svc.renderer.generate_pdf(payload["tailored_resume"])
+            except Exception as e:
+                logger.warning("ATS scoring: PDF render failed, parseability skipped: %s", e)
+                pdf_bytes = None
+            result = svc.scorer.score(
+                payload["tailored_resume"],
+                payload["jd_analysis"],
+                pdf_bytes=pdf_bytes,
+            )
             svc.complete_job(job_id, {"ats_scores": result})
 
         elif job_type == "job_search":

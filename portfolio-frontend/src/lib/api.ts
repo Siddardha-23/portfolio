@@ -1177,7 +1177,17 @@ class ApiService {
       },
       30000,
     );
-    if (submitResp.error) return { error: submitResp.error };
+    if (submitResp.error) {
+      // Forward status + errorPayload so callers can detect 429
+      // daily_quota_exceeded and surface the quota dialog. Previously
+      // we only forwarded the error string, silently dropping the
+      // structured payload — quota dialog never fired.
+      return {
+        error: submitResp.error,
+        status: submitResp.status,
+        errorPayload: submitResp.errorPayload,
+      };
+    }
     if (!submitResp.data?.job_id) return { error: "Failed to submit job" };
 
     return this.pollJob<{
@@ -1208,7 +1218,13 @@ class ApiService {
       },
       30000,
     );
-    if (submitResp.error) return { error: submitResp.error };
+    if (submitResp.error) {
+      return {
+        error: submitResp.error,
+        status: submitResp.status,
+        errorPayload: submitResp.errorPayload,
+      };
+    }
     if (!submitResp.data?.job_id)
       return { error: "Failed to submit regeneration job" };
 

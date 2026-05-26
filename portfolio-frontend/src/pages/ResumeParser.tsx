@@ -446,6 +446,102 @@ function ScoreRing({ score, size = 96 }: { score: number; size?: number }) {
 }
 
 // ─── ATS Panel ──────────────────────────────────────────────────────────────
+function PDFParseabilityCard({
+  score,
+  checks,
+  warnings,
+}: {
+  score: number;
+  checks: Record<string, unknown>;
+  warnings: string[];
+}) {
+  const tone =
+    score >= 90
+      ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-700 dark:text-emerald-300"
+      : score >= 75
+      ? "border-amber-400/40 bg-amber-400/10 text-amber-700 dark:text-amber-300"
+      : "border-rose-400/40 bg-rose-400/10 text-rose-700 dark:text-rose-300";
+
+  const Row = ({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) => (
+    <div className="flex items-center justify-between text-xs">
+      <span className="text-gray-600 dark:text-gray-400">{label}</span>
+      <span
+        className={`inline-flex items-center gap-1.5 font-medium ${
+          ok ? "text-emerald-700 dark:text-emerald-300" : "text-rose-700 dark:text-rose-300"
+        }`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${ok ? "bg-emerald-500" : "bg-rose-500"}`} />
+        {ok ? "Pass" : "Fail"}
+        {detail ? <span className="text-gray-500 dark:text-gray-400 ml-1">({detail})</span> : null}
+      </span>
+    </div>
+  );
+
+  const skillsFound = Number(checks.skills_keywords_found ?? 0);
+  const skillsTotal = Number(checks.skills_keywords_total ?? 0);
+  const datesFound = Number(checks.experience_dates_parseable ?? 0);
+  const datesTotal = Number(checks.experience_dates_total ?? 0);
+
+  return (
+    <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-5">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+          Real ATS Parseability
+        </p>
+        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-semibold ${tone}`}>
+          {score}/100
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+        Deterministic round-trip through pypdf (same library used by Workday,
+        Greenhouse, Taleo) — verifies what a real ATS will actually read.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <Row label="PDF text extraction" ok={!!checks.extraction_ok} />
+        <Row
+          label="Single page"
+          ok={!!checks.single_page}
+          detail={`${checks.page_count ?? "?"} page${(checks.page_count as number) === 1 ? "" : "s"}`}
+        />
+        <Row label="Name extracts cleanly" ok={!!checks.contact_name_found} />
+        <Row label="Email extracts cleanly" ok={!!checks.contact_email_found} />
+        <Row label="Phone extracts cleanly" ok={!!checks.contact_phone_found} />
+        <Row label="Contact at top of page" ok={!!checks.contact_at_top} />
+        <Row
+          label="All sections found"
+          ok={Array.isArray(checks.sections_missing) && (checks.sections_missing as unknown[]).length === 0}
+          detail={`${(checks.sections_found as string[])?.length || 0}/4`}
+        />
+        <Row label="Section order correct" ok={!!checks.sections_in_order} />
+        <Row
+          label="Skills survive extraction"
+          ok={skillsTotal === 0 || skillsFound / skillsTotal >= 0.9}
+          detail={skillsTotal > 0 ? `${skillsFound}/${skillsTotal}` : "n/a"}
+        />
+        <Row
+          label="Dates parseable (ATS pattern)"
+          ok={datesTotal === 0 || datesFound === datesTotal}
+          detail={datesTotal > 0 ? `${datesFound}/${datesTotal}` : "n/a"}
+        />
+        <Row label="No glyph corruption" ok={!!checks.no_glyph_corruption} />
+        <Row
+          label="No word-join issues"
+          ok={!checks.word_join_issues || (checks.word_join_issues as unknown[]).length === 0}
+        />
+      </div>
+      {warnings.length > 0 && (
+        <div className="mt-4 space-y-1.5">
+          {warnings.slice(0, 4).map((w, i) => (
+            <p key={i} className="text-[11px] text-amber-700 dark:text-amber-300/90">
+              ⚠ {w}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ATSPanel({
   scores,
   onAddKeyword,
@@ -517,6 +613,13 @@ function ATSPanel({
           </div>
         </div>
       </div>
+      {(scores as any).pdf_parseable_score !== undefined && (
+        <PDFParseabilityCard
+          score={(scores as any).pdf_parseable_score}
+          checks={(scores as any).pdf_parseable_checks || {}}
+          warnings={(scores as any).pdf_parseable_warnings || []}
+        />
+      )}
       {scores.ai_screener && (
         <div className="rounded-2xl border border-gray-200 dark:border-white/[0.07] bg-white/60 dark:bg-gray-900/40 backdrop-blur-sm shadow-xl shadow-black/5 dark:shadow-black/20 p-5">
           <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-4">

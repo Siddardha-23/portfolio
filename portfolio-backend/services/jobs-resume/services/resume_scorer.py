@@ -28,13 +28,45 @@ logger = logging.getLogger(__name__)
 class ResumeScorer:
     """Hybrid ATS scorer: deterministic ground truth + AI semantic assessment."""
 
-    def score(self, tailored: Dict[str, Any], jd_analysis: Dict[str, Any]) -> Dict[str, Any]:
-        """Run full hybrid scoring pipeline. Returns validated ATS scores dict."""
+    def score(
+        self,
+        tailored: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+        pdf_bytes: bytes | None = None,
+    ) -> Dict[str, Any]:
+        """Run full hybrid scoring pipeline. Returns validated ATS scores dict.
+
+        If `pdf_bytes` is provided, the rendered PDF is round-tripped through
+        pypdf (the same library real ATSes use) and a deterministic
+        parseability score + breakdown is folded into the result. This is
+        the strongest available signal for "will real ATSes parse this?"
+        — no live ATS API exists, so we verify the text layer instead.
+        """
         det = self._deterministic_scores(tailored, jd_analysis)
         # Pass the deterministic results into the AI scorer so the scanner
         # scores reconcile with them rather than being independent guesses.
         ai = self._ai_scores(tailored, jd_analysis, det_facts=det)
-        return self._combine(det, ai)
+        combined = self._combine(det, ai)
+
+        if pdf_bytes:
+            try:
+                from services.pdf_ats_check import check_pdf_parseability
+                pdf_check = check_pdf_parseability(pdf_bytes, tailored, jd_analysis)
+                combined["pdf_parseable_score"] = pdf_check["pdf_parseable_score"]
+                combined["pdf_parseable_checks"] = pdf_check["checks"]
+                combined["pdf_parseable_warnings"] = pdf_check["warnings"]
+                # Fold parseability into overall — heavy weight because a
+                # PDF that doesn't parse means EVERY other ATS metric is
+                # moot (the parser never gets to keyword matching).
+                if pdf_check["pdf_parseable_score"] < 100:
+                    # Cap overall at min(overall, parseable+5) so a 60-parse
+                    # resume can't claim a 90 overall.
+                    overall_cap = pdf_check["pdf_parseable_score"] + 5
+                    combined["overall"] = min(combined["overall"], overall_cap)
+            except Exception as e:
+                logger.warning("PDF parseability check failed: %s", e)
+
+        return combined
 
     # ------------------------------------------------------------------
     # Deterministic scoring (pure Python, no AI)

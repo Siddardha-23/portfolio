@@ -492,8 +492,13 @@ def cover_letter_download():
         raw = pdf.output()
         pdf_bytes = bytes(raw) if isinstance(raw, (bytearray, memoryview)) else raw
 
-        safe_company = "".join(c for c in company if c.isalnum() or c in "-_") or "role"
-        filename = f"cover_letter_{safe_company}.pdf"
+        from services.resume_renderer import ResumeRenderer
+        filename = ResumeRenderer.build_cover_letter_filename(
+            candidate_name=candidate_name,
+            job_title=job_title,
+            company=company,
+            ext="pdf",
+        )
 
         return send_file(
             io.BytesIO(pdf_bytes),

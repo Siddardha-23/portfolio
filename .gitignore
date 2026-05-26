@@ -71,6 +71,11 @@ coverage/
 DEPLOYMENT_GUIDE.md
 sample.md
 
+# Local tailor test outputs (scripts/test_*.py write here)
+tailor_local_output.*
+tailor_*_output.*
+tailor_local_scores.*
+
 Obs-1(26-04-2026).docxHarshith_Manne_Cloud_Engineer.pdf
 portfolio-backend/Untitled
 /Untitled

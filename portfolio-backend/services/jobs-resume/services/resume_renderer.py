@@ -1151,3 +1151,29 @@ class ResumeRenderer:
         segments = [clean(first), clean(last), clean(job_title)]
         segments = [s for s in segments if s]
         return "_".join(segments) + f".{ext}"
+
+    @staticmethod
+    def build_cover_letter_filename(
+        candidate_name: str, job_title: str, company: str, ext: str = "pdf",
+    ) -> str:
+        """Build ATS-friendly cover letter filename:
+            Firstname_Lastname_JobTitle_Cover_Letter.ext
+
+        Mirrors the resume filename convention so recruiters see paired
+        documents in a single sorted view. Company is intentionally NOT
+        included — many ATS portals reject filenames containing punctuation
+        from real company names (e.g. "Two Sigma, LLC"), and the job_title
+        already disambiguates the role.
+        """
+        parts = (candidate_name or "").strip().split()
+        first = parts[0] if parts else "Applicant"
+        last = parts[-1] if len(parts) > 1 else ""
+
+        def clean(s: str) -> str:
+            s = re.sub(r"[^a-zA-Z0-9 ]+", " ", s).strip()
+            s = re.sub(r"\s+", "_", s).strip("_")
+            return s
+
+        segments = [clean(first), clean(last), clean(job_title), "Cover_Letter"]
+        segments = [s for s in segments if s]
+        return "_".join(segments) + f".{ext}"

@@ -8,6 +8,7 @@ import { useDailyUsage, DailyUsage } from "@/hooks/useDailyUsage";
 import { DailyUsageBadge } from "@/components/quota/DailyUsageBadge";
 import { QuotaLimitDialog } from "@/components/quota/QuotaLimitDialog";
 import { useFeedback } from "@/components/feedback/FeedbackWidget";
+import { buildCoverLetterFilename } from "@/lib/filename";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Bot, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { lazy, Suspense } from "react";
@@ -3903,7 +3904,13 @@ function TailorTab() {
       const u = URL.createObjectURL(r.data);
       const a = document.createElement("a");
       a.href = u;
-      a.download = r.filename || "cover_letter.pdf";
+      a.download =
+        r.filename ||
+        buildCoverLetterFilename(
+          result.tailored_resume.contact?.name || "",
+          result.jd_analysis.job_title || "",
+          "pdf",
+        );
       a.click();
       URL.revokeObjectURL(u);
       toast.success("Cover letter downloaded");

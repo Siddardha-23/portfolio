@@ -7,6 +7,7 @@ import { useDailyUsage, DailyUsage } from '@/hooks/useDailyUsage';
 import { DailyUsageBadge } from '@/components/quota/DailyUsageBadge';
 import { QuotaLimitDialog } from '@/components/quota/QuotaLimitDialog';
 import { useFeedback } from '@/components/feedback/FeedbackWidget';
+import { buildCoverLetterFilename } from '@/lib/filename';
 
 interface JDEntry {
   id: string;
@@ -286,9 +287,12 @@ export default function BatchTailor() {
     const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
     const u = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    const safe = (job.title || 'cover-letter').replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 64);
     a.href = u;
-    a.download = `cover_letter_${safe}.txt`;
+    a.download = buildCoverLetterFilename(
+      job.result?.tailored_resume?.contact?.name || '',
+      job.result?.jd_analysis?.job_title || job.title || '',
+      'txt',
+    );
     a.click();
     URL.revokeObjectURL(u);
   }, []);

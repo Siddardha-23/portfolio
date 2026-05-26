@@ -3,6 +3,10 @@ import { apiService } from '@/lib/api';
 import { toast } from 'sonner';
 import type { TailoredFullResume, JDAnalysis, ATSScores } from '@/types/resume';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDailyUsage, DailyUsage } from '@/hooks/useDailyUsage';
+import { DailyUsageBadge } from '@/components/quota/DailyUsageBadge';
+import { QuotaLimitDialog } from '@/components/quota/QuotaLimitDialog';
+import { useFeedback } from '@/components/feedback/FeedbackWidget';
 
 interface JDEntry {
   id: string;
@@ -137,6 +141,9 @@ export default function BatchTailor() {
   const [batchJobs, setBatchJobs] = useState<BatchJob[]>(() => readPersistedBatch(userEmail) ?? []);
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { usage: dailyUsage, loading: usageLoading, refresh: refreshUsage, applyUsage } = useDailyUsage();
+  const [quotaDialog, setQuotaDialog] = useState<(DailyUsage & { requested?: number }) | null>(null);
+  const feedback = useFeedback();
 
   // Persist on every batchJobs change so refresh / tab close survive.
   useEffect(() => {
@@ -222,8 +229,18 @@ export default function BatchTailor() {
     );
     setSubmitting(false);
 
-    if (resp.error) { toast.error('Batch submission failed', { description: resp.error }); return; }
+    if (resp.error) {
+      if (resp.status === 429 && (resp.errorPayload as any)?.error === 'daily_quota_exceeded') {
+        const u = (resp.errorPayload as any).usage as DailyUsage & { requested?: number };
+        applyUsage(u);
+        setQuotaDialog({ ...u, requested: validEntries.length });
+        return;
+      }
+      toast.error('Batch submission failed', { description: resp.error });
+      return;
+    }
     if (!resp.data?.jobs) return;
+    refreshUsage();
 
     const jobs: BatchJob[] = resp.data.jobs.map((j, i) => ({
       id: validEntries[i].id,
@@ -514,7 +531,7 @@ export default function BatchTailor() {
                 <PlusIcon className="w-4 h-4" />Add Job Description
               </button>
             )}
-            <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting}
+            <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting || (dailyUsage?.remaining === 0)}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 dark:disabled:from-gray-800 dark:disabled:to-gray-800 dark:disabled:text-gray-600 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 disabled:shadow-none transition-all duration-200">
               {submitting ? (
                 <><span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />Submitting...</>
@@ -522,6 +539,7 @@ export default function BatchTailor() {
                 <>Tailor All ({jdEntries.filter(e => e.text.trim().length > 50).length})</>
               )}
             </button>
+            <DailyUsageBadge usage={dailyUsage} loading={usageLoading} className="ml-auto" />
           </div>
         </>
       )}
@@ -748,6 +766,21 @@ export default function BatchTailor() {
           </div>
         </>
       )}
+
+      <QuotaLimitDialog
+        open={!!quotaDialog}
+        onOpenChange={(o) => !o && setQuotaDialog(null)}
+        usage={quotaDialog}
+        onRequestMore={() =>
+          feedback.open({
+            type: 'quota_bump',
+            prefill:
+              "Hi — I tried to run a batch of " +
+              `${quotaDialog?.requested ?? ''} tailors and hit my daily limit. ` +
+              "Could you bump it? Quick context:\n\n",
+          })
+        }
+      />
     </div>
   );
 }

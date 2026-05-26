@@ -4,10 +4,21 @@ import { useAuth } from '@/contexts/AuthContext';
 import { apiService } from '@/lib/api';
 import { useNavigate } from 'react-router-dom';
 import { EnvironmentsPanel } from './admin/EnvironmentsPanel';
+import { QuotasPanel } from './admin/QuotasPanel';
+import { FeedbackPanel } from './admin/FeedbackPanel';
 
 const SUPER_ADMIN_EMAIL = 'mannesiddardha@gmail.com';
 
-type Tab = 'overview' | 'users' | 'resumes' | 'tailoring' | 'applications' | 'prep' | 'environments';
+type Tab =
+  | 'overview'
+  | 'users'
+  | 'resumes'
+  | 'tailoring'
+  | 'applications'
+  | 'prep'
+  | 'environments'
+  | 'quotas'
+  | 'feedback';
 
 // ─── Types ────────────────────────────────────────────────────────────────
 interface AdminStats {
@@ -753,6 +764,8 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
 const NAV_ITEMS: { key: Tab; label: string; icon: React.ComponentType<{ c?: string }> }[] = [
   { key: 'overview',     label: 'Overview',       icon: Icon.Home },
   { key: 'users',        label: 'Users',          icon: Icon.Users },
+  { key: 'quotas',       label: 'Quotas',         icon: Icon.Bolt },
+  { key: 'feedback',     label: 'Feedback',       icon: Icon.Doc },
   { key: 'resumes',      label: 'Parsed Resumes', icon: Icon.Doc },
   { key: 'tailoring',    label: 'Tailoring',      icon: Icon.Bolt },
   { key: 'applications', label: 'Applications',   icon: Icon.Briefcase },
@@ -1093,6 +1106,8 @@ export default function AdminPortal() {
   const tabMeta: Record<Tab, { title: string; subtitle: string }> = {
     overview:     { title: 'Overview',       subtitle: 'System health, pipeline, and activity at a glance.' },
     users:        { title: 'Users',          subtitle: `${stats?.total_users ?? 0} registered · ${stats?.users_7d ?? 0} this week` },
+    quotas:       { title: 'Quotas',         subtitle: 'Daily tailor limits per user — raise for active job hunts.' },
+    feedback:     { title: 'Feedback',       subtitle: 'User-submitted notes, bugs, and ideas. Respond and resolve.' },
     resumes:      { title: 'Parsed Resumes', subtitle: 'Structured resumes extracted from user uploads.' },
     tailoring:    { title: 'Tailoring',      subtitle: 'Every JD-tailored session with version + cache metadata.' },
     applications: { title: 'Applications',   subtitle: 'Pipeline across all users — draft through offer.' },
@@ -1167,6 +1182,10 @@ export default function AdminPortal() {
                   <ApplicationsPanel applications={applications} loading={loading} onRefetch={fetchApplications} setApplications={setApplications} />
                 ) : tab === 'environments' ? (
                   <EnvironmentsPanel />
+                ) : tab === 'quotas' ? (
+                  <QuotasPanel />
+                ) : tab === 'feedback' ? (
+                  <FeedbackPanel />
                 ) : (
                   <PrepPanel prepPacks={prepPacks} loading={loading} />
                 )}

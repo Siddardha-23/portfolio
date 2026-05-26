@@ -222,6 +222,13 @@ def dashboard_stats():
 # ------------------------------------------------------------------
 # GET /api/admin/users — All registered users with details
 # ------------------------------------------------------------------
+DEFAULT_DAILY_TAILOR_LIMIT = 5
+
+
+def _today_utc_key():
+    return datetime.utcnow().strftime('%Y-%m-%d')
+
+
 @admin_bp.route('/users', methods=['GET'])
 @require_super_admin
 def list_users():
@@ -232,14 +239,25 @@ def list_users():
             {'password_hash': 0}  # Never expose password hashes
         ).sort('created_at', -1))
 
+        # Bulk-fetch today's usage so we don't N+1 the tailor_usage collection.
+        today = _today_utc_key()
+        emails = [u.get('email', '') for u in users]
+        usage_docs = db.tailor_usage.find(
+            {'email': {'$in': emails}, 'date': today},
+            {'email': 1, 'count': 1, '_id': 0},
+        )
+        usage_by_email = {d['email']: int(d.get('count', 0)) for d in usage_docs}
+
         result = []
         for u in users:
             email = u.get('email', '')
-            # Count resumes for this user
             base_count = db.user_resumes.count_documents({'user_email': email, 'type': 'base'})
             generated_count = db.user_resumes.count_documents({'user_email': email, 'type': 'generated'})
             tailoring_count = db.tailoring_records.count_documents({'user_email': email})
             parsed_resume = db.parsed_resumes.find_one({'user_email': email})
+
+            custom_limit = u.get('daily_tailor_limit')
+            effective_limit = custom_limit if isinstance(custom_limit, int) and custom_limit >= 0 else DEFAULT_DAILY_TAILOR_LIMIT
 
             result.append({
                 'id': str(u['_id']),
@@ -255,12 +273,155 @@ def list_users():
                 'generated_resumes': generated_count,
                 'tailoring_sessions': tailoring_count,
                 'has_parsed_resume': parsed_resume is not None,
+                'daily_tailor_limit_custom': custom_limit if isinstance(custom_limit, int) else None,
+                'daily_tailor_limit_effective': effective_limit,
+                'tailored_today': usage_by_email.get(email, 0),
             })
 
-        return jsonify({'users': result}), 200
+        return jsonify({'users': result, 'default_daily_limit': DEFAULT_DAILY_TAILOR_LIMIT}), 200
     except Exception as e:
         logger.error(f"Admin list users error: {e}")
         return jsonify({'error': 'Failed to fetch users'}), 500
+
+
+# ------------------------------------------------------------------
+# PATCH /api/admin/user/<email>/quota — Set a custom daily tailor limit
+# ------------------------------------------------------------------
+@admin_bp.route('/user/<email>/quota', methods=['PATCH'])
+@require_super_admin
+def update_user_quota(email):
+    """Set or clear a per-user daily tailor limit override.
+
+    Body: {"daily_tailor_limit": int | null}
+      - int >= 0: set custom limit (0 effectively disables tailoring)
+      - null / omit field: reset to default
+    """
+    try:
+        data = request.get_json(force=True) or {}
+        if 'daily_tailor_limit' not in data:
+            return jsonify({'error': 'daily_tailor_limit is required'}), 400
+
+        new_limit = data.get('daily_tailor_limit')
+        db = DBConnect().get_db()
+
+        if new_limit is None:
+            db.users.update_one({'email': email}, {'$unset': {'daily_tailor_limit': ''}})
+        else:
+            try:
+                new_limit = int(new_limit)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'daily_tailor_limit must be an integer or null'}), 400
+            if new_limit < 0 or new_limit > 1000:
+                return jsonify({'error': 'daily_tailor_limit must be between 0 and 1000'}), 400
+            db.users.update_one({'email': email}, {'$set': {'daily_tailor_limit': new_limit}})
+
+        # Return the effective limit after the change.
+        u = db.users.find_one({'email': email}, {'daily_tailor_limit': 1})
+        if not u:
+            return jsonify({'error': 'User not found'}), 404
+        custom = u.get('daily_tailor_limit')
+        effective = custom if isinstance(custom, int) and custom >= 0 else DEFAULT_DAILY_TAILOR_LIMIT
+        today = _today_utc_key()
+        usage_doc = db.tailor_usage.find_one({'email': email, 'date': today}, {'count': 1})
+        used = int(usage_doc.get('count', 0)) if usage_doc else 0
+
+        return jsonify({
+            'email': email,
+            'daily_tailor_limit_custom': custom if isinstance(custom, int) else None,
+            'daily_tailor_limit_effective': effective,
+            'tailored_today': used,
+        }), 200
+    except Exception as e:
+        logger.error(f"Admin update user quota error: {e}")
+        return jsonify({'error': 'Failed to update quota'}), 500
+
+
+# ------------------------------------------------------------------
+# GET /api/admin/feedback — All user feedback (newest first)
+# PATCH /api/admin/feedback/<id> — Respond / change status
+# ------------------------------------------------------------------
+@admin_bp.route('/feedback', methods=['GET'])
+@require_super_admin
+def list_feedback():
+    try:
+        db = DBConnect().get_db()
+        status_filter = request.args.get('status', '').strip()
+        query = {}
+        if status_filter in ('open', 'responded', 'resolved'):
+            query['status'] = status_filter
+
+        docs = list(db.feedback.find(query).sort('created_at', -1).limit(500))
+        out = []
+        for d in docs:
+            out.append({
+                'id': str(d['_id']),
+                'email': d.get('email'),
+                'message': d.get('message', ''),
+                'type': d.get('type', 'general'),
+                'status': d.get('status', 'open'),
+                'admin_response': d.get('admin_response'),
+                'created_at': _iso(d.get('created_at')),
+                'responded_at': _iso(d.get('responded_at')),
+            })
+        return jsonify({'feedback': out}), 200
+    except Exception as e:
+        logger.error(f"Admin list feedback error: {e}")
+        return jsonify({'error': 'Failed to fetch feedback'}), 500
+
+
+@admin_bp.route('/feedback/<fb_id>', methods=['PATCH'])
+@require_super_admin
+def update_feedback(fb_id):
+    """Update a feedback item: optionally write a response and/or change status.
+
+    Body: {"admin_response": "...", "status": "responded" | "resolved" | "open"}
+    """
+    try:
+        from bson import ObjectId  # local to avoid import side effects elsewhere
+        data = request.get_json(force=True) or {}
+        admin_response = (data.get('admin_response') or '').strip()
+        new_status = (data.get('status') or '').strip()
+
+        update = {}
+        if admin_response:
+            if len(admin_response) > 4000:
+                return jsonify({'error': 'admin_response too long (max 4000 chars)'}), 400
+            update['admin_response'] = admin_response
+            update['responded_at'] = datetime.utcnow()
+            if not new_status:
+                new_status = 'responded'
+        if new_status:
+            if new_status not in ('open', 'responded', 'resolved'):
+                return jsonify({'error': 'invalid status'}), 400
+            update['status'] = new_status
+
+        if not update:
+            return jsonify({'error': 'No fields to update'}), 400
+
+        try:
+            obj_id = ObjectId(fb_id)
+        except Exception:
+            return jsonify({'error': 'Invalid feedback id'}), 400
+
+        db = DBConnect().get_db()
+        result = db.feedback.update_one({'_id': obj_id}, {'$set': update})
+        if result.matched_count == 0:
+            return jsonify({'error': 'Feedback not found'}), 404
+
+        doc = db.feedback.find_one({'_id': obj_id})
+        return jsonify({
+            'id': str(doc['_id']),
+            'email': doc.get('email'),
+            'message': doc.get('message', ''),
+            'type': doc.get('type', 'general'),
+            'status': doc.get('status', 'open'),
+            'admin_response': doc.get('admin_response'),
+            'created_at': _iso(doc.get('created_at')),
+            'responded_at': _iso(doc.get('responded_at')),
+        }), 200
+    except Exception as e:
+        logger.error(f"Admin update feedback error: {e}")
+        return jsonify({'error': 'Failed to update feedback'}), 500
 
 
 # ------------------------------------------------------------------

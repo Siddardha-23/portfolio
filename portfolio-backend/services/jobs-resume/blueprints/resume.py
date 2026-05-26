@@ -32,6 +32,30 @@ from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 from utils.db_connect import DBConnect
 from utils.datadog_metrics import dd_metric
 from services.s3_service import get_storage_service
+from services.usage_service import (
+    check_and_increment as _quota_check_and_increment,
+    check_quota as _quota_check,
+    get_usage as _get_usage,
+)
+
+
+def _quota_exceeded_response(usage: dict):
+    """Uniform 429 response with friendly copy for daily quota hits."""
+    limit = usage.get("limit", 5)
+    return (
+        jsonify({
+            "error": "daily_quota_exceeded",
+            "message": (
+                f"You've used all {limit} of your daily tailored resumes. "
+                "We cap this to keep the AI tailoring free for everyone — "
+                "your counter resets at midnight UTC. "
+                "Need more for a specific job hunt push? Send us a note "
+                "via the Feedback button and we'll bump your limit."
+            ),
+            "usage": usage,
+        }),
+        429,
+    )
 from services.resume_versioning import (
     canonical_content_hash,
     ensure_versions,
@@ -82,6 +106,16 @@ def extract_jd():
 
 
 # ------------------------------------------------------------------
+# GET /api/resume/usage/today — Current user's daily tailor quota
+# ------------------------------------------------------------------
+@resume_bp.route("/usage/today", methods=["GET"])
+@jwt_required()
+def usage_today():
+    user_email = get_jwt_identity()
+    return jsonify(_get_usage(user_email)), 200
+
+
+# ------------------------------------------------------------------
 # POST /api/resume/tailor — Submit resume tailoring job
 # ------------------------------------------------------------------
 
@@ -101,13 +135,17 @@ def tailor():
 
     try:
         user_email = get_jwt_identity()
+        allowed, usage = _quota_check_and_increment(user_email, 1)
+        if not allowed:
+            return _quota_exceeded_response(usage)
+
         from services.resume_service import get_resume_service, ResumeService
 
         svc = get_resume_service()
         payload = {"jd_analysis": jd_analysis, "user_email": user_email}
         job_id = svc.create_job("tailor", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "tailor", payload)
-        return jsonify({"job_id": job_id}), 202
+        return jsonify({"job_id": job_id, "usage": usage}), 202
 
     except Exception as e:
         logger.error(f"Resume tailor error: {e}")
@@ -145,13 +183,17 @@ def tailor_with_jd():
 
     try:
         user_email = get_jwt_identity()
+        allowed, usage = _quota_check_and_increment(user_email, 1)
+        if not allowed:
+            return _quota_exceeded_response(usage)
+
         from services.resume_service import get_resume_service, ResumeService
 
         svc = get_resume_service()
         payload = {"job_description": jd_text, "user_email": user_email}
         job_id = svc.create_job("extract_and_tailor", payload, user_email=user_email)
         ResumeService.invoke_async(job_id, "extract_and_tailor", payload)
-        return jsonify({"job_id": job_id}), 202
+        return jsonify({"job_id": job_id, "usage": usage}), 202
 
     except Exception as e:
         logger.error(f"Resume tailor-with-jd error: {e}")
@@ -496,6 +538,13 @@ def batch_tailor():
 
     try:
         user_email = get_jwt_identity()
+        allowed, usage = _quota_check_and_increment(user_email, len(jd_list))
+        if not allowed:
+            # Tell the user exactly how many would fit if they trimmed the batch.
+            usage_msg = usage.copy()
+            usage_msg["requested"] = len(jd_list)
+            return _quota_exceeded_response(usage_msg)
+
         from services.resume_service import get_resume_service, ResumeService
 
         svc = get_resume_service()
@@ -517,7 +566,7 @@ def batch_tailor():
             ResumeService.invoke_async(job_id, "batch_tailor_item", payload)
             jobs.append({"job_id": job_id, "title": jd.get("title", "")})
 
-        return jsonify({"jobs": jobs}), 202
+        return jsonify({"jobs": jobs, "usage": usage}), 202
 
     except Exception as e:
         logger.error(f"Batch tailor error: {e}")

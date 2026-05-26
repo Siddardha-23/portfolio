@@ -4,6 +4,10 @@ import { apiService } from "@/lib/api";
 import AuthGate from "@/components/AuthGate";
 import { useAuth } from "@/contexts/AuthContext";
 import { useVisitorTracking } from "@/hooks/useVisitorTracking";
+import { useDailyUsage, DailyUsage } from "@/hooks/useDailyUsage";
+import { DailyUsageBadge } from "@/components/quota/DailyUsageBadge";
+import { QuotaLimitDialog } from "@/components/quota/QuotaLimitDialog";
+import { useFeedback } from "@/components/feedback/FeedbackWidget";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Bot, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { lazy, Suspense } from "react";
@@ -3172,6 +3176,10 @@ function TailorTab() {
   const [hasResumes, setHasResumes] = useState<boolean | null>(null);
   const [loadingCheck, setLoadingCheck] = useState(true);
   const [jdText, setJdText] = useState("");
+  // Daily quota state — badge near the submit button, modal on 429.
+  const { usage: dailyUsage, loading: usageLoading, refresh: refreshUsage, applyUsage } = useDailyUsage();
+  const [quotaDialog, setQuotaDialog] = useState<(DailyUsage & { requested?: number }) | null>(null);
+  const feedback = useFeedback();
   // Original posting URL when the user came from Daily Pipeline / batch
   // handoff — keeps the "Retry JD fetch" button next to the JD textarea
   // useful even after the initial fetch failed or timed out. Cleared once
@@ -3638,6 +3646,13 @@ function TailorTab() {
     if (phaseTimer) clearTimeout(phaseTimer);
     cleanup();
     if (combined.error) {
+      if (combined.status === 429 && (combined.errorPayload as any)?.error === "daily_quota_exceeded") {
+        const u = (combined.errorPayload as any).usage as DailyUsage;
+        applyUsage(u);
+        setQuotaDialog(u);
+        setTailorError("");
+        return;
+      }
       setTailorError(combined.error);
       return;
     }
@@ -3645,6 +3660,8 @@ function TailorTab() {
       setTailorError("Failed to tailor resume.");
       return;
     }
+    // Success — refresh quota so the badge reflects the just-consumed credit.
+    refreshUsage();
 
     const analysis = combined.data.jd_analysis;
     const tailoredResume = combined.data.tailored_resume;
@@ -5078,7 +5095,7 @@ function TailorTab() {
 
                   <button
                     onClick={handleTailoring}
-                    disabled={!jdText.trim() || analyzingJD || tailoring}
+                    disabled={!jdText.trim() || analyzingJD || tailoring || (dailyUsage?.remaining === 0)}
                     className="w-full inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-purple-500/25 hover:shadow-purple-500/40 active:scale-[0.98] transition-all duration-200"
                   >
                     {analyzingJD || tailoring ? (
@@ -5093,6 +5110,9 @@ function TailorTab() {
                       </>
                     )}
                   </button>
+                  <div className="mt-2 flex justify-center">
+                    <DailyUsageBadge usage={dailyUsage} loading={usageLoading} />
+                  </div>
                 </div>
               )}
 
@@ -5730,6 +5750,20 @@ function TailorTab() {
           </div>
         </div>
       )}
+
+      <QuotaLimitDialog
+        open={!!quotaDialog}
+        onOpenChange={(o) => !o && setQuotaDialog(null)}
+        usage={quotaDialog}
+        onRequestMore={() =>
+          feedback.open({
+            type: "quota_bump",
+            prefill:
+              "Hi — I've hit my daily tailor limit and have an active job-hunt push. " +
+              "Could you bump my limit? Here's the context:\n\n",
+          })
+        }
+      />
     </motion.div>
   );
 }

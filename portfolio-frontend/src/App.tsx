@@ -7,6 +7,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { ThemeProvider } from './components/theme-provider';
 import { UnderTheHoodProvider } from './contexts/UnderTheHoodContext';
 import { AuthProvider } from './contexts/AuthContext';
+import { FeedbackProvider } from './components/feedback/FeedbackWidget';
 import UnderTheHoodDrawer from './components/UnderTheHoodDrawer';
 import Welcome from './pages/Welcome';
 import Home from './pages/Home';
@@ -85,7 +86,9 @@ const App = () => (
         <AuthProvider>
           <UnderTheHoodProvider>
             <TooltipProvider>
-              <AppContent />
+              <FeedbackProvider>
+                <AppContent />
+              </FeedbackProvider>
             </TooltipProvider>
           </UnderTheHoodProvider>
         </AuthProvider>

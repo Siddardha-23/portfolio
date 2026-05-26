@@ -39,6 +39,11 @@ interface ApiResponse<T> {
   data?: T;
   error?: string;
   message?: string;
+  status?: number;
+  // Full error body for callers that need more than the error string —
+  // e.g., quota_exceeded responses include a `usage` object the caller
+  // wants to surface in a modal.
+  errorPayload?: Record<string, unknown>;
 }
 
 class ApiService {
@@ -119,10 +124,12 @@ class ApiService {
         return {
           error:
             data.error || data.message || data.msg || `HTTP ${response.status}`,
+          status: response.status,
+          errorPayload: data,
         };
       }
 
-      return { data };
+      return { data, status: response.status };
     } catch (error) {
       clearTimeout(timeoutId);
       if (error instanceof Error && error.name === "AbortError") {
@@ -2275,8 +2282,94 @@ class ApiService {
         generated_resumes: number;
         tailoring_sessions: number;
         has_parsed_resume: boolean;
+        daily_tailor_limit_custom: number | null;
+        daily_tailor_limit_effective: number;
+        tailored_today: number;
       }>;
+      default_daily_limit: number;
     }>("/admin/users");
+  }
+
+  // ── Daily tailor quota ────────────────────────────────────────
+  async getDailyUsage() {
+    return this.request<{
+      used: number;
+      limit: number;
+      remaining: number;
+      resets_at: string;
+      resets_in_seconds: number;
+      date: string;
+    }>("/resume/usage/today");
+  }
+
+  // ── Feedback (user side) ──────────────────────────────────────
+  async submitFeedback(message: string, type: "general" | "quota_bump" | "bug" | "idea" = "general") {
+    return this.request<{ id: string; status: string }>("/feedback/submit", {
+      method: "POST",
+      body: JSON.stringify({ message, type }),
+    });
+  }
+
+  async getMyFeedback() {
+    return this.request<{
+      feedback: Array<{
+        id: string;
+        message: string;
+        type: string;
+        status: string;
+        admin_response: string | null;
+        created_at: string | null;
+        responded_at: string | null;
+      }>;
+    }>("/feedback/mine");
+  }
+
+  // ── Admin: user quota + feedback management ──────────────────
+  async updateAdminUserQuota(email: string, dailyTailorLimit: number | null) {
+    return this.request<{
+      email: string;
+      daily_tailor_limit_custom: number | null;
+      daily_tailor_limit_effective: number;
+      tailored_today: number;
+    }>(`/admin/user/${encodeURIComponent(email)}/quota`, {
+      method: "PATCH",
+      body: JSON.stringify({ daily_tailor_limit: dailyTailorLimit }),
+    });
+  }
+
+  async getAdminFeedback(status?: "open" | "responded" | "resolved") {
+    const qs = status ? `?status=${status}` : "";
+    return this.request<{
+      feedback: Array<{
+        id: string;
+        email: string;
+        message: string;
+        type: string;
+        status: string;
+        admin_response: string | null;
+        created_at: string | null;
+        responded_at: string | null;
+      }>;
+    }>(`/admin/feedback${qs}`);
+  }
+
+  async updateAdminFeedback(
+    id: string,
+    fields: { admin_response?: string; status?: "open" | "responded" | "resolved" },
+  ) {
+    return this.request<{
+      id: string;
+      email: string;
+      message: string;
+      type: string;
+      status: string;
+      admin_response: string | null;
+      created_at: string | null;
+      responded_at: string | null;
+    }>(`/admin/feedback/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(fields),
+    });
   }
 
   async getAdminUserDetail(email: string) {

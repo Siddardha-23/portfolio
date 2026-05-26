@@ -81,6 +81,7 @@ class ResumeTailor:
             t = self._restore_contact(t, structured_resume)
             t = self._strip_fabricated_langs(t, structured_resume)
             t = self._ensure_jd_skills_coverage(t, structured_resume, jd_analysis)
+            t = self._cap_skills_per_category(t, structured_resume, jd_analysis)
             if target_role:
                 t["target_role"] = target_role
             return t
@@ -335,6 +336,56 @@ class ResumeTailor:
         tailored["skills"] = skills
         return tailored
 
+    # Maximum items per skills category — keeps the rendered block to ~2
+    # lines per category at 10pt with 11mm L/R margins. The LLM sometimes
+    # produces categories with 20-25 items which overflows the page; the
+    # ATS scorer reads from JSON, so the cap also applies to JSON for
+    # consistency between rendered PDF and structured data.
+    _MAX_SKILLS_PER_CATEGORY = 14
+
+    @classmethod
+    def _cap_skills_per_category(
+        cls,
+        tailored: Dict[str, Any],
+        original: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Trim each skills category to a max length, preferring items that
+        match JD required_skills and keywords (highest ATS value)."""
+        skills = tailored.get("skills", {})
+        if not isinstance(skills, dict):
+            return tailored
+
+        jd_terms_lower = set()
+        for s in (jd_analysis.get("required_skills") or []):
+            jd_terms_lower.add((normalize_single(s) or s).lower())
+            for f in get_all_forms(s) or []:
+                jd_terms_lower.add(f.lower())
+        for s in (jd_analysis.get("keywords") or []):
+            jd_terms_lower.add((normalize_single(s) or s).lower())
+            for f in get_all_forms(s) or []:
+                jd_terms_lower.add(f.lower())
+
+        for cat, items in list(skills.items()):
+            if not isinstance(items, list) or len(items) <= cls._MAX_SKILLS_PER_CATEGORY:
+                continue
+            # Stable partition: JD-aligned first, then originals. Preserve
+            # input order within each group so the highest-relevance items
+            # the LLM put first stay first.
+            jd_aligned = []
+            rest = []
+            for s in items:
+                lower = (normalize_single(s) or s).lower()
+                forms = {f.lower() for f in (get_all_forms(s) or [])}
+                forms.add(lower)
+                if forms & jd_terms_lower:
+                    jd_aligned.append(s)
+                else:
+                    rest.append(s)
+            skills[cat] = (jd_aligned + rest)[: cls._MAX_SKILLS_PER_CATEGORY]
+        tailored["skills"] = skills
+        return tailored
+
     @classmethod
     def _ensure_jd_skills_coverage(
         cls,
@@ -365,12 +416,66 @@ class ResumeTailor:
         if not isinstance(skills, dict) or not skills:
             return tailored
 
+        # Inject ALL required_skills (drives the Skills Alignment scorer,
+        # 20% of overall ATS weight). Cap keyword injection to 4 — each
+        # additional keyword adds ~3-4 chars to a skills line; injecting
+        # all 12 JD keywords bloats the section by 1-2 lines and overflows
+        # the 10pt budget on a one-page A4.
         required = list(jd_analysis.get("required_skills", []) or [])
         keywords = list(jd_analysis.get("keywords", []) or [])
-        # Required first (higher priority), then deduped keywords.
-        targets: List[str] = list(dict.fromkeys(required + keywords))
+        targets: List[str] = list(dict.fromkeys(required)) + [
+            kw for kw in dict.fromkeys(keywords) if kw not in required
+        ][:4]
         if not targets:
             return tailored
+
+        # Hard blacklist — production JD analyses pollute keywords with
+        # job-title fragments ("Backend Engineer", "Software Engineer II",
+        # "Platform Team"), the company name ("Rippling"), and industry
+        # tags ("HR Tech"). Those aren't skills, and injecting them
+        # bloats the skills section by ~2 lines — pushing total fill past
+        # 100% at 10pt and forcing the renderer's auto-shrink to 9.5pt.
+        company_name = (jd_analysis.get("company") or "").strip().lower()
+        industry_raw = (jd_analysis.get("industry") or "").strip().lower()
+        # Industry often comes as "HR Tech / SaaS" — split on "/" so each
+        # half hits the exact-match guard.
+        industry_parts = {p.strip() for p in industry_raw.split("/") if p.strip()}
+        BLACKLIST_EXACT = {company_name, "saas", "platform team"} | industry_parts
+        BLACKLIST_EXACT.discard("")
+        BLACKLIST_SUBSTR = (
+            "engineer ii",        # title fragment
+            "engineer iii",
+            "software engineer",
+            "backend engineer",
+            "frontend engineer",
+            "full stack engineer",
+            "fullstack engineer",
+            "backend services",   # too generic, looks like a label
+            "hr tech",
+            " team",              # "Platform Team", "Growth Team"
+        )
+
+        # Compile word-boundary patterns once so we don't catch "backend
+        # engineer" inside "backend engineering" (the discipline is a
+        # legitimate skill term; the role title is not).
+        noise_patterns = [
+            re.compile(r"(?<![a-zA-Z])" + re.escape(s) + r"(?![a-zA-Z])")
+            for s in BLACKLIST_SUBSTR
+        ]
+
+        def _is_noise(term: str) -> bool:
+            t = term.lower().strip()
+            if not t or t in BLACKLIST_EXACT:
+                return True
+            return any(p.search(t) for p in noise_patterns)
+
+        # First sweep: strip noise terms the LLM itself put in skills.
+        # Real-world JDs encode the company name + job title prominently
+        # and Claude sometimes copies those into skills categories.
+        for cat, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            skills[cat] = [s for s in items if not _is_noise(s)]
 
         # Flatten current skills (canonical form, lowercase) for alias-aware lookup.
         existing_lower = set()
@@ -384,29 +489,42 @@ class ResumeTailor:
         # Original text — used to bail on concrete langs the candidate doesn't know.
         original_text_lower = build_resume_text(original).lower()
 
-        # Find/choose target categories.
+        # Find/choose target categories. Prefer the most specific match;
+        # avoid generic words like "system" which can hit "AI & Knowledge
+        # Systems" and pull discipline terms into the wrong bucket.
         cats = list(skills.keys())
-        backend_cat = next(
-            (c for c in cats
-             if any(h in c.lower() for h in ("backend", "api", "platform", "service", "system"))),
-            None,
+        backend_cat = (
+            next((c for c in cats if "backend" in c.lower() and "api" in c.lower()), None)
+            or next((c for c in cats if "backend" in c.lower()), None)
+            or next((c for c in cats if "api" in c.lower()), None)
+            or next((c for c in cats if "platform" in c.lower()), None)
         )
         data_cat = next(
-            (c for c in cats
-             if any(h in c.lower() for h in ("data", "database", "ai", "knowledge"))),
+            (c for c in cats if any(h in c.lower() for h in ("data", "database"))),
             None,
         )
         soft_cat = next(
-            (c for c in cats
-             if any(h in c.lower() for h in ("collaboration", "process", "soft", "method"))),
+            (c for c in cats if "collaboration" in c.lower()),
             None,
         )
+
+        # If no backend-ish category exists, create one so injected terms
+        # don't get dumped into an unrelated bucket (e.g. "AI & Knowledge
+        # Systems"). Title-cased to fit the existing category style.
+        if backend_cat is None:
+            backend_cat = "Backend & API"
+            skills[backend_cat] = []
+            cats.append(backend_cat)
 
         injected: List[str] = []
         for target in targets:
             canonical = normalize_single(target)
             canonical_lower = canonical.lower().strip()
             if not canonical:
+                continue
+
+            # Blacklist guard — job titles, company names, etc.
+            if _is_noise(canonical) or _is_noise(target):
                 continue
 
             # Skip if any alias is already present.

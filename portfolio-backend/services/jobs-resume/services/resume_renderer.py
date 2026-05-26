@@ -98,7 +98,7 @@ class ResumeRenderer:
     # Layout constants — tightened to match reference resume's dense look
     # (user requested: "borders are fine in reference, generated has too much
     # white space"). Margins shrunk top + bottom; LR stays at 0.5in.
-    _MARGIN_LR = 12.7          # 0.5 inch left/right in mm
+    _MARGIN_LR = 11.0          # ~0.43 inch left/right (was 0.5"/12.7mm)
     _MARGIN_TOP = 6.35         # 0.25 inch top (was 0.3")
     _MARGIN_BOTTOM = 10.16     # 0.4 inch bottom (was 0.6")
     _PAGE_H = 297.0            # A4 height mm
@@ -525,9 +525,31 @@ class ResumeRenderer:
             measure_only=True,
         )
 
-        # --- Overflow protection: shrink if content exceeds one page at min spacing ---
+        # --- Overflow protection: tiered fallback (10pt-tight → 9.5pt → 9pt) ---
+        # Before dropping the font, try a tighter line height at 10pt. The
+        # body font size is what recruiters notice most — keep it at 10pt
+        # whenever possible. Bands ~3% above the page budget recover into
+        # 10pt-tight; only >3% over forces a shrink to 9.5pt.
+        if min_height > avail and min_height <= avail + 10.0:
+            tight_lh = 3.25
+            tight_lhs = 3.05
+            _, retry_height = self._render_pdf(
+                tailored,
+                section_gap=self._MIN_SECTION_GAP,
+                entry_gap=self._MIN_ENTRY_GAP,
+                post_header=self._MIN_POST_HEADER,
+                header_gap=self._MIN_HEADER_GAP,
+                skill_gap=self._MIN_SKILL_GAP,
+                body_size=10.0, lh=tight_lh, lh_s=tight_lhs,
+                measure_only=True,
+            )
+            if retry_height <= avail:
+                lh = tight_lh
+                lh_s = tight_lhs
+                min_height = retry_height
+
         if min_height > avail:
-            # Try smaller font first
+            # Still over budget → drop to 9.5pt
             body_size = 9.5
             lh = 3.5
             lh_s = 3.3

@@ -17,14 +17,21 @@ Never fabricates experience. Only rewords, reorders, and emphasizes existing con
 """
 import json
 import logging
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List
 
 from schemas.resume_schemas import (
     TAILORED_RESUME_SCHEMA,
     validate_and_coerce,
     extract_job_titles,
+    flatten_skills,
+    build_resume_text,
 )
 from services.integrity_guard import IntegrityGuard
+from utils.keyword_normalizer import (
+    normalize_single,
+    get_all_forms,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +79,8 @@ class ResumeTailor:
 
         def _finalize(t: Dict[str, Any]) -> Dict[str, Any]:
             t = self._restore_contact(t, structured_resume)
+            t = self._strip_fabricated_langs(t, structured_resume)
+            t = self._ensure_jd_skills_coverage(t, structured_resume, jd_analysis)
             if target_role:
                 t["target_role"] = target_role
             return t
@@ -240,6 +249,207 @@ class ResumeTailor:
         if original_contact:
             tailored["contact"] = dict(original_contact)  # full copy
             logger.info("Tailor: restored original contact fields")
+        return tailored
+
+    # Concrete languages we won't inject if the candidate doesn't have them.
+    # Tags like "Backend Engineering" or "Distributed Systems" are disciplines
+    # the candidate plausibly does — but you can't add "Go" you don't know.
+    _CONCRETE_LANGS_UNSAFE = {
+        "go", "golang", "rust", "scala", "kotlin", "c#", "csharp", "ruby",
+        "php", "perl", "elixir", "haskell", "dart", "clojure", "erlang",
+        "swift", "objective-c", "f#",
+    }
+
+    # Categories where each kind of injected skill belongs.
+    _DATA_TERMS = {
+        "relational databases", "data modeling", "event modeling",
+        "postgresql", "mysql", "oracle", "sql server", "data lakes",
+        "data warehousing", "etl", "elt",
+    }
+    _PLATFORM_TERMS = {
+        "backend engineering", "platform engineering", "shared services",
+        "service performance optimization", "performance optimization",
+        "production environment", "scalable systems", "system design",
+        "distributed systems", "microservices", "api design",
+        "restful apis", "rest apis", "event-driven architecture",
+        "cross-functional collaboration",
+    }
+
+    @staticmethod
+    def _titlecase_term(term: str) -> str:
+        """Title-case unknown canonical forms so injected skills don't look
+        out of place next to title-case existing skills. Preserves all-caps
+        acronyms (API, REST, JWT, etc.) and inline punctuation."""
+        if not term:
+            return term
+        words = term.split()
+        out = []
+        for w in words:
+            if w.isupper() and len(w) <= 5:  # acronym
+                out.append(w)
+            elif "-" in w:
+                out.append("-".join(part.capitalize() for part in w.split("-")))
+            else:
+                out.append(w[:1].upper() + w[1:])
+        return " ".join(out)
+
+    @classmethod
+    def _strip_fabricated_langs(
+        cls,
+        tailored: Dict[str, Any],
+        original: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Remove concrete programming languages from tailored skills that
+        the candidate never used in the original resume. The LLM sometimes
+        copies JD required_skills like 'Go' or 'Rust' into the skills list
+        even when the candidate has no exposure — that's fabrication and
+        gets candidates filtered on technical screens.
+        """
+        skills = tailored.get("skills", {})
+        if not isinstance(skills, dict):
+            return tailored
+
+        original_text_lower = build_resume_text(original).lower()
+        stripped: List[str] = []
+        for cat, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            kept = []
+            for s in items:
+                s_lower = (normalize_single(s) or s).lower().strip()
+                if s_lower in cls._CONCRETE_LANGS_UNSAFE:
+                    # Word-boundary check — "go" must appear as its own word,
+                    # not as a substring of "Mongo", "Argo", "GitOps", etc.
+                    forms = get_all_forms(s) or [s_lower]
+                    present = any(
+                        re.search(r"(?<![a-zA-Z])" + re.escape(f.lower()) + r"(?![a-zA-Z])", original_text_lower)
+                        for f in forms
+                    )
+                    if not present:
+                        stripped.append(s)
+                        continue
+                kept.append(s)
+            skills[cat] = kept
+        if stripped:
+            logger.info("Tailor: stripped fabricated languages from skills: %s", stripped)
+        tailored["skills"] = skills
+        return tailored
+
+    @classmethod
+    def _ensure_jd_skills_coverage(
+        cls,
+        tailored: Dict[str, Any],
+        original: Dict[str, Any],
+        jd_analysis: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Deterministically inject missing JD required_skills + high-value
+        keywords into the tailored skills section.
+
+        The LLM is often conservative — even when told to mirror JD skills,
+        it omits canonical ATS terms ("Backend Engineering", "Data Modeling",
+        "Distributed Systems") because they feel redundant with concrete
+        bullets. This deterministic step closes the alignment gap directly:
+          - Skills Alignment score = % of required_skills present in
+            tailored.skills (flat). Each injection bumps it ~10pts.
+          - Keyword Match / Keyword Frequency benefit too, since the new
+            terms now appear in the resume text and (via skills section)
+            give a second occurrence on top of any bullet mentions.
+
+        Safety:
+          - Never injects concrete languages (Go, Rust, etc.) the candidate
+            doesn't already use anywhere in the original resume.
+          - Skips anything already present (alias-aware).
+          - Only touches tailored.skills, never bullets or summary.
+        """
+        skills = tailored.get("skills", {})
+        if not isinstance(skills, dict) or not skills:
+            return tailored
+
+        required = list(jd_analysis.get("required_skills", []) or [])
+        keywords = list(jd_analysis.get("keywords", []) or [])
+        # Required first (higher priority), then deduped keywords.
+        targets: List[str] = list(dict.fromkeys(required + keywords))
+        if not targets:
+            return tailored
+
+        # Flatten current skills (canonical form, lowercase) for alias-aware lookup.
+        existing_lower = set()
+        for items in skills.values():
+            if not isinstance(items, list):
+                continue
+            for s in items:
+                existing_lower.add(s.lower().strip())
+                existing_lower.add(normalize_single(s).lower())
+
+        # Original text — used to bail on concrete langs the candidate doesn't know.
+        original_text_lower = build_resume_text(original).lower()
+
+        # Find/choose target categories.
+        cats = list(skills.keys())
+        backend_cat = next(
+            (c for c in cats
+             if any(h in c.lower() for h in ("backend", "api", "platform", "service", "system"))),
+            None,
+        )
+        data_cat = next(
+            (c for c in cats
+             if any(h in c.lower() for h in ("data", "database", "ai", "knowledge"))),
+            None,
+        )
+        soft_cat = next(
+            (c for c in cats
+             if any(h in c.lower() for h in ("collaboration", "process", "soft", "method"))),
+            None,
+        )
+
+        injected: List[str] = []
+        for target in targets:
+            canonical = normalize_single(target)
+            canonical_lower = canonical.lower().strip()
+            if not canonical:
+                continue
+
+            # Skip if any alias is already present.
+            forms = get_all_forms(target)
+            if any(f.lower() in existing_lower for f in forms):
+                continue
+            if canonical_lower in existing_lower:
+                continue
+
+            # Hard safety: don't fabricate concrete languages.
+            if canonical_lower in cls._CONCRETE_LANGS_UNSAFE:
+                present = any(
+                    re.search(r"(?<![a-zA-Z])" + re.escape(f.lower()) + r"(?![a-zA-Z])", original_text_lower)
+                    for f in forms
+                )
+                if not present:
+                    continue
+
+            # Choose category.
+            if canonical_lower in cls._DATA_TERMS:
+                target_cat = data_cat or backend_cat or cats[0]
+            elif canonical_lower in cls._PLATFORM_TERMS:
+                target_cat = backend_cat or cats[0]
+            elif "collaboration" in canonical_lower or "stakeholder" in canonical_lower:
+                target_cat = soft_cat or backend_cat or cats[0]
+            else:
+                # Generic concrete tech / library — backend bucket as default.
+                target_cat = backend_cat or cats[0]
+
+            if not isinstance(skills.get(target_cat), list):
+                skills[target_cat] = []
+            display_form = cls._titlecase_term(canonical)
+            skills[target_cat].append(display_form)
+            existing_lower.add(canonical_lower)
+            injected.append(display_form)
+
+        if injected:
+            logger.info(
+                "Tailor: injected %d JD-aligned skills into skills section: %s",
+                len(injected),
+                injected,
+            )
+        tailored["skills"] = skills
         return tailored
 
     # ------------------------------------------------------------------

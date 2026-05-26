@@ -38,11 +38,34 @@ def count_bullets(label, resume_dict):
     print(f"  PROJ total: {sum(len(p.get('bullets', [])) for p in proj)}")
 
 
+def print_ats(label, scores):
+    print(f"\n--- ATS SCORES ({label}) ---")
+    print(f"  OVERALL:               {scores.get('overall', '?')}")
+    print(f"  Keyword Match:         {scores.get('keyword_match', '?')}")
+    print(f"  Keyword Frequency:     {scores.get('keyword_frequency', '?')}")
+    print(f"  Skills Alignment:      {scores.get('skills_alignment', '?')}")
+    print(f"  Experience Relevance:  {scores.get('experience_relevance', '?')}")
+    print(f"  Quantifiable Impact:   {scores.get('quantifiable_impact', '?')}")
+    print(f"  Bullet Quality:        {scores.get('bullet_quality', '?')}")
+    print(f"  Format Score:          {scores.get('format_score', '?')}")
+    print(f"  Section Completeness:  {scores.get('section_completeness', '?')}")
+    missing = scores.get("missing_keywords", []) or []
+    if missing:
+        print(f"  Missing keywords ({len(missing)}): {missing[:12]}")
+    scanners = scores.get("scanners", {}) or {}
+    if scanners:
+        print(f"  Scanners: " + ", ".join(f"{k}={v}" for k, v in scanners.items()))
+    ai = scores.get("ai_screener", {}) or {}
+    if ai:
+        print(f"  AI Screener: " + ", ".join(f"{k}={v}" for k, v in ai.items()))
+
+
 def main():
     from services.resume_tailor import ResumeTailor
     from services.content_augmenter import ContentAugmenter
     from services.project_generator import ProjectGenerator
     from services.resume_renderer import ResumeRenderer
+    from services.resume_scorer import ResumeScorer
 
     print("=" * 78)
     print("FULL PIPELINE LOCAL TEST")
@@ -50,32 +73,40 @@ def main():
 
     count_bullets("ORIGINAL (input)", USER_RESUME)
 
-    print("\n[1/4] Tailoring via Bedrock Claude Sonnet 4.6...")
+    print("\n[1/5] Tailoring via Bedrock Claude Sonnet 4.6...")
     tailor = ResumeTailor()
     tailored = tailor.tailor(USER_RESUME, JD_ANALYSIS)
-    count_bullets("AFTER TAILOR + IntegrityGuard", tailored)
+    count_bullets("AFTER TAILOR + IntegrityGuard + JD-skills coverage", tailored)
 
-    print("\n[2/4] Augmenting (project generation + bullet expansion + ATS harden + overflow trim)...")
+    print("\n[2/5] Augmenting (project generation + bullet expansion + ATS harden + overflow trim)...")
     renderer = ResumeRenderer()
     proj_gen = ProjectGenerator()
     augmenter = ContentAugmenter(renderer, proj_gen)
     augmented = augmenter.augment(tailored, USER_RESUME, JD_ANALYSIS)
     count_bullets("AFTER AUGMENTER", augmented)
 
-    print("\n[3/4] Rendering PDF...")
+    print("\n[3/5] Rendering PDF...")
     pdf_bytes = renderer.generate_pdf(augmented)
     out_pdf = ROOT / "tailor_local_output.pdf"
     out_pdf.write_bytes(pdf_bytes)
     print(f"  PDF saved: {out_pdf} ({len(pdf_bytes)} bytes)")
 
-    print("\n[4/4] Summary:")
+    print("\n[4/5] Scoring (deterministic + AI via Claude)...")
+    scorer = ResumeScorer()
+    scores = scorer.score(augmented, JD_ANALYSIS)
+    print_ats("FINAL", scores)
+
+    print("\n[5/5] Summary:")
     summary = augmented.get("summary", "")
     print(f"  Summary ({len(summary)} chars):")
     print(f"  > {summary[:300]}{'...' if len(summary) > 300 else ''}")
 
     out_json = ROOT / "tailor_local_output.json"
     out_json.write_text(json.dumps(augmented, indent=2))
+    out_scores = ROOT / "tailor_local_scores.json"
+    out_scores.write_text(json.dumps(scores, indent=2))
     print(f"\n  Full augmented JSON: {out_json}")
+    print(f"  ATS scores JSON: {out_scores}")
 
 
 if __name__ == "__main__":

@@ -51,6 +51,25 @@ class ResumeRenderer:
         "Sept": "Sep",
     }
 
+    @staticmethod
+    def _title_case_name(name: str) -> str:
+        """Normalize candidate name to Title Case.
+
+        If a token is entirely upper- or lower-case, capitalize only the first
+        letter ("HARSHITH" -> "Harshith"). If it already has mixed case
+        (e.g. "McDonald", "deShawn"), leave it untouched so we don't damage
+        legitimately styled surnames.
+        """
+        if not name:
+            return name
+        out = []
+        for tok in name.split():
+            if tok.isupper() or tok.islower():
+                out.append(tok[:1].upper() + tok[1:].lower())
+            else:
+                out.append(tok)
+        return " ".join(out)
+
     @classmethod
     def _normalize_dates(cls, date_str: str) -> str:
         """Convert full month names to 3-letter abbreviations to match the
@@ -195,6 +214,7 @@ class ResumeRenderer:
 
         contact = tailored.get("contact", {})
         name = sanitize(contact.get("name", "")).strip() or "Resume"
+        name = self._title_case_name(name)
         ml = self._MARGIN_LR
         mt = self._MARGIN_TOP
 
@@ -214,11 +234,11 @@ class ResumeRenderer:
         pdf.set_y(mt)
         w = pdf.w - 2 * ml  # usable width ≈ 184.6mm
 
-        # ── Name (centered, bold, ALL CAPS) — matches LaTeX template's
-        # \MakeUppercase{\textbf{...}} for the candidate name. Section
-        # headers below also use uppercase.
+        # Name in Title Case (centered, bold). Section headers below still
+        # use uppercase, but the candidate's name itself reads more naturally
+        # as "Harshith Siddardha Manne" than as ALL CAPS.
         pdf.set_font("Times", "B", self._NAME_SIZE)
-        pdf.cell(w, 6.5, name.upper(), align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(w, 6.5, name, align="C", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(0.5)  # \nameskip = \smallskip
 
         # ── Contact line (centered, pipe-separated, black text) ──
@@ -822,6 +842,7 @@ class ResumeRenderer:
         # ------------------- HEADER -------------------
         contact = tailored.get("contact", {})
         name = (contact.get("name", "") or "Resume").strip()
+        name = self._title_case_name(name)
         p = doc.add_paragraph()
         p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run = p.add_run(name)
@@ -1137,6 +1158,7 @@ class ResumeRenderer:
         """Build ATS-friendly filename: Firstname_Lastname_JobTitle.ext"""
         contact = tailored.get("contact", {})
         name = contact.get("name", "").strip()
+        name = ResumeRenderer._title_case_name(name)
         parts = name.split()
         first = parts[0] if parts else "Resume"
         last = parts[-1] if len(parts) > 1 else ""
@@ -1165,7 +1187,8 @@ class ResumeRenderer:
         from real company names (e.g. "Two Sigma, LLC"), and the job_title
         already disambiguates the role.
         """
-        parts = (candidate_name or "").strip().split()
+        normalized = ResumeRenderer._title_case_name((candidate_name or "").strip())
+        parts = normalized.split()
         first = parts[0] if parts else "Applicant"
         last = parts[-1] if len(parts) > 1 else ""
 

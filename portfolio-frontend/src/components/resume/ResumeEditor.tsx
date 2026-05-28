@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import type { TailoredFullResume, ResumeExperience, ResumeEducation, ResumeProject, JDAnalysis } from '@/types/resume';
 import { apiService } from '@/lib/api';
+import { titleCaseName } from '@/lib/filename';
 import { toast } from 'sonner';
 
 // ─── Icons ─────────────────────────────────────────────────────────────────
@@ -78,7 +79,7 @@ function LivePreview({ resume }: { resume: TailoredFullResume }) {
     <div className="text-xs leading-relaxed">
       {/* Contact header */}
       <div className="text-center mb-3 pb-2 border-b border-gray-200 dark:border-gray-800/60">
-        <h2 className="text-base font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wide">{resume.contact?.name || 'Your Name'}</h2>
+        <h2 className="text-base font-bold text-gray-900 dark:text-gray-100 tracking-wide">{titleCaseName(resume.contact?.name || '') || 'Your Name'}</h2>
         <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-1">
           {[resume.contact?.phone, resume.contact?.email, resume.contact?.linkedin, resume.contact?.github]
             .filter(Boolean).join('  |  ')}

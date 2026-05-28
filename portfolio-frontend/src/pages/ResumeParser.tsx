@@ -8,7 +8,7 @@ import { useDailyUsage, DailyUsage } from "@/hooks/useDailyUsage";
 import { DailyUsageBadge } from "@/components/quota/DailyUsageBadge";
 import { QuotaLimitDialog } from "@/components/quota/QuotaLimitDialog";
 import { useFeedback } from "@/components/feedback/FeedbackWidget";
-import { buildCoverLetterFilename } from "@/lib/filename";
+import { buildCoverLetterFilename, titleCaseName } from "@/lib/filename";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Bot, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { lazy, Suspense } from "react";
@@ -833,7 +833,7 @@ function ResumePreview({ resume }: { resume: TailoredFullResume }) {
     <div className="rounded-xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 overflow-hidden shadow-sm">
       <div className="bg-gradient-to-r from-purple-50 via-white to-purple-50 dark:from-purple-500/10 dark:via-gray-900 dark:to-purple-500/10 px-6 py-5 border-b border-gray-200 dark:border-gray-800 group relative">
         <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">
-          {resume.contact?.name}
+          {titleCaseName(resume.contact?.name || "")}
         </h2>
         <p className="text-[12px] text-gray-600 dark:text-gray-300 mt-1">
           {[

@@ -15,8 +15,27 @@ function clean(s: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
+// Title-case a name token only if it's all upper or all lower — keep
+// legitimately mixed-case surnames (McDonald, deShawn) intact.
+function titleCaseToken(tok: string): string {
+  if (!tok) return tok;
+  const upper = tok === tok.toUpperCase();
+  const lower = tok === tok.toLowerCase();
+  if (upper || lower) return tok.charAt(0).toUpperCase() + tok.slice(1).toLowerCase();
+  return tok;
+}
+
+export function titleCaseName(name: string): string {
+  return (name || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(titleCaseToken)
+    .join(' ');
+}
+
 export function buildResumeFilename(name: string, jobTitle: string, ext = 'pdf'): string {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  const parts = titleCaseName(name).split(/\s+/).filter(Boolean);
   const first = parts[0] || 'Resume';
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
   const segments = [clean(first), clean(last), clean(jobTitle || '')].filter(Boolean);
@@ -24,7 +43,7 @@ export function buildResumeFilename(name: string, jobTitle: string, ext = 'pdf')
 }
 
 export function buildCoverLetterFilename(name: string, jobTitle: string, ext = 'pdf'): string {
-  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  const parts = titleCaseName(name).split(/\s+/).filter(Boolean);
   const first = parts[0] || 'Applicant';
   const last = parts.length > 1 ? parts[parts.length - 1] : '';
   const segments = [clean(first), clean(last), clean(jobTitle || ''), 'Cover_Letter'].filter(Boolean);

@@ -315,6 +315,36 @@ def _attach_ats_keyword_audit(result: Dict[str, Any], jd_analysis: Dict[str, Any
         logger.warning("ATS audit skipped: %s", e)
 
 
+def _consume_projects_diagnostic(result: Dict[str, Any]) -> None:
+    """Pop the augmenter's internal diagnostic, log a structured summary,
+    and attach it under `result["_diagnostics"]["projects"]` so the job
+    status response can surface why a Projects section ended up empty.
+
+    The diagnostic dict is removed from the top-level tailored payload so
+    the renderer never sees it.
+    """
+    diag = result.pop("_projects_diagnostic", None)
+    if not diag:
+        return
+    final_count = diag.get("final_count", 0)
+    stage = diag.get("stage_reached", "unknown")
+    budget = diag.get("budget_shape")
+    rejections = diag.get("rejections", []) or []
+    logger.warning(
+        "PROJECTS DIAGNOSTIC: stage=%s final_count=%d budget=%s "
+        "generator_returned=%d rejections=%d defensive_stripped=%s deep_skip=%s",
+        stage, final_count, budget,
+        diag.get("generator_returned", 0),
+        len(rejections),
+        diag.get("defensive_stripped", []),
+        diag.get("deep_project_skip", False),
+    )
+    if rejections:
+        for r in rejections[:10]:
+            logger.warning("  rejection: %s -> %s", r.get("name"), r.get("reason"))
+    result.setdefault("_diagnostics", {})["projects"] = diag
+
+
 def _process_job(job_id: str, job_type: str, payload: dict):
     """Execute the appropriate pipeline step and store the result in MongoDB."""
     svc = get_resume_service()
@@ -421,6 +451,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             # Content augmentation: page-fill, impact injection, ATS hardening
             result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
+            _consume_projects_diagnostic(result)
 
             # Date normalization: consistent "Month YYYY – Present" format
             from services.date_normalizer import normalize_dates
@@ -458,6 +489,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             # project generation, ATS hardening). Without this, feedback that shrinks
             # content leaves empty space on the rendered page.
             result = svc.augmenter.augment(result, structured, payload["jd_analysis"])
+            _consume_projects_diagnostic(result)
 
             # Date + title normalization
             from services.date_normalizer import normalize_dates
@@ -657,6 +689,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 result_contact["phone"] = " ".join(result_contact["phone"].split())
 
             result = svc.augmenter.augment(result, structured, jd_analysis)
+            _consume_projects_diagnostic(result)
 
             from services.date_normalizer import normalize_dates
             from services.title_normalizer import normalize_titles
@@ -696,6 +729,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
 
             # Step 4: Augment
             result = svc.augmenter.augment(result, structured, jd_analysis)
+            _consume_projects_diagnostic(result)
 
             # Step 5: Date + title normalization
             from services.date_normalizer import normalize_dates

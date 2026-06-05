@@ -92,10 +92,24 @@ class ContentAugmenter:
         """
         pipeline_start = time.time()
 
+        # Diagnostic — populated through the pipeline; consumed by
+        # resume_service.py to surface in the job result.
+        diag = {
+            "stage_reached": "init",
+            "budget_shape": None,
+            "generator_returned": 0,
+            "rejections": [],
+            "final_count": 0,
+            "defensive_stripped": [],
+            "deep_project_skip": False,
+        }
+        tailored["_projects_diagnostic"] = diag
+
         # Edge case: empty skills → likely parsing issue, skip augmentation
         skills = tailored.get("skills", {})
         if not skills or (isinstance(skills, dict) and not any(skills.values())):
             logger.warning("ContentAugmenter: empty skills section — skipping augmentation")
+            diag["stage_reached"] = "skipped_empty_skills"
             return tailored
 
         # ── Defensive strip: remove any project in `tailored` whose name doesn't ──
@@ -125,6 +139,7 @@ class ContentAugmenter:
                 "(IntegrityGuard upstream did not catch them)",
                 _stripped, _invented,
             )
+            diag["defensive_stripped"] = _invented
         tailored["projects"] = _real_projects
 
         # Phase 0: Measure current fill
@@ -364,6 +379,15 @@ class ContentAugmenter:
         """
         projects = tailored.get("projects", [])
         tailored.setdefault("projects", projects)
+        diag = tailored.setdefault("_projects_diagnostic", {
+            "stage_reached": "init",
+            "budget_shape": None,
+            "generator_returned": 0,
+            "rejections": [],
+            "final_count": 0,
+            "defensive_stripped": [],
+            "deep_project_skip": False,
+        })
 
         # If user already has at least one deep project, don't dilute it.
         if projects and any(len(p.get("bullets", [])) >= 3 for p in projects):
@@ -372,10 +396,14 @@ class ContentAugmenter:
                 "≥3 bullets — preserving depth without generating shallow extras",
                 len(projects),
             )
+            diag["stage_reached"] = "deep_skip"
+            diag["deep_project_skip"] = True
+            diag["final_count"] = len(projects)
             return tailored
 
         # Compute how many projects (and bullets each) actually fit.
         target_count, target_bullets = self._project_budget(tailored)
+        diag["budget_shape"] = [target_count, target_bullets]
 
         needed = target_count - len(projects)
         if needed <= 0:
@@ -386,12 +414,15 @@ class ContentAugmenter:
                     "will end at Education without a Projects section "
                     "(better than silently overflowing).",
                 )
+                diag["stage_reached"] = "budget_zero"
             else:
                 logger.warning(
                     "ContentAugmenter: %d projects already present "
                     "(budget target %d) — skipping generation",
                     len(projects), target_count,
                 )
+                diag["stage_reached"] = "already_at_target"
+            diag["final_count"] = len(projects)
             return tailored
 
         logger.warning(
@@ -401,13 +432,18 @@ class ContentAugmenter:
         )
 
         # Batch generate all needed projects in ONE LLM call.
+        # rejections_sink captures per-project rejection reasons for diagnostics.
+        rejections_sink: List[Dict] = []
         generated = self.project_generator.generate_batch(
             count=needed,
             original_resume=original,
             jd_analysis=jd_analysis,
             existing_projects=projects,
             bullets_per_project=target_bullets,
+            rejections_sink=rejections_sink,
         )
+        diag["generator_returned"] = len(generated)
+        diag["rejections"] = rejections_sink
 
         for proj in generated:
             projects.append(proj)
@@ -417,6 +453,16 @@ class ContentAugmenter:
             )
 
         tailored["projects"] = projects
+        diag["final_count"] = len(projects)
+        if len(generated) == 0 and needed > 0:
+            # Budget said we should generate N, but generator returned 0.
+            # Either the LLM call failed or every candidate got rejected.
+            diag["stage_reached"] = (
+                "generator_failed" if any(r["name"].startswith("<") for r in rejections_sink)
+                else "all_rejected"
+            )
+        else:
+            diag["stage_reached"] = "success"
         return tailored
 
     @staticmethod
@@ -509,7 +555,13 @@ class ContentAugmenter:
                 for i, eb in enumerate(exp_bullets):
                     if cls._bullets_overlap_significantly(pb, eb):
                         company = (exp.get("company") or "?").strip()
-                        return True, f"overlaps {company} bullet {i + 1}"
+                        # Surface the actual shared tokens so we can tell at a
+                        # glance whether the heuristic is reasonable or paranoid.
+                        shared = sorted(set(cls._tokens(pb)) & set(cls._tokens(eb)))[:6]
+                        return True, (
+                            f"overlaps {company} bullet {i + 1} "
+                            f"(shared tokens: {shared})"
+                        )
         return False, ""
 
     # ------------------------------------------------------------------

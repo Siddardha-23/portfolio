@@ -215,6 +215,7 @@ class ProjectGenerator:
         jd_analysis: Dict[str, Any],
         existing_projects: list = None,
         bullets_per_project: int = 3,
+        rejections_sink: list = None,
     ) -> list:
         """Generate multiple projects in a single LLM call for speed.
 
@@ -222,10 +223,16 @@ class ProjectGenerator:
             bullets_per_project: how many bullets each generated project should
                 have. Default 3 preserves prior behavior; callers with a known
                 vertical budget pass the exact count that fits the page.
+            rejections_sink: optional list that receives one dict per rejected
+                project for diagnostic surfacing upstream. Caller pre-allocates
+                the list; this method appends. Each dict has keys
+                {"name", "reason"}.
 
         Returns a list of validated project dicts (may be fewer than `count`
         if some fail validation or are duplicates).
         """
+        if rejections_sink is None:
+            rejections_sink = []
         from services.gemini_client import gemini_json, GEMINI_FLASH
         from schemas.resume_schemas import flatten_skills, build_resume_text
 
@@ -339,10 +346,17 @@ class ProjectGenerator:
             )
         except Exception as e:
             logger.warning("ProjectGenerator: batch generation failed: %s", e)
+            rejections_sink.append({"name": "<llm-call>", "reason": f"llm_exception: {e}"})
             return []
 
         raw_projects = result.get("projects", [])
         if not isinstance(raw_projects, list):
+            logger.warning(
+                "ProjectGenerator: batch returned non-list 'projects' field "
+                "(type=%s) — treating as empty",
+                type(raw_projects).__name__,
+            )
+            rejections_sink.append({"name": "<llm-output>", "reason": "non_list_projects_field"})
             return []
 
         validated = []
@@ -350,23 +364,37 @@ class ProjectGenerator:
         for raw in raw_projects:
             if not isinstance(raw, dict):
                 continue
+            raw_name = (raw.get("name") if isinstance(raw, dict) else None) or "?"
             project = self._validate_and_clean(raw, original_resume, jd_analysis, bullets_per_project)
             if project is None:
+                logger.warning(
+                    "ProjectGenerator batch: project '%s' rejected — failed validation",
+                    raw_name,
+                )
+                rejections_sink.append({"name": raw_name, "reason": "validation"})
                 continue
             from services.content_augmenter import ContentAugmenter
             # Check for duplicates against existing + already-validated projects
             all_existing = (existing_projects or []) + validated
             if ContentAugmenter._is_duplicate_project(project, all_existing):
-                logger.info("ProjectGenerator batch: duplicate project '%s' — skipping", project.get("name"))
+                logger.warning(
+                    "ProjectGenerator batch: project '%s' rejected — duplicate",
+                    project.get("name"),
+                )
+                rejections_sink.append({"name": project.get("name", "?"), "reason": "duplicate"})
                 continue
             # Check for overlap with the candidate's experience bullets — projects
             # that restate experience add no signal and waste resume real estate.
             overlaps, reason = ContentAugmenter._overlaps_experience(project, original_experience)
             if overlaps:
-                logger.info(
+                logger.warning(
                     "ProjectGenerator batch: project '%s' rejected — %s",
                     project.get("name"), reason,
                 )
+                rejections_sink.append({
+                    "name": project.get("name", "?"),
+                    "reason": f"overlaps_experience: {reason}",
+                })
                 continue
             validated.append(project)
             if len(validated) >= count:

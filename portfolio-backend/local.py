@@ -106,6 +106,10 @@ def create_app():
     from blueprints.tech_chronicle import tech_chronicle_bp
     app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')
 
+    # Job Application Autofill extension backend — must mirror app.py's mount.
+    from blueprints.apply import apply_bp
+    app.register_blueprint(apply_bp, url_prefix='/api/apply')
+
     from blueprints.chat import chat_bp
     app.register_blueprint(chat_bp, url_prefix='/api/chat')
 

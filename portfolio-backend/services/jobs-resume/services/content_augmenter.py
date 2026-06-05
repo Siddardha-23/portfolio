@@ -43,6 +43,34 @@ class ContentAugmenter:
         self.project_generator = project_generator
 
     # ------------------------------------------------------------------
+    # Safe-substitution finalizer
+    # ------------------------------------------------------------------
+
+    def _finalize_safe_substitutions(self, tailored: Dict[str, Any]) -> Dict[str, Any]:
+        """Re-apply IntegrityGuard's safe-substitution passes after augmentation.
+
+        The tailor pipeline runs IntegrityGuard once after the LLM emits the
+        initial tailored resume — that strips AI tells, Unicode dashes,
+        banned phrases, and enforces terminal periods. But the augmenter's
+        Phase 2 (bullet expansion), Phase 3 (impact injection), and Phase 5
+        (ATS hardening) all call the LLM again to rewrite or add bullets.
+        Anything those phases emit (tildes, en-dashes, missing periods,
+        K+/M+/%+ suffixes) would bypass the original guard.
+
+        This method re-runs the deterministic safe-substitution passes —
+        not the full guard (which checks structural integrity and could
+        spuriously flag legitimate augmenter additions). Just the cosmetic
+        cleanup.
+        """
+        from services.integrity_guard import IntegrityGuard
+        g = IntegrityGuard()
+        tailored, _ = g.fix_banned_phrases(tailored)
+        tailored, _ = g.fix_unicode_dashes(tailored)
+        tailored, _ = g.fix_ai_tell_symbols(tailored)
+        tailored, _ = g.fix_terminal_periods(tailored)
+        return tailored
+
+    # ------------------------------------------------------------------
     # Main entry point
     # ------------------------------------------------------------------
 
@@ -134,6 +162,7 @@ class ContentAugmenter:
             t0 = time.time()
             tailored = self._ats_harden(tailored, jd_analysis)
             logger.info("ContentAugmenter Phase 5 (ATS harden): [%.1fs]", time.time() - t0)
+            tailored = self._finalize_safe_substitutions(tailored)
             logger.info("ContentAugmenter: total pipeline time = %.1fs", time.time() - pipeline_start)
             return tailored
 
@@ -165,6 +194,10 @@ class ContentAugmenter:
         fill = self._measure_fill(tailored)
         if fill > _OVERFLOW_SOFT:
             tailored = self._overflow_trim(tailored, fill)
+
+        # Phase 7: Safe-substitution finalizer — strip any AI tells, Unicode
+        # dashes, missing periods that augmenter LLM calls may have emitted.
+        tailored = self._finalize_safe_substitutions(tailored)
 
         logger.info("ContentAugmenter: final fill = %.1f%%, total pipeline time = %.1fs",
                     fill * 100, time.time() - pipeline_start)
@@ -224,7 +257,10 @@ class ContentAugmenter:
     _PROJECT_BULLET_H_MM = 7.0
     _PROJECT_HEADER_H_MM = 5.0
     _PROJECT_SECTION_OVERHEAD_MM = 6.0
-    _PROJECT_BUDGET_SAFETY_BUFFER_MM = 8.0  # leave room for Pass 2 distribution
+    _PROJECT_BUDGET_SAFETY_BUFFER_MM = 3.0  # tier-fallback already absorbs overflow;
+                                            # buffer is just breathing room. 8mm
+                                            # was too aggressive — rejected 1x5 shapes
+                                            # that the renderer could comfortably fit.
 
     def _project_budget(
         self,

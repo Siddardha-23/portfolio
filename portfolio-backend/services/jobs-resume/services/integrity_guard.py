@@ -40,6 +40,8 @@ class IntegrityReport:
     hallucinated_projects: List[Dict] = field(default_factory=list)
     missing_experience_reinjected: List[Dict] = field(default_factory=list)
     banned_phrase_substitutions: List[str] = field(default_factory=list)
+    unicode_dash_substitutions: List[str] = field(default_factory=list)
+    ai_tell_substitutions: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -179,6 +181,19 @@ class IntegrityGuard:
         tailored, substitutions = self.fix_banned_phrases(tailored)
         report.banned_phrase_substitutions = substitutions
 
+        # Step 7: Strip Unicode en-dash / em-dash globally. These are AI tells
+        # outside of dates too — models reach for them in bullet text and
+        # summaries because they look professional, but no human types them
+        # on a resume.
+        tailored, dash_subs = self.fix_unicode_dashes(tailored)
+        report.unicode_dash_substitutions = dash_subs
+
+        # Step 8: Strip fake-precision AI-tell symbols (K+, M+, %+, ~N, sub-N).
+        # Legitimate technical shorthand (bare K/M, percent, ms) stays — only
+        # the hedging decorations are stripped.
+        tailored, ai_subs = self.fix_ai_tell_symbols(tailored)
+        report.ai_tell_substitutions = ai_subs
+
         # Determine severity
         report.severity = self._classify_severity(report)
 
@@ -193,7 +208,8 @@ class IntegrityGuard:
         if report.severity != "clean":
             logger.warning(
                 "IntegrityGuard report: severity=%s overwrites=%d "
-                "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s banned_subs=%d",
+                "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s "
+                "banned_subs=%d dash_subs=%d ai_tell_subs=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
@@ -201,6 +217,8 @@ class IntegrityGuard:
                 len(report.missing_experience_reinjected),
                 report.project_cap_enforced,
                 len(report.banned_phrase_substitutions),
+                len(report.unicode_dash_substitutions),
+                len(report.ai_tell_substitutions),
             )
 
         return tailored, report
@@ -456,6 +474,133 @@ class IntegrityGuard:
         return tailored, substitutions
 
     # ------------------------------------------------------------------
+    # 5. Unicode-dash strip (en-dash, em-dash → ASCII hyphen)
+    # ------------------------------------------------------------------
+
+    # En-dash U+2013, em-dash U+2014. Real candidates type ASCII '-';
+    # these Unicode variants are AI tells in bullet text and summaries.
+    # Date separators get re-normalized in date_normalizer.py, but this
+    # pass catches any that slip through anywhere in the resume.
+    _DASH_CHARS = ("—", "–")  # em-dash, en-dash
+
+    def fix_unicode_dashes(
+        self,
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Replace en-dash / em-dash with ASCII hyphen-space in all candidate-
+        facing text fields (summary, experience bullets, project bullets,
+        experience dates, education dates).
+
+        Strategy:
+          - Spaced dash (` – ` / ` — `)        → ` - `
+          - Bare dash inside a compound        → `-`
+          - Collapse multi-space runs introduced by the substitution.
+        """
+        substitutions: List[str] = []
+
+        def _strip(text: str) -> str:
+            if not isinstance(text, str) or not text:
+                return text
+            new = text
+            for dash in self._DASH_CHARS:
+                if dash not in new:
+                    continue
+                before = new
+                # Spaced dash → spaced ASCII hyphen (preserve breathing room)
+                new = re.sub(rf"\s+{re.escape(dash)}\s+", " - ", new)
+                # Any remaining bare dash → ASCII hyphen
+                new = new.replace(dash, "-")
+                # Collapse multiple spaces the substitution may have produced
+                new = re.sub(r" {2,}", " ", new).strip()
+                if new != before:
+                    substitutions.append(
+                        f"U+{ord(dash):04X} → '-'"
+                    )
+            return new
+
+        if "summary" in tailored:
+            tailored["summary"] = _strip(tailored["summary"])
+
+        for exp in tailored.get("experience", []) or []:
+            exp["bullets"] = [_strip(b) for b in (exp.get("bullets") or [])]
+            if "dates" in exp:
+                exp["dates"] = _strip(exp["dates"])
+
+        for proj in tailored.get("projects", []) or []:
+            proj["bullets"] = [_strip(b) for b in (proj.get("bullets") or [])]
+            if "dates" in proj:
+                proj["dates"] = _strip(proj["dates"])
+
+        for edu in tailored.get("education", []) or []:
+            if "dates" in edu:
+                edu["dates"] = _strip(edu["dates"])
+
+        return tailored, substitutions
+
+    # ------------------------------------------------------------------
+    # 6. AI-tell symbol strip (K+, M+, %+, ~N, sub-N)
+    # ------------------------------------------------------------------
+
+    # Each entry is (regex, replacement). Replacements use \1 / \2 group
+    # references the same way `re.sub` expects. Order matters: percent
+    # cases run before generic '+' cases to avoid double-substitution.
+    _AI_TELL_SUBSTITUTIONS = (
+        # Strip trailing '+' from K-suffixed counts: '120K+' → '120K'
+        (re.compile(r"(\b\d+(?:\.\d+)?)K\+", re.IGNORECASE), r"\1K"),
+        # Strip trailing '+' from M-suffixed counts: '2M+' → '2M'
+        (re.compile(r"(\b\d+(?:\.\d+)?)M\+", re.IGNORECASE), r"\1M"),
+        # Strip trailing '+' from percentages: '99.9%+' → '99.9%'
+        (re.compile(r"(\b\d+(?:\.\d+)?%)\+"), r"\1"),
+        # Drop the tilde approximation marker: '~5,000' → '5,000'
+        (re.compile(r"~(?=\d)"), ""),
+        # Rewrite 'sub-Nms' / 'sub-Ns' / 'sub-N second' → 'under Nunit'
+        (re.compile(r"\bsub-(\d+)\s*(ms|s|sec|second|seconds)\b", re.IGNORECASE),
+         r"under \1\2"),
+        # Phrase form 'sub-second' → 'under one second'
+        (re.compile(r"\bsub-second\b", re.IGNORECASE), "under one second"),
+        # Phrase form 'sub-millisecond' → 'under one millisecond'
+        (re.compile(r"\bsub-millisecond\b", re.IGNORECASE), "under one millisecond"),
+    )
+
+    def fix_ai_tell_symbols(
+        self,
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Strip fake-precision AI-tell decorations.
+
+        Legitimate technical shorthand stays: '120K msgs/sec', '85%', '100ms'.
+        Only the hedging suffixes get stripped: 'K+', 'M+', '%+', '~', 'sub-N'.
+        '5+ years' / '10+ years' style standalone '+' is left alone — that's
+        genuine 'or more' semantics, not an AI tell.
+        """
+        substitutions: List[str] = []
+
+        def _strip(text: str) -> str:
+            if not isinstance(text, str) or not text:
+                return text
+            new = text
+            for pattern, replacement in self._AI_TELL_SUBSTITUTIONS:
+                if pattern.search(new):
+                    before = new
+                    new = pattern.sub(replacement, new)
+                    if new != before:
+                        substitutions.append(
+                            f"'{pattern.pattern}' → '{replacement}'"
+                        )
+            return new
+
+        if "summary" in tailored:
+            tailored["summary"] = _strip(tailored["summary"])
+
+        for exp in tailored.get("experience", []) or []:
+            exp["bullets"] = [_strip(b) for b in (exp.get("bullets") or [])]
+
+        for proj in tailored.get("projects", []) or []:
+            proj["bullets"] = [_strip(b) for b in (proj.get("bullets") or [])]
+
+        return tailored, substitutions
+
+    # ------------------------------------------------------------------
     # Severity classification
     # ------------------------------------------------------------------
 
@@ -475,6 +620,8 @@ class IntegrityGuard:
             or report.missing_experience_reinjected
             or report.project_cap_enforced
             or report.banned_phrase_substitutions
+            or report.unicode_dash_substitutions
+            or report.ai_tell_substitutions
         )
 
         if has_any_fix:

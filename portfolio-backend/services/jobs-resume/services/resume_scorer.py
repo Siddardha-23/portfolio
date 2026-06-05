@@ -199,25 +199,87 @@ class ResumeScorer:
             score += 25
         return score
 
+    # Patterns classifying each metric *type*. A bullet that hits multiple
+    # types still counts as one metric bullet, but contributes multiple
+    # types to the diversity set. Order: more-specific patterns first so a
+    # '420ms' isn't double-counted as both 'duration' and 'count'.
+    _METRIC_TYPE_PATTERNS = (
+        ("percentage", re.compile(r"\d+(?:\.\d+)?%")),
+        ("monetary",   re.compile(r"\$[\d,]+(?:\.\d+)?[KMB]?")),
+        ("range",      re.compile(r"\b\d+\s*(?:to|→|-)\s*\d+\b", re.IGNORECASE)),
+        ("duration",   re.compile(
+            r"\b\d+(?:\.\d+)?\s*(?:ms|s|sec|second|seconds|min|hour|hours|day|days|week|weeks|month|months|year|years)\b",
+            re.IGNORECASE,
+        )),
+        ("multiplier", re.compile(r"\b\d+x\b", re.IGNORECASE)),
+        ("count",      re.compile(r"\b\d{2,}(?:,\d{3})*(?:[KMB])?\b", re.IGNORECASE)),
+    )
+
+    # Patterns that signal fake-precision hedging. Each occurrence subtracts
+    # 2 from the score, capped at -10 total. These mirror the IntegrityGuard
+    # substitutions — anything that slipped past the guard still gets penalized.
+    _AI_TELL_PENALTY_PATTERNS = (
+        re.compile(r"\b\d+(?:\.\d+)?[KM]\+", re.IGNORECASE),      # 120K+, 2M+
+        re.compile(r"\d+(?:\.\d+)?%\+"),                          # 85%+, 99.9%+
+        re.compile(r"~\d"),                                        # ~5000
+        re.compile(r"\bsub-\d", re.IGNORECASE),                   # sub-100ms
+        re.compile(r"\bsub-(?:second|millisecond)\b", re.IGNORECASE),
+        re.compile(r"\bnear-(?:zero|perfect|100%)\b", re.IGNORECASE),
+    )
+
     def _quantifiable_impact_score(self, tailored: Dict[str, Any]) -> int:
-        """Count bullets containing numbers/metrics/percentages.
+        """Score quantifiable impact realistically.
 
-        Score = min(count * 10, 100).
+        Old version: min(count * 10, 100) — easily gamed by stuffing any
+        two-digit number into every bullet, including AI-tell `K+`/`M+`/`~`.
+
+        New version, still pure-Python:
+          1. Count bullets with at least one metric. Base = min(count * 8, 80).
+             Cap at 80 so raw count alone never tops the score.
+          2. Diversity bonus: +5 per distinct metric *type* beyond the first,
+             capped at +20. Five distinct types (percent + count + duration +
+             range + multiplier) earns the full +20.
+          3. AI-tell penalty: -2 per occurrence of `K+`, `M+`, `%+`, `~N`,
+             `sub-N`, `near-X`, capped at -10. Resumes that lean on these
+             fake-precision symbols lose ground.
+          4. Clamp to [0, 100].
         """
-        metric_pattern = re.compile(r"\d+%|\$[\d,]+|\d+\+|\d+x|\b\d{2,}\b")
         count = 0
+        types_seen: set = set()
 
+        all_bullets: List[str] = []
         for exp in tailored.get("experience", []):
-            for b in exp.get("bullets", []):
-                if metric_pattern.search(b):
-                    count += 1
-
+            all_bullets.extend(exp.get("bullets", []) or [])
         for proj in tailored.get("projects", []):
-            for b in proj.get("bullets", []):
-                if metric_pattern.search(b):
-                    count += 1
+            all_bullets.extend(proj.get("bullets", []) or [])
 
-        return min(count * 10, 100)
+        for bullet in all_bullets:
+            if not isinstance(bullet, str):
+                continue
+            bullet_types: set = set()
+            for type_name, pattern in self._METRIC_TYPE_PATTERNS:
+                if pattern.search(bullet):
+                    bullet_types.add(type_name)
+            if bullet_types:
+                count += 1
+                types_seen.update(bullet_types)
+
+        base = min(count * 8, 80)
+
+        # Diversity: each distinct type beyond the first adds 5, capped at 20.
+        diversity_bonus = min(max(len(types_seen) - 1, 0) * 5, 20)
+
+        # AI-tell penalty: -2 per occurrence, capped at -10.
+        ai_tell_hits = 0
+        for bullet in all_bullets:
+            if not isinstance(bullet, str):
+                continue
+            for pattern in self._AI_TELL_PENALTY_PATTERNS:
+                ai_tell_hits += len(pattern.findall(bullet))
+        ai_tell_penalty = min(ai_tell_hits * 2, 10)
+
+        score = base + diversity_bonus - ai_tell_penalty
+        return max(0, min(score, 100))
 
     # ------------------------------------------------------------------
     # Text matching helpers

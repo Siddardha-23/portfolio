@@ -179,6 +179,15 @@ def check_pdf_parseability(
     # For every experience entry, the JSON has `dates` like "May 2023 - May
     # 2024". Verify that pattern survives in the extracted text — if Workday
     # can't parse the date, it can't compute tenure.
+    #
+    # Previously this required the full date string to appear verbatim in
+    # text (`d in text`). That was too strict: fpdf2 / pypdf round-trips can
+    # alter separators (en-dash → ?), inject spaces, or split the string
+    # across PDF text objects, so 'August 2025 - Present' would fail even
+    # when both endpoints were clearly recoverable. The check now confirms
+    # each ATS-pattern token from the date string is independently present
+    # in the extracted text — that's what a real Workday/Greenhouse parser
+    # does (regex-scan, not literal-match).
     exp_dates = [
         (e.get("dates") or "").strip()
         for e in (tailored.get("experience") or [])
@@ -187,9 +196,15 @@ def check_pdf_parseability(
     dates_total = len(exp_dates)
     dates_parseable = 0
     for d in exp_dates:
-        # Treat as parseable if the date string is in extracted text AND
-        # at least one ATS-style pattern matches it.
-        if d in text and any(p.search(d) for p in _DATE_PATTERNS):
+        # Collect every ATS-style token (month+year, MM/YYYY, year, "present")
+        # the date string contains. Date is parseable if all such tokens also
+        # appear in the extracted text.
+        tokens = []
+        for p in _DATE_PATTERNS:
+            tokens.extend(m.group(0) for m in p.finditer(d))
+        if not tokens:
+            continue
+        if all(t.lower() in text.lower() for t in tokens):
             dates_parseable += 1
 
     # --- Page count ---

@@ -114,50 +114,58 @@ class ResumeRenderer:
     # PDF generation (fpdf2) — matches LaTeX resume.cls template
     # ------------------------------------------------------------------
 
-    # Layout constants — tightened to match reference resume's dense look
-    # (user requested: "borders are fine in reference, generated has too much
-    # white space"). Margins shrunk top + bottom; LR stays at 0.5in.
-    _MARGIN_LR = 11.0          # ~0.43 inch left/right (was 0.5"/12.7mm)
-    _MARGIN_TOP = 6.35         # 0.25 inch top (was 0.3")
-    _MARGIN_BOTTOM = 10.16     # 0.4 inch bottom (was 0.6")
+    # Layout constants — loosened from a previous aggressive-density pass.
+    # The earlier ultra-tight values produced a "packed" look where bullets
+    # crashed into role titles and section headers crowded their content.
+    # These values give a clean professional appearance while staying within
+    # one page for typical 2-experience + up-to-3-project resumes. The Pass 2
+    # distribution + tier fallback (10pt-tight → 9.5pt → 9pt) still handle
+    # the densest layouts automatically.
+    _MARGIN_LR = 12.7          # 0.5 inch — standard professional margin
+    _MARGIN_TOP = 10.0         # ~0.4 inch — gives the name+contact block breathing room
+    _MARGIN_BOTTOM = 10.16     # 0.4 inch bottom
     _PAGE_H = 297.0            # A4 height mm
-    _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~280.5mm usable (was ~274.1mm)
+    _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~276.8mm usable
 
-    # Font sizes — from LaTeX: \LoadClass[11pt]{article}, \fontsize commands
-    _NAME_SIZE = 17.0          # \Large at 11pt base ≈ 17pt
-    _CONTACT_SIZE = 11.0       # \fontsize{11}{13}\selectfont
-    _BODY_SIZE = 11.0          # 11pt base document class
-    _SECTION_TITLE_SIZE = 11.0 # same as body, bold, UPPERCASE
-    _COMPANY_SIZE = 11.0       # \textbf{COMPANY}
-    _JOB_TITLE_SIZE = 10.5     # smaller italic job title
-    _BULLET_INDENT = 5.08      # 0.20in = 5.08mm (leftmargin=0.20in)
+    # Font sizes
+    _NAME_SIZE = 17.0          # large centered name
+    _CONTACT_SIZE = 11.0       # contact line
+    _BODY_SIZE = 11.0          # body base (overridden by adaptive tier)
+    _SECTION_TITLE_SIZE = 11.0 # bold UPPERCASE section header
+    _COMPANY_SIZE = 11.0       # bold company name
+    _JOB_TITLE_SIZE = 11.0     # italic role title — matches company size for a
+                               # clean hierarchy (was 10.5pt, looked subordinate)
+    _BULLET_INDENT = 5.08      # 0.20in = 5.08mm
 
-    # Line heights — from LaTeX: \linespread{0.92}, \setstretch{0.98}
-    _LH_BODY = 4.2             # body line height (11pt × 0.92 spread ≈ 10.1pt ≈ 3.6mm, slight padding)
-    _LH_BULLET = 4.0           # bullet line height (\setstretch{0.98})
+    # Line heights
+    _LH_BODY = 4.2             # body line height
+    _LH_BULLET = 4.0           # bullet line height
     _LH_SKILL = 4.0            # skill row line height
     _LH_CONTACT = 4.5          # contact line height
 
-    # Spacing — from LaTeX: \parskip{3.3pt}, \sectionskip{\smallskip}, vspace{-0.02cm}
-    _SECTION_HR_WIDTH = 0.18   # 0.5pt rule ≈ 0.18mm
+    _SECTION_HR_WIDTH = 0.18   # thin rule under section header
 
-    # Spacing defaults (tighter — user requested reduced section gaps)
-    _MIN_SECTION_GAP = 0.5     # before section header (reduced)
-    _MIN_ENTRY_GAP = 0.5       # between experience/project entries
-    _MIN_POST_HEADER = 0.5     # after section HR
+    # Spacing floors — minimum visual gaps. Each constant fires multiple times
+    # on a project-heavy resume, so values are kept conservative to fit one page:
+    #   section_gap fires 5× (Summary, Experience, Projects, Skills, Education)
+    #   entry_gap fires up to 4× (between experience entries + between projects)
+    #   post_header fires 5× (after each section's HR rule)
+    _MIN_SECTION_GAP = 1.2     # before section header — clear visual break
+    _MIN_ENTRY_GAP = 1.2       # between experiences / between projects
+    _MIN_POST_HEADER = 0.8     # after section HR, before first content
     _MIN_HEADER_GAP = 0.5      # after name+contact block
-    _MIN_SKILL_GAP = 0.0       # touching between skill rows
-    _BULLET_GAP = 0.3          # constant gap between bullet points
-    _PRE_BULLET_GAP = 1.0      # gap before first bullet after title
+    _MIN_SKILL_GAP = 0.0       # skill rows touch — that's the correct dense look
+    _BULLET_GAP = 0.3          # gap between bullets within a list
+    _PRE_BULLET_GAP = 2.0      # gap below italic role title before first bullet —
+                               # biggest single visual fix; bullets no longer
+                               # crash into the title above them
 
-    # Spacing ceilings
-    # Reference resume keeps tight spacing throughout (no Pass 2 inflation).
-    # Earlier caps allowed sections to grow by 5mm+ each on a sparse page,
-    # producing the "almost empty" look. Caps tightened so leftover
-    # whitespace stays small and density matches the LaTeX template.
-    _MAX_SECTION_GAP = 1.0
-    _MAX_ENTRY_GAP = 0.8
-    _MAX_POST_HEADER = 0.8
+    # Spacing ceilings — how much Pass 2 may inflate on sparse pages.
+    # Sparse pages (1 exp + 1 proj) get a relaxed look; dense pages stay
+    # near the floor because Pass 2 distributes any slack proportionally.
+    _MAX_SECTION_GAP = 2.5
+    _MAX_ENTRY_GAP = 2.0
+    _MAX_POST_HEADER = 1.5
     _MAX_HEADER_GAP = 0.8
     _MAX_SKILL_GAP = 0.2
 

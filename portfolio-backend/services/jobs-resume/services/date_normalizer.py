@@ -33,7 +33,9 @@ _MONTH_NUM_TO_FULL = {
     9: "September", 10: "October", 11: "November", 12: "December",
 }
 
-_SEPARATOR = " \u2013 "  # en-dash
+_SEPARATOR = " - "  # ASCII hyphen \u2014 every major ATS (Workday, Greenhouse, iCIMS,
+# Taleo, Lever) parses ' - ' reliably. The en-dash ' \u2013 ' previously here
+# round-trips inconsistently through pypdf, breaking date parseability checks.
 
 
 def normalize_dates(tailored: Dict[str, Any]) -> Dict[str, Any]:

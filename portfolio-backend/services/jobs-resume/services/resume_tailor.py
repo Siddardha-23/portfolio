@@ -147,11 +147,14 @@ class ResumeTailor:
             logger.warning(
                 "Integrity check: auto-fixed — %d immutable overwrites, "
                 "%d hallucinated projects removed, %d missing experience re-injected, "
-                "%d banned-phrase substitutions",
+                "%d banned-phrase substitutions, %d unicode-dash substitutions, "
+                "%d AI-tell substitutions",
                 len(report.immutable_overwrites),
                 len(report.hallucinated_projects),
                 len(report.missing_experience_reinjected),
                 len(report.banned_phrase_substitutions),
+                len(report.unicode_dash_substitutions),
+                len(report.ai_tell_substitutions),
             )
             return _finalize(corrected)
 
@@ -747,15 +750,36 @@ class ResumeTailor:
             "       fit a number into your rewritten bullet, keep the bullet's original number-\n"
             "       bearing phrasing intact even at the cost of fewer keywords. Losing source\n"
             "       metrics is a failure.\n"
-            "       Examples of numbers to preserve: '38%', '120K+ msgs/sec', '52% MTTD', '2M+\n"
-            "       monthly prescriptions', '99.9% uptime', '420ms to 95ms', '85% of API surface',\n"
+            "       Examples of numbers to preserve: '38%', '120K msgs/sec', '52% MTTD', '2M\n"
+            "       prescriptions', '99.9% uptime', '420ms to 95ms', '85% of API surface',\n"
             "       '3 days to 4 hours', etc.\n"
             "    2. You may ADD a metric ONLY when the bullet's nature makes the number inferable\n"
             "       from the source (e.g., 'reduced from 420ms to 95ms' is already there, so adding\n"
             "       the 'p95' qualifier is fine), AND the candidate could defend the number. Do NOT\n"
             "       invent ratios, percentages, or counts that were not in the source.\n"
             "    3. Target: at least 10 bullets in the final resume should contain a numeric metric.\n"
-            "       Every number in the source resume must appear somewhere in the output.\n\n"
+            "       Every number in the source resume must appear somewhere in the output.\n"
+            "    4. REALISTIC, HUMAN-WRITTEN NUMERIC FORMATTING — these symbols scream AI-generated\n"
+            "       and must not appear in the output:\n"
+            "       - `K` and `M` as technical shorthand are FINE when scale warrants ('120K\n"
+            "         msgs/sec', '5M users'). What's NOT fine: gluing '+' onto them as hedging.\n"
+            "         Write '120K msgs/sec' NOT '120K+ msgs/sec'. Write '2M prescriptions' NOT\n"
+            "         '2M+ prescriptions'. Write '85% uptime' NOT '85%+ uptime'.\n"
+            "         `+` is reserved for genuine 'or more' semantics already in the source (e.g.,\n"
+            "         the source resume says '10+ years' — keep it; don't synthesize new `+`\n"
+            "         suffixes).\n"
+            "       - NEVER use `~` (tilde) for approximations. Write 'about 5,000' or just '5,000'\n"
+            "         — never '~5,000'. Resumes do not hedge.\n"
+            "       - NEVER write `sub-Nms` or `sub-N` constructs ('sub-100ms', 'sub-second',\n"
+            "         'sub-millisecond'). Write 'under 100ms' or just '100ms'. `sub-` is an AI tic.\n"
+            "       - NEVER coin precision-hedging compounds ('near-zero', 'near-perfect',\n"
+            "         'near-100%').\n"
+            "       - Use commas in large bare numbers when not using K/M: '120,000' not '120000'.\n"
+            "       - NEVER use en-dash `–` (U+2013) or em-dash `—` (U+2014) anywhere in\n"
+            "         the resume — not in dates, not in bullet text, not in the summary. Use ASCII\n"
+            "         hyphen `-` for ranges ('August 2025 - Present') and comma or semicolon\n"
+            "         mid-sentence. These Unicode dashes are AI tells; real candidates type ASCII\n"
+            "         `-`.\n\n"
 
             "(E) VOICE — the summary is the CANDIDATE'S self-description on THEIR resume:\n"
             "    - Write in first-person-implied voice (no 'I' pronoun, but describing the\n"
@@ -839,6 +863,9 @@ class ResumeTailor:
             "  - Opening the summary with the JD's job title as the grammatical subject\n"
             "  - Opening the summary with an adjective ('Versatile...', 'Dynamic...')\n"
             "  - Opening any bullet or summary with 'I'\n"
+            "  - AI-tell numeric symbols: 'K+', 'M+', '%+', '~N' (tilde+number), 'sub-N' constructs\n"
+            "  - Unicode en-dash '–' or em-dash '—' anywhere — use ASCII hyphen '-'\n"
+            "  - Precision-hedging compounds: 'near-zero', 'near-perfect', 'near-100%'\n"
             "BAD example: 'Versatile Python FullStack Developer with extensive experience designing scalable systems'\n"
             "GOOD example: 'Full-stack developer with 4+ years building Python backends and React frontends, "
             "focused on API design, cloud deployment, and CI/CD automation.'\n"

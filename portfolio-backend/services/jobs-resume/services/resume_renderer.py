@@ -14,6 +14,14 @@ from typing import Any, Dict
 class ResumeRenderer:
     """Generates PDF and DOCX documents from a structured (tailored) resume dict."""
 
+    # Bump this whenever the rendered OUTPUT changes (margins, fonts, name
+    # casing, section layout, bullet rules, etc.). The download endpoint caches
+    # rendered files in S3 keyed on the resume *content* hash — but format
+    # changes live here in the renderer, not the content, so without a version
+    # tag a cache "hit" would keep serving a PDF rendered by the OLD code.
+    # Including this in the cache key forces a re-render after any format fix.
+    RENDER_VERSION = "2026-06-05.1"
+
     @staticmethod
     def _contact_display(key: str, value: str) -> tuple:
         """Return (display_text, href_url_or_None) for a contact field."""

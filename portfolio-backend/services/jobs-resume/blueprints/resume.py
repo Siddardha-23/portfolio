@@ -1768,9 +1768,18 @@ def download():
                     )
 
             # Cache hit? Serve from S3, no new row, no re-render.
+            # The render_version guard ensures a format change in the renderer
+            # (margins, name casing, layout) invalidates files rendered by older
+            # code even when the resume content — and thus content_hash — is
+            # unchanged. Without it, downloads keep serving the stale old format.
             files = target.get("files") or {}
             cached = files.get(fmt)
-            if cached and cached.get("s3_key") and cached.get("content_hash") == content_hash:
+            if (
+                cached
+                and cached.get("s3_key")
+                and cached.get("content_hash") == content_hash
+                and cached.get("render_version") == svc.renderer.RENDER_VERSION
+            ):
                 try:
                     file_bytes = storage.get_resume(cached["s3_key"])
                     return send_file(
@@ -1807,6 +1816,7 @@ def download():
                 "size_bytes": len(file_bytes),
                 "filename": filename,
                 "content_hash": content_hash,
+                "render_version": svc.renderer.RENDER_VERSION,
                 "rendered_at": datetime.utcnow(),
             }
             update_set = {

@@ -20,6 +20,105 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+# Shared bullet-quality block injected into both single and batch prompts.
+# Centralizes "what makes a good project bullet" so the two prompts can't drift.
+# This is the single most important text in the generator — it's what turns a
+# tag-cloud bullet ("Built FastAPI microservice ingesting Kafka events with
+# Redis caching to detect anomalies") into a defensible-in-interview bullet
+# ("Wrote a sliding-window outlier detector that flags transactions deviating
+# beyond 3σ from a user's 30-day baseline").
+_BULLET_QUALITY_BLOCK = (
+    "BULLET QUALITY — THE REAL ENGINEER TEST (ATS-friendly + interview-defensible)\n"
+    "Each bullet must do THREE things at the same time:\n"
+    "  1. Read like something the candidate would say out loud in an interview.\n"
+    "  2. Survive an ATS keyword scan by naming the right tech ONCE, in context.\n"
+    "  3. Open with a strong action verb so a recruiter scanning the left edge\n"
+    "     of the page sees impact in two seconds.\n\n"
+    "STRUCTURE OF EVERY BULLET — follow this shape:\n"
+    "  <Strong action verb> + <specific noun (the thing built)> + "
+    "<concrete detail: a decision, trade-off, mechanism, or outcome> + "
+    "<optional single metric>\n\n"
+    "STRONG ACTION VERBS — open EVERY bullet with one of these. Vary them across\n"
+    "the bullets; do not start three bullets with 'Built'.\n"
+    "  Building: Architected, Engineered, Designed, Implemented, Built, Developed,\n"
+    "            Wrote, Modeled, Shipped, Delivered.\n"
+    "  Improving: Optimized, Reduced, Accelerated, Streamlined, Refactored,\n"
+    "             Hardened, Tuned, Cut.\n"
+    "  Deciding:  Chose, Selected, Replaced, Migrated, Consolidated, Standardized.\n"
+    "  Owning:    Led, Drove, Established, Spearheaded, Owned, Automated,\n"
+    "             Integrated, Indexed, Partitioned, Sharded.\n\n"
+    "EACH BULLET MUST CARRY EXACTLY ONE OF THESE FOUR SIGNALS — pick the one that\n"
+    "fits, do NOT try to cram all four into a single bullet:\n"
+    "  (1) A decision + reason — 'Chose materialized views over an in-memory cache\n"
+    "      because the aggregation window exceeded available memory.'\n"
+    "  (2) A specific thing built or designed — 'Wrote a sliding-window outlier\n"
+    "      detector flagging transactions deviating beyond 3σ from a 30-day user\n"
+    "      baseline.'\n"
+    "  (3) A trade-off accepted — 'Traded ~200ms of added latency for higher\n"
+    "      accuracy by joining against historical baselines before scoring.'\n"
+    "  (4) A concrete problem solved — 'Handled out-of-order events by buffering\n"
+    "      30 seconds before scoring, eliminating false positives on late-arriving\n"
+    "      transactions.'\n\n"
+    "ATS-FRIENDLY TECH NAMING — read this carefully, it's the difference between\n"
+    "passing and failing modern AI screeners:\n"
+    "  • Each bullet names EXACTLY ONE technology from the JD-anchor list, spelled\n"
+    "    the way the JD spells it. This is what ATS keyword scanners look for.\n"
+    "  • Naming TWO OR MORE tech names in one bullet creates a 'keyword stuffing'\n"
+    "    pattern modern AI screeners (and recruiters) recognize and downgrade.\n"
+    "  • Across the bullets, cover DIFFERENT JD-anchor technologies — do not name\n"
+    "    the same tech in every bullet. The 'tech:' field already lists the full\n"
+    "    stack; bullets don't repeat it.\n"
+    "  • The tech name must appear as the SUBJECT of a decision or action, NOT as\n"
+    "    a tag at the end.\n"
+    "    Good: 'Indexed flagged transactions in Elasticsearch for sub-second\n"
+    "           forensic queries.'\n"
+    "    Bad:  '...using Elasticsearch and Kibana for visualization.'\n\n"
+    "HARD 'DO NOT DO' RULES — bullets violating these will be rejected:\n"
+    "  • NO semicolons mid-bullet. A semicolon almost always means two unrelated\n"
+    "    thoughts stuffed together for keyword density. Split or cut.\n"
+    "  • NO tool-chain sentences. Patterns like 'Built X with Y and Z using A and\n"
+    "    B' where every capitalized word is a tool name are banned. If a bullet\n"
+    "    lists 3+ tool names, it has zero signal — rewrite.\n"
+    "  • NO generic direct objects. 'Built service', 'Developed application',\n"
+    "    'Implemented system', 'Created platform' — meaningless. The noun must\n"
+    "    name what was SPECIFICALLY built: 'fraud rule engine', 'outlier\n"
+    "    detector', 'back-pressure controller', 'idempotent job runner'.\n"
+    "  • NO weak openers. Never 'Worked on', 'Helped', 'Was involved in',\n"
+    "    'Participated in', 'Assisted with', 'Utilized', 'Leveraged'.\n"
+    "  • NO filler adjectives. Drop 'robust', 'scalable', 'comprehensive',\n"
+    "    'cutting-edge', 'innovative', 'seamless', 'state-of-the-art'.\n"
+    "  • AT MOST ONE METRIC per bullet. Two metrics in one sentence is padding —\n"
+    "    pick the one that matters.\n"
+    "  • BULLET LENGTH: 100-150 characters. Long enough for one real thought,\n"
+    "    short enough that every word earns its place.\n\n"
+    "SELF-CHECK BEFORE EMITTING EACH BULLET — answer yes to all four:\n"
+    "  1. Does it open with a strong action verb (from the list above)?\n"
+    "  2. Does it name EXACTLY ONE JD-anchor technology — not zero, not two?\n"
+    "  3. Does the action own a SPECIFIC noun an interviewer could probe with\n"
+    "     'why did you do it that way?' — and could the candidate answer?\n"
+    "  4. Could this exact bullet appear on five other candidates' resumes? If\n"
+    "     yes, it's generic — rewrite with a specific detail.\n\n"
+    "COMPARISON — this is exactly what to AVOID vs what to WRITE:\n"
+    "  REJECTED (keyword stuffing, no decision, ATS recognizes the pattern):\n"
+    "    'Built FastAPI microservice ingesting transaction events from Kafka\n"
+    "    topics; implemented async processing with Redis caching to detect\n"
+    "    spending anomalies within under one second latency.'\n"
+    "    Why bad: 6 tools, semicolon splice, generic 'microservice' noun, no\n"
+    "    decision an interviewer can probe.\n\n"
+    "  ACCEPTED (one tech each, strong verbs, specific nouns, defensible):\n"
+    "    'Wrote a sliding-window outlier detector in Python that flags\n"
+    "     transactions deviating beyond 3σ from a user 30-day baseline.'\n"
+    "    'Chose Kafka over a polling queue to keep ingestion lag under one\n"
+    "     second even during evening traffic peaks.'\n"
+    "    'Indexed flagged transactions in Elasticsearch so forensic queries on\n"
+    "     false-positives return in under 200ms.'\n"
+    "    Why good: each opens with a varied strong verb (Wrote / Chose / Indexed),\n"
+    "    names exactly ONE JD-anchor tech (Python / Kafka / Elasticsearch), owns\n"
+    "    a specific noun (outlier detector / polling queue / forensic queries),\n"
+    "    and carries a decision or trade-off the candidate can defend.\n"
+)
+
+
 def _summarize_experience_bullets(original_resume: Dict[str, Any], max_chars: int = 1800) -> str:
     """Build a compact 'avoid duplicating these' block for project prompts.
 
@@ -48,8 +147,106 @@ def _summarize_experience_bullets(original_resume: Dict[str, Any], max_chars: in
     return joined
 
 
+# Weak bullet openers that signal "I wasn't really driving this work." Anything
+# starting with one of these phrases (case-insensitive, optional leading bullet
+# glyph stripped) gets dropped by the post-check.
+_WEAK_BULLET_OPENERS = (
+    "worked on",
+    "helped",
+    "was involved in",
+    "was involved with",
+    "participated in",
+    "assisted with",
+    "assisted in",
+    "utilized",
+    "leveraged",
+    "was responsible for",
+    "responsible for",
+    "tasked with",
+    "supported the",
+    "contributed to",
+)
+
+# Lowercase tech-stack tokens used to count "named technologies" inside a
+# single bullet. Kept conservative so we don't false-flag English words —
+# only well-known tools/languages/frameworks appear here.
+_BULLET_TECH_TOKENS = frozenset({
+    # Languages
+    "python", "java", "javascript", "typescript", "go", "golang", "rust",
+    "ruby", "php", "scala", "kotlin", "swift", "csharp",
+    # Web / API frameworks
+    "fastapi", "flask", "django", "spring", "springboot", "express",
+    "react", "angular", "vue", "next", "nextjs", "node", "nodejs",
+    "rails", "laravel", "dotnet", "aspnet", "blazor", "graphql", "grpc",
+    # Data / messaging
+    "postgres", "postgresql", "mysql", "mariadb", "oracle", "sqlite",
+    "mongo", "mongodb", "redis", "memcached", "cassandra", "dynamodb",
+    "kafka", "rabbitmq", "rabbit", "sqs", "sns", "kinesis", "pubsub",
+    "elasticsearch", "opensearch", "solr",
+    # Observability
+    "prometheus", "grafana", "datadog", "splunk", "elk", "logstash",
+    "kibana", "fluentd", "loki", "tempo", "jaeger", "otel", "opentelemetry",
+    # Cloud / infra
+    "aws", "gcp", "azure", "docker", "kubernetes", "k8s",
+    "terraform", "ansible", "helm", "jenkins", "argocd", "ecs", "eks",
+    "ec2", "s3", "lambda", "rds", "cloudwatch", "cloudfront",
+})
+
+# Pre-compiled patterns used by the bullet-quality post-check.
+_SEMICOLON_PATTERN = re.compile(r";")
+_BULLET_TOKEN_PATTERN = re.compile(r"[A-Za-z0-9.+#]+")
+
+
 class ProjectGenerator:
     """Generates a single grounded project entry per invocation."""
+
+    @staticmethod
+    def _bullet_passes_quality_check(bullet: str) -> "tuple[bool, str]":
+        """Deterministic gate behind the BULLET QUALITY prompt block.
+
+        Drops bullets that obviously violate the hard rules. Used as a
+        safety net — the prompt asks the model to follow these rules,
+        but when it slips, we catch the worst offenders here so they
+        don't reach the rendered resume.
+
+        Returns (ok, reason). reason is the failure label when ok=False
+        and empty when ok=True.
+        """
+        if not bullet or not bullet.strip():
+            return False, "empty"
+
+        # Strip a leading bullet glyph if present so opener checks work
+        # whether the model included one or not.
+        stripped = re.sub(r"^[-•*\s]+", "", bullet).strip()
+
+        # Hard rule: no semicolons mid-bullet — almost always a sign of
+        # two thoughts stitched together for keyword density.
+        if _SEMICOLON_PATTERN.search(stripped):
+            return False, "contains_semicolon"
+
+        # Hard rule: no weak openers.
+        lower = stripped.lower()
+        for weak in _WEAK_BULLET_OPENERS:
+            if lower.startswith(weak):
+                return False, f"weak_opener:{weak}"
+
+        # Hard rule: too many named technologies in one bullet (>= 3) is
+        # keyword stuffing. The 'tech:' field already carries the stack.
+        tokens_lower = [t.lower() for t in _BULLET_TOKEN_PATTERN.findall(stripped)]
+        tech_hits = [t for t in tokens_lower if t in _BULLET_TECH_TOKENS]
+        # Use distinct tech tokens — repeating one tech name doesn't count
+        # against the bullet (e.g. "indexed in Elasticsearch and queried
+        # Elasticsearch" is still one tech).
+        if len(set(tech_hits)) >= 3:
+            return False, f"tech_stuffing:{sorted(set(tech_hits))[:5]}"
+
+        # Soft rule (warn-only, not a reject): bullet length. We surface
+        # outliers via log but don't drop them — short bullets sometimes
+        # carry the strongest signal ("Chose materialized views over an
+        # in-memory cache for the 30-day window.").
+        # No-op here on purpose.
+
+        return True, ""
 
     def generate(
         self,
@@ -161,6 +358,7 @@ class ProjectGenerator:
             "          wording or metrics.\n"
             "  STEP 5: ONLY NOW derive the NAME from the purpose. Name = WHAT it does, never\n"
             "          WHO built it.\n\n"
+            + _BULLET_QUALITY_BLOCK + "\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -169,9 +367,9 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string ''.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            f"7. bullets: exactly {bullets_per_project} bullets, each ~100-150 chars, describing what was built and how. "
-            "Each bullet MUST end with a period ('.'). "
-            "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
+            f"7. bullets: exactly {bullets_per_project} bullets. Each ~100-150 chars, ending with a period.\n"
+            "   Bullet quality is governed by the BULLET QUALITY block above — follow it exactly.\n"
+            "   Each bullet must pass the four-question self-check before being emitted.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
             "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue', "
@@ -397,6 +595,7 @@ class ProjectGenerator:
             "          wording or metrics. The reader should think 'this candidate built X\n"
             "          with the exact tech this role uses'.\n"
             "  STEP 5: ONLY NOW derive the NAME from the purpose. Name = WHAT it does.\n\n"
+            + _BULLET_QUALITY_BLOCK + "\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -405,9 +604,10 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string '' for each project.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            f"7. bullets: exactly {bullets_per_project} bullets per project, each ~100-150 chars, describing what was built and how. "
-            "Each bullet MUST end with a period ('.'). "
-            "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
+            f"7. bullets: exactly {bullets_per_project} bullets per project. Each ~100-150 chars, "
+            "ending with a period.\n"
+            "   Bullet quality is governed by the BULLET QUALITY block above — follow it exactly.\n"
+            "   Each bullet must pass the four-question self-check before being emitted.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
             "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue'.\n"
@@ -581,9 +781,37 @@ class ProjectGenerator:
             logger.warning("ProjectGenerator: generated project has no bullets")
             return None
 
-        # Enforce exactly 3 bullets, all strings, non-empty
-        clean_bullets = [str(b).strip() for b in bullets if str(b).strip()][:bullets_per_project]
-        if not clean_bullets:
+        # Enforce exactly N bullets, all strings, non-empty.
+        # We take a wider initial slice (up to 2N) so the bullet-quality filter
+        # below has room to drop weak bullets and still leave N good ones.
+        candidate_bullets = [str(b).strip() for b in bullets if str(b).strip()][:bullets_per_project * 2]
+        if not candidate_bullets:
+            return None
+
+        # Bullet-quality filter — enforce the hard rules from the BULLET QUALITY
+        # block deterministically. The prompt asks the model to follow them; this
+        # post-check is the safety net for when it forgets. We DROP individual
+        # weak bullets rather than rejecting the whole project; if too few good
+        # bullets remain to satisfy bullets_per_project, the project is rejected.
+        clean_bullets = []
+        for b in candidate_bullets:
+            ok, reason = self._bullet_passes_quality_check(b)
+            if not ok:
+                logger.warning(
+                    "ProjectGenerator: dropped bullet (%s): %r",
+                    reason, b[:120],
+                )
+                continue
+            clean_bullets.append(b)
+            if len(clean_bullets) >= bullets_per_project:
+                break
+
+        if len(clean_bullets) < bullets_per_project:
+            logger.warning(
+                "ProjectGenerator: project '%s' rejected — only %d/%d bullets passed "
+                "quality check (need at least %d)",
+                name, len(clean_bullets), len(candidate_bullets), bullets_per_project,
+            )
             return None
 
         # Validate tech: only keep items that appear in the resume text or skills

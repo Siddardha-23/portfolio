@@ -822,6 +822,11 @@ class ResumeTailor:
             "that appears in the source resume must appear somewhere in the output. See HARD\n"
             "CONSTRAINT (D) for the full rule.\n\n"
 
+            "TERMINAL PUNCTUATION: every bullet AND every sentence in the summary MUST end with a\n"
+            "period ('.'). Do NOT end bullets with a semicolon, comma, colon, or no punctuation.\n"
+            "Bullet endings are checked deterministically post-generation; missing periods are a\n"
+            "visible quality regression.\n\n"
+
             "BULLET-COUNT TABLE — these counts are HARD-REQUIRED. Returning fewer is a failure.\n"
             "  | Section                | Bullet count                                        |\n"
             "  |------------------------|-----------------------------------------------------|\n"

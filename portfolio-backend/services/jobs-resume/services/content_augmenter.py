@@ -217,22 +217,102 @@ class ContentAugmenter:
     # Phase 1: Project generation
     # ------------------------------------------------------------------
 
+    # Per-project space estimate at 10pt body, lh=3.4 (renderer Pass 1 base).
+    # A 150-char bullet wraps to ~2 visual lines × lh + bullet gap ≈ 7mm.
+    # Project header (name row + pre-bullet gap) ≈ 5mm.
+    # First call costs the section header + post-header gap (~6mm).
+    _PROJECT_BULLET_H_MM = 7.0
+    _PROJECT_HEADER_H_MM = 5.0
+    _PROJECT_SECTION_OVERHEAD_MM = 6.0
+    _PROJECT_BUDGET_SAFETY_BUFFER_MM = 8.0  # leave room for Pass 2 distribution
+
+    def _project_budget(
+        self,
+        tailored: Dict[str, Any],
+    ) -> "tuple[int, int]":
+        """Decide how many projects (and bullets per project) actually fit.
+
+        Measures the tailored resume WITHOUT the projects section at the
+        renderer's Pass-1 base settings (10pt body, lh=3.4, MIN spacing),
+        then tries candidate (project_count, bullets_per_project) shapes in
+        priority order and picks the largest one that fits.
+
+        Returns (project_count, bullets_per_project). (0, 0) means do not
+        generate a projects section at all — preferable to silently
+        overflowing the page.
+        """
+        # Measure non-project height by temporarily clearing projects.
+        # The renderer skips the entire Projects block when the list is empty,
+        # so this gives a true baseline of everything else.
+        measurement_copy = copy.deepcopy(tailored)
+        measurement_copy["projects"] = []
+        _, non_proj_h = self.renderer._render_pdf(
+            measurement_copy,
+            section_gap=self.renderer._MIN_SECTION_GAP,
+            entry_gap=self.renderer._MIN_ENTRY_GAP,
+            post_header=self.renderer._MIN_POST_HEADER,
+            header_gap=self.renderer._MIN_HEADER_GAP,
+            skill_gap=self.renderer._MIN_SKILL_GAP,
+            body_size=10.0, lh=3.4, lh_s=3.2,
+            measure_only=True,
+        )
+
+        avail_for_projects = (
+            self.renderer._AVAIL_H
+            - non_proj_h
+            - self._PROJECT_BUDGET_SAFETY_BUFFER_MM
+        )
+
+        def _shape_h(count: int, bullets: int) -> float:
+            if count == 0:
+                return 0.0
+            per_project = self._PROJECT_HEADER_H_MM + bullets * self._PROJECT_BULLET_H_MM
+            entry_gaps = max(count - 1, 0) * self.renderer._MIN_ENTRY_GAP
+            return self._PROJECT_SECTION_OVERHEAD_MM + count * per_project + entry_gaps
+
+        # Candidates in priority order — pick the LARGEST one that fits.
+        # Matches the existing bullets_per_project rule (1->5, 2-3->3) but
+        # extends the bottom with smaller shapes and "no projects at all".
+        candidates = (
+            (3, 3),
+            (2, 3),
+            (1, 5),
+            (1, 3),
+            (0, 0),
+        )
+
+        for count, bullets in candidates:
+            if _shape_h(count, bullets) <= avail_for_projects:
+                logger.warning(
+                    "ContentAugmenter._project_budget: non_proj_h=%.1fmm, "
+                    "avail_for_projects=%.1fmm -> %d projects x %d bullets "
+                    "(needs %.1fmm)",
+                    non_proj_h, avail_for_projects,
+                    count, bullets, _shape_h(count, bullets),
+                )
+                return count, bullets
+
+        # Shouldn't reach here — (0, 0) always fits — but be defensive.
+        logger.warning(
+            "ContentAugmenter._project_budget: no shape fits "
+            "(non_proj_h=%.1fmm, avail=%.1fmm) — returning (0, 0)",
+            non_proj_h, avail_for_projects,
+        )
+        return 0, 0
+
     def _augment_projects(
         self,
         tailored: Dict[str, Any],
         original: Dict[str, Any],
         jd_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Generate aligned projects up to _MAX_PROJECTS — but skip if the
-        candidate already has a deep project (≥3 bullets).
+        """Generate aligned projects based on the vertical budget that's
+        actually left on the page after Experience + Skills + Education.
 
-        Empirical finding: with 5/3/3 experience bullets + 1 deep project (5
-        bullets) + 5 skill categories, page fill at 10pt is ~109% and at 9pt
-        is ~75% — fits cleanly. Adding 2 more generated projects pushes 10pt
-        fill to ~131%, 9pt to ~109%, overflow_trim fires and DESTROYS the
-        deep original project's bullets. Net result: 3 shallow projects
-        rendered, worse than 1 deep one. The reference resume the user
-        wants to match has exactly 1 deep project. We honor that."""
+        Honors the existing "deep project" preservation rule: if the
+        candidate already has a project with ≥3 bullets, we don't dilute
+        it with additional shallow ones.
+        """
         projects = tailored.get("projects", [])
         tailored.setdefault("projects", projects)
 
@@ -245,25 +325,39 @@ class ContentAugmenter:
             )
             return tailored
 
-        needed = _MAX_PROJECTS - len(projects)
+        # Compute how many projects (and bullets each) actually fit.
+        target_count, target_bullets = self._project_budget(tailored)
+
+        needed = target_count - len(projects)
         if needed <= 0:
-            logger.warning(
-                "ContentAugmenter: %d projects already present (max %d) — skipping generation",
-                len(projects), _MAX_PROJECTS,
-            )
+            if target_count == 0:
+                logger.warning(
+                    "ContentAugmenter Phase 1: budget says 0 projects fit "
+                    "on this page — skipping project generation. The resume "
+                    "will end at Education without a Projects section "
+                    "(better than silently overflowing).",
+                )
+            else:
+                logger.warning(
+                    "ContentAugmenter: %d projects already present "
+                    "(budget target %d) — skipping generation",
+                    len(projects), target_count,
+                )
             return tailored
 
         logger.warning(
-            "ContentAugmenter Phase 1: generating %d aligned projects (have %d)",
-            needed, len(projects),
+            "ContentAugmenter Phase 1: generating %d aligned projects "
+            "(have %d, budget target %d x %d bullets each)",
+            needed, len(projects), target_count, target_bullets,
         )
 
-        # Batch generate all needed projects in ONE LLM call
+        # Batch generate all needed projects in ONE LLM call.
         generated = self.project_generator.generate_batch(
             count=needed,
             original_resume=original,
             jd_analysis=jd_analysis,
             existing_projects=projects,
+            bullets_per_project=target_bullets,
         )
 
         for proj in generated:

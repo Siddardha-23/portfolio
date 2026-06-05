@@ -42,6 +42,7 @@ class IntegrityReport:
     banned_phrase_substitutions: List[str] = field(default_factory=list)
     unicode_dash_substitutions: List[str] = field(default_factory=list)
     ai_tell_substitutions: List[str] = field(default_factory=list)
+    terminal_period_fixes: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -194,6 +195,12 @@ class IntegrityGuard:
         tailored, ai_subs = self.fix_ai_tell_symbols(tailored)
         report.ai_tell_substitutions = ai_subs
 
+        # Step 9: Enforce terminal periods on every bullet and summary
+        # sentence. Belt-and-suspenders against models occasionally omitting
+        # them; resume convention is to end each bullet with '.'.
+        tailored, period_fixes = self.fix_terminal_periods(tailored)
+        report.terminal_period_fixes = period_fixes
+
         # Determine severity
         report.severity = self._classify_severity(report)
 
@@ -209,7 +216,7 @@ class IntegrityGuard:
             logger.warning(
                 "IntegrityGuard report: severity=%s overwrites=%d "
                 "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s "
-                "banned_subs=%d dash_subs=%d ai_tell_subs=%d",
+                "banned_subs=%d dash_subs=%d ai_tell_subs=%d period_fixes=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
@@ -219,6 +226,7 @@ class IntegrityGuard:
                 len(report.banned_phrase_substitutions),
                 len(report.unicode_dash_substitutions),
                 len(report.ai_tell_substitutions),
+                len(report.terminal_period_fixes),
             )
 
         return tailored, report
@@ -601,6 +609,67 @@ class IntegrityGuard:
         return tailored, substitutions
 
     # ------------------------------------------------------------------
+    # 7. Terminal-period enforcement
+    # ------------------------------------------------------------------
+
+    # End-of-string chars that don't need a period appended (already
+    # terminated). '.', '!', '?' are sentence terminators; closing quote
+    # marks count too since the period precedes them in conventional
+    # punctuation but a quoted bullet usually self-terminates.
+    _TERMINAL_OK = (".", "!", "?", "\"", "'", ")", "]")
+
+    # Punctuation we REPLACE with '.' (mid-thought connectors that look
+    # broken when used as a bullet's terminal char).
+    _TERMINAL_REPLACE = (";", ",", ":", "-", "—", "–")
+
+    def fix_terminal_periods(
+        self,
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Ensure every bullet and summary sentence ends with a period.
+
+        Resume convention: each bullet is a complete thought ending in '.'.
+        Tailor prompts request this but models occasionally forget; this
+        deterministic pass guarantees it.
+        """
+        fixes: List[str] = []
+
+        def _fix(text: str, label: str) -> str:
+            if not isinstance(text, str):
+                return text
+            stripped = text.rstrip()
+            if not stripped:
+                return text
+            last = stripped[-1]
+            if last in self._TERMINAL_OK:
+                return stripped
+            if last in self._TERMINAL_REPLACE:
+                fixed = stripped[:-1].rstrip() + "."
+                fixes.append(f"{label}: '{last}' -> '.'")
+                return fixed
+            fixes.append(f"{label}: appended '.'")
+            return stripped + "."
+
+        if tailored.get("summary"):
+            tailored["summary"] = _fix(tailored["summary"], "summary")
+
+        for ei, exp in enumerate(tailored.get("experience", []) or []):
+            bullets = exp.get("bullets") or []
+            exp["bullets"] = [
+                _fix(b, f"experience[{ei}].bullets[{bi}]")
+                for bi, b in enumerate(bullets)
+            ]
+
+        for pi, proj in enumerate(tailored.get("projects", []) or []):
+            bullets = proj.get("bullets") or []
+            proj["bullets"] = [
+                _fix(b, f"projects[{pi}].bullets[{bi}]")
+                for bi, b in enumerate(bullets)
+            ]
+
+        return tailored, fixes
+
+    # ------------------------------------------------------------------
     # Severity classification
     # ------------------------------------------------------------------
 
@@ -622,6 +691,7 @@ class IntegrityGuard:
             or report.banned_phrase_substitutions
             or report.unicode_dash_substitutions
             or report.ai_tell_substitutions
+            or report.terminal_period_fixes
         )
 
         if has_any_fix:

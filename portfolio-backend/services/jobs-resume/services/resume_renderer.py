@@ -98,8 +98,8 @@ class ResumeRenderer:
     # distribution + tier fallback (10pt-tight → 9.5pt → 9pt) still handle
     # the densest layouts automatically.
     _MARGIN_LR = 12.7          # 0.5 inch — standard professional margin
-    _MARGIN_TOP = 10.0         # ~0.4 inch — gives the name+contact block breathing room
-    _MARGIN_BOTTOM = 10.16     # 0.4 inch bottom
+    _MARGIN_TOP = 12.0         # symmetric with bottom; asymmetric margins are an AI tell
+    _MARGIN_BOTTOM = 12.0      # symmetric with top
     _PAGE_H = 297.0            # A4 height mm
     _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~276.8mm usable
 
@@ -126,15 +126,15 @@ class ResumeRenderer:
     #   section_gap fires 5× (Summary, Experience, Projects, Skills, Education)
     #   entry_gap fires up to 4× (between experience entries + between projects)
     #   post_header fires 5× (after each section's HR rule)
-    _MIN_SECTION_GAP = 1.2     # before section header — clear visual break
-    _MIN_ENTRY_GAP = 1.2       # between experiences / between projects
-    _MIN_POST_HEADER = 0.8     # after section HR, before first content
+    _MIN_SECTION_GAP = 1.5     # before section header — clear visual break
+    _MIN_ENTRY_GAP = 1.5       # between experiences / between projects
+    _MIN_POST_HEADER = 1.0     # after section HR, before first content
     _MIN_HEADER_GAP = 0.5      # after name+contact block
-    _MIN_SKILL_GAP = 0.8       # visible separation between skill categories.
-                               # Earlier "touching rows" looked clean only when
-                               # every category fit on one line; with longer
-                               # skill lists categories often wrap to 2 lines
-                               # and touching rows blur the category boundary.
+    _MIN_SKILL_GAP = 0.4       # compact separation between skill categories.
+                               # Reference LaTeX uses \vspace{-2pt} (tighter
+                               # than touching); we keep ours visible but
+                               # snug — the previous 0.8mm made skills look
+                               # airier than the rest of the resume.
     _BULLET_GAP = 0.3          # gap between bullets within a list
     _PRE_BULLET_GAP = 2.0      # gap below italic role title before first bullet —
                                # biggest single visual fix; bullets no longer
@@ -143,11 +143,11 @@ class ResumeRenderer:
     # Spacing ceilings — how much Pass 2 may inflate on sparse pages.
     # Sparse pages (1 exp + 1 proj) get a relaxed look; dense pages stay
     # near the floor because Pass 2 distributes any slack proportionally.
-    _MAX_SECTION_GAP = 2.5
-    _MAX_ENTRY_GAP = 2.0
-    _MAX_POST_HEADER = 1.5
+    _MAX_SECTION_GAP = 2.8
+    _MAX_ENTRY_GAP = 2.4
+    _MAX_POST_HEADER = 1.8
     _MAX_HEADER_GAP = 0.8
-    _MAX_SKILL_GAP = 1.5
+    _MAX_SKILL_GAP = 0.9
 
     def _count_spacing_slots(self, tailored: Dict[str, Any]) -> Dict[str, int]:
         """Count the number of each spacing slot type in the resume."""
@@ -426,7 +426,7 @@ class ResumeRenderer:
             # so a category that wraps onto a second line still reads as one
             # cohesive block. Without this, wrapped categories collapse onto
             # the following category and the boundary disappears.
-            lh_skill = max(lh_s, 3.6)
+            lh_skill = max(lh_s, 3.45)
             for category, skill_list in skills.items():
                 if not skill_list:
                     continue

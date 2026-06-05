@@ -55,8 +55,15 @@ class ProjectGenerator:
         self,
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any],
+        bullets_per_project: int = 3,
     ) -> Optional[Dict[str, Any]]:
         """Generate one project grounded in the candidate's skills and the JD domain.
+
+        Args:
+            bullets_per_project: how many bullets the generated project should
+                have. Default 3 preserves prior behavior; callers with a known
+                vertical budget (ContentAugmenter._augment_projects) pass the
+                exact count that fits the page.
 
         Returns a project dict {name, dates, bullets, tech} or None if generation
         fails validation or an error occurs.
@@ -111,7 +118,8 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string ''.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            "7. bullets: exactly 3 bullets, each ~100-150 chars, describing what was built and how. "
+            f"7. bullets: exactly {bullets_per_project} bullets, each ~100-150 chars, describing what was built and how. "
+            "Each bullet MUST end with a period ('.'). "
             "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
@@ -181,7 +189,7 @@ class ProjectGenerator:
             logger.warning("ProjectGenerator: LLM call failed: %s", e)
             return None
 
-        project = self._validate_and_clean(result, original_resume, jd_analysis)
+        project = self._validate_and_clean(result, original_resume, jd_analysis, bullets_per_project)
         if project is None:
             logger.warning("ProjectGenerator: AI project failed validation (name='%s')",
                            result.get('name', '?') if isinstance(result, dict) else '?')
@@ -206,8 +214,14 @@ class ProjectGenerator:
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any],
         existing_projects: list = None,
+        bullets_per_project: int = 3,
     ) -> list:
         """Generate multiple projects in a single LLM call for speed.
+
+        Args:
+            bullets_per_project: how many bullets each generated project should
+                have. Default 3 preserves prior behavior; callers with a known
+                vertical budget pass the exact count that fits the page.
 
         Returns a list of validated project dicts (may be fewer than `count`
         if some fail validation or are duplicates).
@@ -277,7 +291,8 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string '' for each project.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            "7. bullets: exactly 3 bullets per project, each ~100-150 chars, describing what was built and how. "
+            f"7. bullets: exactly {bullets_per_project} bullets per project, each ~100-150 chars, describing what was built and how. "
+            "Each bullet MUST end with a period ('.'). "
             "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
@@ -335,7 +350,7 @@ class ProjectGenerator:
         for raw in raw_projects:
             if not isinstance(raw, dict):
                 continue
-            project = self._validate_and_clean(raw, original_resume, jd_analysis)
+            project = self._validate_and_clean(raw, original_resume, jd_analysis, bullets_per_project)
             if project is None:
                 continue
             from services.content_augmenter import ContentAugmenter
@@ -365,6 +380,7 @@ class ProjectGenerator:
         project: Dict[str, Any],
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any] = None,
+        bullets_per_project: int = 3,
     ) -> Optional[Dict[str, Any]]:
         """Validate generated project against allowed tech and schema.
 
@@ -426,7 +442,7 @@ class ProjectGenerator:
             return None
 
         # Enforce exactly 3 bullets, all strings, non-empty
-        clean_bullets = [str(b).strip() for b in bullets if str(b).strip()][:3]
+        clean_bullets = [str(b).strip() for b in bullets if str(b).strip()][:bullets_per_project]
         if not clean_bullets:
             return None
 

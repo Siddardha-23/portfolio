@@ -250,17 +250,18 @@ class ContentAugmenter:
     # Phase 1: Project generation
     # ------------------------------------------------------------------
 
-    # Per-project space estimate at 10pt body, lh=3.4 (renderer Pass 1 base).
-    # A 150-char bullet wraps to ~2 visual lines × lh + bullet gap ≈ 7mm.
-    # Project header (name row + pre-bullet gap) ≈ 5mm.
-    # First call costs the section header + post-header gap (~6mm).
-    _PROJECT_BULLET_H_MM = 7.0
-    _PROJECT_HEADER_H_MM = 5.0
-    _PROJECT_SECTION_OVERHEAD_MM = 6.0
-    _PROJECT_BUDGET_SAFETY_BUFFER_MM = 3.0  # tier-fallback already absorbs overflow;
-                                            # buffer is just breathing room. 8mm
-                                            # was too aggressive — rejected 1x5 shapes
-                                            # that the renderer could comfortably fit.
+    # Small breathing buffer below the renderer's available height. The
+    # 4-tier font fallback (10pt-tight → 10pt-ultra → 9.5pt → 9pt) already
+    # handles real overflow; this just leaves a hair of room so the chosen
+    # shape isn't right at the edge.
+    _PROJECT_BUDGET_SAFETY_BUFFER_MM = 3.0
+
+    # Placeholder bullet length representative of what the generator will
+    # actually emit (~100-150 chars). Used to measure each candidate shape.
+    _BUDGET_PLACEHOLDER_BULLET = (
+        "Built a production-grade service in Python using FastAPI and "
+        "PostgreSQL with proper observability."
+    )
 
     def _project_budget(
         self,
@@ -268,22 +269,24 @@ class ContentAugmenter:
     ) -> "tuple[int, int]":
         """Decide how many projects (and bullets per project) actually fit.
 
-        Measures the tailored resume WITHOUT the projects section at the
-        renderer's Pass-1 base settings (10pt body, lh=3.4, MIN spacing),
-        then tries candidate (project_count, bullets_per_project) shapes in
-        priority order and picks the largest one that fits.
+        Uses ACTUAL measurement via the renderer (not estimates): for each
+        candidate shape, renders the resume with placeholder projects of
+        that shape and checks whether the total fits the page. This avoids
+        the previous per-bullet-height estimates which over-projected by
+        ~30-40% and unnecessarily skipped feasible 1x5 / 2x3 shapes.
 
         Returns (project_count, bullets_per_project). (0, 0) means do not
-        generate a projects section at all — preferable to silently
-        overflowing the page.
+        generate a projects section — better than silently overflowing.
         """
-        # Measure non-project height by temporarily clearing projects.
-        # The renderer skips the entire Projects block when the list is empty,
-        # so this gives a true baseline of everything else.
-        measurement_copy = copy.deepcopy(tailored)
-        measurement_copy["projects"] = []
-        _, non_proj_h = self.renderer._render_pdf(
-            measurement_copy,
+
+        avail = self.renderer._AVAIL_H - self._PROJECT_BUDGET_SAFETY_BUFFER_MM
+
+        # Measure the baseline (no projects) for logging context only —
+        # the per-shape measurements include everything.
+        baseline_copy = copy.deepcopy(tailored)
+        baseline_copy["projects"] = []
+        _, baseline_h = self.renderer._render_pdf(
+            baseline_copy,
             section_gap=self.renderer._MIN_SECTION_GAP,
             entry_gap=self.renderer._MIN_ENTRY_GAP,
             post_header=self.renderer._MIN_POST_HEADER,
@@ -293,18 +296,27 @@ class ContentAugmenter:
             measure_only=True,
         )
 
-        avail_for_projects = (
-            self.renderer._AVAIL_H
-            - non_proj_h
-            - self._PROJECT_BUDGET_SAFETY_BUFFER_MM
-        )
-
-        def _shape_h(count: int, bullets: int) -> float:
+        def _measure_with_shape(count: int, bullets: int) -> float:
             if count == 0:
-                return 0.0
-            per_project = self._PROJECT_HEADER_H_MM + bullets * self._PROJECT_BULLET_H_MM
-            entry_gaps = max(count - 1, 0) * self.renderer._MIN_ENTRY_GAP
-            return self._PROJECT_SECTION_OVERHEAD_MM + count * per_project + entry_gaps
+                return baseline_h
+            test = copy.deepcopy(tailored)
+            test["projects"] = [{
+                "name": f"Placeholder Project {i + 1}",
+                "dates": "",
+                "tech": "Python, FastAPI, Docker",
+                "bullets": [self._BUDGET_PLACEHOLDER_BULLET] * bullets,
+            } for i in range(count)]
+            _, h = self.renderer._render_pdf(
+                test,
+                section_gap=self.renderer._MIN_SECTION_GAP,
+                entry_gap=self.renderer._MIN_ENTRY_GAP,
+                post_header=self.renderer._MIN_POST_HEADER,
+                header_gap=self.renderer._MIN_HEADER_GAP,
+                skill_gap=self.renderer._MIN_SKILL_GAP,
+                body_size=10.0, lh=3.4, lh_s=3.2,
+                measure_only=True,
+            )
+            return h
 
         # Candidates in priority order — pick the LARGEST one that fits.
         # Matches the existing bullets_per_project rule (1->5, 2-3->3) but
@@ -318,21 +330,22 @@ class ContentAugmenter:
         )
 
         for count, bullets in candidates:
-            if _shape_h(count, bullets) <= avail_for_projects:
+            h = _measure_with_shape(count, bullets)
+            if h <= avail:
                 logger.warning(
-                    "ContentAugmenter._project_budget: non_proj_h=%.1fmm, "
-                    "avail_for_projects=%.1fmm -> %d projects x %d bullets "
-                    "(needs %.1fmm)",
-                    non_proj_h, avail_for_projects,
-                    count, bullets, _shape_h(count, bullets),
+                    "ContentAugmenter._project_budget: baseline=%.1fmm, "
+                    "avail=%.1fmm -> %d projects x %d bullets "
+                    "(measured total %.1fmm)",
+                    baseline_h, avail, count, bullets, h,
                 )
                 return count, bullets
 
-        # Shouldn't reach here — (0, 0) always fits — but be defensive.
+        # Shouldn't reach here — (0, 0) returns baseline_h which should be
+        # <= avail by construction — but be defensive.
         logger.warning(
-            "ContentAugmenter._project_budget: no shape fits "
-            "(non_proj_h=%.1fmm, avail=%.1fmm) — returning (0, 0)",
-            non_proj_h, avail_for_projects,
+            "ContentAugmenter._project_budget: baseline already exceeds "
+            "available (%.1fmm > %.1fmm) — returning (0, 0)",
+            baseline_h, avail,
         )
         return 0, 0
 

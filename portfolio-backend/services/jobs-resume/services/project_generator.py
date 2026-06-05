@@ -20,6 +20,34 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 
+def _summarize_experience_bullets(original_resume: Dict[str, Any], max_chars: int = 1800) -> str:
+    """Build a compact 'avoid duplicating these' block for project prompts.
+
+    Lists each experience entry's bullets so the generator can see what
+    territory the resume already covers. Returns an empty string when the
+    candidate has no experience — in that case there's nothing to avoid.
+    """
+    experience = original_resume.get("experience") or []
+    if not experience:
+        return ""
+
+    lines = []
+    for exp in experience:
+        company = (exp.get("company") or "").strip() or "Experience"
+        title = (exp.get("title") or "").strip()
+        header = f"  • {company} — {title}" if title else f"  • {company}"
+        lines.append(header)
+        for b in (exp.get("bullets") or []):
+            text = str(b).strip()
+            if text:
+                lines.append(f"    - {text}")
+
+    joined = "\n".join(lines)
+    if len(joined) > max_chars:
+        joined = joined[:max_chars].rsplit("\n", 1)[0] + "\n    [...]"
+    return joined
+
+
 class ProjectGenerator:
     """Generates a single grounded project entry per invocation."""
 
@@ -55,16 +83,26 @@ class ProjectGenerator:
             or re.search(r'\b' + re.escape(s.lower()) + r'\b', resume_text_lower)
         ]
         relevant_tech_str = ", ".join(relevant_tech[:10]) if relevant_tech else skills_text[:200]
+        experience_block = _summarize_experience_bullets(original_resume)
 
         prompt = (
             "You are generating a single portfolio project entry for a resume.\n\n"
+            "COMPLEMENT, DON'T DUPLICATE — this is the most important rule:\n"
+            "  You will be shown the candidate's existing experience bullets below. The generated\n"
+            "  project must EXPAND THE CANDIDATE'S NARRATIVE by exploring a DIFFERENT domain, tech\n"
+            "  facet, or problem space than what the experience already demonstrates. If the\n"
+            "  experience already shows RabbitMQ event-driven work, do NOT propose a 'RabbitMQ\n"
+            "  decoupling' project — pick a different problem. If the experience already shows a\n"
+            "  Grafana observability dashboard, do NOT propose another observability dashboard.\n"
+            "  Restating an experience bullet as a project is a failure.\n\n"
             "WORKFLOW — follow these steps IN ORDER (do not start with the name):\n"
-            "  STEP 1: Decide the project's PURPOSE — what real problem does it solve? "
-            "Write one sentence in the 'purpose' field.\n"
-            "  STEP 2: Pick the tech stack from the candidate's actual skills that would solve that problem.\n"
-            "  STEP 3: Write 3 bullets describing what was built and how, using that tech.\n"
-            "  STEP 4: ONLY NOW derive the project NAME from the purpose. The name describes WHAT it does, "
-            "never WHO built it.\n\n"
+            "  STEP 1: Read the EXPERIENCE BULLETS block below and note what's already covered.\n"
+            "  STEP 2: Decide the project's PURPOSE — a problem NOT already covered by the\n"
+            "          experience. Write one sentence in the 'purpose' field.\n"
+            "  STEP 3: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
+            "  STEP 4: Write 3 bullets describing what was built and how, using that tech.\n"
+            "  STEP 5: ONLY NOW derive the project NAME from the purpose. The name describes WHAT\n"
+            "          it does, never WHO built it.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -88,9 +126,15 @@ class ProjectGenerator:
             f"Candidate's skills: {skills_text[:300]}\n"
             f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
             f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
+            + (
+                "=== EXPERIENCE BULLETS (DO NOT DUPLICATE these problems/solutions in your project) ===\n"
+                f"{experience_block}\n\n"
+                if experience_block else ""
+            )
+            +
             "Return a JSON object with EXACTLY this structure:\n"
             "{\n"
-            '  "purpose": "One sentence: what real problem does this project solve?",\n'
+            '  "purpose": "One sentence: what real problem does this project solve? (must NOT overlap with experience above)",\n'
             '  "name": "Project Name (derived from purpose — NOT starting from the name)",\n'
             '  "dates": "",\n'
             '  "bullets": [\n'
@@ -142,6 +186,18 @@ class ProjectGenerator:
             logger.warning("ProjectGenerator: AI project failed validation (name='%s')",
                            result.get('name', '?') if isinstance(result, dict) else '?')
             return None
+
+        # Reject if it restates an existing experience bullet.
+        from services.content_augmenter import ContentAugmenter
+        original_experience = original_resume.get("experience") or []
+        overlaps, reason = ContentAugmenter._overlaps_experience(project, original_experience)
+        if overlaps:
+            logger.warning(
+                "ProjectGenerator: project '%s' rejected — %s",
+                project.get("name"), reason,
+            )
+            return None
+
         return project
 
     def generate_batch(
@@ -192,13 +248,27 @@ class ProjectGenerator:
                 f"{', '.join(existing_names)}. Generate DIFFERENT projects.\n"
             )
 
+        experience_block = _summarize_experience_bullets(original_resume)
+
         prompt = (
             f"You are generating {count} portfolio project entries for a resume.\n\n"
+            "COMPLEMENT, DON'T DUPLICATE — this is the most important rule:\n"
+            "  You will be shown the candidate's existing experience bullets below. Each generated\n"
+            "  project must EXPAND THE CANDIDATE'S NARRATIVE by exploring a DIFFERENT domain, tech\n"
+            "  facet, or problem space than what the experience already demonstrates. If the\n"
+            "  experience already shows RabbitMQ event-driven work, do NOT propose a 'RabbitMQ\n"
+            "  decoupling' project. If the experience already shows a Grafana SLI/SLO dashboard,\n"
+            "  do NOT propose another observability dashboard. If the experience shows '420ms→95ms'\n"
+            "  API optimization, do NOT propose an 'API performance' project. Restating an\n"
+            "  experience bullet as a project is a failure.\n\n"
             "WORKFLOW FOR EACH PROJECT — follow these steps IN ORDER (do not start with the name):\n"
-            "  STEP 1: Decide the project's PURPOSE — what real problem does it solve? Write it in 'purpose'.\n"
-            "  STEP 2: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
-            "  STEP 3: Write 3 bullets describing what was built and how.\n"
-            "  STEP 4: ONLY NOW derive the project NAME from the purpose. Name = WHAT it does, never WHO built it.\n\n"
+            "  STEP 1: Read the EXPERIENCE BULLETS block below and note what's already covered.\n"
+            "  STEP 2: Decide the project's PURPOSE — a problem NOT already covered by experience.\n"
+            "          Write it in 'purpose'.\n"
+            "  STEP 3: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
+            "  STEP 4: Write 3 bullets describing what was built and how.\n"
+            "  STEP 5: ONLY NOW derive the project NAME from the purpose. Name = WHAT it does,\n"
+            "          never WHO built it.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -222,9 +292,16 @@ class ProjectGenerator:
             f"Candidate's skills: {skills_text[:300]}\n"
             f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
             f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
+            + (
+                "=== EXPERIENCE BULLETS (DO NOT DUPLICATE these problems/solutions in any project) ===\n"
+                f"{experience_block}\n\n"
+                if experience_block else ""
+            )
+            +
             "Return a JSON object with EXACTLY this structure:\n"
             '{"projects": [\n'
-            '  {"purpose": "One sentence: what problem this solves", "name": "Project Name (derived from purpose)", '
+            '  {"purpose": "One sentence: what problem this solves (must NOT overlap with experience above)", '
+            '"name": "Project Name (derived from purpose)", '
             '"dates": "", "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"], "tech": "Tech1, Tech2"}\n'
             "]}\n\n"
             f"=== CANDIDATE RESUME CONTEXT ===\n{resume_text[:3000]}"
@@ -254,17 +331,27 @@ class ProjectGenerator:
             return []
 
         validated = []
+        original_experience = original_resume.get("experience") or []
         for raw in raw_projects:
             if not isinstance(raw, dict):
                 continue
             project = self._validate_and_clean(raw, original_resume, jd_analysis)
             if project is None:
                 continue
-            # Check for duplicates against existing + already-validated
-            all_existing = (existing_projects or []) + validated
             from services.content_augmenter import ContentAugmenter
+            # Check for duplicates against existing + already-validated projects
+            all_existing = (existing_projects or []) + validated
             if ContentAugmenter._is_duplicate_project(project, all_existing):
                 logger.info("ProjectGenerator batch: duplicate project '%s' — skipping", project.get("name"))
+                continue
+            # Check for overlap with the candidate's experience bullets — projects
+            # that restate experience add no signal and waste resume real estate.
+            overlaps, reason = ContentAugmenter._overlaps_experience(project, original_experience)
+            if overlaps:
+                logger.info(
+                    "ProjectGenerator batch: project '%s' rejected — %s",
+                    project.get("name"), reason,
+                )
                 continue
             validated.append(project)
             if len(validated) >= count:

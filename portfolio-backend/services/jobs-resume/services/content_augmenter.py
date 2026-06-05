@@ -295,6 +295,80 @@ class ContentAugmenter:
                     return True
         return False
 
+    # Words that don't add discriminating signal when matching bullets against
+    # each other (articles, prepositions, common verbs, generic nouns).
+    _STOPWORDS = frozenset({
+        "a", "an", "and", "the", "of", "to", "for", "in", "on", "at", "by",
+        "with", "from", "as", "is", "it", "this", "that", "into", "via",
+        "using", "across", "via", "or", "be", "was", "were", "are",
+        "built", "designed", "developed", "implemented", "created", "made",
+        "service", "services", "system", "systems", "data", "application",
+        "platform",
+    })
+
+    @classmethod
+    def _tokens(cls, text: str) -> list:
+        """Lowercase content-word tokens for bullet overlap comparison."""
+        import re as _re
+        words = _re.findall(r"[A-Za-z0-9]+", text.lower())
+        return [w for w in words if w not in cls._STOPWORDS and len(w) > 2]
+
+    @classmethod
+    def _bullets_overlap_significantly(cls, gen_bullet: str, exp_bullet: str) -> bool:
+        """True if a generated bullet repeats too much content from an experience bullet.
+
+        Two signals, either is enough:
+          1. A 5+ token run from the experience bullet appears verbatim in the
+             generated bullet (catches near-copies like '420ms to 95ms via query optimization').
+          2. ≥4 distinct content tokens overlap (catches re-paraphrases of the
+             same idea using the same key nouns/numbers).
+        """
+        gen_tokens = cls._tokens(gen_bullet)
+        exp_tokens = cls._tokens(exp_bullet)
+        if not gen_tokens or not exp_tokens:
+            return False
+
+        # Signal 1: 5-token consecutive run from exp inside gen
+        gen_text = " ".join(gen_tokens)
+        if len(exp_tokens) >= 5:
+            for i in range(len(exp_tokens) - 4):
+                run = " ".join(exp_tokens[i:i + 5])
+                if run in gen_text:
+                    return True
+
+        # Signal 2: ≥4 distinct content tokens shared
+        shared = set(gen_tokens) & set(exp_tokens)
+        if len(shared) >= 4:
+            return True
+
+        return False
+
+    @classmethod
+    def _overlaps_experience(
+        cls,
+        new_project: dict,
+        experience: List[dict],
+    ) -> tuple:
+        """Detect projects that restate existing experience bullets.
+
+        Returns (overlaps, reason). reason is a human-readable string suitable
+        for logs when overlaps is True; empty when no overlap.
+        """
+        proj_bullets = [str(b) for b in (new_project.get("bullets") or []) if str(b).strip()]
+        if not proj_bullets or not experience:
+            return False, ""
+
+        for exp in experience:
+            exp_bullets = [str(b) for b in (exp.get("bullets") or []) if str(b).strip()]
+            if not exp_bullets:
+                continue
+            for pb in proj_bullets:
+                for i, eb in enumerate(exp_bullets):
+                    if cls._bullets_overlap_significantly(pb, eb):
+                        company = (exp.get("company") or "?").strip()
+                        return True, f"overlaps {company} bullet {i + 1}"
+        return False, ""
+
     # ------------------------------------------------------------------
     # Phase 2: Bullet expansion
     # ------------------------------------------------------------------

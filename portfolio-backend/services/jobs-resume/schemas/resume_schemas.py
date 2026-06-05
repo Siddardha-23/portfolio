@@ -200,7 +200,7 @@ def _validate_object(data: dict, schema: dict) -> dict:
 
 
 def validate_and_coerce(data: Any, schema: dict) -> dict:
-    """Validate Gemini output against schema.
+    """Validate LLM output against schema.
 
     - Ensures all required keys exist (fills missing with type-appropriate defaults)
     - Coerces types where safe (e.g. str → int for score fields)

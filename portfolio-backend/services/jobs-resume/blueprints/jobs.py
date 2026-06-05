@@ -343,9 +343,9 @@ def draft_outreach_route():
     }
     Returns: { "subject": "...", "body": "..." }
 
-    Synchronous (single Gemini Flash call, ~2-3s). Rate-limited per IP at
+    Synchronous (single LLM FLASH-tier call, ~2-3s). Rate-limited per IP at
     20/min so a user can run through their Tier 1 list without manual delay
-    but a misuse can't burn the Gemini quota. The user can edit either
+    but a misuse can't burn the LLM quota. The user can edit either
     field before sending.
     """
     client_ip = get_client_ip(request)
@@ -848,7 +848,7 @@ def pipeline_match_scores():
 
     Stateless on the backend — the frontend fires this after a pipeline run
     lands and overlays the scores on the already-rendered tier groups. No
-    Gemini call, no caching needed: the comparison is regex-against-skills,
+    LLM call, no caching needed: the comparison is regex-against-skills,
     fast enough to score 100 rows under ~50ms.
     """
     client_ip = get_client_ip(request)

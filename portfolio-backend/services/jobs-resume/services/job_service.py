@@ -4,7 +4,7 @@ Job Search Service - JSearch API integration, skill matching, resume parsing, AI
 Provides:
 - Job search via JSearch (RapidAPI) with MongoDB caching
 - Skill-based job matching and scoring
-- Resume parsing via Gemini AI
+- Resume parsing via LLM
 - Job analysis (summary, missing skills, cover letter)
 - Saved jobs CRUD
 - Saved job search filter preferences

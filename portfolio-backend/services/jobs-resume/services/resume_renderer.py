@@ -38,19 +38,6 @@ class ResumeRenderer:
             return (value, None)  # plain text, no link
         return (value, None)  # phone — no href
 
-    # Reference template uses 3-letter month abbreviations in date ranges
-    # ("Jan 2023 - Apr 2023"). Parsed resumes sometimes have full month
-    # names ("January 2023 - April 2023") which look uneven next to the
-    # short month entries. Normalize for visual consistency.
-    _MONTH_FULL_TO_ABBR = {
-        "January": "Jan", "February": "Feb", "March": "Mar",
-        "April": "Apr", "June": "Jun", "July": "Jul",
-        "August": "Aug", "September": "Sep", "October": "Oct",
-        "November": "Nov", "December": "Dec",
-        # May stays "May" — same length already. Sept→Sep handled below.
-        "Sept": "Sep",
-    }
-
     @staticmethod
     def _title_case_name(name: str) -> str:
         """Normalize candidate name to Title Case.
@@ -69,17 +56,6 @@ class ResumeRenderer:
             else:
                 out.append(tok)
         return " ".join(out)
-
-    @classmethod
-    def _normalize_dates(cls, date_str: str) -> str:
-        """Convert full month names to 3-letter abbreviations to match the
-        reference template's date format. Leaves dates already abbreviated
-        or otherwise non-standard untouched."""
-        if not date_str:
-            return date_str
-        for full, abbr in cls._MONTH_FULL_TO_ABBR.items():
-            date_str = re.sub(rf"\b{full}\b", abbr, date_str)
-        return date_str
 
     @staticmethod
     def _sanitize_text(text) -> str:
@@ -154,7 +130,11 @@ class ResumeRenderer:
     _MIN_ENTRY_GAP = 1.2       # between experiences / between projects
     _MIN_POST_HEADER = 0.8     # after section HR, before first content
     _MIN_HEADER_GAP = 0.5      # after name+contact block
-    _MIN_SKILL_GAP = 0.0       # skill rows touch — that's the correct dense look
+    _MIN_SKILL_GAP = 0.8       # visible separation between skill categories.
+                               # Earlier "touching rows" looked clean only when
+                               # every category fit on one line; with longer
+                               # skill lists categories often wrap to 2 lines
+                               # and touching rows blur the category boundary.
     _BULLET_GAP = 0.3          # gap between bullets within a list
     _PRE_BULLET_GAP = 2.0      # gap below italic role title before first bullet —
                                # biggest single visual fix; bullets no longer
@@ -167,7 +147,7 @@ class ResumeRenderer:
     _MAX_ENTRY_GAP = 2.0
     _MAX_POST_HEADER = 1.5
     _MAX_HEADER_GAP = 0.8
-    _MAX_SKILL_GAP = 0.2
+    _MAX_SKILL_GAP = 1.5
 
     def _count_spacing_slots(self, tailored: Dict[str, Any]) -> Dict[str, int]:
         """Count the number of each spacing slot type in the resume."""
@@ -375,7 +355,13 @@ class ResumeRenderer:
             for i, exp in enumerate(experience):
                 company = sanitize(exp.get("company", ""))
                 location = sanitize(exp.get("location", ""))
-                dates = sanitize(self._normalize_dates(exp.get("dates", "")))
+                # Dates are already normalized by services.date_normalizer
+                # before reaching the renderer (e.g. "August 2025 - Present"
+                # with ASCII hyphen). Pass through unchanged so the rendered
+                # PDF text matches the JSON exactly — the ATS parseability
+                # check tokenizes the JSON and requires those tokens to
+                # appear verbatim in the extracted PDF text.
+                dates = sanitize(exp.get("dates", ""))
                 company_line = f"{company}, {location}" if location else company
 
                 # Company bold + dates right — LaTeX: \textbf{COMPANY} \hfill {dates}
@@ -436,6 +422,11 @@ class ResumeRenderer:
         skills = tailored.get("skills", {})
         if skills:
             section_header("Technical Skills")
+            # Use a slightly looser line-height than the bullet tight value
+            # so a category that wraps onto a second line still reads as one
+            # cohesive block. Without this, wrapped categories collapse onto
+            # the following category and the boundary disappears.
+            lh_skill = max(lh_s, 3.6)
             for category, skill_list in skills.items():
                 if not skill_list:
                     continue
@@ -444,7 +435,7 @@ class ResumeRenderer:
                 pdf.set_font("Times", "", body_size)
                 sk = ", ".join(skill_list) if isinstance(skill_list, list) else str(skill_list)
                 line = f"**{sanitize(category)}:** {sanitize(sk)}"
-                pdf.multi_cell(w, lh_s, line, markdown=True,
+                pdf.multi_cell(w, lh_skill, line, markdown=True,
                                new_x="LMARGIN", new_y="NEXT")
                 pdf.ln(skill_gap)
 
@@ -470,7 +461,7 @@ class ResumeRenderer:
                     inst = sanitize(edu.get("institution", ""))
                     location = sanitize(edu.get("location", ""))
                     degree = sanitize(edu.get("degree", ""))
-                    dates = sanitize(self._normalize_dates(edu.get("dates", "")))
+                    dates = sanitize(edu.get("dates", ""))
                     gpa = sanitize(edu.get("gpa", ""))
 
                     # Strip date patterns baked into degree by AI

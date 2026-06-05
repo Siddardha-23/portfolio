@@ -4,7 +4,7 @@ outreach campaign engine, adaptive dashboard, enhanced learning playground,
 and memory/context management.
 
 Architecture:
-  - Orchestrator: sends user message + tool declarations to Gemini Pro;
+  - Orchestrator: sends user message + tool declarations to Claude (PRO tier);
     if the model returns tool calls, executes them locally, feeds results back,
     and loops (max 5 rounds) until the model returns a final text response.
   - Each tool is tagged with a specialist agent name for pipeline visualization.
@@ -997,11 +997,17 @@ TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {
 
 
 # ---------------------------------------------------------------------------
-# Gemini function-calling declarations (built from registry)
+# Function-calling declarations (built from registry)
+# Format follows the legacy Gemini function-declaration shape; the provider
+# abstraction translates these to Claude/Bedrock tool-use blocks at runtime.
 # ---------------------------------------------------------------------------
 
 def _build_function_declarations() -> List[Dict[str, Any]]:
-    """Build Gemini-compatible function declarations from the tool registry."""
+    """Build function declarations from the tool registry.
+
+    Schema mirrors the legacy Gemini function-calling format; the provider
+    abstraction translates these to Claude/Bedrock tool-use blocks.
+    """
     decls = []
     for name, spec in TOOL_REGISTRY.items():
         decls.append({
@@ -1968,7 +1974,7 @@ def generate_outreach_sequence(
     channel: str,
     resume_context: str,
 ) -> List[Dict[str, Any]]:
-    """Use Gemini to generate a 3-5 step outreach sequence."""
+    """Use the LLM to generate a 3-5 step outreach sequence."""
     from services.gemini_client import gemini_json, GEMINI_PRO, GEMINI_FLASH, LLMRetriesExhaustedError
 
     prompt = (

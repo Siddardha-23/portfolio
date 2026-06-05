@@ -7,7 +7,7 @@ to compute a fast per-job match score against the user's stored resume.
 Public API: score_batch(user_email, items) -> Dict[id, ScoreResult]
 
 This is intentionally cheap so the frontend can fire one batch call per
-pipeline run (50-100 items) without burning Gemini quota or adding latency.
+pipeline run (50-100 items) without burning LLM quota or adding latency.
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
 """
-Tech Chronicle blueprint — Gemini-generated tech news + career intelligence feed.
+Tech Chronicle blueprint — LLM-generated tech news + career intelligence feed.
 
 The landing page / AuthGate used to pull directly from Hacker News' Firebase API,
 but CORS issues and intermittent failures made it unreliable. This blueprint
@@ -31,11 +31,11 @@ logger = logging.getLogger(__name__)
 
 tech_chronicle_bp = Blueprint("tech_chronicle", __name__)
 
-# Cache TTLs — Gemini calls are expensive, so we cache aggressively.
+# Cache TTLs — LLM calls are expensive, so we cache aggressively.
 _NEWS_TTL = timedelta(hours=4)
 _CAREER_TTL = timedelta(hours=6)
 
-# Fallback content shown when Gemini is unreachable or cache is cold and
+# Fallback content shown when LLM is unreachable or cache is cold and
 # the caller can't wait for a fresh generation. Keeps the UI from going blank.
 _FALLBACK_NEWS = [
     {
@@ -116,11 +116,11 @@ def _save_cache(kind: str, items: list):
 
 
 # ---------------------------------------------------------------------------
-# Gemini generators
+# LLM generators
 # ---------------------------------------------------------------------------
 
 def _generate_tech_news() -> list:
-    """Ask Gemini for 15 trending tech news items. Returns a list of dicts."""
+    """Ask LLM for 15 trending tech news items. Returns a list of dicts."""
     from services.gemini_client import gemini_json, GEMINI_FLASH
 
     today = datetime.now(timezone.utc).strftime("%B %Y")
@@ -173,7 +173,7 @@ Return a JSON object: {{"items": [...]}}
             model=GEMINI_FLASH, schema=schema,
         )
         items = result.get("items") or []
-        logger.info("Generated %d tech news items via Gemini", len(items))
+        logger.info("Generated %d tech news items via LLM", len(items))
         return items
     except Exception as e:
         logger.error("Tech news generation failed: %s", e)
@@ -181,7 +181,7 @@ Return a JSON object: {{"items": [...]}}
 
 
 def _generate_career_intel() -> list:
-    """Ask Gemini for 8 career intelligence items. Returns a list of dicts."""
+    """Ask LLM for 8 career intelligence items. Returns a list of dicts."""
     from services.gemini_client import gemini_json, GEMINI_FLASH
 
     today = datetime.now(timezone.utc).strftime("%B %Y")
@@ -219,7 +219,7 @@ Return a JSON object: {{"items": [...]}}
             model=GEMINI_FLASH, schema=schema,
         )
         items = result.get("items") or []
-        logger.info("Generated %d career intel items via Gemini", len(items))
+        logger.info("Generated %d career intel items via LLM", len(items))
         return items
     except Exception as e:
         logger.error("Career intel generation failed: %s", e)
@@ -236,7 +236,7 @@ _URL_RE = re.compile(r"^https?://[\w.-]+\.\w+(/[^\s]*)?$", re.IGNORECASE)
 def _normalize_source_link(item: dict) -> dict:
     """Ensure every tech news item has a usable link.
 
-    Gemini sometimes fabricates URLs that don't resolve. We can't do a live
+    LLM sometimes fabricates URLs that don't resolve. We can't do a live
     HEAD check on every item at serve time (latency), so instead we fall back
     to a Google search query built from the headline + source — this always
     works and lands the user on the real article 99% of the time.
@@ -368,7 +368,7 @@ def regenerate():
     """Force a regeneration of both caches. No auth (public, rate-limited).
 
     Mainly for admin use or cron triggers. Safe to call — the worst case is
-    burning a few Gemini tokens to refresh the cache.
+    burning a few LLM tokens to refresh the cache.
     """
     # Light rate limiting: if the last regen was < 10 minutes ago, refuse
     _, news_ts = _load_cached("news")

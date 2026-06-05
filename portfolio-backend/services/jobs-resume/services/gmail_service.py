@@ -11,7 +11,7 @@ Design notes
 - Sync is incremental: we remember `last_history_id` per user so we only
   process new messages on each run. Falls back to a date-bounded list
   query on first sync.
-- Classification is delegated to Gemini Flash with a strict JSON schema.
+- Classification is delegated to the LLM (FLASH tier) with a strict JSON schema.
   High-confidence results auto-apply; lower-confidence ones land in a
   per-user "suggestions" inbox the user reviews from the UI.
 """
@@ -1026,7 +1026,7 @@ def _heuristic_status(msg: Dict[str, Any]) -> Tuple[Optional[str], float]:
 def classify_message(msg: Dict[str, Any], record_meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Classify an email → {status, confidence, reason}.
 
-    Uses keyword heuristics + Gemini Flash. Returns None on failure.
+    Uses keyword heuristics + the LLM (FLASH tier). Returns None on failure.
     """
     heur_status, heur_conf = _heuristic_status(msg)
 

@@ -25,6 +25,54 @@ from utils.keyword_normalizer import (
 logger = logging.getLogger(__name__)
 
 
+# Keywords the suggestions engine must NOT recommend the candidate "add."
+# JD logistics terms describe the role's working arrangement, not skills.
+# Suggesting a candidate add "Contract W2" to their resume is bad advice —
+# recruiters use those terms to filter the JD, not to evaluate candidates.
+_LOGISTICS_KEYWORDS = frozenset({
+    "contract w2", "contract", "hybrid", "remote", "on-site", "onsite",
+    "full-time", "part-time", "fulltime", "parttime", "w2", "1099",
+    "us citizen", "green card", "h1b", "h-1b", "visa sponsorship",
+    "no sponsorship", "work authorization", "available for", "open to",
+})
+
+# Compliance frameworks require demonstrated domain experience. Suggesting
+# "Add FedRAMP to your skills" to a candidate with no federal-cloud work
+# is encouraging fabrication. These belong on a resume only when bullets
+# already show work in the matching domain.
+_COMPLIANCE_FRAMEWORKS = frozenset({
+    "fedramp", "soc 2", "soc2", "hipaa", "pci-dss", "pci dss", "pci",
+    "sox", "iso 27001", "iso27001", "iso", "nist 800-53", "nist", "gdpr",
+    "ccpa", "ato", "fisma", "hitrust", "cmmc",
+})
+
+
+def _classify_missing_keywords(missing: List[str]) -> Dict[str, List[str]]:
+    """Partition missing JD keywords into skills / logistics / compliance.
+
+    Only the `skills` bucket is safe to surface to the suggestions model.
+    `logistics` describes the JD's working arrangement (Contract W2, Hybrid);
+    `compliance` requires domain evidence (FedRAMP, HIPAA, SOX) and should
+    never be suggested as a free addition.
+    """
+    skills: List[str] = []
+    logistics: List[str] = []
+    compliance: List[str] = []
+    for kw in missing or []:
+        if not isinstance(kw, str):
+            continue
+        low = kw.strip().lower()
+        if not low:
+            continue
+        if low in _LOGISTICS_KEYWORDS:
+            logistics.append(kw)
+        elif low in _COMPLIANCE_FRAMEWORKS:
+            compliance.append(kw)
+        else:
+            skills.append(kw)
+    return {"skills": skills, "logistics": logistics, "compliance": compliance}
+
+
 class ResumeScorer:
     """Hybrid ATS scorer: deterministic ground truth + AI semantic assessment."""
 
@@ -47,6 +95,14 @@ class ResumeScorer:
         # scores reconcile with them rather than being independent guesses.
         ai = self._ai_scores(tailored, jd_analysis, det_facts=det)
         combined = self._combine(det, ai)
+
+        # Surface the classified missing keywords so the UI / API consumer
+        # can render them with appropriate framing — skills the candidate
+        # could add, logistics terms (informational only), and compliance
+        # frameworks (requires domain evidence, not a free addition).
+        combined["missing_keywords_classified"] = _classify_missing_keywords(
+            det.get("missing_keywords", [])
+        )
 
         if pdf_bytes:
             try:
@@ -310,7 +366,7 @@ class ResumeScorer:
         return len(pattern.findall(text_lower))
 
     # ------------------------------------------------------------------
-    # AI scoring (Gemini)
+    # AI scoring (Claude on Bedrock; routed via the gemini_client facade)
     # ------------------------------------------------------------------
 
     def _ai_scores(
@@ -319,10 +375,12 @@ class ResumeScorer:
         jd_analysis: Dict[str, Any],
         det_facts: dict | None = None,
     ) -> dict:
-        """Call Gemini for semantic assessment that can't be computed
-        deterministically. `det_facts` carries the deterministic results so
-        the AI scanner scoring is grounded in what we already know to be
-        true (section completeness, keyword coverage, format).
+        """Call Claude (via the gemini_client facade — name kept for the
+        widely-imported `gemini_json` symbol) for semantic assessment that
+        can't be computed deterministically. `det_facts` carries the
+        deterministic results so the AI scanner scoring is grounded in what
+        we already know to be true (section completeness, keyword coverage,
+        format).
         """
         import json
         from services.gemini_client import gemini_json, GEMINI_PRO
@@ -335,6 +393,15 @@ class ResumeScorer:
         # producing Workday=78 / Taleo=65 even though every fact ATSes
         # actually parse for (sections, keywords, format) was at 95-100.
         facts = det_facts or {}
+
+        # Classify missing keywords so the suggestions model only sees the
+        # ones that are safe to recommend the candidate add. Logistics terms
+        # (Contract W2, Hybrid) and compliance frameworks (FedRAMP, HIPAA)
+        # are excluded from the model-facing list because suggesting their
+        # addition either misrepresents the role or encourages fabrication.
+        classified = _classify_missing_keywords(facts.get("missing_keywords", []))
+        safe_missing_skills = classified["skills"]
+
         facts_block = (
             "=== DETERMINISTIC PARSING FACTS (use these as evidence) ===\n"
             f"- Keyword Match score: {facts.get('keyword_match', '?')}/100\n"
@@ -346,14 +413,58 @@ class ResumeScorer:
             f"- Format: single-column, standard fonts, no tables/images/columns, "
             "ATS-friendly section headers (SUMMARY, EXPERIENCE, PROJECTS, "
             "TECHNICAL SKILLS, EDUCATION), bullets with Unicode standard •\n"
-            f"- Missing required keywords ({len(facts.get('missing_keywords', []))}): "
-            f"{', '.join(facts.get('missing_keywords', [])[:8]) or 'none'}\n\n"
+            f"- Missing skills the candidate could plausibly add ({len(safe_missing_skills)}): "
+            f"{', '.join(safe_missing_skills[:8]) or 'none'}\n\n"
+        )
+
+        suggestion_guardrails = (
+            "=== SUGGESTION GUARDRAILS — applies to the 'suggestions' field ===\n"
+            "When generating the 'suggestions' list, you MUST NOT recommend any of\n"
+            "the following. These are dealbreakers; suggesting them is worse than\n"
+            "offering no suggestion at all:\n\n"
+            "1. NEVER suggest adding compliance frameworks (FedRAMP, SOC 2, HIPAA,\n"
+            "   PCI-DSS, SOX, ISO 27001, NIST 800-53, GDPR, ATO, FISMA, HITRUST)\n"
+            "   unless the candidate's existing bullets already demonstrate work in\n"
+            "   that domain. If the candidate's experience doesn't show federal,\n"
+            "   healthcare, or financial-services work, do not suggest those\n"
+            "   framework keywords. The 'missing skills' list above has already\n"
+            "   been filtered to exclude these — do not re-introduce them.\n\n"
+            "2. NEVER suggest the candidate close a years-of-experience gap by\n"
+            "   reframing project work, academic work, or freelance work to look\n"
+            "   like full-time employment. If the JD wants 10+ years and the\n"
+            "   candidate has 4-5, suggest 'tailor the summary to emphasize depth\n"
+            "   of impact and leadership scope' — never suggest inflating tenure\n"
+            "   or repackaging projects as professional experience.\n\n"
+            "3. NEVER suggest adding JD logistical keywords as resume content.\n"
+            "   These include: 'Contract W2', 'Contract', 'Hybrid', 'Remote',\n"
+            "   'On-site', 'Full-time', 'Part-time', visa/work-authorization\n"
+            "   phrases. These describe the role's logistics, not the candidate's\n"
+            "   skills. They have been filtered out of the missing-skills list\n"
+            "   above; do not surface them in suggestions.\n\n"
+            "4. NEVER suggest adding a job-title noun (e.g., 'Full Stack Developer',\n"
+            "   'Software Engineer', 'Senior Engineer') into the skills section.\n"
+            "   Titles belong in the experience section; suggesting them as skills\n"
+            "   produces keyword-stuffed resumes that recruiters notice.\n\n"
+            "5. NEVER suggest fabricating quantitative metrics (percentages, user\n"
+            "   counts, revenue figures, team sizes) the candidate cannot defend.\n"
+            "   If a bullet lacks impact, suggest 'describe the outcome in concrete\n"
+            "   terms' — not 'add a percentage.'\n\n"
+            "What you CAN suggest:\n"
+            "- Reordering existing bullets to lead with JD-relevant ones\n"
+            "- Rewriting weak bullets to surface technical depth that's plausible\n"
+            "  given the candidate's stack\n"
+            "- Adding real, defensible skills from the missing-skills list above\n"
+            "  that the candidate's experience supports (same ecosystem / same\n"
+            "  language family / same domain)\n"
+            "- Tightening the summary to mention the target role title\n"
+            "- Improving headline wording to match the JD's role naming\n\n"
         )
 
         prompt = (
             "You are an ATS (Applicant Tracking System) and AI recruitment screener expert.\n"
             "Analyze the tailored resume against the job description.\n\n"
-            + facts_block +
+            + facts_block
+            + suggestion_guardrails +
             "SCORING RUBRIC — scanner scores MUST track the deterministic facts above. "
             "A resume with Format=ATS-friendly, Section Completeness=100, "
             "Keyword Match≥90, Keyword Frequency≥90, Skills Alignment≥85 should score "

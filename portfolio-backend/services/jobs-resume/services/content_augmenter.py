@@ -6,7 +6,7 @@ Subsumes the old single-project injection logic.
 
 Phases:
   0: Measure fill → early exit if >= 90% (except project generation, which always runs if < 3)
-  1: Generate projects (batch: up to 3 total in ONE Gemini call)
+  1: Generate projects (batch: up to 3 total in ONE LLM call)
   2: Expand experience bullets + baked-in impact metrics
   3: Impact injection on existing no-metric bullets
   4: Overflow protection (trim if > 95%)
@@ -427,7 +427,7 @@ class ContentAugmenter:
             for p in expansion_plan:
                 p["additional_needed"] = max(1, round(p["additional_needed"] * scale))
 
-        # Build Gemini prompt
+        # Build the LLM prompt
         original_text = build_resume_text(original)[:2000]
         required_skills = ", ".join(jd_analysis.get("required_skills", [])[:10])
         keywords = ", ".join(jd_analysis.get("keywords", [])[:10])
@@ -480,7 +480,7 @@ class ContentAugmenter:
                 model=GEMINI_FLASH, schema=EXPANSION_SCHEMA,
             )
         except Exception as e:
-            logger.error("ContentAugmenter: bullet expansion Gemini call failed: %s", e)
+            logger.error("ContentAugmenter: bullet expansion LLM call failed: %s", e)
             return tailored
 
         # Merge expanded bullets back
@@ -597,7 +597,7 @@ class ContentAugmenter:
                 model=GEMINI_FLASH, schema=IMPACT_SCHEMA,
             )
         except Exception as e:
-            logger.error("ContentAugmenter: impact injection Gemini call failed: %s", e)
+            logger.error("ContentAugmenter: impact injection LLM call failed: %s", e)
             return tailored
 
         # Apply enhanced bullets with validation
@@ -753,7 +753,7 @@ class ContentAugmenter:
         #
         # Timeout handling: a `with ThreadPoolExecutor(...)` block waits on
         # __exit__ for ALL submitted threads, even ones we abandoned via
-        # `future.result(timeout=...)`. If keyword density's Gemini call
+        # `future.result(timeout=...)`. If keyword density's LLM call
         # hangs (e.g. 503 retries), the per-future timeout fires at 30s but
         # then the context manager blocks for another ~30s waiting for the
         # runaway thread — net ~60s of wall time per timeout for what was
@@ -763,7 +763,7 @@ class ContentAugmenter:
         # so we return as soon as our useful work is done. Orphan threads
         # finish on their own without blocking this request. Per-future
         # timeouts are unchanged from the original (30s each) — accuracy is
-        # preserved: any Gemini response that would have completed inside
+        # preserved: any LLM response that would have completed inside
         # 30s before is still captured now.
         keyword_result = tailored
         summary_result = tailored
@@ -908,7 +908,7 @@ class ContentAugmenter:
                 model=GEMINI_FLASH, schema=KEYWORD_SCHEMA,
             )
         except Exception as e:
-            logger.error("ContentAugmenter ATS keyword density: Gemini failed: %s", e)
+            logger.error("ContentAugmenter ATS keyword density: LLM call failed: %s", e)
             return tailored
 
         for item in result.get("modified_bullets", []):
@@ -974,7 +974,7 @@ class ContentAugmenter:
                 model=GEMINI_FLASH, schema=VERB_SCHEMA,
             )
         except Exception as e:
-            logger.error("ContentAugmenter ATS weak verbs: Gemini failed: %s", e)
+            logger.error("ContentAugmenter ATS weak verbs: LLM call failed: %s", e)
             return tailored
 
         for item in result.get("fixed_bullets", []):

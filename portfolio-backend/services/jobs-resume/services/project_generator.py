@@ -171,14 +171,14 @@ class ProjectGenerator:
                 logger.warning("ProjectGenerator: FLASH call failed: %s", e)
 
             if not isinstance(result, dict):
-                logger.warning("ProjectGenerator: all Gemini models failed — result type: %s", type(result))
+                logger.warning("ProjectGenerator: all LLM models failed — result type: %s", type(result))
                 return None
 
-            logger.info("ProjectGenerator: Gemini returned project name='%s', tech='%s'",
+            logger.info("ProjectGenerator: LLM returned project name='%s', tech='%s'",
                         result.get('name', '?'), result.get('tech', '?'))
 
         except Exception as e:
-            logger.warning("ProjectGenerator: Gemini call failed: %s", e)
+            logger.warning("ProjectGenerator: LLM call failed: %s", e)
             return None
 
         project = self._validate_and_clean(result, original_resume, jd_analysis)
@@ -207,7 +207,7 @@ class ProjectGenerator:
         jd_analysis: Dict[str, Any],
         existing_projects: list = None,
     ) -> list:
-        """Generate multiple projects in a single Gemini call for speed.
+        """Generate multiple projects in a single LLM call for speed.
 
         Returns a list of validated project dicts (may be fewer than `count`
         if some fail validation or are duplicates).
@@ -386,7 +386,7 @@ class ProjectGenerator:
             project["name"] = name
             logger.info("ProjectGenerator: converted slug name to title case: '%s'", name)
 
-        # If name contains banned filler words or the JD/role title, ask Gemini for a better name.
+        # If name contains banned filler words or the JD/role title, ask LLM for a better name.
         # Expanded rejection list — matches the BAD NAMES rule in the prompt.
         BANNED_NAME_TOKENS = ("portfolio", "demo", "project", "application", "platform")
         needs_rename = False
@@ -396,7 +396,7 @@ class ProjectGenerator:
             jd_title = jd_analysis.get("job_title", "").strip()
             if jd_title and jd_title.lower() in name_lower:
                 logger.warning(
-                    "ProjectGenerator: name '%s' contains job title '%s', requesting new name from Gemini",
+                    "ProjectGenerator: name '%s' contains job title '%s', requesting new name from LLM",
                     name, jd_title,
                 )
                 needs_rename = True
@@ -416,9 +416,9 @@ class ProjectGenerator:
             if new_name:
                 project["name"] = new_name
                 name = new_name
-                logger.info("ProjectGenerator: Gemini generated new name: '%s'", new_name)
+                logger.info("ProjectGenerator: LLM generated new name: '%s'", new_name)
             else:
-                logger.warning("ProjectGenerator: Gemini name retry failed, rejecting project")
+                logger.warning("ProjectGenerator: LLM name retry failed, rejecting project")
                 return None
 
         if not isinstance(bullets, list) or len(bullets) == 0:
@@ -460,7 +460,7 @@ class ProjectGenerator:
 
     @staticmethod
     def _generate_project_name(tech_str: str, jd_title: str) -> Optional[str]:
-        """Ask Gemini for just a project name when the initial name was bad.
+        """Ask LLM for just a project name when the initial name was bad.
 
         Uses FLASH for speed/cost — this is a lightweight one-shot call.
         Returns the name string or None if it fails.
@@ -489,10 +489,10 @@ class ProjectGenerator:
                 name = result["name"].strip()
                 # Final safety check: ensure the name doesn't still contain the job title
                 if jd_title and jd_title.lower() in name.lower():
-                    logger.warning("ProjectGenerator: Gemini name retry still contains job title: '%s'", name)
+                    logger.warning("ProjectGenerator: LLM name retry still contains job title: '%s'", name)
                     return None
                 if "portfolio" in name.lower():
-                    logger.warning("ProjectGenerator: Gemini name retry still contains 'portfolio': '%s'", name)
+                    logger.warning("ProjectGenerator: LLM name retry still contains 'portfolio': '%s'", name)
                     return None
                 return name
         except Exception as e:

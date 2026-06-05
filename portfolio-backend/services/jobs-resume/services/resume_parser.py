@@ -1,17 +1,18 @@
 """
-Resume Parser — Gemini multi-modal document extraction + structured parsing.
+Resume Parser — multi-modal LLM document extraction + structured parsing.
 
 Architecture:
   ┌──────────────┐    ┌──────────────────────────────┐    ┌──────────┐
-  │ PDF / DOCX   │───>│ Gemini Flash (multi-modal)   │───>│ Validated│
+  │ PDF / DOCX   │───>│ LLM FLASH tier (multi-modal) │───>│ Validated│
   │ file (bytes) │    │  • Structured JSON parsing    │    │  JSON    │
   │              │    │  • Raw text transcription      │    │  + store │
   │              │    │  • Hyperlink URL extraction     │    │          │
   └──────────────┘    └──────────────────────────────┘    └──────────┘
 
 Model routing:
-  - Gemini 2.5 Flash: fast, factual extraction — no hallucination, no rewriting.
-  - Multi-modal mode: sends raw file bytes (PDF or DOCX) directly to Gemini
+  - FLASH tier (Claude Haiku on Bedrock today): fast, factual extraction —
+    no hallucination, no rewriting.
+  - Multi-modal mode: sends raw file bytes (PDF or DOCX) directly to the LLM
     for visual document understanding. Superior for complex layouts (columns,
     tables, sidebars) and eliminates the need for separate text extraction
     libraries (PyPDF2, python-docx).
@@ -22,8 +23,9 @@ Output conforms to PARSED_RESUME_SCHEMA so downstream consumers
 Key design decisions:
   1. Strict extraction prompt — prevents the model from inventing or embellishing.
   2. No native schema= enforcement — PARSED_RESUME_SCHEMA uses _dict_of for skills
-     (Record<string, string[]>) which Gemini's response_schema API cannot handle.
-     Instead, we rely on prompt instructions + post-call validate_and_coerce().
+     (Record<string, string[]>) which the Gemini response_schema API could not
+     handle. Instead, we rely on prompt instructions + post-call
+     validate_and_coerce(); this also works cleanly for Claude/Bedrock tool use.
   3. Keyword normalization — standardizes skill names ("JS" → "JavaScript") for
      accurate downstream matching in scoring and gap analysis.
   4. Single-user storage — resumes are replaced (not versioned) in MongoDB.
@@ -267,8 +269,8 @@ _EXTRACTION_PROMPT_SLIM = (
 class ResumeParser:
     """Handles PDF/DOCX → structured JSON parsing and MongoDB storage.
 
-    Uses Gemini Flash multi-modal to process documents directly — file bytes
-    (PDF or DOCX) are sent to Gemini for visual document understanding,
+    Uses the LLM (FLASH tier) multi-modal to process documents directly — file bytes
+    (PDF or DOCX) are sent to the LLM for visual document understanding,
     structured extraction, and raw text transcription in a single call.
 
     Usage:
@@ -302,7 +304,7 @@ class ResumeParser:
         """Validate that a file is a supported, non-corrupted PDF or DOCX.
 
         Performs lightweight structural checks without extracting text content.
-        Text extraction is handled by Gemini multi-modal in the async job.
+        Text extraction is handled by the multi-modal LLM in the async job.
 
         Args:
             file_bytes: Raw file content as bytes.
@@ -340,11 +342,11 @@ class ResumeParser:
         file_base64: str = None,
         mime_type: str = "application/pdf",
     ) -> tuple:
-        """Parse resume content into structured JSON using Gemini Flash.
+        """Parse resume content into structured JSON using the LLM (FLASH tier).
 
         Supports two input modes:
           - Multi-modal (preferred): Sends raw file bytes (PDF or DOCX) directly
-            to Gemini for visual document understanding. Gemini also extracts
+            to the LLM for visual document understanding. It also extracts
             raw text and hyperlink URLs in the same call.
           - Text-only (fallback): Uses pre-extracted raw text when file bytes
             aren't available (e.g., legacy uploads).
@@ -357,7 +359,7 @@ class ResumeParser:
         Returns:
             Tuple of (structured_dict, raw_text_str):
               - structured_dict: Resume data conforming to PARSED_RESUME_SCHEMA.
-              - raw_text_str: Full plain-text transcription from Gemini (or input raw_text).
+              - raw_text_str: Full plain-text transcription from the LLM (or input raw_text).
         """
         from services.gemini_client import gemini_json, GEMINI_FLASH, get_active_provider
         import base64
@@ -367,7 +369,7 @@ class ResumeParser:
         t0 = time.perf_counter()
 
         # ---- Local pre-extraction (text layer + PDF /Annots / DOCX rels) ----
-        # Doing this locally cuts the dominant cost (Gemini transcribing the
+        # Doing this locally cuts the dominant cost (the LLM transcribing the
         # whole document into raw_text) and gives byte-perfect hyperlink targets.
         # If the PDF is image-based or extraction fails, local_text is empty
         # and we transparently fall back to the legacy FULL prompt path.
@@ -390,7 +392,7 @@ class ResumeParser:
                     local_extract_status = "ok"
                     logger.info(
                         "Resume parse: local extraction OK (%d chars, %d links) — "
-                        "using slim Gemini prompt",
+                        "using slim LLM prompt",
                         len(local_text),
                         len(local_urls),
                     )
@@ -398,7 +400,7 @@ class ResumeParser:
                     local_extract_status = "unhealthy"
                     logger.warning(
                         "Resume parse: local extraction yielded %d chars (unhealthy) — "
-                        "falling back to FULL Gemini transcription. "
+                        "falling back to FULL LLM transcription. "
                         "If this happens often, check pypdf install and PDF text layer.",
                         len(local_text_clean) if local_text_clean else 0,
                     )
@@ -415,7 +417,7 @@ class ResumeParser:
             raw_text, file_base64, mime_type, provider, base64, slim=use_slim
         )
 
-        # Call Gemini Flash. Slim path needs far fewer output tokens because
+        # Call the LLM (FLASH tier). Slim path needs far fewer output tokens because
         # we no longer ask for raw_text or extracted_urls.
         result = gemini_json(
             prompt=None,  # Prompt is embedded in the parts
@@ -435,7 +437,7 @@ class ResumeParser:
         # Decide on the authoritative raw_text + URL set:
         #   - Slim path: local extraction is canonical (byte-perfect text +
         #     /Annots URI targets are more reliable than LLM scraping).
-        #   - Full path: Gemini transcribed the document; use that.
+        #   - Full path: the LLM transcribed the document; use that.
         if use_slim:
             effective_raw_text = local_text
             extracted_urls = local_urls
@@ -454,7 +456,7 @@ class ResumeParser:
         # ("JS" → "JavaScript", "k8s" → "Kubernetes", etc.)
         result = self._normalize_skills(result)
 
-        # Backfill contact info from raw text if Gemini failed to extract it
+        # Backfill contact info from raw text if the LLM failed to extract it
         result = self._backfill_contact(result, effective_raw_text)
 
         # Backfill education institution from raw text if missing
@@ -481,7 +483,7 @@ class ResumeParser:
         # `path=full` here, the slim optimization was bypassed (most likely
         # cause: pypdf not installed in the runtime, or the PDF has no text
         # layer / encrypted / etc.). If `path=slim` but total > ~30s, the
-        # cost is in Gemini-side latency, not local extraction.
+        # cost is in LLM-side latency, not local extraction.
         t_end = time.perf_counter()
         # NOTE: emitted at WARNING (not INFO) because AWS Lambda's preconfigured
         # root logger swallows INFO-level records from user code — verified by
@@ -589,7 +591,7 @@ class ResumeParser:
     def _backfill_contact(result: dict, raw_text: str) -> dict:
         """Backfill empty contact fields from raw text using regex patterns.
 
-        When Gemini omits or partially extracts contact fields, this method
+        When the LLM omits or partially extracts contact fields, this method
         fills in the gaps using regex patterns for email, phone, LinkedIn,
         GitHub, and a name heuristic (first non-URL/email line).
         """
@@ -610,7 +612,7 @@ class ResumeParser:
             logger.info("Contact backfill: filling missing fields %s from raw text", fields_to_fill)
 
         # --- Extract [Extracted Link: ...] markers from PDF annotations ---
-        # These are actual href URLs from the PDF, more reliable than Gemini's extraction.
+        # These are actual href URLs from the PDF, more reliable than the LLM's extraction.
         extracted_links = re.findall(r"\[Extracted Link:\s*([^\]]+)\]", raw_text)
         linkedin_href = ""
         github_href = ""
@@ -627,7 +629,7 @@ class ResumeParser:
         if github_href:
             contact["github"] = github_href
 
-        # For LinkedIn: if Gemini returned a non-URL value (e.g. display text "LinkedIn"),
+        # For LinkedIn: if the LLM returned a non-URL value (e.g. display text "LinkedIn"),
         # clear it now so regex backfill can try, but the href will override at the end.
         linkedin_val = contact.get("linkedin", "").strip()
         if (
@@ -736,7 +738,7 @@ class ResumeParser:
         if contact.get("github"):
             contact["github"] = ResumeParser._normalize_github(contact["github"])
 
-        # Proper-case the name regardless of source (Gemini extract / regex fallback / display text)
+        # Proper-case the name regardless of source (LLM extract / regex fallback / display text)
         # so "HARSHITH SIDDARDHA MANNE" → "Harshith Siddardha Manne" everywhere.
         if contact.get("name"):
             original_name = contact["name"]
@@ -892,7 +894,7 @@ class ResumeParser:
     def _backfill_education(result: dict, raw_text: str) -> dict:
         """Backfill empty education institution names from raw text.
 
-        Gemini sometimes extracts the degree and dates but omits the
+        The LLM sometimes extracts the degree and dates but omits the
         institution name. This method searches the raw text for common
         university name patterns near the degree text.
 
@@ -977,7 +979,7 @@ class ResumeParser:
     def _clean_education_fields(result: dict) -> dict:
         """Strip date patterns and duplicate segments from education degree fields.
 
-        Gemini sometimes returns degree fields with dates baked in, e.g.:
+        The LLM sometimes returns degree fields with dates baked in, e.g.:
           degree: "Master of Science, Information Technology | Dec 2025"
         or even:
           degree: "Master of Science, IT | Dec 2025 | Master of Science, IT"
@@ -1110,7 +1112,7 @@ class ResumeParser:
         return self.save_parsed_resume(structured, raw_text, user_email=user_email)
 
     def upload_and_parse_file(self, file_bytes: bytes, filename: str, user_email: str = "") -> dict:
-        """Upload and parse a PDF or DOCX resume file via Gemini multi-modal."""
+        """Upload and parse a PDF or DOCX resume file via multi-modal LLM."""
         import base64
 
         file_b64 = base64.b64encode(file_bytes).decode("utf-8")
@@ -1128,7 +1130,7 @@ class ResumeParser:
         """Build flat status fields, persist to MongoDB, and return the document.
 
         This method is separated from upload_and_parse so the async job worker
-        can call it independently after Gemini parsing completes.
+        can call it independently after LLM parsing completes.
 
         Flat fields (skills, experience_years, job_titles, summary) are stored
         alongside the full structured JSON for backward compatibility with

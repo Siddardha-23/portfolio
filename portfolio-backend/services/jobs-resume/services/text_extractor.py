@@ -3,7 +3,7 @@ Local text + hyperlink extraction for resumes (PDF and DOCX).
 
 Purpose
 -------
-The Gemini multi-modal call used to be asked for a verbatim transcription
+The multi-modal LLM call used to be asked for a verbatim transcription
 (`raw_text`) of the document plus a list of every hyperlink. That output was
 the dominant cost in the parse pipeline (3-5k tokens of output → 60-80s of
 wall time at Flash output speeds).
@@ -19,14 +19,14 @@ extract text and links **locally** with byte-perfect accuracy:
 
 This module exposes a single boundary — `extract_text()` — that callers can
 use without caring about file type. It never raises: a failed extraction
-returns ("", []) so the caller can fall back to asking Gemini.
+returns ("", []) so the caller can fall back to asking the LLM.
 
 Failure budget
 --------------
 Local extraction is *advisory*. If anything looks off — encrypted PDF,
 broken font encoding producing replacement chars, image-only PDF, malformed
 DOCX, wildly unusual layout — `is_text_healthy()` returns False and the
-caller falls back to the existing FULL-prompt Gemini path. Behavior in that
+caller falls back to the existing FULL-prompt LLM path. Behavior in that
 case is identical to today's pipeline. We never *worsen* the floor.
 
 Lambda safety
@@ -130,7 +130,7 @@ def extract_pdf_text(file_bytes: bytes) -> Tuple[str, List[str]]:
 
     Robustness:
       - Encrypted PDFs: try empty-password decrypt; if it fails, return
-        empty (caller falls back to Gemini OCR).
+        empty (caller falls back to LLM OCR).
       - Page cap: process at most _MAX_PDF_PAGES pages.
       - Per-page failures swallowed so one bad page doesn't lose the rest.
 
@@ -355,7 +355,7 @@ def build_link_markers(urls: List[str]) -> str:
 # Strip control characters that pypdf occasionally leaves behind
 _CTRL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 # Zero-width / formatting glyphs and BOM. NOTE: U+FFFD is NOT stripped here —
-# is_text_healthy treats high U+FFFD density as "fall back to Gemini", but a
+# is_text_healthy treats high U+FFFD density as "fall back to the LLM", but a
 # few replacement chars in otherwise-good text (e.g. for one un-mappable
 # bullet) shouldn't be silently rewritten away.
 _ZW_RE = re.compile(r"[​‌‍﻿]")

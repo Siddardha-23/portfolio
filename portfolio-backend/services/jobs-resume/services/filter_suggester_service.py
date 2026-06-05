@@ -13,8 +13,8 @@ Intent-aware behavior:
     candidate gets ML titles first, not generic SWE.
   - The generic SWE safety net is only added for early-career or generalist
     profiles, NOT for senior specialists where it would dilute results.
-  - Gemini Flash then refines the seed and adds tail variants. The deterministic
-    seed is authoritative — anything Gemini drops is restored.
+  - The LLM (FLASH tier) then refines the seed and adds tail variants. The deterministic
+    seed is authoritative — anything the LLM drops is restored.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ _SUGGESTION_SCHEMA = {
     "preset_tags": [str],
 }
 
-# Synthesizer schema — what we ask Gemini Pro to return when generating
+# Synthesizer schema — what we ask the LLM (PRO tier) to return when generating
 # personalized titles from the resume content itself.
 _SYNTHESIZER_SCHEMA = {
     "detected_role": str,        # short label, e.g. "Full-Stack Backend Engineer (mid)"
@@ -113,13 +113,13 @@ def _synthesize_titles_from_resume(
 
     This is the architectural fix for "every user gets the same cloud titles."
     Previously the suggester pulled from a STATIC per-intent template
-    (INTENTS[primary]["target_titles"]) and forced Gemini to keep them. Now
-    we ask Gemini Pro to read the actual resume content (titles held,
+    (INTENTS[primary]["target_titles"]) and forced the LLM to keep them. Now
+    we ask the LLM (PRO tier) to read the actual resume content (titles held,
     projects, skills) and emit titles that match THIS candidate — not a
     cohort. Intent classification is included only as a hint to ground the
     model when the resume itself is ambiguous.
 
-    Returns {} on Gemini failure so the caller can fall back to the legacy
+    Returns {} on LLM failure so the caller can fall back to the legacy
     static-seed path. Never raises.
     """
     primary = profile.get("primary_intent") or "backend"
@@ -304,9 +304,9 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
     Architecture:
       1. Profile classifier runs first — gives us an intent HINT and the
          seniority estimate.
-      2. Gemini Pro generates titles personalized to THIS resume (not a
+      2. The LLM (PRO tier) generates titles personalized to THIS resume (not a
          per-intent template). This is the authoritative output.
-      3. If Gemini fails or returns too few titles, we fall back to the legacy
+      3. If the LLM fails or returns too few titles, we fall back to the legacy
          static-seed path so the user is never left empty-handed.
       4. Anti-keywords from the synthesizer get exposed back to the UI so the
          pipeline scoring can use them to suppress off-domain noise.
@@ -337,7 +337,7 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         rationale = synth.get("rationale") or ""
         headline = detected_role
 
-        # Breadth safety net: even when synth runs, Gemini Pro sometimes
+        # Breadth safety net: even when synth runs, the LLM (PRO tier) sometimes
         # returns a narrow primary-only list (e.g. only Cloud Engineer
         # variants for a cloud+backend+AI candidate). Backfill from the
         # primary+secondary intent seeds so the feed has enough surface area
@@ -359,7 +359,7 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
             linkedin_phrases = _merge_preserving_order(linkedin_phrases, seed_phrases)
     else:
         # Fallback path — keep the legacy static-seed behaviour so nobody is
-        # left without filters when Gemini is rate-limited.
+        # left without filters when the LLM is rate-limited.
         logger.warning(
             "suggest_filters: synth failed for resume_sig=%s, falling back to static seeds",
             sig,
@@ -369,7 +369,7 @@ def suggest_filters(structured_resume: Dict[str, Any]) -> Dict[str, Any]:
         custom_role_terms = []
         detected_role = primary_label
         # Accurate rationale: the resume parse worked (profile got a confident
-        # primary intent), but Gemini Pro AND Flash both errored or timed out.
+        # primary intent), but the LLM (PRO tier) AND Flash both errored or timed out.
         # The user should retry — this is usually transient (rate limit or
         # cold start) rather than a resume issue.
         rationale = (

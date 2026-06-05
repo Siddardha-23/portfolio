@@ -126,7 +126,7 @@ class ResumeTailor:
         #      because the model often gave invented projects realistic-
         #      looking names).
         # Plain prompt + multi-strategy JSON parse + validate_and_coerce is
-        # how the original Gemini flow worked; matches that behavior here.
+        # how the pre-Claude flow worked; matches that behavior here.
         result = gemini_json(
             prompt=prompt,
             max_tokens=24000,
@@ -268,7 +268,7 @@ class ResumeTailor:
     ) -> Dict[str, Any]:
         """Forcefully restore original contact fields onto tailored output.
 
-        Gemini sometimes rewrites contact fields despite being told not to.
+        The LLM sometimes rewrites contact fields despite being told not to.
         This guarantees the original parsed values (especially LinkedIn/GitHub
         from PDF annotations) are always preserved.
         """

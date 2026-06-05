@@ -1,7 +1,7 @@
 """
 Integrity Guard — deterministic post-tailor validation and correction.
 
-Runs AFTER Gemini returns a tailored resume and AFTER schema validation.
+Runs AFTER the LLM returns a tailored resume and AFTER schema validation.
 Compares the tailored output against the original parsed resume to enforce:
 
   1. Immutable fields (contact, experience facts, education facts) are unchanged
@@ -115,7 +115,7 @@ def _match_entries(
 class IntegrityGuard:
     """Post-tailor deterministic integrity enforcement.
 
-    All methods are pure — no Gemini calls, no side effects beyond the
+    All methods are pure — no LLM calls, no side effects beyond the
     returned corrected dict and report.
     """
 

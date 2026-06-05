@@ -10,7 +10,7 @@ specialized sub-services for each concern:
   │                                                                   │
   │   Manages:                                                        │
   │     - Async job lifecycle (create → poll → complete/fail)         │
-  │     - JD extraction (short, self-contained Gemini call)           │
+  │     - JD extraction (short, self-contained LLM call)               │
   │     - Lambda / background-thread dispatch                         │
   │                                                                   │
   │   Delegates to:                                                   │
@@ -231,7 +231,7 @@ class ResumeService:
     # ------------------------------------------------------------------
 
     def extract_jd(self, jd_text: str) -> Dict[str, Any]:
-        """Parse a job description into structured fields using Gemini Pro.
+        """Parse a job description into structured fields using the LLM (PRO tier).
 
         Extracts: job title, company, location, required/preferred skills,
         responsibilities, qualifications, experience requirements, industry,
@@ -288,7 +288,7 @@ def _attach_ats_keyword_audit(result: Dict[str, Any], jd_analysis: Dict[str, Any
     """Re-run the deterministic keyword gap engine on the FINAL tailored
     resume so the UI can warn about JD keywords that didn't make it in.
 
-    Gemini occasionally paraphrases tokens (e.g. "Amazon Web Services" in
+    The LLM occasionally paraphrases tokens (e.g. "Amazon Web Services" in
     place of the literal "AWS" the JD asked for); enterprise ATS screeners
     match exact strings. We attach the result as `ats_keyword_audit` so the
     tailor modal can show a "X keywords missed" badge — passive, not
@@ -320,7 +320,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
     svc = get_resume_service()
     try:
         if job_type == "gmail_sync":
-            # Gmail sync can scan dozens of messages and run a Gemini classifier
+            # Gmail sync can scan dozens of messages and run an LLM classifier
             # per match — easily blows past API Gateway's 29s. Done async so the
             # HTTP route can return 202 immediately and the UI polls /job/<id>.
             from services.gmail_service import sync_user
@@ -336,28 +336,28 @@ def _process_job(job_id: str, job_type: str, payload: dict):
         elif job_type == "upload_parse":
             user_email = payload.get("user_email", "")
             content_hash = payload.get("content_hash", "")
-            # file_base64 + mime_type for Gemini multi-modal (new path)
+            # file_base64 + mime_type for multi-modal LLM input (new path)
             # Falls back to pdf_base64 for backward compatibility
             file_base64 = payload.get("file_base64") or payload.get("pdf_base64")
             mime_type = payload.get("mime_type", "application/pdf")
             input_raw_text = payload.get("raw_text", "")
 
             # parse_to_structured validates internally via validate_and_coerce.
-            # If Gemini returns fundamentally broken output, attempt one repair.
+            # If the LLM returns fundamentally broken output, attempt one repair.
             try:
                 validated, raw_text = svc.parser.parse_to_structured(
                     input_raw_text, file_base64, mime_type
                 )
             except (ValueError, KeyError) as ve:
                 logger.warning("Upload parse validation failed, attempting repair: %s", ve)
-                # Try to get raw Gemini output for repair (re-parse without validation)
+                # Try to get raw LLM output for repair (re-parse without validation)
                 validated = _repair_extraction(input_raw_text, {}, str(ve))
                 raw_text = input_raw_text
                 if validated is None:
                     svc.fail_job(job_id, f"Resume parsing failed validation: {ve}")
                     return
 
-            # Validate that Gemini extracted meaningful content
+            # Validate that the LLM extracted meaningful content
             if len(raw_text.strip()) < 50:
                 svc.fail_job(
                     job_id,
@@ -529,7 +529,7 @@ def _process_job(job_id: str, job_type: str, payload: dict):
             #
             # Saves ~22s vs separate /extract-jd + /tailor jobs (no inter-job
             # HTTP round-trip + poll lag) and ~10s vs sequential project gen.
-            # No accuracy change — same Gemini calls in different orchestration.
+            # No accuracy change — same LLM calls in different orchestration.
             from concurrent.futures import (
                 ThreadPoolExecutor,
                 TimeoutError as FuturesTimeoutError,

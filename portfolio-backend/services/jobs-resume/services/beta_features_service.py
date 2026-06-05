@@ -1,7 +1,7 @@
 """
 Beta features — small, focused utility services for the Beta Lab tab.
 
-These are intentionally lightweight (single Gemini call or pure-Python
+These are intentionally lightweight (single LLM call or pure-Python
 analytics) so they can ship as "Beta — feedback wanted" without committing
 to a heavy infrastructure stack. Each function is callable on its own and
 returns a JSON-serializable dict.
@@ -31,8 +31,8 @@ def build_morning_brief(user_email: str) -> Dict[str, Any]:
     Output:
       { ok: bool, briefing: { headline, lines[], counts{}, generated_at } }
 
-    Headline is a Gemini-generated 1-sentence call-to-action. Lines are a
-    deterministic punch list (no Gemini risk) so the agenda is always
+    Headline is an LLM-generated 1-sentence call-to-action. Lines are a
+    deterministic punch list (no LLM risk) so the agenda is always
     actionable even if the LLM is rate-limited.
     """
     from services.job_intelligence_service import (
@@ -117,8 +117,8 @@ def build_morning_brief(user_email: str) -> Dict[str, Any]:
             "compare carefully and review the Visa Timeline tab for start-date implications."
         )
 
-    # Gemini-generated headline (Flash, single field) with deterministic fallback
-    # so the briefing is always populated even when Gemini is rate-limited.
+    # LLM-generated headline (Flash, single field) with deterministic fallback
+    # so the briefing is always populated even when LLM is rate-limited.
     headline = ""
     try:
         from services.gemini_client import gemini_json, GEMINI_FLASH
@@ -142,7 +142,7 @@ def build_morning_brief(user_email: str) -> Dict[str, Any]:
         if isinstance(out, dict) and isinstance(out.get("headline"), str):
             headline = out["headline"].strip().split("\n")[0][:200]
     except Exception as e:
-        logger.info("morning-brief headline gemini soft-fail: %s", e)
+        logger.info("morning-brief headline LLM soft-fail: %s", e)
 
     if not headline:
         # Deterministic fallback — picks the most urgent thread.
@@ -180,7 +180,7 @@ def find_similar_roles(
     """Given a seed JD, return saved/pipeline rows with similar skill signatures.
 
     Lightweight keyword-vector match (no embeddings dependency):
-      1. Extract top skill tokens from the seed JD via Gemini Flash.
+      1. Extract top skill tokens from the seed JD via the LLM (FLASH tier).
       2. Pull the user's saved_jobs and most-recent pipeline_results from DB.
       3. Score each candidate by token overlap with the seed signature.
       4. Return top-N sorted by overlap desc.
@@ -214,7 +214,7 @@ def find_similar_roles(
             str(t).strip().lower() for t in (result or {}).get("tokens", []) if t
         ][:15]
     except Exception as e:
-        logger.warning("similar-roles gemini soft-fail: %s", e)
+        logger.warning("similar-roles LLM soft-fail: %s", e)
     if not seed_tokens:
         # Fallback: regex tokens from JD itself.
         import re
@@ -320,7 +320,7 @@ def ab_telemetry(user_email: str) -> Dict[str, Any]:
         })
         total_apps += total
 
-    # Gemini insight — only worth spending a call when there are ≥2 tagged
+    # LLM insight — only worth spending a call when there are ≥2 tagged
     # variants with enough sample size to compare. Soft-fail on rate-limit.
     insight = ""
     if has_tagged:

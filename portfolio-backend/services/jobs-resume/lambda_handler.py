@@ -7,7 +7,7 @@ Industry-standard cold start pattern:
   - Init duration measured once, matches CloudWatch's "Init Duration"
 
 This is the ONLY service that includes the async_job dispatch branch,
-used for Gemini-powered resume processing and Apify job search aggregation.
+used for LLM-powered resume processing and Apify job search aggregation.
 
 Architecture:
     API Gateway (HTTP API) -> Lambda -> apig-wsgi -> Flask App -> MongoDB Atlas

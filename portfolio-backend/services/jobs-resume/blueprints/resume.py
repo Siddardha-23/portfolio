@@ -3,7 +3,7 @@ Resume blueprint — Resume tailoring, ATS scoring, and document generation endp
 
 Reuses the same JWT from /api/jobs/auth (job_search_token).
 
-Async pattern: Gemini endpoints submit a job, Lambda processes it
+Async pattern: LLM-backed endpoints submit a job, Lambda processes it
 asynchronously, and the frontend polls GET /job/<id> for the result.
   1. POST /extract-jd   → returns { job_id }   (instant)
   2. POST /tailor       → returns { job_id }   (instant)
@@ -158,7 +158,7 @@ def tailor():
 # This endpoint replaces the two-step /extract-jd then /tailor sequence on
 # the frontend, eliminating one HTTP round-trip + ~22s of poll lag. Inside
 # the job, project generation is also run in parallel with tailor.tailor()
-# for another ~10s saving. Same Gemini calls, just a tighter orchestration.
+# for another ~10s saving. Same LLM calls, just a tighter orchestration.
 #
 # Returns BOTH jd_analysis and tailored_resume on completion.
 # Old /extract-jd and /tailor endpoints remain operational for fallback.
@@ -300,7 +300,7 @@ def rewrite_bullet():
             prompt, max_tokens=6000, temperature=0.4, model=GEMINI_FLASH, schema=schema
         )
         rewritten = result.get("rewritten", "").strip()
-        # Strip any leading/trailing quotes Gemini may have added
+        # Strip any leading/trailing quotes the LLM may have added
         if rewritten.startswith('"'):
             rewritten = rewritten.lstrip('"')
         if rewritten.endswith('"'):
@@ -1308,7 +1308,7 @@ def practice_question(record_id):
         result = gemini_json(
             prompt, max_tokens=8000, temperature=0.75, model=GEMINI_PRO
         ) or {}
-        # Unwrap if Gemini still returned fields at the top level instead of under `question`.
+        # Unwrap if the LLM still returned fields at the top level instead of under `question`.
         payload = result.get("question")
         if not isinstance(payload, dict):
             payload = {k: v for k, v in result.items() if k not in ("category", "difficulty")}
@@ -1320,7 +1320,7 @@ def practice_question(record_id):
 
 # ------------------------------------------------------------------
 # POST /api/resume/tailoring-records/<record_id>/chat
-# Context-aware AI interview coach. Gemini receives the resume + JD as
+# Context-aware AI interview coach. The LLM receives the resume + JD as
 # system context and the most recent messages, then replies. History is
 # persisted on the record (capped at last 40 messages).
 # ------------------------------------------------------------------
@@ -1404,7 +1404,7 @@ def interview_chat(record_id):
             + ("Skills: " + " | ".join(skills_flat[:6]) if skills_flat else "")
         )
 
-        # Convert stored messages to Gemini-friendly text
+        # Convert stored messages to LLM-friendly text
         convo = []
         for m in history:
             role = "User" if m.get("role") == "user" else "Coach"
@@ -1888,7 +1888,7 @@ def upload():
         # Validate file structure (lightweight, no text extraction)
         ResumeParser.validate_file(file_bytes, original_filename)
 
-        # Content hash — used to skip Gemini re-parse when the same file is
+        # Content hash — used to skip LLM re-parse when the same file is
         # uploaded twice. Per-user (a user re-uploading the exact same bytes
         # gets back their existing parsed structured data instantly).
         content_hash = hashlib.sha256(file_bytes).hexdigest()
@@ -1927,7 +1927,7 @@ def upload():
 
             # Synthesize an already-completed job so the frontend can poll
             # the same /job/<id> endpoint and get the parsed result back
-            # without invoking Gemini at all.
+            # without invoking the LLM at all.
             job_id = svc.create_job(
                 "upload_parse",
                 {"cached": True, "content_hash": content_hash, "user_email": user_email},
@@ -1935,7 +1935,7 @@ def upload():
             )
             svc.complete_job(job_id, {"parsed_resume": existing_structured})
             logger.info(
-                "Resume upload cache HIT for %s (content_hash=%s) — skipping Gemini parse",
+                "Resume upload cache HIT for %s (content_hash=%s) — skipping LLM parse",
                 user_email,
                 content_hash[:12],
             )
@@ -1969,7 +1969,7 @@ def upload():
         except Exception as s3_err:
             logger.warning(f"Failed to save resume to S3: {s3_err}")
 
-        # Async: create a job for Gemini multi-modal parsing and return job_id immediately
+        # Async: create a job for multi-modal LLM parsing and return job_id immediately
         import base64
 
         file_b64 = base64.b64encode(file_bytes).decode("utf-8")
@@ -3174,7 +3174,7 @@ def get_visa_timeline():
         milestones = compute_timeline(profile)
         serialized = serialize_timeline(milestones)
 
-        # Gemini-generated personalized recommendation (Flash, soft-fail).
+        # LLM-generated personalized recommendation (FLASH tier, soft-fail).
         # Deterministic milestones already cover "what" — this adds the
         # "what next" judgment that's hard to express in pure logic.
         recommendation = ""

@@ -484,137 +484,58 @@ class ContentAugmenter:
                     return True
         return False
 
-    # Stopwords + generic structural words. We exclude these from the
-    # "deliverable noun phrase" comparison so that two bullets aren't flagged
-    # for both containing "the system" or "a service".
+    # Stopwords used for normalizing bullet text before the near-duplicate
+    # similarity check below. We strip these so that two bullets aren't
+    # called "near-duplicate" just because they share "the", "and", "of".
     _STOPWORDS = frozenset({
         "a", "an", "and", "the", "of", "to", "for", "in", "on", "at", "by",
         "with", "from", "as", "is", "it", "this", "that", "into", "via",
         "using", "across", "or", "be", "was", "were", "are",
-        "service", "services", "system", "systems", "data", "application",
-        "platform",
-    })
-
-    # Action verbs commonly opening bullets. These are NOT what makes two
-    # bullets describe the same accomplishment — every bullet starts with
-    # one of these. Excluded from the deliverable-noun comparison.
-    _ACTION_VERBS = frozenset({
-        "built", "designed", "developed", "implemented", "created", "made",
-        "engineered", "architected", "deployed", "shipped", "delivered",
-        "led", "drove", "spearheaded", "established", "optimized", "reduced",
-        "improved", "increased", "accelerated", "refactored", "migrated",
-        "automated", "configured", "integrated", "monitored", "scaled",
-        "maintained", "managed", "owned", "supported", "ran",
-        "added", "introduced", "rewrote", "modernized", "streamlined",
-        "wrote", "coded", "produced",
-    })
-
-    # Tech-stack vocabulary. When two bullets share these tokens it's
-    # because the candidate uses the same tools, NOT because the bullets
-    # describe the same accomplishment. Shared tech is *good* — it makes
-    # the project defensible. So tech tokens are excluded from the
-    # deliverable comparison.
-    #
-    # Kept conservative; we add to it as failure modes surface. Anything
-    # not on this list is treated as a "content" word (noun, domain term,
-    # specific action) and DOES count toward the overlap signal.
-    _TECH_TOKENS = frozenset({
-        # Languages
-        "python", "java", "javascript", "typescript", "go", "golang", "rust",
-        "ruby", "php", "scala", "kotlin", "swift", "csharp", "c", "cpp",
-        # Frameworks / libs
-        "fastapi", "flask", "django", "spring", "springboot", "express",
-        "react", "angular", "vue", "next", "nextjs", "node", "nodejs",
-        "rails", "laravel", "dotnet", "aspnet", "blazor",
-        # Data / messaging
-        "postgres", "postgresql", "mysql", "mariadb", "oracle", "sqlite",
-        "mongo", "mongodb", "redis", "memcached", "cassandra", "dynamodb",
-        "kafka", "rabbitmq", "rabbit", "sqs", "sns", "kinesis", "pubsub",
-        "elasticsearch", "elastic", "opensearch", "solr",
-        # Observability
-        "prometheus", "grafana", "datadog", "splunk", "elk", "logstash",
-        "kibana", "fluentd", "fluent", "loki", "tempo", "jaeger", "otel",
-        "opentelemetry",
-        # Cloud / infra
-        "aws", "gcp", "azure", "cloud", "docker", "kubernetes", "k8s",
-        "terraform", "ansible", "helm", "jenkins", "argocd", "ecs", "eks",
-        "ec2", "s3", "lambda", "rds", "cloudwatch", "cloudfront",
-        # Web / API
-        "rest", "graphql", "grpc", "http", "https", "websocket", "websockets",
-        "api", "apis", "json", "xml", "yaml",
-        # Testing / CI
-        "pytest", "junit", "mocha", "jest", "cypress", "selenium",
-        "github", "gitlab", "bitbucket", "ci", "cd", "cicd",
-        # General CS terms that are tech, not "what was built"
-        "microservices", "microservice", "container", "containers",
-        "containerized", "serverless",
     })
 
     @classmethod
-    def _tokens(cls, text: str, *, exclude_tech: bool = False) -> list:
-        """Lowercase content-word tokens for bullet comparison.
+    def _tokens(cls, text: str) -> list:
+        """Lowercase content-word tokens — minimal cleanup for similarity.
 
-        When `exclude_tech=True`, tech-stack words and action verbs are
-        also dropped. What's left is the "what did you build / what
-        problem did you solve" content — the only thing that can
-        legitimately signal two bullets are describing the same
-        accomplishment.
+        Kept for backward-compat with any caller; the rejection path no
+        longer uses this. We only strip stopwords and very short noise.
         """
         import re as _re
         words = _re.findall(r"[A-Za-z0-9]+", text.lower())
-        out = []
-        for w in words:
-            if len(w) <= 2:
-                continue
-            if w in cls._STOPWORDS:
-                continue
-            if exclude_tech:
-                if w in cls._TECH_TOKENS:
-                    continue
-                if w in cls._ACTION_VERBS:
-                    continue
-            out.append(w)
-        return out
+        return [w for w in words if w not in cls._STOPWORDS and len(w) > 2]
+
+    @staticmethod
+    def _normalize_for_similarity(text: str) -> str:
+        """Lowercase + strip non-alphanumeric for near-duplicate comparison."""
+        import re as _re
+        return _re.sub(r"[^a-z0-9 ]+", " ", text.lower())
 
     @classmethod
-    def _deliverable_phrase(cls, text: str) -> str:
-        """Extract the 'what was built' noun phrase from a bullet or name.
+    def _is_literal_copy(cls, project_text: str, exp_bullet: str) -> tuple:
+        """True when project_text is a near-verbatim copy of exp_bullet.
 
-        Cheap heuristic: drop stopwords, action verbs, and tech tokens, then
-        join the remaining content tokens. Two bullets describing the same
-        accomplishment produce highly similar deliverable phrases regardless
-        of whether they share tech stack.
+        A portfolio project SHOULD reinforce experience — same domain,
+        same tech, same problem area is GOOD. Recruiters use this to
+        confirm the candidate actually knows the area. What we reject is
+        only the lazy copy-paste: a project bullet whose wording is
+        ≥80% identical to an experience bullet at the character level.
 
-        Example:
-          'Built RabbitMQ event-driven anomaly detection pipeline for
-           clinical devices using Kafka and Python'
-          →  'event driven anomaly detection pipeline clinical devices'
+        Uses difflib's ratio (character-based) — robust to small edits
+        like "Built X" → "Developed X", but catches verbatim re-use.
+
+        Returns (is_copy, ratio).
         """
-        return " ".join(cls._tokens(text, exclude_tech=True))
-
-    @classmethod
-    def _same_accomplishment(cls, project_text: str, exp_bullet: str) -> tuple:
-        """Decide whether the project describes the SAME work as exp_bullet.
-
-        We compare the "deliverable phrases" — what each bullet says was
-        actually built / solved, with tech stack and action verbs removed.
-        Shared tech alone never triggers; shared deliverable nouns do.
-
-        Returns (is_same, shared_tokens). shared_tokens is the list of
-        content tokens that drove the decision, surfaced for diagnostics.
-        """
-        proj_content = set(cls._tokens(project_text, exclude_tech=True))
-        exp_content = set(cls._tokens(exp_bullet, exclude_tech=True))
-        if not proj_content or not exp_content:
-            return False, []
-
-        shared = proj_content & exp_content
-        # Threshold: 3+ non-tech, non-verb content tokens shared signals
-        # the same deliverable. Below that, the bullets are independent
-        # work that happens to touch the same domain words.
-        if len(shared) >= 3:
-            return True, sorted(shared)[:6]
-        return False, []
+        from difflib import SequenceMatcher
+        a = cls._normalize_for_similarity(project_text).strip()
+        b = cls._normalize_for_similarity(exp_bullet).strip()
+        if not a or not b:
+            return False, 0.0
+        # Only meaningful for bullets of similar length. If the project
+        # bullet is much shorter or much longer it's not a copy.
+        if len(a) < 0.5 * len(b) or len(a) > 2.0 * len(b):
+            return False, 0.0
+        ratio = SequenceMatcher(None, a, b).ratio()
+        return ratio >= 0.80, ratio
 
     @classmethod
     def _overlaps_experience(
@@ -622,52 +543,37 @@ class ContentAugmenter:
         new_project: dict,
         experience: List[dict],
     ) -> tuple:
-        """Detect projects that describe the SAME ACCOMPLISHMENT as an
-        existing experience bullet — not merely sharing tech stack.
+        """Detect projects that LITERALLY COPY an experience bullet.
 
-        A personal/side project that uses the candidate's day-job tech is
-        exactly the kind of project we want (it's defensible: candidate
-        can speak to it fluently in an interview). What we reject is the
-        project re-describing the same deliverable the experience already
-        claims credit for.
+        A portfolio project reinforcing the candidate's experience —
+        same domain, same tech, same problem area — is exactly what we
+        want on a resume. It tells the recruiter the candidate knows
+        the area well enough to explore it outside work. The only
+        thing to reject is a lazy copy-paste of an experience bullet,
+        which signals the model gave up and re-used existing text.
 
-        Detection: compare each project bullet AND the project name+purpose
-        against each experience bullet, looking only at content tokens
-        (deliverable nouns, domain terms, specific actions). Tech-stack
-        tokens and generic action verbs are deliberately ignored.
+        Detection: any project bullet whose normalized text is ≥80%
+        character-identical to any experience bullet.
 
-        Returns (overlaps, reason). reason is a human-readable string when
-        overlaps is True; empty when no overlap.
+        Returns (overlaps, reason). reason is human-readable when
+        overlaps is True; empty otherwise.
         """
         proj_bullets = [str(b) for b in (new_project.get("bullets") or []) if str(b).strip()]
         if not proj_bullets or not experience:
             return False, ""
 
-        # Include the name + purpose in the comparison — sometimes the
-        # name alone gives away that the project is just "the experience
-        # bullet, repackaged" (e.g. name = 'Clinical Device Anomaly
-        # Detection Engine' when an experience bullet mentions building
-        # exactly that at GE).
-        proj_signal_texts = list(proj_bullets)
-        proj_name = str(new_project.get("name") or "").strip()
-        proj_purpose = str(new_project.get("purpose") or "").strip()
-        if proj_name:
-            proj_signal_texts.append(proj_name)
-        if proj_purpose:
-            proj_signal_texts.append(proj_purpose)
-
         for exp in experience:
             exp_bullets = [str(b) for b in (exp.get("bullets") or []) if str(b).strip()]
             if not exp_bullets:
                 continue
-            for pt in proj_signal_texts:
+            for pb in proj_bullets:
                 for i, eb in enumerate(exp_bullets):
-                    is_same, shared = cls._same_accomplishment(pt, eb)
-                    if is_same:
+                    is_copy, ratio = cls._is_literal_copy(pb, eb)
+                    if is_copy:
                         company = (exp.get("company") or "?").strip()
                         return True, (
-                            f"same accomplishment as {company} bullet {i + 1} "
-                            f"(shared deliverable tokens: {shared})"
+                            f"literal copy of {company} bullet {i + 1} "
+                            f"(similarity {ratio:.2f})"
                         )
         return False, ""
 

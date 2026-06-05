@@ -39,6 +39,7 @@ class IntegrityReport:
     hallucinated_experience: List[Dict] = field(default_factory=list)
     hallucinated_projects: List[Dict] = field(default_factory=list)
     missing_experience_reinjected: List[Dict] = field(default_factory=list)
+    banned_phrase_substitutions: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -171,6 +172,13 @@ class IntegrityGuard:
             != len(original.get("experience", []))
         )
 
+        # Step 6: Auto-substitute the safe banned phrases (buzzwords the model
+        # keeps emitting). Anything outside the safe-substitution list stays
+        # as the prompt's responsibility — no retry trigger for cosmetic
+        # phrasing, since the cost (re-running PRO model) outweighs the gain.
+        tailored, substitutions = self.fix_banned_phrases(tailored)
+        report.banned_phrase_substitutions = substitutions
+
         # Determine severity
         report.severity = self._classify_severity(report)
 
@@ -185,13 +193,14 @@ class IntegrityGuard:
         if report.severity != "clean":
             logger.warning(
                 "IntegrityGuard report: severity=%s overwrites=%d "
-                "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s",
+                "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s banned_subs=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
                 len(report.hallucinated_projects),
                 len(report.missing_experience_reinjected),
                 report.project_cap_enforced,
+                len(report.banned_phrase_substitutions),
             )
 
         return tailored, report
@@ -386,6 +395,67 @@ class IntegrityGuard:
         return tailored, cap_enforced
 
     # ------------------------------------------------------------------
+    # 4. Banned-phrase auto-substitution
+    # ------------------------------------------------------------------
+
+    # Safe substitutions only — these rewrite filler without changing meaning.
+    # Anything beyond this list is left for the prompt to handle (forcing a
+    # PRO-model retry over a cosmetic phrase isn't worth the latency/cost).
+    # Case-insensitive match, preserves the candidate's actual content.
+    _SAFE_SUBSTITUTIONS = (
+        # (regex, replacement)
+        (re.compile(r'\bextensive\s+experience\b', re.IGNORECASE), 'experience'),
+        (re.compile(r'\bproven\s+track\s+record\b', re.IGNORECASE), 'track record'),
+        (re.compile(r'\bstrong\s+foundation\s+in\b', re.IGNORECASE), 'experience with'),
+        (re.compile(r'\bstrong\s+background\s+in\b', re.IGNORECASE), 'experience with'),
+        (re.compile(r'\bhands-on\s+expertise\b', re.IGNORECASE), 'hands-on experience'),
+        (re.compile(r'\brobust\s+experience\b', re.IGNORECASE), 'experience'),
+    )
+
+    def fix_banned_phrases(
+        self,
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Scan summary + all bullets for safe-substitution banned phrases.
+
+        Mutates the tailored dict in place; returns it plus a list of human-
+        readable substitution descriptions (for logging/reporting).
+        Phrases outside the SAFE_SUBSTITUTIONS list are NOT rewritten here —
+        the prompt's banned-language section is responsible for those.
+        """
+        substitutions: List[str] = []
+
+        def _rewrite(text: str) -> str:
+            if not isinstance(text, str) or not text:
+                return text
+            new = text
+            for pattern, replacement in self._SAFE_SUBSTITUTIONS:
+                if pattern.search(new):
+                    before = new
+                    new = pattern.sub(replacement, new)
+                    if new != before:
+                        substitutions.append(
+                            f"'{pattern.pattern}' → '{replacement}'"
+                        )
+            return new
+
+        # Summary
+        if "summary" in tailored:
+            tailored["summary"] = _rewrite(tailored["summary"])
+
+        # Experience bullets
+        for exp in tailored.get("experience", []) or []:
+            bullets = exp.get("bullets") or []
+            exp["bullets"] = [_rewrite(b) for b in bullets]
+
+        # Project bullets
+        for proj in tailored.get("projects", []) or []:
+            bullets = proj.get("bullets") or []
+            proj["bullets"] = [_rewrite(b) for b in bullets]
+
+        return tailored, substitutions
+
+    # ------------------------------------------------------------------
     # Severity classification
     # ------------------------------------------------------------------
 
@@ -404,6 +474,7 @@ class IntegrityGuard:
             or report.hallucinated_projects
             or report.missing_experience_reinjected
             or report.project_cap_enforced
+            or report.banned_phrase_substitutions
         )
 
         if has_any_fix:

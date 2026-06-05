@@ -36,6 +36,22 @@ from utils.keyword_normalizer import (
 logger = logging.getLogger(__name__)
 
 
+# Canonical banned-phrase list. Single source of truth for both the tailor
+# prompt and IntegrityGuard's post-hoc check. Buzzwords + over-polished
+# corporate filler that make the resume read AI-generated.
+BANNED_PHRASES: tuple = (
+    "Versatile", "Proficient", "Leverages", "Leverage",
+    "extensive experience", "proven track record", "results-driven",
+    "passionate", "detail-oriented", "highly skilled", "seasoned",
+    "cutting-edge", "innovative", "dynamic", "self-motivated",
+    "Adept", "dedicated", "committed to excellence",
+    "strong foundation", "strong record", "strong background",
+    "robust experience", "hands-on expertise",
+    "should have", "candidates should", "the candidate", "this candidate",
+    "seeking a challenging",
+)
+
+
 class ResumeTailor:
     _guard = IntegrityGuard()
 
@@ -130,10 +146,12 @@ class ResumeTailor:
         if report.severity == "auto_fixed":
             logger.warning(
                 "Integrity check: auto-fixed — %d immutable overwrites, "
-                "%d hallucinated projects removed, %d missing experience re-injected",
+                "%d hallucinated projects removed, %d missing experience re-injected, "
+                "%d banned-phrase substitutions",
                 len(report.immutable_overwrites),
                 len(report.hallucinated_projects),
                 len(report.missing_experience_reinjected),
+                len(report.banned_phrase_substitutions),
             )
             return _finalize(corrected)
 
@@ -643,132 +661,237 @@ class ResumeTailor:
     ) -> str:
         """Build the main tailoring prompt.
 
-        Structure: the proven Gemini-era prompt as the base — short, focused,
-        no Phase A / 8-step methodology. Only the lessons we earned during
-        the Claude migration are layered on top:
-          • Banned words extended with the specific phrases Claude kept
-            emitting (strong foundation, strong record, strong background,
-            robust experience, hands-on expertise, should have, candidates
-            should).
-          • VOICE rule: first-person-implied; never write in third-person
-            about "the candidate"; never open the summary with the JD's
-            job title as the grammatical subject. Came from real
-            regressions on the Rippling Backend tailor.
-          • Years-of-experience honesty rule: if the JD wants N+ years and
-            the candidate has fewer, use a generic opener (no years number)
-            rather than inflating.
-        Everything else (IMMUTABLE FIELDS, 10 ATS rules, 8 INTEGRITY rules,
-        few-shot examples, content/format including 5-8/4-6/2-4 bullet
-        distribution, JSON schema) is restored from the original prompt.
+        Structural philosophy:
+          - HARD CONSTRAINTS at the top (years honesty, the Defensibility +
+            Blendability test that governs all additions, plausibility
+            cutoffs, voice). These are the highest-violation rules — they
+            sit closest to the goal so the model sees them while planning.
+          - IMMUTABLE FIELDS immediately after.
+          - CONTENT RULES with bullet counts stated twice (once as a table,
+            once inline in the JSON example) so the schema example can't
+            silently contradict the rule.
+          - BANNED LANGUAGE split into PHRASES vs PATTERNS for salience.
+          - FEW-SHOT examples cover the four real failure modes:
+            defensible-skill addition, defensible bullet enrichment,
+            defensible project enrichment, years-of-experience honesty.
+          - JSON SCHEMA last, with bullet array showing the real count.
+
+        The Defensibility + Blendability test replaces the old
+        evidence-only rule: the model MAY add skills, sub-tasks, technical
+        details, and tools as long as (a) the candidate could defend the
+        addition in an interview given their background, and (b) the
+        addition blends with existing content (same voice, scope,
+        seniority). Cross-ecosystem jumps, fake companies, and seniority
+        inflation remain forbidden.
         """
+        banned_phrases_str = ", ".join(f"'{p}'" for p in BANNED_PHRASES)
+
         return (
             "You are a professional resume writer helping a candidate present their experience clearly.\n"
-            "Given the candidate\'s ACTUAL resume (as structured JSON) and a structured job description analysis,\n"
+            "Given the candidate's ACTUAL resume (as structured JSON) and a structured job description analysis,\n"
             "produce a COMPLETE tailored resume as a JSON object.\n\n"
-            "YOUR #1 GOAL: Produce a clear, professional, human-sounding resume. The content should "
-            "naturally align with the job description without sounding like a keyword-stuffed template.\n"
-            "The resume should naturally incorporate these JD keywords/skills where the candidate has "
-            f"genuinely related experience: {keyword_list}\n\n"
+
+            "YOUR #1 GOAL: Produce a clear, professional, human-sounding resume that naturally aligns with the "
+            "job description. The candidate should be able to defend every line in an interview.\n"
+            "Naturally incorporate these JD keywords/skills where the candidate has genuinely related "
+            f"experience: {keyword_list}\n\n"
             f"{gap_context}"
             f"{role_context}"
 
-            "VOICE — the summary is the CANDIDATE\'S self-description on THEIR resume:\n"
-            "  - Write in first-person-implied voice (no \'I\' pronoun, but describing the candidate\'s own work).\n"
-            "    Example: \'Backend engineer with hands-on experience building Python microservices on AWS...\'\n"
-            "  - NEVER write in third-person about \'the candidate\' / \'this candidate\' / \'candidates should have...\'\n"
-            "  - NEVER open the summary with the JD\'s job title as the grammatical subject\n"
-            "    (e.g. NEVER: \'Software Engineer II Backend candidates should have built...\')\n\n"
+            # ----------------------------------------------------------------
+            # HARD CONSTRAINTS — the four rules that drive most failures
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "HARD CONSTRAINTS (violating any of these = the output is rejected)\n"
+            "================================================================\n\n"
 
-            "YEARS OF EXPERIENCE — DO NOT INFLATE:\n"
-            "  - Compute the candidate\'s actual years from their experience dates.\n"
-            "  - If JD wants N+ years and candidate has N+ -> may state specific years (\'4+ years\').\n"
-            "  - If candidate has FEWER -> write a GENERIC opener, no years number at all.\n"
-            "    Don\'t write \'3+ years\' when JD wants 5+ — that highlights the gap.\n\n"
+            "(A) YEARS OF EXPERIENCE — DO NOT INFLATE:\n"
+            "  - Compute the candidate's actual years from their experience dates.\n"
+            "  - If JD wants N+ years and candidate has N+ → may state specific years ('4+ years').\n"
+            "  - If candidate has FEWER → write a GENERIC opener with NO years number at all.\n"
+            "    Don't write '3+ years' when JD wants 5+ — that highlights the gap.\n\n"
 
-            "IMMUTABLE FIELDS — copy these EXACTLY from the original JSON, character for character:\n"
-            "- contact.name, contact.email, contact.phone, contact.linkedin, contact.github, contact.location, contact.portfolio\n"
-            "- Each experience entry\'s: company, title, location, dates\n"
-            "- Each education entry\'s: institution, degree, location, dates, gpa\n"
+            "(B) THE DEFENSIBILITY + BLENDABILITY TEST — governs ALL additions:\n"
+            "    This applies to skills, sub-tasks inside experience bullets, technical details in\n"
+            "    project bullets, tools, methodologies, and any technical claim.\n"
+            "    You MAY add content if BOTH are true:\n"
+            "      1. DEFENSIBLE — the candidate could confidently explain it in an interview given\n"
+            "         the rest of their background. The addition must fit their stack, role, and\n"
+            "         seniority. A recruiter glancing at the bullet should not be surprised; a\n"
+            "         hiring manager asking 'tell me more about that' should get a coherent answer.\n"
+            "      2. BLENDABLE — the addition reads as a natural extension of an existing bullet\n"
+            "         or skill group: same voice, same scope, same seniority. If you add a JD skill\n"
+            "         to the skills section, you should ALSO extend at least one existing bullet to\n"
+            "         use it in context. Skills must not appear only as orphan keywords.\n"
+            "    Examples of GOOD additions (covered in the FEW-SHOT section below):\n"
+            "      - Adding AWS Lambda when candidate already uses AWS EC2, AND extending the\n"
+            "        deployment bullet to mention Lambda for event-driven work.\n"
+            "      - Adding 'versioning, authentication, rate-limiting' to an existing 'Built REST\n"
+            "        APIs' bullet — standard concerns the candidate would have encountered.\n"
+            "      - Adding 'custom analyzers for fuzzy matching' to an existing Elasticsearch\n"
+            "        project — natural depth for anyone who built ES search.\n\n"
+
+            "(C) PLAUSIBILITY CUTOFF — never add:\n"
+            "    - Cross-ecosystem tech (Azure when only AWS is shown; Go when only Python/JS).\n"
+            "    - Domain claims with no exposure (HIPAA/SOX/PCI when no matching work history).\n"
+            "    - Seniority signals that contradict reality (leading a team when they were an IC,\n"
+            "      managing a budget when no management context exists).\n"
+            "    - New companies, job titles, employment dates, degrees, or certifications. These\n"
+            "      are immutable (see next section).\n"
+            "    - Metrics the candidate has no basis to claim. Metrics may be added ONLY when the\n"
+            "      bullet's nature makes the metric inferable AND the candidate could defend the\n"
+            "      number. If unsure, write impact in natural language without numbers.\n\n"
+
+            "(D) VOICE — the summary is the CANDIDATE'S self-description on THEIR resume:\n"
+            "    - Write in first-person-implied voice (no 'I' pronoun, but describing the\n"
+            "      candidate's own work).\n"
+            "      Example: 'Backend engineer with hands-on experience building Python microservices on AWS...'\n"
+            "    - NEVER write in third-person about 'the candidate' / 'this candidate' / 'candidates should...'\n"
+            "    - NEVER open the summary with the JD's job title as the grammatical subject\n"
+            "      (e.g. NEVER: 'Software Engineer II Backend candidates should have built...').\n\n"
+
+            # ----------------------------------------------------------------
+            # IMMUTABLE FIELDS
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "IMMUTABLE FIELDS — copy EXACTLY from the original JSON, character for character:\n"
+            "================================================================\n"
+            "- contact.name, contact.email, contact.phone, contact.linkedin, contact.github, "
+            "contact.location, contact.portfolio\n"
+            "- Each experience entry's: company, title, location, dates\n"
+            "- Each education entry's: institution, degree, location, dates, gpa\n"
+            "- certifications: COPY the array EXACTLY from the ORIGINAL resume. Do NOT add, remove, "
+            "modify, or reorder entries.\n"
             "Do NOT alter any of these fields, even to fix typos or formatting.\n\n"
 
-            "ATS OPTIMIZATION RULES:\n"
-            "1. Mirror the EXACT terminology from the JD (e.g. if JD says \'microservices\', use \'microservices\' not \'micro-services\').\n"
+            "ALSO IMMUTABLE STRUCTURAL RULES:\n"
+            "- The output MUST contain exactly the same number of experience entries as the input.\n"
+            "- Projects: include ONLY projects from the original resume in the projects array. If "
+            "the original has none, return an empty array []. The backend handles project generation "
+            "separately.\n"
+            "- Every field in the JSON MUST be a non-null string or array — never null.\n\n"
+
+            # ----------------------------------------------------------------
+            # CONTENT RULES
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "CONTENT RULES (the resume MUST physically fill ONE full A4 page with substantive text)\n"
+            "================================================================\n\n"
+
+            "BULLET-COUNT TABLE — these counts are HARD-REQUIRED. Returning fewer is a failure.\n"
+            "  | Section                | Bullet count                                        |\n"
+            "  |------------------------|-----------------------------------------------------|\n"
+            "  | Most recent role       | EXACTLY 5 bullets                                   |\n"
+            "  | Second role            | EXACTLY 3 bullets                                   |\n"
+            "  | Third (oldest) role    | EXACTLY 3 bullets                                   |\n"
+            f"  | Each project           | EXACTLY {target_project_bullets} bullets (scales with project count)  |\n"
+            "  | Each bullet length     | ~150-200 chars (2 full lines in rendered PDF)       |\n\n"
+
+            "1. Summary: 3-4 clear, confident sentences that naturally incorporate the target role title and "
+            "3-4 top required skills. Open by describing what the candidate IS (e.g. 'Backend engineer with...'). "
+            "Do NOT start with an adjective or with 'I'.\n\n"
+
+            "2. Skills: 4-6 categories, most JD-relevant first. Include ALL skills from the original resume that "
+            "are relevant to the JD, experience bullets, or projects — do NOT drop original skills just because "
+            "they are not explicitly in the JD. Also include JD-required skills the candidate plausibly knows "
+            "(per the Defensibility + Blendability test above) — and extend at least one bullet to use each "
+            "added skill in context.\n\n"
+
+            "3. Education: Institution, degree, dates, location, gpa, coursework — each in its OWN field. "
+            "Do NOT concatenate fields (e.g. don't put dates inside the degree string).\n\n"
+
+            "4. Projects: bullet count per project scales inversely with project count so the resume fits one "
+            "page (1 project → 5 bullets, 2-3 projects → 3 bullets each). If there are no projects, compensate "
+            "with more experience bullets. Projects in the output array MUST be from the original resume.\n\n"
+
+            "5. Do NOT rely on empty whitespace to fill the page. Generate robust, detailed content for every "
+            "bullet and summary sentence.\n\n"
+
+            # ----------------------------------------------------------------
+            # BANNED LANGUAGE
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "BANNED LANGUAGE — do NOT use any of these anywhere in the resume\n"
+            "================================================================\n\n"
+            f"BANNED PHRASES: {banned_phrases_str}.\n\n"
+            "BANNED PATTERNS:\n"
+            "  - Third-person about the candidate ('the candidate', 'candidates should have...')\n"
+            "  - Opening the summary with the JD's job title as the grammatical subject\n"
+            "  - Opening the summary with an adjective ('Versatile...', 'Dynamic...')\n"
+            "  - Opening any bullet or summary with 'I'\n"
+            "BAD example: 'Versatile Python FullStack Developer with extensive experience designing scalable systems'\n"
+            "GOOD example: 'Full-stack developer with 4+ years building Python backends and React frontends, "
+            "focused on API design, cloud deployment, and CI/CD automation.'\n"
+            "Write like a real person describing their work — direct, specific, no buzzwords.\n\n"
+
+            # ----------------------------------------------------------------
+            # ATS OPTIMIZATION RULES
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "ATS OPTIMIZATION RULES\n"
+            "================================================================\n"
+            "1. Mirror the EXACT terminology from the JD (e.g. if JD says 'microservices', use "
+            "'microservices' not 'micro-services').\n"
             "2. Put the most JD-relevant skills FIRST in each category.\n"
-            "3. Front-load each bullet with a strong action verb that matches the JD\'s language.\n"
-            "4. Weave required keywords naturally into experience bullets and summary — don\'t just list them.\n"
+            "3. Front-load each bullet with a strong action verb that matches the JD's language.\n"
+            "4. Weave required keywords naturally into experience bullets and summary — don't just list them.\n"
             "5. The professional summary MUST mention the target role title and 3-4 top required skills.\n"
             "6. Reorder experience bullets so the most JD-relevant achievements appear first.\n"
             "7. For projects, emphasize aspects that directly relate to the JD requirements.\n"
-            "8. Each experience bullet should start with an action verb and describe what was done with the "
-            "technologies actually used. Include impact or outcome where the original bullet had one. "
-            "Do NOT add technologies the candidate did not use.\n"
-            "9. Include each required_skill from the JD in the skills section. Where the candidate has relevant "
-            "experience, naturally reference these skills in bullets — but do not force-fit them.\n"
-            "10. Use a diverse mix of action verbs. No single verb may start more than 2 bullets across "
-            "the entire resume. Good verbs include: Built, Developed, Implemented, Designed, Led, Managed, "
-            "Created, Configured, Optimized, Reduced, Migrated, Integrated, Automated, Deployed, Maintained, "
-            "Collaborated, Established, Streamlined, Refactored, Monitored. Avoid overusing \'Spearheaded\', "
-            "\'Architected\', \'Engineered\', or \'Orchestrated\' — these sound robotic when used more than once. "
-            "Write as a normal, competent professional would write their own resume.\n\n"
+            "8. Each experience bullet starts with an action verb and describes what was done with the "
+            "technologies actually used. Include impact or outcome where the original had one.\n"
+            "9. Use a diverse mix of action verbs. No single verb may start more than 2 bullets across the "
+            "entire resume. Good verbs: Built, Developed, Implemented, Designed, Led, Managed, Created, "
+            "Configured, Optimized, Reduced, Migrated, Integrated, Automated, Deployed, Maintained, "
+            "Collaborated, Established, Streamlined, Refactored, Monitored. Avoid overusing 'Spearheaded', "
+            "'Architected', 'Engineered', or 'Orchestrated' — these sound robotic when used more than once.\n\n"
 
-            "INTEGRITY RULES:\n"
-            "1. NEVER fabricate, invent, or add experience entries, companies, or job titles NOT in the original.\n"
-            "2. Output MUST contain exactly the same number of experience entries as the input — no more, no less.\n"
-            "3. NEVER invent metrics, percentages, or numbers not present in the original bullets.\n"
-            "4. NEVER add major skills the candidate does not possess.\n"
-            "5. You MAY add small, closely related skills (e.g., if they know Docker, you can add \'containerization\'; "
-            "if they use AWS, add specific AWS services the JD asks for IF the candidate plausibly used them).\n"
-            "6. Projects: Include ONLY projects from the original resume. If none exist, return an empty projects array []. "
-            "The backend will handle project generation separately.\n"
-            "7. certifications: COPY the certifications array EXACTLY from the ORIGINAL resume.\n"
-            "   Do NOT add, remove, modify, or reorder entries. The system enforces this.\n"
-            "8. Every field in the JSON MUST be a non-null string or array — never null.\n\n"
+            # ----------------------------------------------------------------
+            # FEW-SHOT EXAMPLES
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "FEW-SHOT EXAMPLES (Defensibility + Blendability in action)\n"
+            "================================================================\n\n"
 
-            "FEW-SHOT EXAMPLES (How to Tailor without Hallucinating):\n"
-            "Example 1: Aligning to JD without inventing skills\n"
-            "JD requires: Kubernetes, CI/CD, Go\n"
-            "Original Bullet: \'Built APIs with Python and deployed them on cloud servers.\'\n"
-            "BAD Rewrite: \'Built APIs with Go and deployed on Kubernetes using CI/CD.\' (Hallucination! They didn\'t use Go or K8s)\n"
-            "GOOD Rewrite: \'Built scalable APIs with Python and deployed them to cloud infrastructure, improving deployment reliability.\'\n\n"
-            "Example 2: Adding Impact without faking metrics\n"
-            "Original Bullet: \'Helped the frontend team build the dashboard in React.\'\n"
-            "BAD Rewrite: \'Spearheaded React dashboard development, increasing revenue by 40%.\' (Fake metric!)\n"
-            "GOOD Rewrite: \'Worked with the frontend team to build and improve a React dashboard, enhancing data visibility for stakeholders.\'\n\n"
+            "Example A — Defensible skill addition (skill + bullet integration):\n"
+            "  JD requires: AWS Lambda, S3, CloudFormation\n"
+            "  Candidate's resume: uses AWS EC2, Docker, Python\n"
+            "  GOOD: Add 'AWS Lambda, S3' to skills AND extend a deployment bullet →\n"
+            "    'Deployed Python services on AWS using EC2 and S3, with Lambda for event-driven processing.'\n"
+            "    (Same ecosystem; integrated into a real bullet.)\n"
+            "  BAD: Add 'CloudFormation' only to skills section; no bullet mentions it. (Keyword stuffing — not blended.)\n"
+            "  BAD: Add 'Azure Functions'. (Cross-ecosystem — not defensible.)\n\n"
 
-            "CONTENT & FORMAT RULES (the resume MUST physically fill ONE full A4 page with substantive text):\n"
-            "1. Summary: 3-4 clear, confident sentences that naturally incorporate the target role title and "
-            "3-4 top required skills. Use plain, professional language. Open by describing what the candidate IS "
-            "(e.g. \'Backend engineer with...\') — NEVER open with the JD\'s job title as a noun phrase.\n"
-            "BANNED WORDS/PHRASES — do NOT use ANY of these anywhere in the resume:\n"
-            "\'Versatile\', \'Proficient\', \'Leverages\', \'Leverage\', \'extensive experience\', \'proven track record\',\n"
-            "\'results-driven\', \'passionate\', \'detail-oriented\', \'highly skilled\', \'seasoned\', \'cutting-edge\',\n"
-            "\'innovative\', \'dynamic\', \'self-motivated\', \'Adept\', \'dedicated\', \'committed to excellence\',\n"
-            "\'strong foundation\', \'strong record\', \'strong background\', \'robust experience\',\n"
-            "\'hands-on expertise\', \'should have\', \'candidates should\', \'the candidate\', \'this candidate\',\n"
-            "\'seeking a challenging\'. Do NOT start the summary with an adjective or with \'I\'.\n"
-            "BAD example: \'Versatile Python FullStack Developer with extensive experience designing scalable systems\'\n"
-            "GOOD example: \'Full-stack developer with 4+ years building Python backends and React frontends, "
-            "focused on API design, cloud deployment, and CI/CD automation.\'\n"
-            "Write like a real person describing their work — direct, specific, no buzzwords.\n"
-            "2. Experience: bullet count is HARD-REQUIRED — total 11+ bullets across all roles.\n"
-            "   - Most recent role: EXACTLY 5 bullets (not 3, not 4 — 5)\n"
-            "   - Second role: EXACTLY 3 bullets\n"
-            "   - Third (oldest) role: EXACTLY 3 bullets\n"
-            "   - Each bullet ~150-200 chars (2 full lines in the rendered PDF).\n"
-            "   If you return fewer bullets per role than specified you have failed the task.\n"
-            "3. Skills: 4-6 categories with comprehensive skill lists, most JD-relevant first. "
-            "Include ALL skills from the original resume that are relevant to the JD, experience bullets, "
-            "or projects — do NOT drop original skills just because they are not explicitly in the JD. "
-            "Also include JD-required skills where the candidate has related experience. "
-            "Only omit skills that are completely irrelevant to both the JD and the candidate\'s work.\n"
-            "4. Education: Institution, degree, and dates.\n"
-            f"5. Projects: EXACTLY {target_project_bullets} bullets per project (each ~150-200 chars). "
-            "Bullet count scales inversely with project count so the resume fits one page: "
-            "1 project -> 5 bullets, 2-3 projects -> 3 bullets each. If there are no projects, "
-            "compensate by adding more experience bullets.\n"
-            "6. IMPORTANT: Do NOT rely on empty whitespace to fill the page. Generate robust, detailed content for every single bullet and summary sentence to naturally fill the available space.\n\n"
+            "Example B — Defensible bullet enrichment:\n"
+            "  JD requires: API versioning, rate-limiting, authentication\n"
+            "  Original bullet: 'Built REST APIs in Python for the customer-facing dashboard.'\n"
+            "  GOOD: 'Built REST APIs in Python for the customer-facing dashboard, with versioning, JWT-based\n"
+            "    authentication, and rate-limiting for tenant isolation.'\n"
+            "    (Defensible — these are standard concerns for any production API; blendable — same voice.)\n"
+            "  BAD: 'Built REST APIs in Python, processing 50M requests/day with 99.99% uptime.' (Invented metrics.)\n"
+            "  BAD: 'Built REST APIs in Python and led API design across 5 teams.' (Seniority inflation if IC.)\n\n"
 
-            "Return a JSON object with EXACTLY this structure:\n"
+            "Example C — Defensible project enrichment:\n"
+            "  JD requires: Elasticsearch, search relevance tuning\n"
+            "  Original project: 'Built a search feature for an e-commerce site using Elasticsearch.'\n"
+            "  GOOD: 'Built a search feature using Elasticsearch with custom analyzers for fuzzy matching and\n"
+            "    synonym handling to improve relevance for product queries.'\n"
+            "    (Defensible — anyone who built ES search would have done relevance work.)\n\n"
+
+            "Example D — Years-of-experience honesty:\n"
+            "  JD wants: 5+ years. Candidate has: ~3 years.\n"
+            "  GOOD opener: 'Backend engineer with hands-on experience building Python microservices on AWS...'\n"
+            "    (Generic opener, no years cited.)\n"
+            "  BAD opener: 'Backend engineer with 5+ years building...' (Inflated.)\n"
+            "  BAD opener: 'Backend engineer with 3+ years...' (Honest but highlights the gap — use generic.)\n\n"
+
+            # ----------------------------------------------------------------
+            # JSON SCHEMA
+            # ----------------------------------------------------------------
+            "================================================================\n"
+            "Return a JSON object with EXACTLY this structure\n"
+            "(bullet arrays below show ONE example bullet — the actual counts come from the BULLET-COUNT TABLE above)\n"
+            "================================================================\n"
             "{\n"
             '  "contact": {\n'
             '    "name": "Full Name",\n'
@@ -791,15 +914,21 @@ class ResumeTailor:
             '      "location": "City, State/Country",\n'
             '      "dates": "Start - End",\n'
             '      "type": "Full-time/Internship",\n'
-            '      "bullets": ["Achievement 1...", "Achievement 2..."]\n'
+            '      "bullets": [\n'
+            '        "Bullet 1 (~150-200 chars)",\n'
+            '        "Bullet 2",\n'
+            '        "Bullet 3",\n'
+            '        "Bullet 4 (most recent role MUST have 5; older roles MUST have 3)",\n'
+            '        "Bullet 5"\n'
+            "      ]\n"
             "    }\n"
             "  ],\n"
             '  "education": [\n'
             "    {\n"
-            '      "degree": "ONLY the degree name (e.g. Master of Science, Information Technology). Do NOT include dates, institution, or location in this field.",\n'
-            '      "institution": "University Name (MUST be separate from degree)",\n'
-            '      "location": "City, State (MUST be separate from institution)",\n'
-            '      "dates": "Graduation date or date range (MUST be separate from degree)",\n'
+            '      "degree": "Degree name ONLY (e.g. Master of Science, Information Technology) — no dates, institution, or location here",\n'
+            '      "institution": "University Name — separate field, not concatenated with degree",\n'
+            '      "location": "City, State — separate field",\n'
+            '      "dates": "Graduation date or range — separate field",\n'
             '      "gpa": "GPA if available",\n'
             '      "coursework": "Relevant coursework if listed"\n'
             "    }\n"
@@ -808,7 +937,7 @@ class ResumeTailor:
             "    {\n"
             '      "name": "Project Name",\n'
             '      "dates": "Date Range",\n'
-            '      "bullets": ["Description 1...", "Description 2..."],\n'
+            f'      "bullets": [ /* EXACTLY {target_project_bullets} bullets, ~150-200 chars each */ ],\n'
             '      "tech": "Tech1, Tech2, Tech3"\n'
             "    }\n"
             "  ],\n"

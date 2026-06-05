@@ -58,6 +58,13 @@ class ProjectGenerator:
 
         prompt = (
             "You are generating a single portfolio project entry for a resume.\n\n"
+            "WORKFLOW — follow these steps IN ORDER (do not start with the name):\n"
+            "  STEP 1: Decide the project's PURPOSE — what real problem does it solve? "
+            "Write one sentence in the 'purpose' field.\n"
+            "  STEP 2: Pick the tech stack from the candidate's actual skills that would solve that problem.\n"
+            "  STEP 3: Write 3 bullets describing what was built and how, using that tech.\n"
+            "  STEP 4: ONLY NOW derive the project NAME from the purpose. The name describes WHAT it does, "
+            "never WHO built it.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -68,21 +75,23 @@ class ProjectGenerator:
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
             "7. bullets: exactly 3 bullets, each ~100-150 chars, describing what was built and how. "
             "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
-            "8. The project name MUST sound like a real GitHub project name. Think about what a real "
-            "developer would name their project based on what it does.\n"
+            "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
             "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue', "
             "'Sentiment Analysis Pipeline', 'API Rate Limiter Service'.\n"
-            "   BAD NAMES (NEVER use these patterns): 'Python FullStack Developer Portfolio Project', "
-            "'Software Engineer Project', 'Backend Engineer Side Project', "
-            "'Python & AWS Integration Platform', anything with the job title in it.\n"
-            "   The name must describe WHAT the project does, not WHO built it or WHAT role it's for.\n\n"
+            "   BAD NAMES (auto-rejected — name MUST NOT contain any of these words/patterns):\n"
+            "     - The JD's job title (e.g. 'Backend Engineer Project', 'Full Stack Developer ...')\n"
+            "     - The candidate's role title\n"
+            "     - 'Portfolio', 'Project', 'Demo', 'Application', 'Platform' as filler\n"
+            "     - Lists of techs in the name (e.g. 'Python & AWS Integration Platform')\n"
+            "     - Anything describing WHO built it or WHAT ROLE it's for\n\n"
             f"Candidate's skills: {skills_text[:300]}\n"
             f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
             f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
             "Return a JSON object with EXACTLY this structure:\n"
             "{\n"
-            '  "name": "Project Name",\n'
+            '  "purpose": "One sentence: what real problem does this project solve?",\n'
+            '  "name": "Project Name (derived from purpose — NOT starting from the name)",\n'
             '  "dates": "",\n'
             '  "bullets": [\n'
             '    "Bullet 1 (~100-150 chars, action verb + technology + outcome)",\n'
@@ -97,6 +106,7 @@ class ProjectGenerator:
         try:
             from services.gemini_client import GEMINI_FLASH
             PROJECT_SCHEMA = {
+                "purpose": str,
                 "name": str,
                 "dates": str,
                 "bullets": [str],
@@ -184,6 +194,11 @@ class ProjectGenerator:
 
         prompt = (
             f"You are generating {count} portfolio project entries for a resume.\n\n"
+            "WORKFLOW FOR EACH PROJECT — follow these steps IN ORDER (do not start with the name):\n"
+            "  STEP 1: Decide the project's PURPOSE — what real problem does it solve? Write it in 'purpose'.\n"
+            "  STEP 2: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
+            "  STEP 3: Write 3 bullets describing what was built and how.\n"
+            "  STEP 4: ONLY NOW derive the project NAME from the purpose. Name = WHAT it does, never WHO built it.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -194,13 +209,14 @@ class ProjectGenerator:
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
             "7. bullets: exactly 3 bullets per project, each ~100-150 chars, describing what was built and how. "
             "Each bullet should be specific and technical — mention real patterns, tools, and design decisions.\n"
-            "8. Each project name MUST sound like a real GitHub project name. Think about what a real "
-            "developer would name their project based on what it does.\n"
+            "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
             "   GOOD NAMES: 'Payment Fraud Detection API', 'Real-Time Log Aggregator', "
             "'E-Commerce Search Engine', 'Cloud Cost Optimizer', 'Distributed Task Queue'.\n"
-            "   BAD NAMES (NEVER): 'Python FullStack Developer Portfolio Project', "
-            "'Software Engineer Project', anything with the job title in it.\n"
-            "   The name must describe WHAT the project does, not WHO built it.\n"
+            "   BAD NAMES (auto-rejected — name MUST NOT contain any of these words/patterns):\n"
+            "     - The JD's job title or the candidate's role title\n"
+            "     - 'Portfolio', 'Project', 'Demo', 'Application', 'Platform' as filler\n"
+            "     - Lists of techs in the name ('Python & AWS Integration Platform')\n"
+            "     - Anything describing WHO built it or WHAT ROLE it's for\n"
             f"9. Each project must be DISTINCT — different domains, different tech stacks.\n"
             f"{avoid_clause}\n"
             f"Candidate's skills: {skills_text[:300]}\n"
@@ -208,13 +224,15 @@ class ProjectGenerator:
             f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
             "Return a JSON object with EXACTLY this structure:\n"
             '{"projects": [\n'
-            '  {"name": "Project Name", "dates": "", "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"], "tech": "Tech1, Tech2"}\n'
+            '  {"purpose": "One sentence: what problem this solves", "name": "Project Name (derived from purpose)", '
+            '"dates": "", "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"], "tech": "Tech1, Tech2"}\n'
             "]}\n\n"
             f"=== CANDIDATE RESUME CONTEXT ===\n{resume_text[:3000]}"
         )
 
         BATCH_SCHEMA = {
             "projects": [{
+                "purpose": str,
                 "name": str,
                 "dates": str,
                 "bullets": [str],
@@ -281,17 +299,30 @@ class ProjectGenerator:
             project["name"] = name
             logger.info("ProjectGenerator: converted slug name to title case: '%s'", name)
 
-        # If name contains the job title or "Portfolio", ask Gemini for a better name
+        # If name contains banned filler words or the JD/role title, ask Gemini for a better name.
+        # Expanded rejection list — matches the BAD NAMES rule in the prompt.
+        BANNED_NAME_TOKENS = ("portfolio", "demo", "project", "application", "platform")
         needs_rename = False
         jd_title = ""
+        name_lower = name.lower()
         if jd_analysis:
             jd_title = jd_analysis.get("job_title", "").strip()
-            if jd_title and jd_title.lower() in name.lower():
-                logger.warning("ProjectGenerator: name '%s' contains job title '%s', requesting new name from Gemini", name, jd_title)
+            if jd_title and jd_title.lower() in name_lower:
+                logger.warning(
+                    "ProjectGenerator: name '%s' contains job title '%s', requesting new name from Gemini",
+                    name, jd_title,
+                )
                 needs_rename = True
-        if "portfolio" in name.lower():
-            logger.warning("ProjectGenerator: name '%s' contains 'portfolio', requesting new name from Gemini", name)
-            needs_rename = True
+        for token in BANNED_NAME_TOKENS:
+            # match as a whole word so e.g. 'Application' as a noun is rejected
+            # but 'Web Application Firewall' (rare) would still bounce — that's OK.
+            if re.search(r'\b' + token + r'\b', name_lower):
+                logger.warning(
+                    "ProjectGenerator: name '%s' contains banned token '%s', requesting new name",
+                    name, token,
+                )
+                needs_rename = True
+                break
 
         if needs_rename:
             new_name = self._generate_project_name(tech_str, jd_title)

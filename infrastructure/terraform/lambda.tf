@@ -141,6 +141,9 @@ locals {
     "ANY /api/resume/{proxy+}"         = "jobs-resume"
     "GET /api/tech-chronicle"          = "jobs-resume"
     "ANY /api/tech-chronicle/{proxy+}" = "jobs-resume"
+    # Job Application Autofill Chrome extension backend (blueprints/apply.py).
+    # Dedicated prefix so its traffic is monitorable separately in CloudWatch.
+    "ANY /api/apply/{proxy+}" = "jobs-resume"
 
     # Chat service routes
     "POST /api/chat"         = "chat"

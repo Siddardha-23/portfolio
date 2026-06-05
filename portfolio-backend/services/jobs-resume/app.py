@@ -96,6 +96,15 @@ def create_app():
     from blueprints.tech_chronicle import tech_chronicle_bp
     app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')
 
+    # Job Application Autofill Chrome extension backend. Mounted at a dedicated
+    # top-level /api/apply prefix (NOT under /api/resume) so its traffic shows
+    # up as its own route group in CloudWatch and is easy to monitor. This
+    # REQUIRES a matching "ANY /api/apply/{proxy+}" route in
+    # infrastructure/terraform/lambda.tf — without it the gateway silently
+    # returns the SPA index.html for /api/apply/* instead of hitting this Lambda.
+    from blueprints.apply import apply_bp
+    app.register_blueprint(apply_bp, url_prefix='/api/apply')
+
     # Health check endpoint
     @app.route('/api/health')
     def health():

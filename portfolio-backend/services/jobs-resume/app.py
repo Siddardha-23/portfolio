@@ -86,8 +86,12 @@ def create_app():
     from blueprints.resume import resume_bp
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
 
+    # Mounted UNDER /api/resume rather than a top-level /api/feedback so it
+    # rides the existing "ANY /api/resume/{proxy+}" API Gateway route to this
+    # Lambda. There is no /api/feedback route in the gateway, so a top-level
+    # mount would 404 at the edge and silently drop every submission.
     from blueprints.feedback import feedback_bp
-    app.register_blueprint(feedback_bp, url_prefix='/api/feedback')
+    app.register_blueprint(feedback_bp, url_prefix='/api/resume/feedback')
 
     from blueprints.tech_chronicle import tech_chronicle_bp
     app.register_blueprint(tech_chronicle_bp, url_prefix='/api/tech-chronicle')

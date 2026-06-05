@@ -2320,7 +2320,7 @@ class ApiService {
 
   // ── Feedback (user side) ──────────────────────────────────────
   async submitFeedback(message: string, type: "general" | "quota_bump" | "bug" | "idea" = "general") {
-    return this.request<{ id: string; status: string }>("/feedback/submit", {
+    return this.request<{ id: string; status: string }>("/resume/feedback/submit", {
       method: "POST",
       body: JSON.stringify({ message, type }),
     });
@@ -2337,7 +2337,7 @@ class ApiService {
         created_at: string | null;
         responded_at: string | null;
       }>;
-    }>("/feedback/mine");
+    }>("/resume/feedback/mine");
   }
 
   // ── Admin: user quota + feedback management ──────────────────

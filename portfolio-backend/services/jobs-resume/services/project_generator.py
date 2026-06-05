@@ -92,24 +92,50 @@ class ProjectGenerator:
         relevant_tech_str = ", ".join(relevant_tech[:10]) if relevant_tech else skills_text[:200]
         experience_block = _summarize_experience_bullets(original_resume)
 
+        # JD-required skills the candidate plausibly has — the project's
+        # primary anchor (project should showcase these, not random tech).
+        jd_required_in_resume = [
+            s for s in jd_required
+            if s.lower() in all_skills_lower
+            or re.search(r'\b' + re.escape(s.lower()) + r'\b', resume_text_lower)
+        ]
+        jd_anchor = ", ".join(jd_required_in_resume[:8]) if jd_required_in_resume else ""
+
         prompt = (
             "You are generating a single portfolio project entry for a resume.\n\n"
-            "COMPLEMENT, DON'T DUPLICATE — this is the most important rule:\n"
-            "  You will be shown the candidate's existing experience bullets below. The generated\n"
-            "  project must EXPAND THE CANDIDATE'S NARRATIVE by exploring a DIFFERENT domain, tech\n"
-            "  facet, or problem space than what the experience already demonstrates. If the\n"
-            "  experience already shows RabbitMQ event-driven work, do NOT propose a 'RabbitMQ\n"
-            "  decoupling' project — pick a different problem. If the experience already shows a\n"
-            "  Grafana observability dashboard, do NOT propose another observability dashboard.\n"
-            "  Restating an experience bullet as a project is a failure.\n\n"
-            "WORKFLOW — follow these steps IN ORDER (do not start with the name):\n"
-            "  STEP 1: Read the EXPERIENCE BULLETS block below and note what's already covered.\n"
-            "  STEP 2: Decide the project's PURPOSE — a problem NOT already covered by the\n"
-            "          experience. Write one sentence in the 'purpose' field.\n"
-            "  STEP 3: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
-            "  STEP 4: Write 3 bullets describing what was built and how, using that tech.\n"
-            "  STEP 5: ONLY NOW derive the project NAME from the purpose. The name describes WHAT\n"
-            "          it does, never WHO built it.\n\n"
+            "PROJECT MUST BE ALL THREE: defensible, JD-aligned, complementary to experience.\n"
+            "  Three constraints decide whether the project is acceptable. Skip any one and the\n"
+            "  project will be rejected:\n\n"
+            "  (A) DEFENSIBLE — the candidate could actually build this with the tech in their\n"
+            "      profile. No fake stacks, no domains they have no exposure to, no fabricated\n"
+            "      metrics. A technical interviewer asking 'tell me more' should get a coherent\n"
+            "      answer rooted in the candidate's real skills.\n\n"
+            "  (B) JD-ALIGNED — the project must SHOWCASE the JD's required skills, not the\n"
+            "      candidate's miscellaneous stack. Anchor the project's purpose to a problem\n"
+            "      that NATURALLY USES the JD-required skills listed below. If the JD wants\n"
+            "      C#/ASP.NET/Angular/Oracle and the candidate plausibly knows them, the\n"
+            "      project should be a C#/ASP.NET/Angular/Oracle project — not a Python/ELK\n"
+            "      project just because the candidate also knows Python and ELK.\n\n"
+            "  (C) COMPLEMENTARY, NOT DUPLICATIVE — explore a DIFFERENT domain than what the\n"
+            "      experience bullets below already demonstrate. Read them carefully. If the\n"
+            "      experience shows RabbitMQ event-driven work, do NOT propose a 'RabbitMQ\n"
+            "      decoupling' project. If the experience shows ELK Stack / structured logging,\n"
+            "      do NOT propose a 'log aggregation' or 'logging pipeline' project. If the\n"
+            "      experience shows a Grafana observability dashboard, do NOT propose another\n"
+            "      observability dashboard. Restating an experience bullet as a project is a\n"
+            "      failure.\n\n"
+            "WORKFLOW — follow IN ORDER (do not start with the name):\n"
+            "  STEP 1: List the JD-required skills the candidate plausibly knows (provided below).\n"
+            "          These are your project's tech anchors.\n"
+            "  STEP 2: Read the EXPERIENCE BULLETS block. List the domains/problems experience\n"
+            "          already covers — those are OFF LIMITS.\n"
+            "  STEP 3: Pick a project PURPOSE that uses the JD anchors (Step 1) AND solves a\n"
+            "          problem in a domain NOT covered by experience (Step 2). Write the\n"
+            "          one-sentence purpose into 'purpose'.\n"
+            "  STEP 4: Write the bullets — each must reference at least one JD-anchor skill\n"
+            "          naturally.\n"
+            "  STEP 5: ONLY NOW derive the NAME from the purpose. Name = WHAT it does, never\n"
+            "          WHO built it.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -131,9 +157,13 @@ class ProjectGenerator:
             "     - 'Portfolio', 'Project', 'Demo', 'Application', 'Platform' as filler\n"
             "     - Lists of techs in the name (e.g. 'Python & AWS Integration Platform')\n"
             "     - Anything describing WHO built it or WHAT ROLE it's for\n\n"
-            f"Candidate's skills: {skills_text[:300]}\n"
-            f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
-            f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
+            f"=== JD CONTEXT ===\n"
+            f"JD role: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
+            f"JD-REQUIRED SKILLS THE CANDIDATE PLAUSIBLY KNOWS (PRIMARY ANCHORS — use these for the project): "
+            f"{jd_anchor or '(none — fall back to general candidate skills, but only those most JD-adjacent)'}\n"
+            f"JD-relevant tech (broader, secondary): {relevant_tech_str}\n\n"
+            f"=== CANDIDATE'S OWN SKILLS (for plausibility checks; tech must come from this list) ===\n"
+            f"{skills_text[:400]}\n\n"
             + (
                 "=== EXPERIENCE BULLETS (DO NOT DUPLICATE these problems/solutions in your project) ===\n"
                 f"{experience_block}\n\n"
@@ -142,7 +172,7 @@ class ProjectGenerator:
             +
             "Return a JSON object with EXACTLY this structure:\n"
             "{\n"
-            '  "purpose": "One sentence: what real problem does this project solve? (must NOT overlap with experience above)",\n'
+            '  "purpose": "One sentence: what real problem does this project solve, using the JD-required skills, in a domain NOT covered by experience above?",\n'
             '  "name": "Project Name (derived from purpose — NOT starting from the name)",\n'
             '  "dates": "",\n'
             '  "bullets": [\n'
@@ -271,25 +301,54 @@ class ProjectGenerator:
 
         experience_block = _summarize_experience_bullets(original_resume)
 
+        # JD-required skills the candidate plausibly has (intersection of
+        # JD.required_skills with candidate.skills/text). This is the
+        # PRIMARY anchor for the project's purpose — the project should
+        # showcase these skills, not the candidate's overall stack.
+        jd_required_in_resume = [
+            s for s in jd_required
+            if s.lower() in all_skills_lower
+            or re.search(r'\b' + re.escape(s.lower()) + r'\b', resume_text_lower)
+        ]
+        jd_anchor = ", ".join(jd_required_in_resume[:8]) if jd_required_in_resume else ""
+
         prompt = (
             f"You are generating {count} portfolio project entries for a resume.\n\n"
-            "COMPLEMENT, DON'T DUPLICATE — this is the most important rule:\n"
-            "  You will be shown the candidate's existing experience bullets below. Each generated\n"
-            "  project must EXPAND THE CANDIDATE'S NARRATIVE by exploring a DIFFERENT domain, tech\n"
-            "  facet, or problem space than what the experience already demonstrates. If the\n"
-            "  experience already shows RabbitMQ event-driven work, do NOT propose a 'RabbitMQ\n"
-            "  decoupling' project. If the experience already shows a Grafana SLI/SLO dashboard,\n"
-            "  do NOT propose another observability dashboard. If the experience shows '420ms→95ms'\n"
-            "  API optimization, do NOT propose an 'API performance' project. Restating an\n"
-            "  experience bullet as a project is a failure.\n\n"
-            "WORKFLOW FOR EACH PROJECT — follow these steps IN ORDER (do not start with the name):\n"
-            "  STEP 1: Read the EXPERIENCE BULLETS block below and note what's already covered.\n"
-            "  STEP 2: Decide the project's PURPOSE — a problem NOT already covered by experience.\n"
-            "          Write it in 'purpose'.\n"
-            "  STEP 3: Pick a tech stack from the candidate's actual skills that would solve that problem.\n"
-            "  STEP 4: Write 3 bullets describing what was built and how.\n"
-            "  STEP 5: ONLY NOW derive the project NAME from the purpose. Name = WHAT it does,\n"
-            "          never WHO built it.\n\n"
+            "PROJECT MUST BE ALL THREE: defensible, JD-aligned, complementary to experience.\n"
+            "  Three constraints decide whether a project is acceptable. Skip any one and the\n"
+            "  project will be rejected:\n\n"
+            "  (A) DEFENSIBLE — the candidate could actually build this with the tech in their\n"
+            "      profile. No fake stacks, no domains they have no exposure to, no fabricated\n"
+            "      metrics. A recruiter glancing at the project should not be surprised; a\n"
+            "      technical interviewer asking 'tell me more' should get a coherent answer.\n\n"
+            "  (B) JD-ALIGNED — the project must SHOWCASE the JD's required skills, not the\n"
+            "      candidate's miscellaneous stack. Anchor the project's purpose to a problem\n"
+            "      that NATURALLY USES the JD-required skills listed below. If the JD wants\n"
+            "      C#/ASP.NET/Angular/Oracle and the candidate plausibly knows them, the\n"
+            "      project should be a C#/ASP.NET/Angular/Oracle project — not a Python/ELK\n"
+            "      project just because the candidate also knows Python and ELK.\n\n"
+            "  (C) COMPLEMENTARY, NOT DUPLICATIVE — the project must explore a DIFFERENT\n"
+            "      domain, tech facet, or problem space than what the experience bullets\n"
+            "      below already demonstrate. Read the EXPERIENCE BULLETS block carefully.\n"
+            "      If the experience shows RabbitMQ event-driven work, do NOT propose a\n"
+            "      'RabbitMQ decoupling' project. If the experience shows ELK Stack /\n"
+            "      structured logging / log alerting, do NOT propose a 'log aggregation' or\n"
+            "      'logging pipeline' project. If the experience shows API latency optimization,\n"
+            "      do NOT propose an 'API performance' project. If the experience shows a\n"
+            "      Grafana SLI/SLO dashboard, do NOT propose another observability dashboard.\n"
+            "      Restating an experience bullet as a project is a failure.\n\n"
+            "WORKFLOW — follow IN ORDER (do not start with the name):\n"
+            "  STEP 1: List the JD-required skills the candidate plausibly knows (provided\n"
+            "          below). These are your project's tech anchors.\n"
+            "  STEP 2: Read the EXPERIENCE BULLETS block. List the domains/problems\n"
+            "          experience already covers — those are OFF LIMITS.\n"
+            "  STEP 3: Pick a project PURPOSE that uses the JD anchors (Step 1) AND solves\n"
+            "          a problem in a domain NOT covered by experience (Step 2). Write the\n"
+            "          one-sentence purpose into 'purpose'.\n"
+            "  STEP 4: Write the bullets — each must reference at least one JD-anchor skill\n"
+            "          naturally. The reader should think 'this candidate built X with the\n"
+            "          exact tech this role uses'.\n"
+            "  STEP 5: ONLY NOW derive the NAME from the purpose. Name = WHAT it does.\n\n"
             "STRICT RULES — violations will be rejected:\n"
             "1. Use ONLY technologies that appear in the candidate's skills or experience below.\n"
             "2. Do NOT invent fake company names, production systems, or client work.\n"
@@ -311,9 +370,13 @@ class ProjectGenerator:
             "     - Anything describing WHO built it or WHAT ROLE it's for\n"
             f"9. Each project must be DISTINCT — different domains, different tech stacks.\n"
             f"{avoid_clause}\n"
-            f"Candidate's skills: {skills_text[:300]}\n"
-            f"JD domain: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
-            f"JD-relevant tech the candidate knows: {relevant_tech_str}\n\n"
+            f"=== JD CONTEXT ===\n"
+            f"JD role: {jd_title}" + (f" in {jd_industry}" if jd_industry else "") + "\n"
+            f"JD-REQUIRED SKILLS THE CANDIDATE PLAUSIBLY KNOWS (PRIMARY ANCHORS — use these for the project): "
+            f"{jd_anchor or '(none — fall back to general candidate skills, but only those most JD-adjacent)'}\n"
+            f"JD-relevant tech (broader, secondary): {relevant_tech_str}\n\n"
+            f"=== CANDIDATE'S OWN SKILLS (for plausibility checks; tech must come from this list) ===\n"
+            f"{skills_text[:400]}\n\n"
             + (
                 "=== EXPERIENCE BULLETS (DO NOT DUPLICATE these problems/solutions in any project) ===\n"
                 f"{experience_block}\n\n"
@@ -322,7 +385,8 @@ class ProjectGenerator:
             +
             "Return a JSON object with EXACTLY this structure:\n"
             '{"projects": [\n'
-            '  {"purpose": "One sentence: what problem this solves (must NOT overlap with experience above)", '
+            '  {"purpose": "One sentence: what problem this solves, using the JD-required skills, '
+            'in a domain NOT covered by experience above", '
             '"name": "Project Name (derived from purpose)", '
             '"dates": "", "bullets": ["Bullet 1", "Bullet 2", "Bullet 3"], "tech": "Tech1, Tech2"}\n'
             "]}\n\n"

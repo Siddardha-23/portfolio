@@ -22,12 +22,17 @@ This module replaces that with relevance-driven allocation:
 
 Guardrails
 ----------
-  * Floor of 2 bullets per experience role and per project (when the model
-    supplied at least that many) so no entry looks empty.
+  * Floor of 2 bullets per EXPERIENCE role (when the model supplied at least
+    that many) so a real job never looks empty. PROJECTS get NO reserved floor —
+    work experience always outweighs projects, so project bullets earn page
+    space only by competing in the greedy fill against (and after) experience.
+    A project appears on the page only when its bullets win the space; a project
+    that wins zero bullets is dropped entirely (no empty project header).
   * Recency bonus: ties break toward the most-recent role (experience arrives
     date-ordered, so index 0 = most recent).
-  * Experience-over-projects: when the budget is tight, project bullets yield
-    before experience bullets.
+  * Experience-over-projects: experience floors are locked first and every
+    project bullet is a fill candidate, so project content can never displace an
+    experience bullet — it only fills space experience didn't claim.
 
 The default scorer is JD-aware: it ranks each bullet by how many distinct JD
 terms it covers and whether it carries a quantified metric, then blends that
@@ -245,19 +250,25 @@ def allocate_bullets(
     for lst in by_entry.values():
         lst.sort(key=score, reverse=True)
 
-    # --- Seed: floor bullets per entry (cannot be dropped) ---
+    # --- Seed: floor bullets for EXPERIENCE ONLY (cannot be dropped) ---
+    # Projects get no reserved floor — their bullets all go into `remaining` and
+    # compete in the greedy fill, so work experience always wins page space first.
     selected: Dict[Tuple[str, int], List[str]] = {}
     remaining: List[Candidate] = []
     for key, lst in by_entry.items():
-        floor = lst[:_FLOOR_PER_ENTRY]
-        selected[key] = [c["text"] for c in floor]
-        remaining.extend(lst[_FLOOR_PER_ENTRY:])
+        section, _idx = key
+        if section == "experience":
+            floor = lst[:_FLOOR_PER_ENTRY]
+            selected[key] = [c["text"] for c in floor]
+            remaining.extend(lst[_FLOOR_PER_ENTRY:])
+        else:
+            selected[key] = []           # no project floor
+            remaining.extend(lst)        # every project bullet competes
 
-    # If even the floors overflow, drop the lowest-priority floor bullets
-    # (project floors before experience) until it fits. Never go below 1/entry.
+    # If even the experience floors overflow, drop the lowest-scored experience
+    # floor bullets until it fits. Never go below 1 bullet per role.
     _apply_selection(tailored, selected)
     if _measure(renderer, tailored) > avail:
-        # Build a droppable list: extra floor bullets (rank>=1) worst-first.
         droppable = sorted(
             (c for key in selected for c in by_entry[key]
              if c["text"] in selected[key]),
@@ -266,13 +277,16 @@ def allocate_bullets(
         for c in droppable:
             key = (c["section"], c["entry_idx"])
             if len(selected[key]) <= 1:
-                continue  # keep at least 1 per entry
+                continue  # keep at least 1 per role
             selected[key].remove(c["text"])
             _apply_selection(tailored, selected)
             if _measure(renderer, tailored) <= avail:
                 break
 
     # --- Greedy fill: add remaining candidates by score until next add overflows ---
+    # `remaining` holds extra experience bullets AND all project bullets. The
+    # scorer's +_EXPERIENCE_PRIORITY keeps experience ahead of equally-relevant
+    # project bullets, so projects fill only the space experience leaves behind.
     remaining.sort(key=score, reverse=True)
     for c in remaining:
         key = (c["section"], c["entry_idx"])
@@ -288,6 +302,20 @@ def allocate_bullets(
             # Keep trying lower-scored candidates — a shorter bullet elsewhere
             # may still fit even after a long one didn't.
             continue
+
+    # --- Drop projects that won zero bullets (no empty project headers) ---
+    projects = tailored.get("projects") or []
+    if projects:
+        kept_projects = [
+            p for pi, p in enumerate(projects)
+            if isinstance(p, dict) and selected.get(("project", pi))
+        ]
+        if len(kept_projects) != len(projects):
+            logger.info(
+                "Bullet allocation: dropped %d project(s) that won no bullets",
+                len(projects) - len(kept_projects),
+            )
+            tailored["projects"] = kept_projects
 
     counts = {k: len(v) for k, v in selected.items()}
     logger.info("Bullet allocation: %s (avail %.1fmm)", counts, avail)

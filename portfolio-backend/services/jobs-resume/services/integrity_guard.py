@@ -44,6 +44,7 @@ class IntegrityReport:
     ai_tell_substitutions: List[str] = field(default_factory=list)
     terminal_period_fixes: List[str] = field(default_factory=list)
     fabricated_certs_stripped: List[str] = field(default_factory=list)
+    nonskill_traits_stripped: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -181,11 +182,18 @@ class IntegrityGuard:
         tailored, stripped_certs = self.strip_fabricated_certs(original, tailored)
         report.fabricated_certs_stripped = stripped_certs
 
-        # NOTE: deterministic skill-content stripping (ungrounded-JD-skill and
-        # non-skill heuristics) was removed — on real resumes it both missed real
-        # garbage (JD product names) and stripped legitimately-grounded
-        # competencies. Skills-section quality is owned by the tailor prompt +
-        # model. Only the binary cert fabrication is blocked here.
+        # Step 4c: Strip JD soft-trait / working-style PROSE the model pasted
+        # into the skills section ("ownership and follow-through", "comfort with
+        # ambiguity"). This is a NARROW, profession-agnostic safety net for the
+        # scorer fix: even though required-skill alignment now credits evidence
+        # anywhere (removing the incentive to dump), the model still occasionally
+        # mirrors the JD's culture-fit phrasing into skills. We strip ONLY
+        # unambiguous multi-word trait phrases — never named technologies or
+        # grounded competencies. Job-titles / bare-domains / vague catch-alls
+        # stay the prompt's responsibility (too context-dependent to strip
+        # safely; broad stripping caused net harm on real resumes before).
+        tailored, stripped_traits = self.strip_nonskill_traits(tailored)
+        report.nonskill_traits_stripped = stripped_traits
 
         # Step 5: Check experience count
         report.experience_count_mismatch = (
@@ -235,7 +243,7 @@ class IntegrityGuard:
                 "IntegrityGuard report: severity=%s overwrites=%d "
                 "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s "
                 "banned_subs=%d dash_subs=%d ai_tell_subs=%d period_fixes=%d "
-                "fab_certs=%d",
+                "fab_certs=%d nonskill_traits=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
@@ -247,6 +255,7 @@ class IntegrityGuard:
                 len(report.ai_tell_substitutions),
                 len(report.terminal_period_fixes),
                 len(report.fabricated_certs_stripped),
+                len(report.nonskill_traits_stripped),
             )
 
         return tailored, report
@@ -474,6 +483,42 @@ class IntegrityGuard:
                 else:
                     kept.append(s)
             skills[category] = kept
+        tailored["skills"] = skills
+        return tailored, stripped
+
+    def strip_nonskill_traits(
+        self,
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Drop JD soft-trait / working-style prose pasted into the skills section.
+
+        Narrow safety net — removes ONLY unambiguous multi-word trait phrases
+        ('ownership and follow-through', 'comfort with ambiguity', 'collaborative
+        working style'). Named technologies, methods, and grounded competencies
+        are never matched by is_nonskill_soft_trait, so they survive. Empty
+        categories left behind are pruned.
+        """
+        from services.fabrication_filter import is_nonskill_soft_trait
+
+        skills = tailored.get("skills")
+        if not isinstance(skills, dict):
+            return tailored, []
+
+        stripped: List[str] = []
+        for category, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            kept = []
+            for s in items:
+                if isinstance(s, str) and is_nonskill_soft_trait(s):
+                    stripped.append(s)
+                else:
+                    kept.append(s)
+            if kept:
+                skills[category] = kept
+            else:
+                # Don't leave an empty category behind.
+                del skills[category]
         tailored["skills"] = skills
         return tailored, stripped
 
@@ -750,6 +795,7 @@ class IntegrityGuard:
             or report.ai_tell_substitutions
             or report.terminal_period_fixes
             or report.fabricated_certs_stripped
+            or report.nonskill_traits_stripped
         )
 
         if has_any_fix:

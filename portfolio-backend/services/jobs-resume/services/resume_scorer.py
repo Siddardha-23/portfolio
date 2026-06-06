@@ -138,7 +138,9 @@ class ResumeScorer:
 
         kw_score, found_kw, missing_kw = self._keyword_match_score(resume_text, all_kw)
         kw_freq_score = self._keyword_frequency_score(resume_text, all_kw)
-        skills_score = self._skills_alignment_score(tailored.get("skills", {}), required)
+        skills_score = self._skills_alignment_score(
+            tailored.get("skills", {}), required, resume_text
+        )
         section_score = self._section_completeness_score(tailored)
         impact_score = self._quantifiable_impact_score(tailored)
         format_score = 95  # We control the format — always ATS-friendly
@@ -219,15 +221,34 @@ class ResumeScorer:
         max_possible = len(keywords) * 2  # 2 per keyword is ideal
         return min(100, round((total_freq / max_possible) * 100)) if max_possible > 0 else 100
 
-    def _skills_alignment_score(self, resume_skills: dict, required_skills: List[str]) -> int:
-        """Percentage of required JD skills found in resume skills section.
+    def _skills_alignment_score(
+        self,
+        resume_skills: dict,
+        required_skills: List[str],
+        resume_text: str = "",
+    ) -> int:
+        """Percentage of required JD skills the resume DEMONSTRATES.
 
-        Uses normalization so "Postgres" in JD matches "PostgreSQL" in resume skills.
+        A required skill counts as aligned if it is backed ANYWHERE in the
+        resume — the skills section, an experience/project bullet, or the
+        summary — not only when its literal phrase sits in the skills list.
+
+        Why: the old version credited a requirement only when its exact phrase
+        appeared in the skills section. That rewarded keyword-dumping: the
+        tailoring model learned to paste JD phrases ("ownership and
+        follow-through", "comfort with ambiguity", a bare domain) straight into
+        skills to score, producing keyword soup a human recruiter rejects.
+        Crediting evidence anywhere removes that incentive — a competency
+        demonstrated in a bullet or stated in the summary scores the same as a
+        skills-list entry, so the model is free to put each item where it
+        honestly belongs. Alias/word-boundary aware via get_all_forms, mirroring
+        _keyword_match_score.
         """
         if not required_skills:
             return 100
 
-        # Flatten and normalize all resume skills
+        # Flatten + normalize the structured skills section (kept for the
+        # primary, highest-confidence match).
         flat_skills = set()
         if isinstance(resume_skills, dict):
             for skill_list in resume_skills.values():
@@ -236,10 +257,21 @@ class ResumeScorer:
         elif isinstance(resume_skills, list):
             flat_skills.update(normalize_single(s).lower() for s in resume_skills)
 
-        found = sum(
-            1 for skill in required_skills
-            if normalize_single(skill).lower() in flat_skills
-        )
+        text_lower = (resume_text or "").lower()
+
+        def _is_backed(skill: str) -> bool:
+            # 1) exact normalized presence in the structured skills section
+            if normalize_single(skill).lower() in flat_skills:
+                return True
+            # 2) any alias of the skill present anywhere in the resume text
+            #    (bullets / summary / skills), word-boundary aware
+            if text_lower:
+                for form in get_all_forms(skill):
+                    if self._text_contains(text_lower, form):
+                        return True
+            return False
+
+        found = sum(1 for skill in required_skills if _is_backed(skill))
         return round((found / len(required_skills)) * 100)
 
     def _section_completeness_score(self, tailored: Dict[str, Any]) -> int:

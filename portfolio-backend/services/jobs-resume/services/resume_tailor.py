@@ -28,7 +28,6 @@ from schemas.resume_schemas import (
     build_resume_text,
 )
 from services.integrity_guard import IntegrityGuard
-from services.fabrication_filter import is_fabricated_certification
 from utils.keyword_normalizer import (
     normalize_single,
     get_all_forms,
@@ -96,7 +95,6 @@ class ResumeTailor:
 
         def _finalize(t: Dict[str, Any]) -> Dict[str, Any]:
             t = self._restore_contact(t, structured_resume)
-            t = self._strip_fabricated_langs(t, structured_resume)
             t = self._ensure_jd_skills_coverage(t, structured_resume, jd_analysis)
             t = self._cap_skills_per_category(t, structured_resume, jd_analysis)
             t = self._allocate_bullets(t, jd_analysis)
@@ -280,89 +278,15 @@ class ResumeTailor:
             logger.info("Tailor: restored original contact fields")
         return tailored
 
-    # Concrete languages we won't inject if the candidate doesn't have them.
-    # Tags like "Backend Engineering" or "Distributed Systems" are disciplines
-    # the candidate plausibly does — but you can't add "Go" you don't know.
-    _CONCRETE_LANGS_UNSAFE = {
-        "go", "golang", "rust", "scala", "kotlin", "c#", "csharp", "ruby",
-        "php", "perl", "elixir", "haskell", "dart", "clojure", "erlang",
-        "swift", "objective-c", "f#",
-    }
-
-    # Categories where each kind of injected skill belongs.
-    _DATA_TERMS = {
-        "relational databases", "data modeling", "event modeling",
-        "postgresql", "mysql", "oracle", "sql server", "data lakes",
-        "data warehousing", "etl", "elt",
-    }
-    _PLATFORM_TERMS = {
-        "backend engineering", "platform engineering", "shared services",
-        "service performance optimization", "performance optimization",
-        "production environment", "scalable systems", "system design",
-        "distributed systems", "microservices", "api design",
-        "restful apis", "rest apis", "event-driven architecture",
-        "cross-functional collaboration",
-    }
-
-    @staticmethod
-    def _titlecase_term(term: str) -> str:
-        """Title-case unknown canonical forms so injected skills don't look
-        out of place next to title-case existing skills. Preserves all-caps
-        acronyms (API, REST, JWT, etc.) and inline punctuation."""
-        if not term:
-            return term
-        words = term.split()
-        out = []
-        for w in words:
-            if w.isupper() and len(w) <= 5:  # acronym
-                out.append(w)
-            elif "-" in w:
-                out.append("-".join(part.capitalize() for part in w.split("-")))
-            else:
-                out.append(w[:1].upper() + w[1:])
-        return " ".join(out)
-
-    @classmethod
-    def _strip_fabricated_langs(
-        cls,
-        tailored: Dict[str, Any],
-        original: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Remove concrete programming languages from tailored skills that
-        the candidate never used in the original resume. The LLM sometimes
-        copies JD required_skills like 'Go' or 'Rust' into the skills list
-        even when the candidate has no exposure — that's fabrication and
-        gets candidates filtered on technical screens.
-        """
-        skills = tailored.get("skills", {})
-        if not isinstance(skills, dict):
-            return tailored
-
-        original_text_lower = build_resume_text(original).lower()
-        stripped: List[str] = []
-        for cat, items in list(skills.items()):
-            if not isinstance(items, list):
-                continue
-            kept = []
-            for s in items:
-                s_lower = (normalize_single(s) or s).lower().strip()
-                if s_lower in cls._CONCRETE_LANGS_UNSAFE:
-                    # Word-boundary check — "go" must appear as its own word,
-                    # not as a substring of "Mongo", "Argo", "GitOps", etc.
-                    forms = get_all_forms(s) or [s_lower]
-                    present = any(
-                        re.search(r"(?<![a-zA-Z])" + re.escape(f.lower()) + r"(?![a-zA-Z])", original_text_lower)
-                        for f in forms
-                    )
-                    if not present:
-                        stripped.append(s)
-                        continue
-                kept.append(s)
-            skills[cat] = kept
-        if stripped:
-            logger.info("Tailor: stripped fabricated languages from skills: %s", stripped)
-        tailored["skills"] = skills
-        return tailored
+    # NOTE: a former _strip_fabricated_langs step (which deleted ungrounded
+    # concrete languages like Go/Rust/C# from skills) was removed. It contradicted
+    # the tailor prompt, which now instructs the model to ADD defensible adjacent
+    # languages (e.g. C# for a strong Python dev) — a correct, interview-defensible
+    # addition that passes ATS. Language defensibility is a JUDGMENT call and
+    # therefore the model's job ("model decides, code guards floors"); the only
+    # deterministic skill floors are the binary cert block and the narrow
+    # non-skill/soft-trait strip. A truly cross-domain language with no bridge is
+    # forbidden by the prompt and surfaced to the user by the match-gap reporter.
 
     # Maximum items per skills category — keeps the rendered block to ~2
     # lines per category at 10pt with 11mm L/R margins. The LLM sometimes
@@ -487,48 +411,37 @@ class ResumeTailor:
         original: Dict[str, Any],
         jd_analysis: Dict[str, Any],
     ) -> Dict[str, Any]:
-        """Deterministically inject missing JD required_skills + high-value
-        keywords into the tailored skills section.
+        """Clean the model's skills section — does NOT inject JD phrases.
 
-        The LLM is often conservative — even when told to mirror JD skills,
-        it omits canonical ATS terms ("Backend Engineering", "Data Modeling",
-        "Distributed Systems") because they feel redundant with concrete
-        bullets. This deterministic step closes the alignment gap directly:
-          - Skills Alignment score = % of required_skills present in
-            tailored.skills (flat). Each injection bumps it ~10pts.
-          - Keyword Match / Keyword Frequency benefit too, since the new
-            terms now appear in the resume text and (via skills section)
-            give a second occurrence on top of any bullet mentions.
+        HISTORY (why this no longer injects): this method used to paste ALL of
+        jd_analysis["required_skills"] (+ top keywords) into the skills section
+        to drive the Skills Alignment scorer, which credited a requirement only
+        when its literal phrase sat in the skills list. That scorer is now fixed
+        (resume_scorer._skills_alignment_score credits a requirement backed
+        ANYWHERE in the resume — bullets/summary/skills), so injection no longer
+        buys any score. Worse, it ran AFTER IntegrityGuard and re-introduced the
+        exact garbage the guard had stripped: JD soft-trait prose ("comfort with
+        ambiguity", "collaborative working style"), bare domains ("clinical
+        workflows", "EHR integration"), and vague phrases — because production JD
+        `required_skills` lists contain all of those. A human recruiter rejects a
+        skills section that mirrors the JD verbatim. So injection is DISABLED.
 
-        Safety:
-          - Never injects concrete languages (Go, Rust, etc.) the candidate
-            doesn't already use anywhere in the original resume.
-          - Skips anything already present (alias-aware).
-          - Only touches tailored.skills, never bullets or summary.
+        What this still does (pure cleanup, never additive):
+          - Noise-sweep: drop job-title fragments / company name / industry tags
+            the MODEL itself copied into a skills category.
+          - Soft-trait strip: drop JD culture-fit prose the model pasted in
+            (narrow, profession-agnostic; see fabrication_filter).
+        Skills CONTENT is the model's job (governed by the prompt); we only
+        remove the unambiguous non-skills it occasionally emits.
         """
         skills = tailored.get("skills", {})
         if not isinstance(skills, dict) or not skills:
             return tailored
 
-        # Inject ALL required_skills (drives the Skills Alignment scorer,
-        # 20% of overall ATS weight). Cap keyword injection to 4 — each
-        # additional keyword adds ~3-4 chars to a skills line; injecting
-        # all 12 JD keywords bloats the section by 1-2 lines and overflows
-        # the 10pt budget on a one-page A4.
-        required = list(jd_analysis.get("required_skills", []) or [])
-        keywords = list(jd_analysis.get("keywords", []) or [])
-        targets: List[str] = list(dict.fromkeys(required)) + [
-            kw for kw in dict.fromkeys(keywords) if kw not in required
-        ][:4]
-        if not targets:
-            return tailored
-
         # Hard blacklist — production JD analyses pollute keywords with
         # job-title fragments ("Backend Engineer", "Software Engineer II",
         # "Platform Team"), the company name ("Rippling"), and industry
-        # tags ("HR Tech"). Those aren't skills, and injecting them
-        # bloats the skills section by ~2 lines — pushing total fill past
-        # 100% at 10pt and forcing the renderer's auto-shrink to 9.5pt.
+        # tags ("HR Tech"). The model sometimes copies those into skills.
         company_name = (jd_analysis.get("company") or "").strip().lower()
         industry_raw = (jd_analysis.get("industry") or "").strip().lower()
         # Industry often comes as "HR Tech / SaaS" — split on "/" so each
@@ -563,111 +476,30 @@ class ResumeTailor:
                 return True
             return any(p.search(t) for p in noise_patterns)
 
-        # First sweep: strip noise terms the LLM itself put in skills.
-        # Real-world JDs encode the company name + job title prominently
-        # and Claude sometimes copies those into skills categories.
+        # Sweep: strip noise terms the model put in skills, and prune any
+        # category left empty.
+        from services.fabrication_filter import is_nonskill_soft_trait
+
+        removed: List[str] = []
         for cat, items in list(skills.items()):
             if not isinstance(items, list):
                 continue
-            skills[cat] = [s for s in items if not _is_noise(s)]
-
-        # Flatten current skills (canonical form, lowercase) for alias-aware lookup.
-        existing_lower = set()
-        for items in skills.values():
-            if not isinstance(items, list):
-                continue
+            kept = []
             for s in items:
-                existing_lower.add(s.lower().strip())
-                existing_lower.add(normalize_single(s).lower())
-
-        # Original text — used to bail on concrete langs the candidate doesn't know.
-        original_text_lower = build_resume_text(original).lower()
-
-        # Find/choose target categories. Prefer the most specific match;
-        # avoid generic words like "system" which can hit "AI & Knowledge
-        # Systems" and pull discipline terms into the wrong bucket.
-        cats = list(skills.keys())
-        backend_cat = (
-            next((c for c in cats if "backend" in c.lower() and "api" in c.lower()), None)
-            or next((c for c in cats if "backend" in c.lower()), None)
-            or next((c for c in cats if "api" in c.lower()), None)
-            or next((c for c in cats if "platform" in c.lower()), None)
-        )
-        data_cat = next(
-            (c for c in cats if any(h in c.lower() for h in ("data", "database"))),
-            None,
-        )
-        soft_cat = next(
-            (c for c in cats if "collaboration" in c.lower()),
-            None,
-        )
-
-        # If no backend-ish category exists, create one so injected terms
-        # don't get dumped into an unrelated bucket (e.g. "AI & Knowledge
-        # Systems"). Title-cased to fit the existing category style.
-        if backend_cat is None:
-            backend_cat = "Backend & API"
-            skills[backend_cat] = []
-            cats.append(backend_cat)
-
-        injected: List[str] = []
-        for target in targets:
-            canonical = normalize_single(target)
-            canonical_lower = canonical.lower().strip()
-            if not canonical:
-                continue
-
-            # Blacklist guard — job titles, company names, etc.
-            if _is_noise(canonical) or _is_noise(target):
-                continue
-
-            # Skip if any alias is already present.
-            forms = get_all_forms(target)
-            if any(f.lower() in existing_lower for f in forms):
-                continue
-            if canonical_lower in existing_lower:
-                continue
-
-            # Hard safety: never auto-inject a certification the candidate does
-            # not hold — it's binary and indefensible. (Skill/tool defensibility
-            # is the model's call, not this deterministic injector's.)
-            if is_fabricated_certification(target, original):
-                continue
-
-            # Don't fabricate a concrete programming language the candidate has
-            # never used — auto-injecting "Go"/"Rust" into skills is our code
-            # being reckless, distinct from the model defensibly mentioning it.
-            if canonical_lower in cls._CONCRETE_LANGS_UNSAFE:
-                present = any(
-                    re.search(r"(?<![a-zA-Z])" + re.escape(f.lower()) + r"(?![a-zA-Z])", original_text_lower)
-                    for f in forms
-                )
-                if not present:
-                    continue
-
-            # Choose category.
-            if canonical_lower in cls._DATA_TERMS:
-                target_cat = data_cat or backend_cat or cats[0]
-            elif canonical_lower in cls._PLATFORM_TERMS:
-                target_cat = backend_cat or cats[0]
-            elif "collaboration" in canonical_lower or "stakeholder" in canonical_lower:
-                target_cat = soft_cat or backend_cat or cats[0]
+                if isinstance(s, str) and (_is_noise(s) or is_nonskill_soft_trait(s)):
+                    removed.append(s)
+                else:
+                    kept.append(s)
+            if kept:
+                skills[cat] = kept
             else:
-                # Generic concrete tech / library — backend bucket as default.
-                target_cat = backend_cat or cats[0]
+                del skills[cat]
 
-            if not isinstance(skills.get(target_cat), list):
-                skills[target_cat] = []
-            display_form = cls._titlecase_term(canonical)
-            skills[target_cat].append(display_form)
-            existing_lower.add(canonical_lower)
-            injected.append(display_form)
-
-        if injected:
+        if removed:
             logger.info(
-                "Tailor: injected %d JD-aligned skills into skills section: %s",
-                len(injected),
-                injected,
+                "Tailor: stripped %d non-skill terms from skills section: %s",
+                len(removed),
+                removed,
             )
         tailored["skills"] = skills
         return tailored
@@ -826,6 +658,34 @@ class ResumeTailor:
             "      candidate's real history supports them. A skills list that mirrors the JD's\n"
             "      requirements verbatim (e.g. pasting 'CUDA, OpenGL, Medical Device Software\n"
             "      Development' onto a cloud engineer's resume) is keyword-stuffing and is rejected.\n\n"
+
+            "    SORT THE JD'S 'REQUIREMENTS' INTO TWO PILES — this is the key skills decision:\n"
+            "    PILE 1 = REAL, NAMED, TEACHABLE SKILLS the JD asks for: a technology, tool,\n"
+            "      language, framework, database, or named method/technique (Java, Kafka, GraphQL,\n"
+            "      Terraform, pytest; or for non-tech roles: Power BI, variance analysis, GA4, Six\n"
+            "      Sigma method, SQL). These are what the ATS actually checks and what a recruiter\n"
+            "      expects. You SHOULD ADD these to the skills section when they are DEFENSIBLE for\n"
+            "      this candidate — meaning the candidate already has it OR it is genuinely ADJACENT\n"
+            "      to something they have (Java for a strong Python/C# dev; GraphQL for someone who\n"
+            "      builds REST APIs; Power BI for a strong Tableau user). Adding defensible adjacent\n"
+            "      tech is CORRECT, not fabrication — the candidate can speak to it in an interview\n"
+            "      because the core concepts transfer. Do NOT add a PILE-1 tech from a DIFFERENT\n"
+            "      profession/domain with no bridge (Salesforce for a backend dev; OpenGL for a cloud\n"
+            "      engineer) — that has no transferable analog and is not defensible.\n"
+            "    PILE 2 = NOT SKILLS — these are WAYS OF WORKING ON skills, value statements, or\n"
+            "      role/discipline labels, NOT teachable capabilities:\n"
+            "        * Discipline / job-shaped labels: 'Full-Stack Development', 'Software\n"
+            "          Engineering', 'Backend Development', 'Data Analysis' (as a bare label).\n"
+            "        * Quality / value statements: 'Code Quality', 'Clean and Testable Code', 'Error\n"
+            "          Handling and Observability', 'Best Practices', 'Scalability'.\n"
+            "        * Soft traits / working style: 'Ownership', 'Comfort with Ambiguity',\n"
+            "          'Collaborative Working Style', 'Attention to Detail'.\n"
+            "        * Bare domains: 'Clinical Workflows', 'Healthcare', 'FinTech'.\n"
+            "        * Vague catch-alls: 'AI Coding Tools', 'Modern Tooling'.\n"
+            "      NEVER put PILE 2 in the skills section — a recruiter reads those as keyword soup\n"
+            "      and rejects the resume. They belong in the SUMMARY as prose (e.g. a full-stack dev\n"
+            "      who owns quality and works well in ambiguity), backed by the PILE-1 skills that\n"
+            "      actually deliver them (React + Node + PostgreSQL; pytest + TDD + code review).\n\n"
 
             "(D) METRICS — PRESERVATION IS MANDATORY, ADDITION IS BOUNDED:\n"
             "    This is the rule the model violates most often. Read it carefully.\n"

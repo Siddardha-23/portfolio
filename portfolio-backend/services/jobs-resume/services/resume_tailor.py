@@ -28,6 +28,7 @@ from schemas.resume_schemas import (
     build_resume_text,
 )
 from services.integrity_guard import IntegrityGuard
+from services.fabrication_filter import is_fabricated_certification
 from utils.keyword_normalizer import (
     normalize_single,
     get_all_forms,
@@ -101,6 +102,11 @@ class ResumeTailor:
             t = self._allocate_bullets(t, jd_analysis)
             if target_role:
                 t["target_role"] = target_role
+            # Match-gap report: tell the user which JD requirements they
+            # genuinely lack, tiered by interview-defensibility. Computed on the
+            # cleaned/allocated resume so gaps reflect the honest document.
+            # Never raises (degrades to a safe report internally).
+            t["match_gaps"] = self._build_match_gaps(t, jd_analysis)
             return t
 
         prompt = self._build_tailor_prompt(
@@ -413,6 +419,20 @@ class ResumeTailor:
             tailored, ResumeRenderer(), jd_analysis=jd_analysis
         )
 
+    @staticmethod
+    def _build_match_gaps(
+        tailored: Dict[str, Any], jd_analysis: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """User-facing match-gap report (tiered by interview-defensibility).
+
+        Thin wrapper over services.match_gap_reporter.build_match_gaps, which
+        runs deterministic gap detection and (only if gaps exist) a small Claude
+        call to tier them. Never raises. See services/match_gap_reporter.py.
+        """
+        from services.match_gap_reporter import build_match_gaps
+
+        return build_match_gaps(tailored, jd_analysis)
+
     @classmethod
     def _cap_skills_per_category(
         cls,
@@ -607,7 +627,15 @@ class ResumeTailor:
             if canonical_lower in existing_lower:
                 continue
 
-            # Hard safety: don't fabricate concrete languages.
+            # Hard safety: never auto-inject a certification the candidate does
+            # not hold — it's binary and indefensible. (Skill/tool defensibility
+            # is the model's call, not this deterministic injector's.)
+            if is_fabricated_certification(target, original):
+                continue
+
+            # Don't fabricate a concrete programming language the candidate has
+            # never used — auto-injecting "Go"/"Rust" into skills is our code
+            # being reckless, distinct from the model defensibly mentioning it.
             if canonical_lower in cls._CONCRETE_LANGS_UNSAFE:
                 present = any(
                     re.search(r"(?<![a-zA-Z])" + re.escape(f.lower()) + r"(?![a-zA-Z])", original_text_lower)
@@ -708,32 +736,75 @@ class ResumeTailor:
             "    Don't write '3+ years' when JD wants 5+ — that highlights the gap.\n\n"
 
             "(B) THE DEFENSIBILITY + BLENDABILITY TEST — governs ALL additions:\n"
-            "    This applies to skills, sub-tasks inside experience bullets, technical details in\n"
-            "    project bullets, tools, methodologies, and any technical claim.\n"
+            "    Applies to skills, sub-tasks inside experience bullets, details in project/\n"
+            "    engagement bullets, tools, methods, and any claim — for ANY profession (technical\n"
+            "    or non-technical). The test is identical regardless of field.\n"
             "    You MAY add content if BOTH are true:\n"
             "      1. DEFENSIBLE — the candidate could confidently explain it in an interview given\n"
-            "         the rest of their background. The addition must fit their stack, role, and\n"
-            "         seniority. A recruiter glancing at the bullet should not be surprised; a\n"
-            "         hiring manager asking 'tell me more about that' should get a coherent answer.\n"
+            "         the rest of their background. The addition must fit their actual work, role,\n"
+            "         and seniority. A recruiter glancing at it should not be surprised; a hiring\n"
+            "         manager asking 'tell me more about that' should get a coherent answer.\n"
             "      2. BLENDABLE — the addition reads as a natural extension of an existing bullet\n"
             "         or skill group: same voice, same scope, same seniority. If you add a JD skill\n"
             "         to the skills section, you should ALSO extend at least one existing bullet to\n"
             "         use it in context. Skills must not appear only as orphan keywords.\n"
-            "    Examples of GOOD additions (covered in the FEW-SHOT section below):\n"
-            "      - Adding AWS Lambda when candidate already uses AWS EC2, AND extending the\n"
-            "        deployment bullet to mention Lambda for event-driven work.\n"
-            "      - Adding 'versioning, authentication, rate-limiting' to an existing 'Built REST\n"
-            "        APIs' bullet — standard concerns the candidate would have encountered.\n"
-            "      - Adding 'custom analyzers for fuzzy matching' to an existing Elasticsearch\n"
-            "        project — natural depth for anyone who built ES search.\n\n"
+            "    Examples of GOOD additions, across professions:\n"
+            "      - (Engineering) Adding 'AWS Lambda' when the candidate already uses AWS EC2, AND\n"
+            "        extending a deployment bullet to mention it for event-driven work.\n"
+            "      - (Analytics) Adding 'cohort/retention analysis' to an analyst who already builds\n"
+            "        dashboards and writes SQL — a standard extension of that work.\n"
+            "      - (Finance) Adding 'variance analysis' to an FP&A analyst who already owns the\n"
+            "        monthly forecast — implied by the role.\n"
+            "      - (Marketing) Adding 'A/B testing of ad creative' to someone already running\n"
+            "        paid campaigns — a natural part of that responsibility.\n"
+            "      - (Operations/PM) Adding 'stakeholder reporting cadence' to a PM who already runs\n"
+            "        sprints and status updates.\n"
+            "    The common thread: each addition is something the candidate plausibly already did\n"
+            "    or could speak to — never a different profession's expertise.\n\n"
 
-            "(C) PLAUSIBILITY CUTOFF — never add:\n"
-            "    - Cross-ecosystem tech (Azure when only AWS is shown; Go when only Python/JS).\n"
-            "    - Domain claims with no exposure (HIPAA/SOX/PCI when no matching work history).\n"
+            "(C) PLAUSIBILITY CUTOFF — these rules apply to EVERY profession (engineering,\n"
+            "    business, analytics, healthcare, finance, marketing, operations, design, legal,\n"
+            "    etc.), not just technical roles. The principle is the same for all: judge by\n"
+            "    whether THIS candidate could defend the addition given their actual background.\n"
+            "    Never add:\n"
+            "    - A DIFFERENT-ECOSYSTEM / different-domain tool or platform with no analog in the\n"
+            "      candidate's real work. NOTE: an ADJACENT skill, tool, language, or method whose\n"
+            "      CORE CONCEPTS TRANSFER from what the candidate already does IS DEFENSIBLE and MAY\n"
+            "      be presented as a transferable strength — just don't claim deep YEARS in it or\n"
+            "      invent a whole project/engagement around it. Examples ACROSS professions:\n"
+            "        * Engineer: C# for a strong Python/Java dev; Angular for a React dev.\n"
+            "        * Data analyst: Power BI for a strong Tableau user; SQL window functions for\n"
+            "          someone already writing complex SQL.\n"
+            "        * Finance/accounting: IFRS familiarity for a strong US-GAAP accountant;\n"
+            "          a new ERP's reporting module for someone fluent in another ERP's reporting.\n"
+            "        * Marketing: paid-social on a new platform for someone running paid-search;\n"
+            "          GA4 for a seasoned web-analytics marketer.\n"
+            "        * Healthcare/PM/ops: a new EHR or ticketing system for someone who ran an\n"
+            "          equivalent one; a new framework (Scrum vs Kanban) for an experienced PM.\n"
+            "      The bridge must be REAL (same underlying concepts), not wishful (a different\n"
+            "      profession's expertise).\n"
+            "    - Domain/compliance claims with no exposure (HIPAA/SOX/PCI/GDPR, clinical\n"
+            "      licensure, bar admission, etc. when no matching history exists).\n"
             "    - Seniority signals that contradict reality (leading a team when they were an IC,\n"
-            "      managing a budget when no management context exists).\n"
+            "      owning a budget/P&L when no such context exists).\n"
             "    - New companies, job titles, employment dates, degrees, or certifications. These\n"
-            "      are immutable (see next section).\n\n"
+            "      are immutable (see next section).\n"
+            "    - A SPECIFIC NAMED THIRD-PARTY PRODUCT / VENDOR / SYSTEM the candidate never used —\n"
+            "      EVEN IF THE JOB DESCRIPTION LISTS IT. A named commercial product is a verifiable\n"
+            "      claim: the candidate either operated it or did not. This holds for ALL fields —\n"
+            "      e.g. Qualys, Wiz, ServiceNow, Splunk (tech); Salesforce, HubSpot, Marketo\n"
+            "      (sales/marketing); SAP, Oracle Financials, Workday, NetSuite (finance/HR); Epic,\n"
+            "      Cerner (healthcare); Tableau, Power BI (analytics). Do NOT inject such a product\n"
+            "      into skills or weave it into a bullet unless that exact product already appears\n"
+            "      in the ORIGINAL resume. By contrast, GENERIC role-standard skills anyone in the\n"
+            "      role can defend (e.g. Git/SQL/REST/Agile for engineers; Excel/forecasting/\n"
+            "      stakeholder management for analysts & business roles; charting/segmentation for\n"
+            "      marketers) remain fine to add per the Defensibility test.\n"
+            "    - CERTIFICATIONS / LICENSES anywhere. Never list a certification or license the\n"
+            "      candidate does not hold (e.g. PMP, CPA, AWS Certified, Six Sigma, RN license) —\n"
+            "      and never smuggle one into the SKILLS section to dodge this rule (e.g.\n"
+            "      'X Implementation Specialist Certification' as a skill). Certifications live ONLY\n"
+            "      in the certifications field and are copied verbatim from the original.\n\n"
 
             "(D) METRICS — PRESERVATION IS MANDATORY, ADDITION IS BOUNDED:\n"
             "    This is the rule the model violates most often. Read it carefully.\n"
@@ -945,6 +1016,19 @@ class ResumeTailor:
             "    (Generic opener, no years cited.)\n"
             "  BAD opener: 'Backend engineer with 5+ years building...' (Inflated.)\n"
             "  BAD opener: 'Backend engineer with 3+ years...' (Honest but highlights the gap — use generic.)\n\n"
+
+            "Example E — NON-TECHNICAL role (the SAME rules apply to every profession):\n"
+            "  Role: Financial Analyst. JD requires: variance analysis, Power BI, scenario modeling.\n"
+            "  Candidate's resume: owns the monthly forecast in Excel, builds Tableau dashboards.\n"
+            "  GOOD: Add 'variance analysis' and 'scenario modeling' to skills AND extend a bullet →\n"
+            "    'Owned the monthly revenue forecast in Excel, running variance analysis against actuals and\n"
+            "    scenario models to flag budget risk to finance leadership.'\n"
+            "    (Defensible — implied by owning the forecast; blendable — same voice. 'Power BI' is\n"
+            "    defensible to list as a transferable strength for a strong Tableau user, but do NOT claim\n"
+            "    years in it or invent a Power BI project.)\n"
+            "  BAD: Add 'CPA' or 'CFA' to skills. (A credential not held — fabrication, regardless of field.)\n"
+            "  BAD: Add 'SAP' or 'Oracle Financials' when the candidate never used them. (Named product\n"
+            "    they didn't operate — same rule as Qualys/ServiceNow for engineers.)\n\n"
 
             # ----------------------------------------------------------------
             # JSON SCHEMA

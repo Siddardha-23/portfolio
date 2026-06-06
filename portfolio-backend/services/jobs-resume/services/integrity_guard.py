@@ -43,6 +43,7 @@ class IntegrityReport:
     unicode_dash_substitutions: List[str] = field(default_factory=list)
     ai_tell_substitutions: List[str] = field(default_factory=list)
     terminal_period_fixes: List[str] = field(default_factory=list)
+    fabricated_certs_stripped: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -169,6 +170,13 @@ class IntegrityGuard:
             c for c in original_certs if isinstance(c, str) and c.strip()
         ]
 
+        # Step 4b: Strip fabricated certifications the LLM placed in the skills
+        # section (the back door around the certifications field). This is the
+        # ONLY fabrication we block deterministically — a cert is binary (held or
+        # not). Defensibility of skills/tools is the model's job, not ours.
+        tailored, stripped_certs = self.strip_fabricated_certs(original, tailored)
+        report.fabricated_certs_stripped = stripped_certs
+
         # Step 5: Check experience count
         report.experience_count_mismatch = (
             len(tailored.get("experience", []))
@@ -216,7 +224,8 @@ class IntegrityGuard:
             logger.warning(
                 "IntegrityGuard report: severity=%s overwrites=%d "
                 "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s "
-                "banned_subs=%d dash_subs=%d ai_tell_subs=%d period_fixes=%d",
+                "banned_subs=%d dash_subs=%d ai_tell_subs=%d period_fixes=%d "
+                "fab_certs=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
@@ -227,6 +236,7 @@ class IntegrityGuard:
                 len(report.unicode_dash_substitutions),
                 len(report.ai_tell_substitutions),
                 len(report.terminal_period_fixes),
+                len(report.fabricated_certs_stripped),
             )
 
         return tailored, report
@@ -419,6 +429,43 @@ class IntegrityGuard:
 
         tailored["projects"] = tail_projects
         return tailored, cap_enforced
+
+    # ------------------------------------------------------------------
+    # 4b. Anti-fabrication: strip certifications not held
+    # ------------------------------------------------------------------
+
+    def strip_fabricated_certs(
+        self,
+        original: Dict[str, Any],
+        tailored: Dict[str, Any],
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Drop certification claims from skills that aren't in the base resume.
+
+        A cert is binary (held or not) — the one fabrication we block
+        deterministically. The model placing a cert in the skills section is the
+        back door around the certifications field; we close it here. Skill/tool
+        defensibility (e.g. C# for a Python dev) is the model's judgment, not
+        ours, so ordinary skills are left untouched.
+        """
+        from services.fabrication_filter import is_fabricated_certification
+
+        skills = tailored.get("skills")
+        if not isinstance(skills, dict):
+            return tailored, []
+
+        stripped: List[str] = []
+        for category, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            kept = []
+            for s in items:
+                if isinstance(s, str) and is_fabricated_certification(s, original):
+                    stripped.append(s)
+                else:
+                    kept.append(s)
+            skills[category] = kept
+        tailored["skills"] = skills
+        return tailored, stripped
 
     # ------------------------------------------------------------------
     # 4. Banned-phrase auto-substitution
@@ -692,6 +739,7 @@ class IntegrityGuard:
             or report.unicode_dash_substitutions
             or report.ai_tell_substitutions
             or report.terminal_period_fixes
+            or report.fabricated_certs_stripped
         )
 
         if has_any_fix:

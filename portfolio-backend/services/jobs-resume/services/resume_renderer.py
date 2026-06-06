@@ -20,7 +20,7 @@ class ResumeRenderer:
     # changes live here in the renderer, not the content, so without a version
     # tag a cache "hit" would keep serving a PDF rendered by the OLD code.
     # Including this in the cache key forces a re-render after any format fix.
-    RENDER_VERSION = "2026-06-05.1"
+    RENDER_VERSION = "2026-06-06.2"
 
     @staticmethod
     def _contact_display(key: str, value: str) -> tuple:
@@ -105,21 +105,21 @@ class ResumeRenderer:
     # one page for typical 2-experience + up-to-3-project resumes. The Pass 2
     # distribution + tier fallback (10pt-tight → 9.5pt → 9pt) still handle
     # the densest layouts automatically.
-    _MARGIN_LR = 12.7          # 0.5 inch — standard professional margin
-    _MARGIN_TOP = 12.0         # symmetric with bottom; asymmetric margins are an AI tell
-    _MARGIN_BOTTOM = 12.0      # symmetric with top
+    _MARGIN_LR = 11.0          # ~0.43 inch — wider text column, fewer wraps
+    _MARGIN_TOP = 11.5         # slightly under 12mm to add usable height
+    _MARGIN_BOTTOM = 11.5      # symmetric with top
     _PAGE_H = 297.0            # A4 height mm
     _AVAIL_H = _PAGE_H - _MARGIN_TOP - _MARGIN_BOTTOM  # ~276.8mm usable
 
     # Font sizes
-    _NAME_SIZE = 17.0          # large centered name
-    _CONTACT_SIZE = 11.0       # contact line
+    _NAME_SIZE = 19.0          # large centered name
+    _CONTACT_SIZE = 10.0       # contact line
     _BODY_SIZE = 11.0          # body base (overridden by adaptive tier)
     _SECTION_TITLE_SIZE = 11.0 # bold UPPERCASE section header
     _COMPANY_SIZE = 11.0       # bold company name
     _JOB_TITLE_SIZE = 11.0     # italic role title — matches company size for a
                                # clean hierarchy (was 10.5pt, looked subordinate)
-    _BULLET_INDENT = 5.08      # 0.20in = 5.08mm
+    _BULLET_INDENT = 5.05      # ~0.199in
 
     # Line heights
     _LH_BODY = 4.2             # body line height
@@ -127,7 +127,7 @@ class ResumeRenderer:
     _LH_SKILL = 4.0            # skill row line height
     _LH_CONTACT = 4.5          # contact line height
 
-    _SECTION_HR_WIDTH = 0.18   # thin rule under section header
+    _SECTION_HR_WIDTH = 0.16   # thin rule under section header
 
     # Spacing floors — minimum visual gaps. Each constant fires multiple times
     # on a project-heavy resume, so values are kept conservative to fit one page:
@@ -143,10 +143,12 @@ class ResumeRenderer:
                                # than touching); we keep ours visible but
                                # snug — the previous 0.8mm made skills look
                                # airier than the rest of the resume.
-    _BULLET_GAP = 0.3          # gap between bullets within a list
-    _PRE_BULLET_GAP = 2.0      # gap below italic role title before first bullet —
-                               # biggest single visual fix; bullets no longer
-                               # crash into the title above them
+    _BULLET_GAP = 0.6          # gap between bullets within a list — breathing
+                               # room so consecutive bullets don't visually merge
+    _PRE_BULLET_GAP = 1.2      # gap below italic role title before first bullet
+    _EDU_ENTRY_GAP = 1.2       # gap between two education entries
+    _JOB_TITLE_CELL_H = 4.0    # italic role-title line height (was 4.5 — the
+                               # extra 0.5mm read as dead space under the title)
 
     # Spacing ceilings — how much Pass 2 may inflate on sparse pages.
     # Sparse pages (1 exp + 1 proj) get a relaxed look; dense pages stay
@@ -319,7 +321,7 @@ class ResumeRenderer:
 
             # Small filled circle bullet (Latin-1 safe)
             pdf.set_fill_color(0, 0, 0)
-            pdf.circle(x_start + 0.8, y_center, 0.5, style="F")
+            pdf.circle(x_start + 0.8, y_center, 0.6, style="F")
 
             pdf.set_x(x_start + 2.5)
             pdf.multi_cell(w - indent - 2.5, lh, sanitize(text),
@@ -390,7 +392,7 @@ class ResumeRenderer:
                 title = sanitize(exp.get("title", ""))
                 if title:
                     pdf.set_font("Times", "I", self._JOB_TITLE_SIZE)
-                    pdf.cell(w, 4.5, title,
+                    pdf.cell(w, self._JOB_TITLE_CELL_H, title,
                              new_x="LMARGIN", new_y="NEXT")
 
                 exp_bullets = exp.get("bullets", [])
@@ -465,7 +467,9 @@ class ResumeRenderer:
 
             if deduped_education:
                 section_header("Education")
-                for edu in deduped_education:
+                for ei, edu in enumerate(deduped_education):
+                    if ei > 0:
+                        pdf.ln(self._EDU_ENTRY_GAP)  # gap between education entries
                     inst = sanitize(edu.get("institution", ""))
                     location = sanitize(edu.get("location", ""))
                     degree = sanitize(edu.get("degree", ""))
@@ -539,7 +543,7 @@ class ResumeRenderer:
         # project, longer bullets, etc).
         body_size = 10.0
         lh = 3.4
-        lh_s = 3.2
+        lh_s = 3.08
 
         _, min_height = self._render_pdf(
             tailored,
@@ -555,12 +559,14 @@ class ResumeRenderer:
         # --- Overflow protection: tiered fallback (10pt-tight → 10pt-ultra → 9.5pt → 9pt) ---
         # Body font size is what recruiters notice most — keep it at 10pt
         # whenever possible. Two tight-lh tiers stack before any font drop:
-        #   Tier 1 (~3% over): lh=3.25 / lh_s=3.05 (~7-8mm recovered)
-        #   Tier 2 (~7% over): lh=3.10 / lh_s=2.95 (~13-15mm recovered;
-        #                       comfortable for 2-project resumes)
-        # Only >7% over forces a font drop to 9.5pt.
+        #   Tier 1: lh=3.35 / lh_s=3.08 — keeps per-bullet-line breathing room
+        #   Tier 2: lh=3.22 / lh_s=3.08
+        #   Tier 3: lh=3.10 / lh_s=3.08 — densest 10pt tier before a font drop
+        # lh_s (skill/edu rows) is held at 3.08 across all 10pt tiers so those
+        # rows keep a consistent line height regardless of which tier fits.
+        # Only past Tier 3 do we drop to 9.5pt.
         if min_height > avail:
-            for tier_lh, tier_lhs in ((3.25, 3.05), (3.10, 2.95)):
+            for tier_lh, tier_lhs in ((3.35, 3.08), (3.22, 3.08), (3.10, 3.08)):
                 _, retry_height = self._render_pdf(
                     tailored,
                     section_gap=self._MIN_SECTION_GAP,

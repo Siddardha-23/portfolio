@@ -98,17 +98,13 @@ class ResumeTailor:
             t = self._strip_fabricated_langs(t, structured_resume)
             t = self._ensure_jd_skills_coverage(t, structured_resume, jd_analysis)
             t = self._cap_skills_per_category(t, structured_resume, jd_analysis)
-            t = self._cap_project_bullets(t)
+            t = self._allocate_bullets(t, jd_analysis)
             if target_role:
                 t["target_role"] = target_role
             return t
 
-        original_project_count = len(structured_resume.get("projects") or [])
-        target_project_bullets = self.bullets_per_project(original_project_count)
-
         prompt = self._build_tailor_prompt(
             keyword_list, gap_context, role_context, resume_payload, jd_json,
-            target_project_bullets=target_project_bullets,
         )
 
         # Intentionally DO NOT pass schema=. Schema-forced tool-use on Claude
@@ -398,26 +394,24 @@ class ResumeTailor:
 
     _MAX_SKILLS_PER_CATEGORY = _MAX_SKILLS_PER_CATEGORY_BASE  # legacy alias
 
-    @classmethod
-    def _cap_project_bullets(cls, tailored: Dict[str, Any]) -> Dict[str, Any]:
-        """Normalize every project's bullet count to `bullets_per_project`.
+    @staticmethod
+    def _allocate_bullets(
+        tailored: Dict[str, Any], jd_analysis: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Select the page-fitting subset of model-proposed bullets by relevance.
 
-        Trims overflow (keeps the first N bullets — these tend to be the
-        most JD-aligned since the tailor prompt is told to lead with the
-        most relevant). Never adds bullets (would risk fabrication).
-        Applies the same rule regardless of JD or user — the cap is a
-        function of project count only.
+        Replaces the old fixed per-slot caps (`_cap_project_bullets` +
+        `bullets_per_project`). The model now over-generates ranked bullets and
+        `bullet_allocator.allocate_bullets` keeps the top-ranked set that fits
+        one page at 10pt, favoring experience over projects and keeping a floor
+        of 2 bullets per entry. See services/bullet_allocator.py.
         """
-        projects = tailored.get("projects") or []
-        target = cls.bullets_per_project(len(projects))
-        for p in projects:
-            if not isinstance(p, dict):
-                continue
-            bullets = p.get("bullets") or []
-            if len(bullets) > target:
-                p["bullets"] = bullets[:target]
-        tailored["projects"] = projects
-        return tailored
+        from services.bullet_allocator import allocate_bullets
+        from services.resume_renderer import ResumeRenderer
+
+        return allocate_bullets(
+            tailored, ResumeRenderer(), jd_analysis=jd_analysis
+        )
 
     @classmethod
     def _cap_skills_per_category(
@@ -660,7 +654,6 @@ class ResumeTailor:
         role_context: str,
         resume_payload: str,
         jd_json: str,
-        target_project_bullets: int = 5,
     ) -> str:
         """Build the main tailoring prompt.
 
@@ -827,14 +820,18 @@ class ResumeTailor:
             "Bullet endings are checked deterministically post-generation; missing periods are a\n"
             "visible quality regression.\n\n"
 
-            "BULLET-COUNT TABLE — these counts are HARD-REQUIRED. Returning fewer is a failure.\n"
-            "  | Section                | Bullet count                                        |\n"
+            "BULLET GENERATION — emit RANKED candidates, best-first. A downstream allocator keeps the\n"
+            "top-ranked bullets that fit one page and discards the rest, so over-generate and let the\n"
+            "STRONGEST bullets lead. Order every bullet list by relevance to THIS job description and\n"
+            "by impact (quantified, JD-aligned bullets first).\n"
+            "  | Section                | Bullets to emit (ranked, best-first)                |\n"
             "  |------------------------|-----------------------------------------------------|\n"
-            "  | Most recent role       | EXACTLY 5 bullets                                   |\n"
-            "  | Second role            | EXACTLY 3 bullets                                   |\n"
-            "  | Third (oldest) role    | EXACTLY 3 bullets                                   |\n"
-            f"  | Each project           | EXACTLY {target_project_bullets} bullets (scales with project count)  |\n"
-            "  | Each bullet length     | ~150-200 chars (2 full lines in rendered PDF)       |\n\n"
+            "  | Each experience role   | up to 6 bullets, ordered best-first (min 2 real)    |\n"
+            "  | Each project           | up to 5 bullets, ordered best-first (min 2 real)    |\n"
+            "  | Each bullet length     | ~150-200 chars (2 full lines in rendered PDF)       |\n"
+            "  Emit a bullet ONLY if it is a distinct, quantified accomplishment. Do NOT pad to reach a\n"
+            "  number and do NOT repeat the same achievement across bullets. Fewer strong bullets beats\n"
+            "  more weak ones — the allocator will trim, but it cannot invent quality.\n\n"
 
             "1. Summary: 3-4 clear, confident sentences that naturally incorporate the target role title and "
             "3-4 top required skills. Open by describing what the candidate IS (e.g. 'Backend engineer with...'). "
@@ -849,9 +846,9 @@ class ResumeTailor:
             "3. Education: Institution, degree, dates, location, gpa, coursework — each in its OWN field. "
             "Do NOT concatenate fields (e.g. don't put dates inside the degree string).\n\n"
 
-            "4. Projects: bullet count per project scales inversely with project count so the resume fits one "
-            "page (1 project → 5 bullets, 2-3 projects → 3 bullets each). If there are no projects, compensate "
-            "with more experience bullets. Projects in the output array MUST be from the original resume.\n\n"
+            "4. Projects: emit up to 5 ranked bullets per project (best-first). The allocator favors "
+            "experience over projects when space is tight, so lead each project with its single strongest, "
+            "most JD-relevant bullet. Projects in the output array MUST be from the original resume.\n\n"
 
             "5. Do NOT rely on empty whitespace to fill the page. Generate robust, detailed content for every "
             "bullet and summary sentence.\n\n"
@@ -979,11 +976,10 @@ class ResumeTailor:
             '      "dates": "Start - End",\n'
             '      "type": "Full-time/Internship",\n'
             '      "bullets": [\n'
-            '        "Bullet 1 (~150-200 chars)",\n'
+            '        "Bullet 1 — strongest, most JD-relevant (~150-200 chars)",\n'
             '        "Bullet 2",\n'
-            '        "Bullet 3",\n'
-            '        "Bullet 4 (most recent role MUST have 5; older roles MUST have 3)",\n'
-            '        "Bullet 5"\n'
+            '        "Bullet 3 (up to 6 per role, ranked best-first; min 2 real)",\n'
+            '        "... emit only distinct, quantified bullets — no padding ..."\n'
             "      ]\n"
             "    }\n"
             "  ],\n"
@@ -1001,7 +997,7 @@ class ResumeTailor:
             "    {\n"
             '      "name": "Project Name",\n'
             '      "dates": "Date Range",\n'
-            f'      "bullets": [ /* EXACTLY {target_project_bullets} bullets, ~150-200 chars each */ ],\n'
+            '      "bullets": [ /* up to 5 ranked bullets, best-first, ~150-200 chars each */ ],\n'
             '      "tech": "Tech1, Tech2, Tech3"\n'
             "    }\n"
             "  ],\n"

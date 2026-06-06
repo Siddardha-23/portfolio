@@ -19,6 +19,13 @@ from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
+# Floor below which a generated project is rejected. Matches the bullet
+# allocator's per-entry floor (services/bullet_allocator.py _FLOOR_PER_ENTRY):
+# a project the allocator would keep needs at least this many good bullets.
+# The generator over-generates up to `bullets_per_project` ranked bullets; the
+# allocator downstream trims to what fits the page.
+_MIN_PROJECT_BULLETS = 2
+
 
 # Shared bullet-quality block injected into both single and batch prompts.
 # Centralizes "what makes a good project bullet" so the two prompts can't drift.
@@ -252,15 +259,16 @@ class ProjectGenerator:
         self,
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any],
-        bullets_per_project: int = 3,
+        bullets_per_project: int = 5,
     ) -> Optional[Dict[str, Any]]:
         """Generate one project grounded in the candidate's skills and the JD domain.
 
         Args:
-            bullets_per_project: how many bullets the generated project should
-                have. Default 3 preserves prior behavior; callers with a known
-                vertical budget (ContentAugmenter._augment_projects) pass the
-                exact count that fits the page.
+            bullets_per_project: how many ranked bullets the generated project
+                should emit (best-first). Default 5 over-generates so the
+                downstream bullet_allocator can keep the strongest that fit the
+                page (it never goes below 2 per project). Callers may pass a
+                smaller target.
 
         Returns a project dict {name, dates, bullets, tech} or None if generation
         fails validation or an error occurs.
@@ -367,7 +375,8 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string ''.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            f"7. bullets: exactly {bullets_per_project} bullets. Each ~100-150 chars, ending with a period.\n"
+            f"7. bullets: up to {bullets_per_project} bullets, ordered best-first (strongest, most "
+            f"JD-relevant first). Each ~100-150 chars, ending with a period.\n"
             "   Bullet quality is governed by the BULLET QUALITY block above — follow it exactly.\n"
             "   Each bullet must pass the four-question self-check before being emitted.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
@@ -467,15 +476,16 @@ class ProjectGenerator:
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any],
         existing_projects: list = None,
-        bullets_per_project: int = 3,
+        bullets_per_project: int = 5,
         rejections_sink: list = None,
     ) -> list:
         """Generate multiple projects in a single LLM call for speed.
 
         Args:
-            bullets_per_project: how many bullets each generated project should
-                have. Default 3 preserves prior behavior; callers with a known
-                vertical budget pass the exact count that fits the page.
+            bullets_per_project: how many ranked bullets each generated project
+                should emit (best-first). Default 5 over-generates so the
+                downstream bullet_allocator keeps the strongest that fit the
+                page (never below 2 per project).
             rejections_sink: optional list that receives one dict per rejected
                 project for diagnostic surfacing upstream. Caller pre-allocates
                 the list; this method appends. Each dict has keys
@@ -604,8 +614,8 @@ class ProjectGenerator:
             "would actually build and put on GitHub — not a generic label or placeholder.\n"
             "5. dates: return empty string '' for each project.\n"
             "6. tech: comma-separated list of ONLY technologies present in the candidate's profile.\n"
-            f"7. bullets: exactly {bullets_per_project} bullets per project. Each ~100-150 chars, "
-            "ending with a period.\n"
+            f"7. bullets: up to {bullets_per_project} bullets per project, ordered best-first (strongest, "
+            "most JD-relevant first). Each ~100-150 chars, ending with a period.\n"
             "   Bullet quality is governed by the BULLET QUALITY block above — follow it exactly.\n"
             "   Each bullet must pass the four-question self-check before being emitted.\n"
             "8. PROJECT NAME RULES — the name describes WHAT the project does:\n"
@@ -720,7 +730,7 @@ class ProjectGenerator:
         project: Dict[str, Any],
         original_resume: Dict[str, Any],
         jd_analysis: Dict[str, Any] = None,
-        bullets_per_project: int = 3,
+        bullets_per_project: int = 5,
     ) -> Optional[Dict[str, Any]]:
         """Validate generated project against allowed tech and schema.
 
@@ -781,9 +791,10 @@ class ProjectGenerator:
             logger.warning("ProjectGenerator: generated project has no bullets")
             return None
 
-        # Enforce exactly N bullets, all strings, non-empty.
-        # We take a wider initial slice (up to 2N) so the bullet-quality filter
-        # below has room to drop weak bullets and still leave N good ones.
+        # Keep up to `bullets_per_project` good bullets, ranked best-first (the
+        # downstream bullet_allocator trims to what fits the page). We slice a
+        # wide initial pool so the quality filter can drop weak bullets and still
+        # leave a full ranked set.
         candidate_bullets = [str(b).strip() for b in bullets if str(b).strip()][:bullets_per_project * 2]
         if not candidate_bullets:
             return None
@@ -791,8 +802,8 @@ class ProjectGenerator:
         # Bullet-quality filter — enforce the hard rules from the BULLET QUALITY
         # block deterministically. The prompt asks the model to follow them; this
         # post-check is the safety net for when it forgets. We DROP individual
-        # weak bullets rather than rejecting the whole project; if too few good
-        # bullets remain to satisfy bullets_per_project, the project is rejected.
+        # weak bullets rather than rejecting the whole project; the project is
+        # rejected only if fewer than the allocator floor (2) survive.
         clean_bullets = []
         for b in candidate_bullets:
             ok, reason = self._bullet_passes_quality_check(b)
@@ -806,11 +817,11 @@ class ProjectGenerator:
             if len(clean_bullets) >= bullets_per_project:
                 break
 
-        if len(clean_bullets) < bullets_per_project:
+        if len(clean_bullets) < _MIN_PROJECT_BULLETS:
             logger.warning(
                 "ProjectGenerator: project '%s' rejected — only %d/%d bullets passed "
                 "quality check (need at least %d)",
-                name, len(clean_bullets), len(candidate_bullets), bullets_per_project,
+                name, len(clean_bullets), len(candidate_bullets), _MIN_PROJECT_BULLETS,
             )
             return None
 

@@ -44,6 +44,8 @@ class IntegrityReport:
     ai_tell_substitutions: List[str] = field(default_factory=list)
     terminal_period_fixes: List[str] = field(default_factory=list)
     fabricated_certs_stripped: List[str] = field(default_factory=list)
+    ungrounded_jd_skills_stripped: List[str] = field(default_factory=list)
+    non_skills_stripped: List[str] = field(default_factory=list)
     experience_count_mismatch: bool = False
     project_cap_enforced: bool = False
     original_experience_count: int = 0
@@ -125,11 +127,15 @@ class IntegrityGuard:
         self,
         original: Dict[str, Any],
         tailored: Dict[str, Any],
+        jd_analysis: Dict[str, Any] = None,
     ) -> Tuple[Dict[str, Any], IntegrityReport]:
         """Full integrity pipeline.
 
         Returns (corrected_tailored, report).
         The corrected dict is safe to render/score/return to the client.
+
+        jd_analysis (optional) enables stripping ungrounded JD-verbatim skills
+        (keyword-stuffing). When omitted, that step is skipped.
         """
         tailored = copy.deepcopy(tailored)
         report = IntegrityReport()
@@ -176,6 +182,23 @@ class IntegrityGuard:
         # not). Defensibility of skills/tools is the model's job, not ours.
         tailored, stripped_certs = self.strip_fabricated_certs(original, tailored)
         report.fabricated_certs_stripped = stripped_certs
+
+        # Step 4c: Strip ungrounded JD-verbatim skills (keyword-stuffing) — a
+        # skill that is both absent from the base resume AND a near-verbatim JD
+        # required-skill phrase. Catches the JD's requirement list pasted into
+        # skills on a severe mismatch (e.g. CUDA/OpenGL/"Medical Device Software
+        # Development" on a cloud engineer). Profession-agnostic. Needs the JD.
+        tailored, stripped_jd_skills = self.strip_ungrounded_jd_skills(
+            original, tailored, jd_analysis
+        )
+        report.ungrounded_jd_skills_stripped = stripped_jd_skills
+
+        # Step 4d: Strip non-skills the model listed in the skills section —
+        # job titles ("C++ Developer") and bare domain phrases ("Medical Device
+        # Software Development"). These aren't skills and read as low-quality to
+        # recruiters/ATS. Conservative pattern match; generic disciplines kept.
+        tailored, stripped_non_skills = self.strip_non_skills(tailored)
+        report.non_skills_stripped = stripped_non_skills
 
         # Step 5: Check experience count
         report.experience_count_mismatch = (
@@ -225,7 +248,7 @@ class IntegrityGuard:
                 "IntegrityGuard report: severity=%s overwrites=%d "
                 "hallucinated_exp=%d hallucinated_proj=%d reinjected=%d cap=%s "
                 "banned_subs=%d dash_subs=%d ai_tell_subs=%d period_fixes=%d "
-                "fab_certs=%d",
+                "fab_certs=%d ungrounded_jd_skills=%d non_skills=%d",
                 report.severity,
                 len(report.immutable_overwrites),
                 len(report.hallucinated_experience),
@@ -237,6 +260,8 @@ class IntegrityGuard:
                 len(report.ai_tell_substitutions),
                 len(report.terminal_period_fixes),
                 len(report.fabricated_certs_stripped),
+                len(report.ungrounded_jd_skills_stripped),
+                len(report.non_skills_stripped),
             )
 
         return tailored, report
@@ -460,6 +485,72 @@ class IntegrityGuard:
             kept = []
             for s in items:
                 if isinstance(s, str) and is_fabricated_certification(s, original):
+                    stripped.append(s)
+                else:
+                    kept.append(s)
+            skills[category] = kept
+        tailored["skills"] = skills
+        return tailored, stripped
+
+    def strip_ungrounded_jd_skills(
+        self,
+        original: Dict[str, Any],
+        tailored: Dict[str, Any],
+        jd_analysis: Dict[str, Any] = None,
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Drop skills that are JD requirement phrases the candidate can't support.
+
+        Catches keyword-stuffing: a skill both absent from the base resume AND a
+        near-verbatim JD required-skill phrase (e.g. CUDA/OpenGL/'Medical Device
+        Software Development' pasted onto a cloud engineer applying to an
+        embedded role). Profession-agnostic; needs jd_analysis. Grounded skills
+        and broad generic disciplines are kept.
+        """
+        if not jd_analysis:
+            return tailored, []
+        from services.fabrication_filter import is_ungrounded_jd_skill
+
+        skills = tailored.get("skills")
+        if not isinstance(skills, dict):
+            return tailored, []
+
+        stripped: List[str] = []
+        for category, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            kept = []
+            for s in items:
+                if isinstance(s, str) and is_ungrounded_jd_skill(s, original, jd_analysis):
+                    stripped.append(s)
+                else:
+                    kept.append(s)
+            skills[category] = kept
+        tailored["skills"] = skills
+        return tailored, stripped
+
+    def strip_non_skills(
+        self, tailored: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], List[str]]:
+        """Drop skills-section entries that are job titles or bare domain phrases.
+
+        'C++ Developer' is a title, 'Medical Device Software Development' is a
+        domain — neither is a skill. Conservative pattern match (see
+        fabrication_filter.is_non_skill); genuine skills and generic disciplines
+        are kept.
+        """
+        from services.fabrication_filter import is_non_skill
+
+        skills = tailored.get("skills")
+        if not isinstance(skills, dict):
+            return tailored, []
+
+        stripped: List[str] = []
+        for category, items in list(skills.items()):
+            if not isinstance(items, list):
+                continue
+            kept = []
+            for s in items:
+                if isinstance(s, str) and is_non_skill(s):
                     stripped.append(s)
                 else:
                     kept.append(s)
@@ -740,6 +831,8 @@ class IntegrityGuard:
             or report.ai_tell_substitutions
             or report.terminal_period_fixes
             or report.fabricated_certs_stripped
+            or report.ungrounded_jd_skills_stripped
+            or report.non_skills_stripped
         )
 
         if has_any_fix:

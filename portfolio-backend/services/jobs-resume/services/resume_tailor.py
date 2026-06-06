@@ -28,7 +28,10 @@ from schemas.resume_schemas import (
     build_resume_text,
 )
 from services.integrity_guard import IntegrityGuard
-from services.fabrication_filter import is_fabricated_certification
+from services.fabrication_filter import (
+    is_fabricated_certification,
+    is_ungrounded_jd_skill,
+)
 from utils.keyword_normalizer import (
     normalize_single,
     get_all_forms,
@@ -139,7 +142,7 @@ class ResumeTailor:
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
 
         # --- Integrity enforcement ---
-        corrected, report = self._guard.enforce(structured_resume, validated)
+        corrected, report = self._guard.enforce(structured_resume, validated, jd_analysis)
 
         if report.severity == "clean":
             logger.info("Integrity check: clean — no violations detected")
@@ -178,7 +181,7 @@ class ResumeTailor:
         )
         retry_validated = validate_and_coerce(retry_result, TAILORED_RESUME_SCHEMA)
 
-        final, retry_report = self._guard.enforce(structured_resume, retry_validated)
+        final, retry_report = self._guard.enforce(structured_resume, retry_validated, jd_analysis)
 
         if retry_report.severity == "needs_retry":
             logger.error(
@@ -258,7 +261,7 @@ class ResumeTailor:
         validated = validate_and_coerce(result, TAILORED_RESUME_SCHEMA)
 
         # Integrity enforcement
-        corrected, report = self._guard.enforce(structured_resume, validated)
+        corrected, report = self._guard.enforce(structured_resume, validated, jd_analysis)
         if report.severity != "clean":
             logger.warning("Regenerate integrity: %s", report.severity)
 
@@ -460,11 +463,12 @@ class ResumeTailor:
                 jd_terms_lower.add(f.lower())
 
         for cat, items in list(skills.items()):
-            if not isinstance(items, list) or len(items) <= cap:
+            if not isinstance(items, list) or not items:
                 continue
             # Stable partition: JD-aligned first, then originals. Preserve
             # input order within each group so the highest-relevance items
-            # the LLM put first stay first.
+            # the LLM put first stay first. Applied even when under the cap so
+            # short categories still lead with JD-relevant skills (ATS scan).
             jd_aligned = []
             rest = []
             for s in items:
@@ -633,6 +637,13 @@ class ResumeTailor:
             if is_fabricated_certification(target, original):
                 continue
 
+            # Never paste an ungrounded JD required-skill phrase into skills —
+            # that's keyword-stuffing (e.g. injecting "CUDA"/"Medical Device
+            # Software Development" onto a cloud engineer's resume). Grounded
+            # overlaps and generic disciplines still inject.
+            if is_ungrounded_jd_skill(target, original, jd_analysis):
+                continue
+
             # Don't fabricate a concrete programming language the candidate has
             # never used — auto-injecting "Go"/"Rust" into skills is our code
             # being reckless, distinct from the model defensibly mentioning it.
@@ -711,6 +722,17 @@ class ResumeTailor:
         banned_phrases_str = ", ".join(f"'{p}'" for p in BANNED_PHRASES)
 
         return (
+            "TOP PRIORITY — obey these before everything else (most-violated rules):\n"
+            "  1. Output ONE complete, valid JSON object in the exact schema below — never truncate.\n"
+            "  2. NEVER fabricate: no certification/license the candidate lacks, no named product they\n"
+            "     never used, no JD skill absent from their real resume — even if the JD demands it.\n"
+            "  3. Skills = real, correctly-categorized technologies/methods. No job titles, no bare\n"
+            "     domains, no JD keyword-dumping.\n"
+            "  4. Every bullet: strong action verb first, dense technical phrasing, a real metric where\n"
+            "     the source had one. Preserve every source number.\n"
+            "  5. If the candidate is a poor fit for the JD, produce an HONEST resume around their real\n"
+            "     strengths — do NOT invent a matching skill set. (Details in the sections below.)\n\n"
+
             "You are a professional resume writer helping a candidate present their experience clearly.\n"
             "Given the candidate's ACTUAL resume (as structured JSON) and a structured job description analysis,\n"
             "produce a COMPLETE tailored resume as a JSON object.\n\n"
@@ -747,7 +769,9 @@ class ResumeTailor:
             "      2. BLENDABLE — the addition reads as a natural extension of an existing bullet\n"
             "         or skill group: same voice, same scope, same seniority. If you add a JD skill\n"
             "         to the skills section, you should ALSO extend at least one existing bullet to\n"
-            "         use it in context. Skills must not appear only as orphan keywords.\n"
+            "         use it in context — BUT ONLY for skills the candidate actually has. NEVER weave\n"
+            "         an ungrounded JD skill (absent from the original resume) into a bullet to\n"
+            "         manufacture a match; that is fabrication, not blending.\n"
             "    Examples of GOOD additions, across professions:\n"
             "      - (Engineering) Adding 'AWS Lambda' when the candidate already uses AWS EC2, AND\n"
             "        extending a deployment bullet to mention it for event-driven work.\n"
@@ -804,7 +828,11 @@ class ResumeTailor:
             "      candidate does not hold (e.g. PMP, CPA, AWS Certified, Six Sigma, RN license) —\n"
             "      and never smuggle one into the SKILLS section to dodge this rule (e.g.\n"
             "      'X Implementation Specialist Certification' as a skill). Certifications live ONLY\n"
-            "      in the certifications field and are copied verbatim from the original.\n\n"
+            "      in the certifications field and are copied verbatim from the original.\n"
+            "    - DO NOT copy the JD's required-skill phrases into the SKILLS section unless the\n"
+            "      candidate's real history supports them. A skills list that mirrors the JD's\n"
+            "      requirements verbatim (e.g. pasting 'CUDA, OpenGL, Medical Device Software\n"
+            "      Development' onto a cloud engineer's resume) is keyword-stuffing and is rejected.\n\n"
 
             "(D) METRICS — PRESERVATION IS MANDATORY, ADDITION IS BOUNDED:\n"
             "    This is the rule the model violates most often. Read it carefully.\n"
@@ -881,10 +909,8 @@ class ResumeTailor:
             "CONTENT RULES (the resume MUST physically fill ONE full A4 page with substantive text)\n"
             "================================================================\n\n"
 
-            "NUMBER RETENTION TARGET: at least 10 of the final bullets must contain a numeric metric\n"
-            "(percentage, latency, throughput, count, ratio, duration, dollar amount). EVERY number\n"
-            "that appears in the source resume must appear somewhere in the output. See HARD\n"
-            "CONSTRAINT (D) for the full rule.\n\n"
+            "NUMBER RETENTION: see HARD CONSTRAINT (D) — preserve every source number; aim for >=10\n"
+            "bullets carrying a metric.\n\n"
 
             "TERMINAL PUNCTUATION: every bullet AND every sentence in the summary MUST end with a\n"
             "period ('.'). Do NOT end bullets with a semicolon, comma, colon, or no punctuation.\n"
@@ -904,15 +930,29 @@ class ResumeTailor:
             "  number and do NOT repeat the same achievement across bullets. Fewer strong bullets beats\n"
             "  more weak ones — the allocator will trim, but it cannot invent quality.\n\n"
 
-            "1. Summary: 3-4 clear, confident sentences that naturally incorporate the target role title and "
-            "3-4 top required skills. Open by describing what the candidate IS (e.g. 'Backend engineer with...'). "
-            "Do NOT start with an adjective or with 'I'.\n\n"
+            "1. Summary: 3-4 clear, confident sentences. Open by describing what the candidate IS "
+            "(e.g. 'Backend engineer with...'). Do NOT start with an adjective or with 'I'. Naturally "
+            "weave in the JD-relevant skills the candidate GENUINELY HAS — as many as read naturally "
+            "in 3-4 sentences, most important first. Do NOT force a fixed number, do NOT list skills "
+            "the candidate lacks (if they lack the JD's core skills, write an honest summary around "
+            "their real strengths), and do NOT turn the summary into a keyword list — it must read "
+            "like a human wrote it.\n\n"
 
-            "2. Skills: 4-6 categories, most JD-relevant first. Include ALL skills from the original resume that "
-            "are relevant to the JD, experience bullets, or projects — do NOT drop original skills just because "
-            "they are not explicitly in the JD. Also include JD-required skills the candidate plausibly knows "
-            "(per the Defensibility + Blendability test above) — and extend at least one bullet to use each "
-            "added skill in context.\n\n"
+            "2. Skills: 4-6 categories, most JD-relevant category first, and within each category list the\n"
+            "   most JD-relevant skills first. Rules for a HIGH-QUALITY skills section:\n"
+            "   - Each entry is a concrete SKILL — a technology, tool, language, framework, or method.\n"
+            "     NEVER list a JOB TITLE ('C++ Developer', 'Software Engineer', 'Data Analyst') or a bare\n"
+            "     DOMAIN/area phrase ('Medical Device Software Development') as a skill.\n"
+            "   - Put every skill in a category it GENUINELY belongs to. Do NOT place a skill in a\n"
+            "     mismatched bucket (e.g. OpenGL/CUDA are graphics/GPU, NOT 'Backend & API'; Tableau is\n"
+            "     analytics/BI, not 'Languages'). If a category label doesn't fit the skills under it,\n"
+            "     rename the category.\n"
+            "   - Use canonical, recruiter-recognized names ('CI/CD' not 'continuous integration and\n"
+            "     continuous delivery'; 'PostgreSQL' not 'postgres db'; 'Kubernetes (EKS)' is fine).\n"
+            "   - Include ALL original-resume skills relevant to the JD, experience, or projects — do NOT\n"
+            "     drop a real skill just because it isn't in the JD. A skill need NOT appear in a bullet to\n"
+            "     be listed, but it MUST be one the candidate genuinely has; do NOT pad with JD wishlist\n"
+            "     terms the candidate never used (that is keyword-stuffing and is rejected).\n\n"
 
             "3. Education: Institution, degree, dates, location, gpa, coursework — each in its OWN field. "
             "Do NOT concatenate fields (e.g. don't put dates inside the degree string).\n\n"
@@ -936,9 +976,8 @@ class ResumeTailor:
             "  - Opening the summary with the JD's job title as the grammatical subject\n"
             "  - Opening the summary with an adjective ('Versatile...', 'Dynamic...')\n"
             "  - Opening any bullet or summary with 'I'\n"
-            "  - AI-tell numeric symbols: 'K+', 'M+', '%+', '~N' (tilde+number), 'sub-N' constructs\n"
-            "  - Unicode en-dash '–' or em-dash '—' anywhere — use ASCII hyphen '-'\n"
-            "  - Precision-hedging compounds: 'near-zero', 'near-perfect', 'near-100%'\n"
+            "  - AI-tell numeric/dash symbols — see HARD CONSTRAINT (D.4) (no 'K+/M+/%+', '~N',\n"
+            "    'sub-N', en/em-dash, or 'near-*' compounds).\n"
             "BAD example: 'Versatile Python FullStack Developer with extensive experience designing scalable systems'\n"
             "GOOD example: 'Full-stack developer with 4+ years building Python backends and React frontends, "
             "focused on API design, cloud deployment, and CI/CD automation.'\n"
@@ -955,7 +994,8 @@ class ResumeTailor:
             "2. Put the most JD-relevant skills FIRST in each category.\n"
             "3. Front-load each bullet with a strong action verb that matches the JD's language.\n"
             "4. Weave required keywords naturally into experience bullets and summary — don't just list them.\n"
-            "5. The professional summary MUST mention the target role title and 3-4 top required skills.\n"
+            "5. The professional summary mentions the target role title and the JD-relevant skills the "
+            "candidate genuinely has (see Content Rule 1 — adaptive, grounded, never fabricated).\n"
             "6. Reorder experience bullets so the most JD-relevant achievements appear first.\n"
             "7. For projects, emphasize aspects that directly relate to the JD requirements.\n"
             "8. Each experience bullet starts with an action verb and describes what was done with the "
@@ -991,17 +1031,9 @@ class ResumeTailor:
             "  BAD: 'Built REST APIs in Python, processing 50M requests/day with 99.99% uptime.' (Invented metrics.)\n"
             "  BAD: 'Built REST APIs in Python and led API design across 5 teams.' (Seniority inflation if IC.)\n\n"
 
-            "Example B′ — Metric PRESERVATION when rewriting:\n"
-            "  Source bullet: 'reduced average API response time from 420ms to 95ms via query optimization\n"
-            "    and PostgreSQL index tuning'\n"
-            "  GOOD rewrite: 'Designed and maintained a RESTful API layer in Python and Node.js, applying\n"
-            "    JWT-based authentication and query optimization that reduced average API response time\n"
-            "    from 420ms to 95ms.'\n"
-            "    (Numbers preserved: 420ms, 95ms.)\n"
-            "  BAD rewrite: 'Designed and maintained a RESTful API layer in Python and Node.js with JWT-\n"
-            "    based authentication; significantly improved API response times via query optimization.'\n"
-            "    (Numbers LOST — Quantifiable Impact score drops. Never trade source numbers for\n"
-            "    qualitative wording.)\n\n"
+            "Example B' — Metric PRESERVATION (see HARD CONSTRAINT D): when rewriting 'reduced response\n"
+            "    time from 420ms to 95ms ...', the rewrite MUST keep '420ms' and '95ms'. Never trade a\n"
+            "    source number for qualitative wording like 'significantly improved'.\n\n"
 
             "Example C — Defensible project enrichment:\n"
             "  JD requires: Elasticsearch, search relevance tuning\n"

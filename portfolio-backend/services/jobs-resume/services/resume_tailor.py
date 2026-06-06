@@ -28,10 +28,7 @@ from schemas.resume_schemas import (
     build_resume_text,
 )
 from services.integrity_guard import IntegrityGuard
-from services.fabrication_filter import (
-    is_fabricated_certification,
-    is_ungrounded_jd_skill,
-)
+from services.fabrication_filter import is_fabricated_certification
 from utils.keyword_normalizer import (
     normalize_single,
     get_all_forms,
@@ -635,13 +632,6 @@ class ResumeTailor:
             # not hold — it's binary and indefensible. (Skill/tool defensibility
             # is the model's call, not this deterministic injector's.)
             if is_fabricated_certification(target, original):
-                continue
-
-            # Never paste an ungrounded JD required-skill phrase into skills —
-            # that's keyword-stuffing (e.g. injecting "CUDA"/"Medical Device
-            # Software Development" onto a cloud engineer's resume). Grounded
-            # overlaps and generic disciplines still inject.
-            if is_ungrounded_jd_skill(target, original, jd_analysis):
                 continue
 
             # Don't fabricate a concrete programming language the candidate has

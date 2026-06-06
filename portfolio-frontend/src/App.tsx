@@ -21,6 +21,7 @@ const CloudLab = lazy(() => import('./pages/CloudLab'));
 const AdminPortal = lazy(() => import('./pages/AdminPortal'));
 const GmailCallback = lazy(() => import('./pages/GmailCallback'));
 const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const ApplyPilotPrivacy = lazy(() => import('./pages/ApplyPilotPrivacy'));
 
 const queryClient = new QueryClient();
 
@@ -67,6 +68,7 @@ function AppContent() {
           <Route path="/admin" element={<Suspense fallback={<RouteLoadingFallback />}><AdminPortal /></Suspense>} />
           <Route path="/oauth/gmail/callback" element={<Suspense fallback={<RouteLoadingFallback />}><GmailCallback /></Suspense>} />
           <Route path="/reset-password" element={<Suspense fallback={<RouteLoadingFallback />}><ResetPassword /></Suspense>} />
+          <Route path="/applypilot/privacy" element={<Suspense fallback={<RouteLoadingFallback />}><ApplyPilotPrivacy /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

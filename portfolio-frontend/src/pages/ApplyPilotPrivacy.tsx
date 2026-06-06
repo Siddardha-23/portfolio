@@ -86,7 +86,7 @@ export default function ApplyPilotPrivacy() {
         </Section>
 
         <Section title="Contact">
-          <p>Questions about this policy: <a className="text-blue-600 hover:underline" href="mailto:sandeep@gnanalytica.com">sandeep@gnanalytica.com</a></p>
+          <p>Questions about this policy: <a className="text-blue-600 hover:underline" href="mailto:harshith.siddardha@gmail.com">harshith.siddardha@gmail.com</a></p>
         </Section>
       </div>
     </div>

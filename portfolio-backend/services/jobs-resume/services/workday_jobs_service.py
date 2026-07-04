@@ -39,6 +39,10 @@ import requests
 
 from services.workday_cxs_fetcher import _HEADERS, _approx_iso_from_relative
 from services.workday_tenant_catalog import WORKDAY_TENANT_CATALOG, INDUSTRIES
+# Imported at module load, NOT lazily inside the search: a lazy import that
+# runs after the fan-out can fail if anything (e.g. FD pressure) breaks
+# file access mid-invocation.
+from services.jd_match_scorer import _build_match_regex
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +76,26 @@ DETAIL_TIMEOUT = 5
 STREAM_EVERY_TASKS = 80
 STREAM_TOP = 120
 
-# Shared session: connection pooling saves a TLS handshake for every
-# (tenant, term) pair beyond the first per host. pool size covers the worker
-# count; pool_connections bounds the per-host pool LRU across ~532 hosts.
+# Shared session with HARD-CAPPED pooling. The fan-out touches ~532 distinct
+# hosts; generous pools (256 hosts x 96 sockets) accumulated enough
+# keep-alive sockets to exhaust Lambda's 1024-FD limit mid-run ("[Errno 24]
+# Too many open files" — it even broke later imports). Keep-alive across
+# hosts is worth little here (~6 requests/host), so cap to 32 host pools x
+# 8 sockets: worst case ~256 pooled + ~96 in-flight FDs, far under the limit.
 _SESSION = requests.Session()
 _SESSION.mount("https://", requests.adapters.HTTPAdapter(
-    pool_connections=256, pool_maxsize=MAX_WORKERS, max_retries=0,
+    pool_connections=32, pool_maxsize=8, max_retries=0,
 ))
+
+
+def _drain_session_pools() -> None:
+    """Close every pooled socket. Called after each search so a warm Lambda
+    container never carries hundreds of idle sockets into the next run."""
+    try:
+        for adapter in _SESSION.adapters.values():
+            adapter.poolmanager.clear()
+    except Exception:
+        pass
 
 CACHE_COLLECTION = "workday_jobs_cache"
 CACHE_TTL_SECONDS = 6 * 3600     # Mongo TTL reaper
@@ -581,8 +598,6 @@ def _score_jobs(
 
     Nothing is ever dropped here — scoring only orders; recall is preserved.
     """
-    from services.jd_match_scorer import _build_match_regex
-
     skill_rx = [(s, _build_match_regex(s)) for s in skills]
     matchers = _title_matchers(titles)
     skill_terms_set = {t.lower() for t in skill_terms}
@@ -976,6 +991,9 @@ def run_workday_jobs_search(
 
     jobs = jobs[:GLOBAL_KEEP]
     _attach_feasibility(jobs, skills, resume_years)
+    # Release every pooled socket — a warm container must not carry idle
+    # connections to hundreds of hosts into its next invocation.
+    _drain_session_pools()
 
     window_counts = {"today": 0, "d1": 0, "d3": 0, "d7": 0, "d30": 0}
     for j in jobs:

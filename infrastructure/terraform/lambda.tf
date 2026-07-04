@@ -33,7 +33,11 @@ locals {
     }
     jobs-resume = {
       description = "Job search and resume tailoring"
-      memory      = 512
+      # 1536MB (~0.87 vCPU) — the Workday Jobs direct-CXS fan-out issues
+      # ~2000 HTTPS requests across ~530 hosts; at 512MB the TLS handshakes
+      # were CPU-starved and a full scan took ~6 min. Keep in sync with the
+      # --memory-size override in .github/workflows/deploy.yml.
+      memory = 1536
       # 900s (Lambda max) — async path runs the Apify daily pipeline
       # (parallel LinkedIn + Workday scrapes + scoring) which can exceed 5 min.
       # API Gateway requests still return in <30s thanks to the 202 + poll pattern.

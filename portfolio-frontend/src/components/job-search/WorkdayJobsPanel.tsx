@@ -17,13 +17,19 @@ import type {
   WorkdayRecency,
 } from '@/types/jobs';
 
+// Workday reports posting age at day granularity ("Posted Today" /
+// "Posted N Days Ago"), so windows are calendar-day based: "1 day" =
+// today + yesterday. Top matches carry the exact posting date from the
+// job-detail API. "custom" lets the user pick any 0-30 day window.
 const RECENCY_OPTIONS: Array<{ key: WorkdayRecency; label: string; maxDays: number }> = [
   { key: 'today', label: 'Today', maxDays: 0 },
-  { key: '24h', label: 'Last 24h', maxDays: 1 },
-  { key: '3d', label: 'Last 3 days', maxDays: 3 },
-  { key: '7d', label: 'Last 7 days', maxDays: 7 },
-  { key: '30d', label: 'Last 30 days', maxDays: 30 },
+  { key: '24h', label: '1 day', maxDays: 1 },
+  { key: '3d', label: '3 days', maxDays: 3 },
+  { key: '7d', label: '7 days', maxDays: 7 },
+  { key: '30d', label: '30 days', maxDays: 30 },
 ];
+
+type RecencyChoice = WorkdayRecency | 'custom';
 
 const INDUSTRY_LABELS: Record<string, string> = {
   fintech: 'Fintech',
@@ -55,7 +61,8 @@ export function WorkdayJobsPanel({
   const [industries, setIndustries] = useState<string[]>([]);
   const [location, setLocation] = useState('');
   const [remoteOnly, setRemoteOnly] = useState(false);
-  const [recency, setRecency] = useState<WorkdayRecency>('3d');
+  const [recency, setRecency] = useState<RecencyChoice>('3d');
+  const [customDays, setCustomDays] = useState(2);
   const [groupByCompany, setGroupByCompany] = useState(false);
   // The backend returns up to 1500 scored roles — render incrementally so
   // wide windows don't mount a thousand JobCards at once.
@@ -106,6 +113,25 @@ export function WorkdayJobsPanel({
       },
       (partial) => {
         if (partial?.progress) setProgress(partial.progress);
+        // Matches stream in company-by-company — render them immediately
+        // while the scan keeps running (final payload replaces this slice).
+        if (partial?.jobs?.length) {
+          setResult((prev) => ({
+            ok: true,
+            generated_at: prev?.generated_at ?? '',
+            jobs: partial.jobs,
+            total: partial.total ?? partial.jobs.length,
+            window_counts: prev?.window_counts ?? { today: 0, d1: 0, d3: 0, d7: 0, d30: 0 },
+            query_terms: partial.query_terms ?? prev?.query_terms ?? [],
+            tenants_total: partial.progress?.tenants_total ?? prev?.tenants_total ?? 0,
+            tenants_done: partial.progress?.tenants_done ?? 0,
+            tenants_with_results: prev?.tenants_with_results ?? 0,
+            industries_available: prev?.industries_available ?? [],
+            cache_hit: false,
+            errors: [],
+            streaming: true,
+          }));
+        }
       },
     );
     setLoading(false);
@@ -140,7 +166,9 @@ export function WorkdayJobsPanel({
 
   // ── Client-side recency filtering (the backend always returns the full
   //    30-day window, so switching Today ↔ 30d never refetches). ───────────
-  const maxDays = RECENCY_OPTIONS.find((o) => o.key === recency)?.maxDays ?? 3;
+  const maxDays = recency === 'custom'
+    ? Math.min(30, Math.max(0, customDays))
+    : (RECENCY_OPTIONS.find((o) => o.key === recency)?.maxDays ?? 3);
   const visibleJobs = useMemo(() => {
     const all = result?.jobs ?? [];
     return all.filter((j) => j.days_ago != null && j.days_ago <= maxDays);
@@ -149,7 +177,7 @@ export function WorkdayJobsPanel({
   // Reset incremental rendering whenever the visible set changes shape.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [recency, groupByCompany, result]);
+  }, [recency, customDays, groupByCompany, result]);
   const renderedJobs = useMemo(
     () => visibleJobs.slice(0, visibleCount),
     [visibleJobs, visibleCount],
@@ -300,9 +328,11 @@ export function WorkdayJobsPanel({
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="flex items-center gap-1.5">
                   <Loader2 className="h-3 w-3 animate-spin text-purple-500" />
-                  {progress
-                    ? `Scanned ${progress.tenants_done} of ${progress.tenants_total} companies — ${progress.jobs_found} postings so far`
-                    : 'Querying Workday career sites directly (no scraping, no credits)…'}
+                  {progress?.phase === 'details'
+                    ? 'Fetching full descriptions for top matches — refining skill scores…'
+                    : progress
+                      ? `Scanned ${progress.tenants_done} of ${progress.tenants_total} companies — ${progress.jobs_found} postings so far (matches stream in below)`
+                      : 'Querying Workday career sites directly (no scraping, no credits)…'}
                 </span>
               </div>
               <Progress
@@ -326,22 +356,48 @@ export function WorkdayJobsPanel({
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Recency segmented control — filters the cached 30-day set
                 client-side, so switching windows is instant. */}
-            <div className="inline-flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
-              {RECENCY_OPTIONS.map((opt) => (
+            <div className="flex items-center gap-1.5">
+              <div className="inline-flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
+                {RECENCY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setRecency(opt.key)}
+                    className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                      recency === opt.key
+                        ? 'bg-background text-purple-600 shadow-sm dark:text-purple-300'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {opt.label}
+                    <span className="ml-1 tabular-nums opacity-60">{recencyCounts[opt.key]}</span>
+                  </button>
+                ))}
                 <button
-                  key={opt.key}
                   type="button"
-                  onClick={() => setRecency(opt.key)}
+                  onClick={() => setRecency('custom')}
                   className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition ${
-                    recency === opt.key
+                    recency === 'custom'
                       ? 'bg-background text-purple-600 shadow-sm dark:text-purple-300'
                       : 'text-muted-foreground hover:text-foreground'
                   }`}
                 >
-                  {opt.label}
-                  <span className="ml-1 tabular-nums opacity-60">{recencyCounts[opt.key]}</span>
+                  Custom
                 </button>
-              ))}
+              </div>
+              {recency === 'custom' && (
+                <label className="flex items-center gap-1 text-[11px] font-medium text-muted-foreground">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={30}
+                    value={customDays}
+                    onChange={(e) => setCustomDays(Number(e.target.value))}
+                    className="h-8 w-16 border-gray-200 bg-white/80 text-xs dark:border-white/10 dark:bg-gray-950/60"
+                  />
+                  days
+                </label>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -357,10 +413,12 @@ export function WorkdayJobsPanel({
           </div>
 
           <p className="text-[11px] text-muted-foreground">
-            Matched {result.tenants_with_results} of {result.tenants_total} companies
-            {result.cache_hit ? ' · served from cache — Refresh to re-scan' : ''}
-            {result.query_terms.length ? ` · searched: ${result.query_terms.join(', ')}` : ''}
-            {result.errors.length > 0 ? ` · ${result.errors.length} source warnings` : ''}
+            {result.streaming
+              ? `Streaming — ${result.tenants_done} of ${result.tenants_total} companies scanned, best matches so far below`
+              : <>Matched {result.tenants_with_results} of {result.tenants_total} companies
+                {result.cache_hit ? ' · served from cache — Refresh to re-scan' : ''}
+                {result.query_terms.length ? ` · searched: ${result.query_terms.join(', ')}` : ''}
+                {result.errors.length > 0 ? ` · ${result.errors.length} source warnings` : ''}</>}
           </p>
 
           {visibleJobs.length === 0 ? (

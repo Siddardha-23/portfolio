@@ -401,9 +401,16 @@ jobs:
         run: |
           FUNCTION_NAME="${{ env.PROJECT_NAME }}-${{ matrix.service }}"
           LAYER_ARN="${{ needs.deploy-layer.outputs.layer_arn }}"
+          # jobs-resume memory must match terraform/lambda.tf (1536MB for the
+          # Workday direct-CXS fan-out); CI sets it so the bump lands without
+          # waiting for a manual terraform apply.
+          EXTRA_ARGS=""
+          if [ "${{ matrix.service }}" = "jobs-resume" ]; then
+            EXTRA_ARGS="--memory-size 1536"
+          fi
           aws lambda update-function-configuration \
             --function-name "${FUNCTION_NAME}" \
-            --layers "${LAYER_ARN}" \
+            --layers "${LAYER_ARN}" ${EXTRA_ARGS} \
             --no-cli-pager
           aws lambda wait function-updated --function-name "${FUNCTION_NAME}"
 

@@ -901,11 +901,12 @@ class ApiService {
     );
     if (submitResp.error) return { error: submitResp.error };
     if (!submitResp.data?.job_id) return { error: "Failed to start Workday search" };
-    // A cold full-catalog fan-out takes ~1-2 min; poll up to 5 with progress
-    // partials streaming in every few seconds.
+    // A cold full-catalog fan-out can take several minutes on Lambda; poll
+    // up to the function's 15-min ceiling. Matches stream in via onPartial
+    // the whole time, so the wait is visible, not a spinner.
     return this.pollJob<import("../types/jobs").WorkdayJobsResult>(
       submitResp.data.job_id,
-      300000,
+      900000,
       undefined,
       onPartial,
     );

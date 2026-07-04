@@ -206,6 +206,9 @@ export interface WorkdayJob extends Job {
   /** True when the job title covers all core tokens of one of the user's
    *  search titles — drives the ranking boost. */
   title_matched?: boolean;
+  /** Which search terms (title families and/or resume skills) retrieved
+   *  this posting. Skill-term hits keep differently-titled roles ranked. */
+  matched_terms?: string[];
 }
 
 export interface WorkdayJobsParams {
@@ -224,6 +227,8 @@ export interface WorkdayJobsProgress {
   tenants_done: number;
   tenants_total: number;
   jobs_found: number;
+  /** "details" while full descriptions are being fetched for top matches. */
+  phase?: string;
 }
 
 export interface WorkdayJobsResult {
@@ -243,6 +248,8 @@ export interface WorkdayJobsResult {
   errors: string[];
   /** Present only on streaming partials while the fan-out is running. */
   progress?: WorkdayJobsProgress;
+  /** True on streaming partials — the jobs list is a provisional top slice. */
+  streaming?: boolean;
 }
 
 export interface WorkdayCatalogIndustry {

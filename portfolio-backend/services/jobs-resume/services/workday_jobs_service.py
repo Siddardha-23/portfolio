@@ -43,9 +43,9 @@ from services.workday_tenant_catalog import WORKDAY_TENANT_CATALOG, INDUSTRIES
 logger = logging.getLogger(__name__)
 
 # Bump when the record schema or fetch behavior changes so stale cached
-# results don't leak the old shape into the UI. v4: tightened geo tiers
-# ("IN"-suffix, "Remote India", "CA-Toronto" no longer slip through).
-RESULT_SCHEMA_VERSION = 4
+# results don't leak the old shape into the UI. v5: matched_terms tracking,
+# skill-derived search terms, description enrichment fields.
+RESULT_SCHEMA_VERSION = 5
 
 # Fan-out envelope — tuned against a live full-catalog run (532 tenants x
 # 3 terms, 2026-07): 1 page/term is enough because the US facet + relevance
@@ -55,13 +55,22 @@ RESULT_SCHEMA_VERSION = 4
 # jobs-resume Lambda timeout is 900s, so OVERALL_TIMEOUT=420 has headroom.
 PAGE_LIMIT = 20
 MAX_PAGES_PER_TERM = 1
-MAX_QUERY_TERMS = 3
-PER_TENANT_KEEP = 20
+MAX_QUERY_TERMS = 3       # title-family terms
+TOTAL_TERMS_CAP = 4       # title terms + resume-skill terms combined
+PER_TENANT_KEEP = 25
 GLOBAL_KEEP = 1500
 REQUEST_TIMEOUT = 6
-OVERALL_TIMEOUT = 420
+OVERALL_TIMEOUT = 600
 MAX_WORKERS = 96
 WINDOW_DAYS = 30
+# Top-ranked rows get their full JD fetched from the CXS detail endpoint so
+# skill matching runs against the real description, not just the title.
+DETAIL_ENRICH_TOP = 200
+DETAIL_TIMEOUT = 5
+# Stream a provisional top slice to the poller as companies complete, so the
+# tab renders matches while the scan is still running.
+STREAM_EVERY_TASKS = 80
+STREAM_TOP = 120
 
 # Shared session: connection pooling saves a TLS handshake for every
 # (tenant, term) pair beyond the first per host. pool size covers the worker
@@ -109,6 +118,40 @@ def _derive_query_terms(titles: List[str], cap: int = MAX_QUERY_TERMS) -> List[s
         if len(out) >= cap:
             break
     return out or ["software engineer"]
+
+
+# Soft skills / ubiquitous tokens that would make terrible search terms.
+_SKILL_TERM_STOPLIST = frozenset({
+    "communication", "leadership", "teamwork", "problem solving", "agile",
+    "scrum", "git", "github", "microsoft office", "excel", "english", "jira",
+    "collaboration", "documentation", "testing", "debugging", "linux",
+})
+
+
+def _derive_skill_terms(skills: List[str], title_terms: List[str],
+                        cap: int) -> List[str]:
+    """Broaden retrieval beyond title vocabulary.
+
+    Workday's searchText matches the FULL posting text, so querying by a
+    distinctive resume skill ("python", "kubernetes") surfaces roles whose
+    titles never say "engineer" — e.g. "Member of Technical Staff". Those
+    rows then earn a skill-signal boost in scoring instead of being missed
+    entirely. Skills arrive in resume-prominence order from the parser.
+    """
+    if cap <= 0:
+        return []
+    title_blob = " ".join(title_terms).lower()
+    out: List[str] = []
+    for s in skills or []:
+        tok = str(s).strip().lower()
+        if len(tok) < 3 or tok in _SKILL_TERM_STOPLIST or tok in title_blob:
+            continue
+        if not re.fullmatch(r"[a-z0-9+#. /-]{3,30}", tok):
+            continue
+        out.append(tok)
+        if len(out) >= cap:
+            break
+    return out
 
 
 def _title_matchers(titles: List[str]) -> List[List[str]]:
@@ -348,6 +391,7 @@ def _fetch_tenant_term(
                 "tenant": tenant,
                 "industry": row.get("industry") or "",
                 "days_ago": days,
+                "search_term": term,
             })
         if len(postings) < PAGE_LIMIT:
             break  # exhausted this term on this tenant
@@ -361,40 +405,105 @@ def _fetch_tenant_term(
 def _score_jobs(
     jobs: List[Dict[str, Any]],
     titles: List[str],
-    user_email: str,
+    skills: List[str],
+    skill_terms: List[str],
 ) -> List[Dict[str, Any]]:
     """Attach match_score / matched_skills / missing_skills to every job.
 
-    Two signals, both deterministic (no LLM):
-      - skill overlap of the job TITLE against the parsed resume skills
-        (jd_match_scorer.score_one — same scorer the pipeline overlay uses);
-      - a title-family bonus when the job title covers all core tokens of one
-        of the user's search titles. The CXS list view has no description, so
-        the title bonus carries most of the ranking weight.
-    """
-    from services.jd_match_scorer import _load_user_skills, score_one
+    Deterministic (no LLM). Three signals:
+      - skill overlap of the resume skills against title + description (the
+        description exists once _enrich_details has run for that row — same
+        regex semantics as jd_match_scorer);
+      - a title-family bonus (+45) when the job title covers all core tokens
+        of one of the user's titles;
+      - a skill-signal bonus (+20) when the title DOESN'T match but the row
+        either overlaps resume skills or was retrieved by a skill-derived
+        search term — this is what keeps differently-titled roles ("Member
+        of Technical Staff") ranked instead of buried at zero.
 
-    skills = _load_user_skills(user_email) if user_email else []
+    Nothing is ever dropped here — scoring only orders; recall is preserved.
+    """
+    from services.jd_match_scorer import _build_match_regex
+
+    skill_rx = [(s, _build_match_regex(s)) for s in skills]
     matchers = _title_matchers(titles)
+    skill_terms_set = {t.lower() for t in skill_terms}
+    denom = max(8, len(skills))
 
     for job in jobs:
         title_lc = job["title"].lower()
+        blob = (job["title"] + "\n" + (job.get("description") or "")).lower()
+        matched = [s for s, rx in skill_rx if rx is not None and rx.search(blob)]
+        matched_set = set(matched)
+        missing = [s for s, _ in skill_rx if s not in matched_set][:8]
+        base = min(100, round(len(matched) / denom * 100)) if skills else 0
         title_matched = any(all(tok in title_lc for tok in m) for m in matchers)
-        if skills:
-            s = score_one(jd_text="", title=job["title"], resume_skills=skills)
-            base = s["match_score"]
-            matched = s["matched_skills"]
-            missing = s["missing_top"]
-        else:
-            base, matched, missing = 0, [], []
-        score = min(100, base + (45 if title_matched else 0))
+        skill_signal = bool(matched) or bool(
+            skill_terms_set & {str(t).lower() for t in (job.get("matched_terms") or [])}
+        )
+        score = min(100, base + (45 if title_matched else (20 if skill_signal else 0)))
         if not skills and not title_matched:
             score = 15  # neutral floor so the ring isn't a sea of zeros
         job["match_score"] = score
-        job["matched_skills"] = matched
+        job["matched_skills"] = matched[:12]
         job["missing_skills"] = missing
         job["title_matched"] = title_matched
     return jobs
+
+
+# ----------------------------------------------------------------------
+# Detail enrichment — full JD for the top-ranked rows
+# ----------------------------------------------------------------------
+
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _html_to_text(raw: str) -> str:
+    import html as _html
+    return re.sub(r"\s+", " ", _TAG_RE.sub(" ", _html.unescape(raw or ""))).strip()
+
+
+def _enrich_details(jobs: List[Dict[str, Any]]) -> int:
+    """Fetch the CXS job-detail JSON for rows lacking a description.
+
+    GET {base}/wday/cxs/{tenant}/{site}{externalPath} returns
+    jobPostingInfo with the full HTML jobDescription, the EXACT posting
+    startDate (better than the lossy "Posted N Days Ago"), and remoteType.
+    Enables real skill-overlap scoring + accurate recency for top matches.
+    Returns how many rows were enriched; individual failures are skipped.
+    """
+    need = [j for j in jobs if not j.get("description") and j.get("tenant")]
+    if not need:
+        return 0
+
+    def _one(job: Dict[str, Any]) -> bool:
+        m = re.match(r"(https://[^/]+)/(.+)$", job.get("apply_link") or "")
+        if not m:
+            return False
+        url = f"{m.group(1)}/wday/cxs/{job['tenant']}/{m.group(2)}"
+        try:
+            resp = _SESSION.get(url, headers=_HEADERS, timeout=DETAIL_TIMEOUT)
+            if resp.status_code != 200:
+                return False
+            info = (resp.json() or {}).get("jobPostingInfo") or {}
+        except (requests.RequestException, ValueError):
+            return False
+        desc = info.get("jobDescription") or ""
+        if desc:
+            job["description"] = _html_to_text(desc)[:5000]
+        start = str(info.get("startDate") or "")[:10]
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", start):
+            days = _days_ago(start)
+            if days is not None:
+                job["date_posted"] = start
+                job["days_ago"] = days
+        if "remote" in str(info.get("remoteType") or "").lower():
+            job["is_remote"] = True
+        return bool(desc)
+
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, 64)) as pool:
+        results = list(pool.map(_one, need))
+    return sum(1 for ok in results if ok)
 
 
 # ----------------------------------------------------------------------
@@ -499,7 +608,14 @@ def run_workday_jobs_search(
         if (not industries or r.get("industry") in industries)
         and (not companies or r["tenant"] in companies)
     ]
-    terms = _derive_query_terms(titles)
+    # Resume skills drive both retrieval (extra search terms) and scoring.
+    from services.jd_match_scorer import _load_user_skills
+    skills = _load_user_skills(user_email) if user_email else []
+    title_terms = _derive_query_terms(titles)
+    skill_terms = _derive_skill_terms(
+        skills, title_terms, cap=TOTAL_TERMS_CAP - len(title_terms),
+    )
+    terms = title_terms + skill_terms
     errors: List[str] = []
 
     coll = _get_cache_collection()
@@ -522,6 +638,40 @@ def run_workday_jobs_search(
         fallback_tenants: set = set()
         done_tasks = 0
         tasks_per_tenant = max(1, len(terms))
+        matchers = _title_matchers(titles)
+
+        def _stream_snapshot() -> None:
+            """Push a provisional, cheaply-ranked top slice to the poller so
+            the tab renders matches company-by-company during the scan."""
+            if not partial_cb:
+                return
+            snap: Dict[str, Dict[str, Any]] = {}
+            for j in collected:
+                snap.setdefault(j["job_id"], j)
+            rows_snap = list(snap.values())
+            for j in rows_snap:
+                tl = j["title"].lower()
+                tm = any(all(tok in tl for tok in m) for m in matchers)
+                j["match_score"] = 45 if tm else 15
+                j.setdefault("matched_skills", [])
+                j.setdefault("missing_skills", [])
+            rows_snap.sort(key=lambda x: (
+                -(x["match_score"]),
+                x.get("days_ago") if x.get("days_ago") is not None else 99,
+            ))
+            try:
+                partial_cb({
+                    "progress": {
+                        "tenants_done": min(tenants_total, done_tasks // tasks_per_tenant),
+                        "tenants_total": tenants_total,
+                        "jobs_found": len(rows_snap),
+                    },
+                    "jobs": rows_snap[:STREAM_TOP],
+                    "total": len(rows_snap),
+                    "streaming": True,
+                })
+            except Exception:
+                pass
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
             futures = {pool.submit(_fetch_tenant_term, r, t, location, us_only): (r, t)
                        for r, t in tasks}
@@ -541,19 +691,10 @@ def run_workday_jobs_search(
                     if items:
                         seen_tenants_with_hits.add(r["tenant"])
                         collected.extend(items)
-                    # Progress stream every ~25 completed tasks so the tab can
-                    # render "Scanned N of M companies - X roles so far".
-                    if partial_cb and done_tasks % 25 == 0:
-                        try:
-                            partial_cb({
-                                "progress": {
-                                    "tenants_done": min(tenants_total, done_tasks // tasks_per_tenant),
-                                    "tenants_total": tenants_total,
-                                    "jobs_found": len(collected),
-                                },
-                            })
-                        except Exception:
-                            pass
+                    # Stream a provisional result slice every ~80 tasks so
+                    # matches appear in the tab while the scan continues.
+                    if partial_cb and done_tasks % STREAM_EVERY_TASKS == 0:
+                        _stream_snapshot()
             except TimeoutError:
                 pending = sum(1 for f in futures if not f.done())
                 errors.append(f"timeout: {pending} tenant queries did not finish")
@@ -565,11 +706,18 @@ def run_workday_jobs_search(
         tenants_with_results = len(seen_tenants_with_hits)
         diagnostics["facet_fallbacks"] = len(fallback_tenants)
 
-        # Dedupe (same posting can match multiple terms) + per-tenant cap so a
-        # single high-volume tenant can't flood the feed.
+        # Dedupe (same posting can match multiple terms — remember WHICH
+        # terms found it, the scorer uses that) + per-tenant cap so a single
+        # high-volume tenant can't flood the feed.
         by_id: Dict[str, Dict[str, Any]] = {}
         for j in collected:
-            by_id.setdefault(j["job_id"], j)
+            term = j.pop("search_term", None)
+            existing = by_id.get(j["job_id"])
+            if existing is None:
+                j["matched_terms"] = [term] if term else []
+                by_id[j["job_id"]] = j
+            elif term and term not in existing["matched_terms"]:
+                existing["matched_terms"].append(term)
         per_tenant: Dict[str, int] = {}
         raw_jobs = []
         for j in sorted(by_id.values(), key=lambda x: x.get("days_ago") if x.get("days_ago") is not None else 99):
@@ -583,16 +731,64 @@ def run_workday_jobs_search(
         tenants_done = tenants_total
         tenants_with_results = len({j.get("tenant") for j in raw_jobs if j.get("tenant")})
 
-    jobs = [dict(j) for j in raw_jobs]
+    # Recompute recency at SERVE time — cached rows age (a "Posted Today"
+    # row cached before midnight is 1 day old after it), so days_ago must
+    # never be trusted from the cache. Rows aging past the window drop out.
+    jobs = []
+    for j0 in raw_jobs:
+        j = dict(j0)
+        days = _days_ago(j.get("date_posted") or "")
+        if days is None or days > WINDOW_DAYS:
+            continue
+        j["days_ago"] = days
+        jobs.append(j)
 
     if remote_only:
         jobs = [j for j in jobs if j.get("is_remote")]
 
-    jobs = _score_jobs(jobs, titles, user_email)
-    jobs.sort(key=lambda j: (
-        -(j.get("match_score") or 0),
-        j.get("days_ago") if j.get("days_ago") is not None else 99,
-    ))
+    def _rank(items: List[Dict[str, Any]]) -> None:
+        items.sort(key=lambda j: (
+            -(j.get("match_score") or 0),
+            j.get("days_ago") if j.get("days_ago") is not None else 99,
+        ))
+
+    jobs = _score_jobs(jobs, titles, skills, skill_terms)
+    _rank(jobs)
+
+    # Fetch full descriptions for the top slice, then rescore those rows on
+    # real skill overlap + exact posting dates. Rows outside the slice keep
+    # their title-based score — nothing is dropped either way.
+    if partial_cb:
+        try:
+            partial_cb({
+                "progress": {"tenants_done": tenants_total,
+                             "tenants_total": tenants_total,
+                             "jobs_found": len(jobs), "phase": "details"},
+                "jobs": jobs[:STREAM_TOP], "total": len(jobs),
+                "streaming": True,
+            })
+        except Exception:
+            pass
+    top = jobs[:DETAIL_ENRICH_TOP]
+    enriched = _enrich_details(top)
+    if enriched:
+        _score_jobs(top, titles, skills, skill_terms)
+        # startDate refinement can push a row past the 30-day window.
+        jobs = [j for j in jobs
+                if j.get("days_ago") is not None and j["days_ago"] <= WINDOW_DAYS]
+        _rank(jobs)
+        # Persist descriptions/exact dates into the cache so repeat searches
+        # serve them without re-fetching 200 detail pages.
+        if coll is not None:
+            enriched_by_id = {j["job_id"]: j for j in top if j.get("description")}
+            for rj in raw_jobs:
+                e = enriched_by_id.get(rj["job_id"])
+                if e:
+                    rj["description"] = e["description"]
+                    rj["date_posted"] = e["date_posted"]
+                    rj["is_remote"] = e["is_remote"]
+            _write_cache(coll, key, raw_jobs)
+
     jobs = jobs[:GLOBAL_KEEP]
 
     window_counts = {"today": 0, "d1": 0, "d3": 0, "d7": 0, "d30": 0}

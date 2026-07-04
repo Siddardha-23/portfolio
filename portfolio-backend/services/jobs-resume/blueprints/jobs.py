@@ -581,6 +581,77 @@ def daily_pipeline():
 
 
 # ------------------------------------------------------------------
+# Workday Jobs tab — direct CXS fan-out across the validated tenant catalog.
+# Free (no Apify credits), async submit → poll /api/resume/job/<id>.
+# ------------------------------------------------------------------
+
+@jobs_bp.route("/workday/catalog", methods=["GET"])
+@jwt_required()
+def workday_catalog():
+    """Catalog metadata for the Workday Jobs tab's industry/company filters."""
+    try:
+        from services.workday_jobs_service import catalog_summary
+        return jsonify(catalog_summary()), 200
+    except Exception as e:
+        logger.error(f"Workday catalog error: {e}")
+        return jsonify({"error": "Failed to load Workday catalog"}), 500
+
+
+@jobs_bp.route("/workday/search", methods=["POST"])
+@jwt_required()
+def workday_search():
+    """Run a Workday Jobs search across the curated tenant catalog.
+
+    Body (all optional):
+        {
+          "titles":       ["Backend Engineer", ...],   # prefilled from resume
+          "industries":   ["fintech", "banking"],      # [] = all industries
+          "companies":    ["cvshealth", ...],          # [] = all tenants
+          "location":     "Texas",   # optional narrowing WITHIN the US
+          "remote_only":  false,
+          "us_only":      true,      # server-side US country facet (default)
+          "force_refresh": false
+        }
+    Returns: {"job_id": "..."} (202) — poll /api/resume/job/<id>. The result
+    carries the full 30-day window; recency filtering happens client-side.
+    """
+    client_ip = get_client_ip(request)
+    limiter = get_rate_limiter()
+    if limiter.is_rate_limited(f"jobs_workday:{client_ip}", max_requests=6, window_seconds=300):
+        return jsonify({"error": "Rate limit exceeded. Workday searches are limited to 6 / 5 min."}), 429
+
+    data = request.get_json(silent=True) or {}
+    titles = _split_lines(data.get("titles"), max_items=20, max_len=120)
+    industries = _split_lines(data.get("industries"), max_items=15, max_len=40)
+    companies = _split_lines(data.get("companies"), max_items=100, max_len=60)
+    location = InputSanitizer.sanitize_string(str(data.get("location") or ""), max_length=80)
+    remote_only = bool(data.get("remote_only", False))
+    us_only = bool(data.get("us_only", True))
+    force_refresh = bool(data.get("force_refresh", False))
+
+    user_email = get_jwt_identity()
+    payload = {
+        "titles": titles,
+        "industries": industries,
+        "companies": companies,
+        "location": location,
+        "remote_only": remote_only,
+        "us_only": us_only,
+        "force_refresh": force_refresh,
+        "user_email": user_email,
+    }
+    try:
+        from services.resume_service import get_resume_service, ResumeService
+        svc = get_resume_service()
+        job_id = svc.create_job("workday_jobs", payload, user_email=user_email)
+        ResumeService.invoke_async(job_id, "workday_jobs", payload)
+        return jsonify({"job_id": job_id}), 202
+    except Exception as e:
+        logger.error(f"Workday search submit error: {e}")
+        return jsonify({"error": "Failed to start Workday search"}), 500
+
+
+# ------------------------------------------------------------------
 # POST /api/jobs/analyze
 # ------------------------------------------------------------------
 

@@ -876,6 +876,41 @@ class ApiService {
     );
   }
 
+  // ============================================
+  // Workday Jobs tab (/api/jobs/workday)
+  // ============================================
+
+  async getWorkdayCatalog() {
+    return this.request<import("../types/jobs").WorkdayCatalog>(
+      "/jobs/workday/catalog",
+      { method: "GET" },
+    );
+  }
+
+  async searchWorkdayJobs(
+    params: import("../types/jobs").WorkdayJobsParams,
+    onPartial?: (partial: import("../types/jobs").WorkdayJobsResult) => void,
+  ): Promise<ApiResponse<import("../types/jobs").WorkdayJobsResult>> {
+    const submitResp = await this.request<{ job_id: string }>(
+      "/jobs/workday/search",
+      {
+        method: "POST",
+        body: JSON.stringify(params),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: "Failed to start Workday search" };
+    // A cold full-catalog fan-out takes ~1-2 min; poll up to 5 with progress
+    // partials streaming in every few seconds.
+    return this.pollJob<import("../types/jobs").WorkdayJobsResult>(
+      submitResp.data.job_id,
+      300000,
+      undefined,
+      onPartial,
+    );
+  }
+
   async analyzeJob(
     job: import("../types/jobs").Job,
     action: "summarize" | "missing_skills" | "cover_letter",

@@ -192,6 +192,70 @@ export interface Job {
   missing_skills: string[];
 }
 
+// ── Workday Jobs tab (direct CXS fan-out across the validated tenant catalog) ──
+
+export type WorkdayRecency = 'today' | '24h' | '3d' | '7d' | '30d';
+
+/** Job shape returned by /api/jobs/workday/search — superset of Job with
+ *  catalog metadata so the tab can filter recency/industry client-side. */
+export interface WorkdayJob extends Job {
+  tenant: string;
+  industry: string;
+  /** Whole days since posting (0 = today). null/undefined = unknown. */
+  days_ago?: number | null;
+  /** True when the job title covers all core tokens of one of the user's
+   *  search titles — drives the ranking boost. */
+  title_matched?: boolean;
+}
+
+export interface WorkdayJobsParams {
+  titles?: string[];
+  industries?: string[];
+  companies?: string[];
+  /** Optional narrowing WITHIN the US (state/city/"Remote"). */
+  location?: string;
+  remote_only?: boolean;
+  /** Server-side US country facet on every tenant. Defaults to true. */
+  us_only?: boolean;
+  force_refresh?: boolean;
+}
+
+export interface WorkdayJobsProgress {
+  tenants_done: number;
+  tenants_total: number;
+  jobs_found: number;
+}
+
+export interface WorkdayJobsResult {
+  ok: boolean;
+  generated_at: string;
+  jobs: WorkdayJob[];
+  total: number;
+  window_counts: { today: number; d1: number; d3: number; d7: number; d30: number };
+  query_terms: string[];
+  tenants_total: number;
+  tenants_done: number;
+  tenants_with_results: number;
+  industries_available: string[];
+  cache_hit: boolean;
+  us_only?: boolean;
+  diagnostics?: { facet_fallbacks: number; task_errors: number };
+  errors: string[];
+  /** Present only on streaming partials while the fan-out is running. */
+  progress?: WorkdayJobsProgress;
+}
+
+export interface WorkdayCatalogIndustry {
+  key: string;
+  count: number;
+  companies: Array<{ display_name: string; tenant: string }>;
+}
+
+export interface WorkdayCatalog {
+  total: number;
+  industries: WorkdayCatalogIndustry[];
+}
+
 export interface SavedJob {
   _id: string;
   job_id: string;

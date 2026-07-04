@@ -34,6 +34,7 @@ const InterviewPrepTab = lazy(() => import("@/components/resume/InterviewPrepTab
 const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab"));
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
+const WorkdayJobsTab = lazy(() => import("@/components/resume/WorkdayJobsTab"));
 const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
 const VisaTimelineTab = lazy(() => import("@/components/visa/VisaTimelineTab"));
 const BetaLabTab = lazy(() => import("@/components/beta/BetaLabTab"));
@@ -270,6 +271,18 @@ function FileIcon({ className = "w-4 h-4" }: { className?: string }) {
     </svg>
   );
 }
+function BuildingOfficeIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+      />
+    </svg>
+  );
+}
+
 function ChevronIcon({
   open,
   className = "w-4 h-4",
@@ -298,6 +311,7 @@ type NavTab =
   | "tailor"
   | "batch"
   | "jobs"
+  | "workday-jobs"
   | "my-resumes"
   | "tailored"
   | "applications"
@@ -6000,6 +6014,13 @@ const NAV_ITEMS: ResumeNavItem[] = [
     hint: "Discover and save roles",
   },
   {
+    key: "workday-jobs",
+    label: "Workday Jobs",
+    icon: <BuildingOfficeIcon className="w-4 h-4" />,
+    badge: "New",
+    hint: "Direct enterprise scan",
+  },
+  {
     key: "profile",
     label: "Profile",
     icon: <UserCircleIcon className="w-4 h-4" />,
@@ -6010,7 +6031,7 @@ const NAV_ITEMS: ResumeNavItem[] = [
 const NAV_SECTIONS: ResumeNavSection[] = [
   { label: "Create", items: ["tailor", "batch"] },
   { label: "Library", items: ["my-resumes", "tailored", "applications"] },
-  { label: "Career", items: ["interview", "visa", "copilot", "jobs"] },
+  { label: "Career", items: ["interview", "visa", "copilot", "jobs", "workday-jobs"] },
   { label: "Experimental", items: ["beta"] },
   { label: "Account", items: ["profile"] },
 ];
@@ -6175,6 +6196,7 @@ const VALID_NAV_TABS: readonly NavTab[] = [
   "tailor",
   "batch",
   "jobs",
+  "workday-jobs",
   "my-resumes",
   "tailored",
   "applications",
@@ -6562,6 +6584,21 @@ export default function ResumeParser() {
                     }
                   >
                     <JobOpportunitiesTab />
+                  </Suspense>
+                </div>
+              )}
+              {/* Workday Jobs stays mounted once visited — a full-catalog scan
+                  takes ~1-2 min and must survive tab switches mid-run. */}
+              {wasVisited("workday-jobs") && (
+                <div style={{ display: isVisible("workday-jobs") ? undefined : "none" }}>
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                        <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
+                      </div>
+                    }
+                  >
+                    <WorkdayJobsTab />
                   </Suspense>
                 </div>
               )}

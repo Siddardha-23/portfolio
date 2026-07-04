@@ -868,6 +868,15 @@ def _process_job(job_id: str, job_type: str, payload: dict):
                 )
             svc.complete_job(job_id, result)
 
+        elif job_type == "workday_jobs":
+            from services.workday_jobs_service import run_workday_jobs_search
+
+            def _stream_workday_partial(partial: dict) -> None:
+                svc.update_job_partial(job_id, partial)
+
+            result = run_workday_jobs_search(payload, partial_cb=_stream_workday_partial)
+            svc.complete_job(job_id, result)
+
         elif job_type == "daily_pipeline":
             # Idempotency guard — Lambda async invocations are at-least-once,
             # so AWS may retry the same job after a transient failure or long

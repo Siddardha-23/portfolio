@@ -94,6 +94,26 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
 
           {/* Meta row (salary / type / posted / source) */}
           <div className="flex flex-wrap gap-1.5 text-[10.5px]">
+            {job.tailor_feasibility && (
+              <Badge
+                variant="outline"
+                title={job.feasibility_reason}
+                className={`px-1.5 py-0 ${
+                  job.tailor_feasibility === 'strong'
+                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : job.tailor_feasibility === 'possible'
+                      ? 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                      : job.tailor_feasibility === 'stretch'
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                        : 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300'
+                }`}
+              >
+                {job.tailor_feasibility === 'strong' ? 'Strong fit'
+                  : job.tailor_feasibility === 'possible' ? 'Tailorable'
+                    : job.tailor_feasibility === 'stretch' ? 'Stretch'
+                      : 'Off-target'}
+              </Badge>
+            )}
             {jobStatus === 'applied' && (
               <Badge className="gap-1 border border-amber-500/30 bg-amber-500/15 px-1.5 py-0 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300">
                 <BookmarkCheck className="h-2.5 w-2.5" /> Applied

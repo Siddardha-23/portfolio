@@ -171,6 +171,9 @@ export interface DailyPipelineResult {
   };
 }
 
+export type TailorFeasibility = 'strong' | 'possible' | 'stretch' | 'skip';
+export type JobSeniority = 'intern' | 'entry' | 'mid' | 'senior';
+
 export interface Job {
   job_id: string;
   title: string;
@@ -190,6 +193,12 @@ export interface Job {
   match_score: number;
   matched_skills: string[];
   missing_skills: string[];
+  /** Frank "can the base resume be tailored into this JD?" verdict —
+   *  set by sources that analyze descriptions (Workday Jobs). */
+  tailor_feasibility?: TailorFeasibility;
+  feasibility_reason?: string;
+  /** Title-derived seniority band. */
+  seniority?: JobSeniority;
 }
 
 // ── Workday Jobs tab (direct CXS fan-out across the validated tenant catalog) ──
@@ -247,6 +256,8 @@ export interface WorkdayJobsResult {
   industries_available: string[];
   cache_hit: boolean;
   us_only?: boolean;
+  /** 0 => no parsed resume on this account (skill scoring unavailable). */
+  resume_skill_count?: number;
   diagnostics?: { facet_fallbacks: number; task_errors: number };
   errors: string[];
   /** Present only on streaming partials while the fan-out is running. */

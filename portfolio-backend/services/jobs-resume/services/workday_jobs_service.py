@@ -43,9 +43,9 @@ from services.workday_tenant_catalog import WORKDAY_TENANT_CATALOG, INDUSTRIES
 logger = logging.getLogger(__name__)
 
 # Bump when the record schema or fetch behavior changes so stale cached
-# results don't leak the old shape into the UI. v6: country_code from the
-# detail endpoint resolves "N Locations" rows' geo definitively.
-RESULT_SCHEMA_VERSION = 6
+# results don't leak the old shape into the UI. v7: seniority + tailor
+# feasibility fields, 4 title terms + 2 skill terms, 300-row enrichment.
+RESULT_SCHEMA_VERSION = 7
 
 # Fan-out envelope — tuned against a live full-catalog run (532 tenants x
 # 3 terms, 2026-07): 1 page/term is enough because the US facet + relevance
@@ -55,17 +55,17 @@ RESULT_SCHEMA_VERSION = 6
 # jobs-resume Lambda timeout is 900s, so OVERALL_TIMEOUT=420 has headroom.
 PAGE_LIMIT = 20
 MAX_PAGES_PER_TERM = 1
-MAX_QUERY_TERMS = 3       # title-family terms
-TOTAL_TERMS_CAP = 4       # title terms + resume-skill terms combined
-PER_TENANT_KEEP = 25
+MAX_QUERY_TERMS = 4       # title-family terms (multi-domain resumes need 4)
+TOTAL_TERMS_CAP = 6       # title terms + resume-skill terms combined
+PER_TENANT_KEEP = 30
 GLOBAL_KEEP = 1500
 REQUEST_TIMEOUT = 6
 OVERALL_TIMEOUT = 600
 MAX_WORKERS = 96
 WINDOW_DAYS = 30
 # Top-ranked rows get their full JD fetched from the CXS detail endpoint so
-# skill matching runs against the real description, not just the title.
-DETAIL_ENRICH_TOP = 200
+# skill matching + tailor-feasibility run against the real description.
+DETAIL_ENRICH_TOP = 300
 DETAIL_TIMEOUT = 5
 # Stream a provisional top slice to the poller as companies complete, so the
 # tab renders matches while the scan is still running.
@@ -399,6 +399,164 @@ def _fetch_tenant_term(
 
 
 # ----------------------------------------------------------------------
+# Seniority + tailor-feasibility (deterministic, no LLM)
+# ----------------------------------------------------------------------
+
+_SENIOR_RE = re.compile(
+    r"\b(senior|sr\.?|staff|principal|lead|architect|director|manager|head|"
+    r"vp|vice president|distinguished|fellow|iii|iv|v)\b", re.IGNORECASE)
+_ENTRY_RE = re.compile(
+    r"\b(junior|jr\.?|associate|entry|early career|new grad|graduate|"
+    r"university|campus|\bi\b|\b1\b)\b", re.IGNORECASE)
+_INTERN_RE = re.compile(r"\b(intern|internship|co-?op)\b", re.IGNORECASE)
+
+
+def _seniority(title: str) -> str:
+    t = title or ""
+    if _INTERN_RE.search(t):
+        return "intern"
+    if _SENIOR_RE.search(t):
+        return "senior"
+    if _ENTRY_RE.search(t):
+        return "entry"
+    return "mid"
+
+
+# Tech-stack families for the frank tailor-feasibility check. A family is a
+# JD "core requirement" when it appears in the TITLE or >= 3 times in the
+# description; the resume "has" a family when any parsed skill matches it.
+_STACK_FAMILIES: Dict[str, Tuple[str, re.Pattern]] = {
+    k: (label, re.compile(rx, re.IGNORECASE)) for k, (label, rx) in {
+        "dotnet":     (".NET/C#", r"\.net\b|\bc#|asp\.net|dotnet"),
+        "java":       ("Java/Spring", r"\bjava\b(?!script)|spring boot|spring framework|\bj2ee\b"),
+        "python":     ("Python", r"\bpython\b|django|fastapi|\bflask\b"),
+        "node":       ("Node.js", r"node\.?js|\bexpress\.js\b|\bnestjs\b"),
+        "frontend":   ("Frontend JS", r"\breact\b|\bangular\b|\bvue\b|next\.?js|\btypescript\b"),
+        "golang":     ("Go", r"\bgolang\b|\bgo\b(?=\s+(developer|engineer|programming|lang))"),
+        "ruby":       ("Ruby/Rails", r"\bruby\b|\brails\b"),
+        "php":        ("PHP", r"\bphp\b|\blaravel\b"),
+        "ios":        ("iOS/Swift", r"\bios\b|\bswift\b|objective-c"),
+        "android":    ("Android/Kotlin", r"\bandroid\b|\bkotlin\b"),
+        "embedded":   ("Embedded/C++", r"\bembedded\b|\bc\+\+|\brtos\b|\bfirmware\b"),
+        "mainframe":  ("Mainframe/COBOL", r"\bmainframe\b|\bcobol\b|as/400|\brpg\b"),
+        "sap":        ("SAP/ABAP", r"\babap\b|\bsap\b"),
+        "salesforce": ("Salesforce", r"\bsalesforce\b|\bapex\b"),
+        "data_eng":   ("Data Eng", r"\bspark\b|\bhadoop\b|\bairflow\b|\bdbt\b|\bsnowflake\b|\bdatabricks\b|\betl\b"),
+        "cloud":      ("Cloud/DevOps", r"\baws\b|\bazure\b|\bgcp\b|kubernetes|terraform|\bdocker\b|devops|ci/cd|\bsre\b|\bjenkins\b"),
+        "ml_ai":      ("ML/AI", r"machine learning|pytorch|tensorflow|\bnlp\b|\bllm\b|deep learning"),
+    }.items()
+}
+
+_CLEARANCE_RE = re.compile(
+    r"(active|current)\s+(security\s+)?clearance|ts/?sci|top secret|secret clearance",
+    re.IGNORECASE)
+_YEARS_RE = re.compile(r"(\d{1,2})\s*\+?\s*years?", re.IGNORECASE)
+
+
+def _families_in(text: str, core_threshold: int = 1) -> set:
+    found = set()
+    for key, (_label, rx) in _STACK_FAMILIES.items():
+        if len(rx.findall(text)) >= core_threshold:
+            found.add(key)
+    return found
+
+
+def _required_years(description: str) -> Optional[int]:
+    """Max plausible years-of-experience ask ("8+ years ... experience")."""
+    best = None
+    for m in _YEARS_RE.finditer(description or ""):
+        n = int(m.group(1))
+        if n > 20:
+            continue
+        window = description[max(0, m.start() - 60):m.end() + 60].lower()
+        if "experience" in window or "exp." in window:
+            best = n if best is None else max(best, n)
+    return best
+
+
+def _attach_feasibility(jobs: List[Dict[str, Any]], resume_skills: List[str],
+                        resume_years: Optional[int]) -> None:
+    """Frank, strict "can the base resume be tailored into this?" verdict.
+
+    strong   - core stacks overlap and the skill score is already solid
+    possible - no hard conflict; tailoring is plausible
+    stretch  - real gap (2-4 missing years, partial stack mismatch)
+    skip     - not honestly tailorable: the JD centers on a stack the resume
+               has zero footprint in (.NET JD vs Python resume), demands
+               5+ more years than the resume shows, or needs an active
+               security clearance. The tab hides these by default.
+
+    Left unset when there's no parsed resume — we refuse to guess.
+    """
+    if not resume_skills:
+        return
+    resume_fams = _families_in(" \n".join(resume_skills))
+    for job in jobs:
+        title = job.get("title") or ""
+        desc = job.get("description") or ""
+        title_fams = _families_in(title)
+        core = set(title_fams)
+        if desc:
+            core |= _families_in(desc, core_threshold=3)
+        verdict, reason = "possible", "No hard conflicts found"
+        overlap = core & resume_fams
+        conflicts = core - resume_fams
+        if core and not overlap:
+            labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(conflicts))
+            verdict, reason = "skip", f"Core stack mismatch — centers on {labels}, no resume footprint"
+        elif desc and _CLEARANCE_RE.search(desc):
+            verdict, reason = "skip", "Requires an active security clearance"
+        else:
+            req = _required_years(desc) if desc else None
+            gap = (req - resume_years) if (req and resume_years is not None) else 0
+            if gap >= 5:
+                verdict, reason = "skip", f"Asks ~{req}+ yrs experience vs ≈{resume_years} on resume"
+            elif gap >= 2:
+                verdict, reason = "stretch", f"Asks ~{req}+ yrs vs ≈{resume_years} — a stretch"
+            elif conflicts and overlap:
+                labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(conflicts))
+                verdict, reason = "stretch", f"Partially off-stack ({labels}) — tailorable via {', '.join(_STACK_FAMILIES[k][0] for k in sorted(overlap))}"
+            elif overlap and (job.get("match_score") or 0) >= 55:
+                labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(overlap))
+                verdict, reason = "strong", f"Direct overlap on {labels}"
+        job["tailor_feasibility"] = verdict
+        job["feasibility_reason"] = reason
+
+
+def _load_resume_profile(user_email: str) -> Tuple[List[str], Optional[int]]:
+    """Skills (resume-prominence order) + experience years for feasibility."""
+    if not user_email:
+        return [], None
+    try:
+        from utils.db_connect import DBConnect
+        from schemas.resume_schemas import flatten_skills
+        db = DBConnect().get_db()
+        doc = db.user_resumes.find_one(
+            {"user_email": user_email, "structured": {"$exists": True}},
+            sort=[("parsed_at", -1)],
+        )
+        if not doc:
+            return [], None
+        skills_raw = flatten_skills(doc.get("structured") or {}) or []
+        seen: set = set()
+        skills: List[str] = []
+        for s in skills_raw:
+            n = str(s).strip().lower()
+            if n and n not in seen:
+                seen.add(n)
+                skills.append(n)
+        years = doc.get("experience_years")
+        try:
+            years = int(years) if years is not None else None
+        except (TypeError, ValueError):
+            years = None
+        return skills, years
+    except Exception as e:
+        logger.warning("workday-jobs: resume profile load failed for %s: %s", user_email, e)
+        return [], None
+
+
+# ----------------------------------------------------------------------
 # Scoring
 # ----------------------------------------------------------------------
 
@@ -428,7 +586,6 @@ def _score_jobs(
     skill_rx = [(s, _build_match_regex(s)) for s in skills]
     matchers = _title_matchers(titles)
     skill_terms_set = {t.lower() for t in skill_terms}
-    denom = max(8, len(skills))
 
     for job in jobs:
         title_lc = job["title"].lower()
@@ -436,7 +593,11 @@ def _score_jobs(
         matched = [s for s, rx in skill_rx if rx is not None and rx.search(blob)]
         matched_set = set(matched)
         missing = [s for s, _ in skill_rx if s not in matched_set][:8]
-        base = min(100, round(len(matched) / denom * 100)) if skills else 0
+        # Base measures JD COVERAGE, not "fraction of resume used" — a
+        # 50-skill resume matching 10 of a JD's asks is a great fit, not a
+        # 20%. ~6 points per matched skill, saturating at 55 so the
+        # title/skill boosts still differentiate the top of the scale.
+        base = min(55, len(matched) * 6) if skills else 0
         title_matched = any(all(tok in title_lc for tok in m) for m in matchers)
         skill_signal = bool(matched) or bool(
             skill_terms_set & {str(t).lower() for t in (job.get("matched_terms") or [])}
@@ -448,6 +609,7 @@ def _score_jobs(
         job["matched_skills"] = matched[:12]
         job["missing_skills"] = missing
         job["title_matched"] = title_matched
+        job["seniority"] = _seniority(job["title"])
     return jobs
 
 
@@ -620,9 +782,9 @@ def run_workday_jobs_search(
         if (not industries or r.get("industry") in industries)
         and (not companies or r["tenant"] in companies)
     ]
-    # Resume skills drive both retrieval (extra search terms) and scoring.
-    from services.jd_match_scorer import _load_user_skills
-    skills = _load_user_skills(user_email) if user_email else []
+    # Resume skills drive retrieval (extra search terms), scoring, and the
+    # tailor-feasibility verdicts; years feed the experience-gap check.
+    skills, resume_years = _load_resume_profile(user_email)
     title_terms = _derive_query_terms(titles)
     skill_terms = _derive_skill_terms(
         skills, title_terms, cap=TOTAL_TERMS_CAP - len(title_terms),
@@ -813,6 +975,7 @@ def run_workday_jobs_search(
             _write_cache(coll, key, raw_jobs)
 
     jobs = jobs[:GLOBAL_KEEP]
+    _attach_feasibility(jobs, skills, resume_years)
 
     window_counts = {"today": 0, "d1": 0, "d3": 0, "d7": 0, "d30": 0}
     for j in jobs:
@@ -843,6 +1006,9 @@ def run_workday_jobs_search(
         "industries_available": INDUSTRIES,
         "cache_hit": cache_hit,
         "us_only": us_only,
+        # 0 => this account has no parsed resume: the tab shows an upload
+        # nudge because skill scores/feasibility are unavailable without it.
+        "resume_skill_count": len(skills),
         "diagnostics": diagnostics,
         "errors": errors[:20],
     }

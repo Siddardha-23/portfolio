@@ -123,25 +123,39 @@ def _derive_query_terms(titles: List[str], cap: int = MAX_QUERY_TERMS) -> List[s
     seen: set = set()
     out: List[str] = []
     for raw in titles or []:
-        tokens = [t for t in re.split(r"[^a-z0-9+#.]+", str(raw).lower()) if t]
-        core = [t for t in tokens if t not in _TERM_NOISE]
-        if not core:
-            continue
-        term = " ".join(core[:4])
-        if term in seen:
-            continue
-        seen.add(term)
-        out.append(term)
-        if len(out) >= cap:
-            break
+        # Compound resume titles like "Cloud/DevOps Engineer (Associate
+        # Data Scientist)" must yield SEPARATE terms ("cloud engineer",
+        # "devops engineer", "data scientist"), not one mangled phrase.
+        for seg in re.split(r"[/(),;&+]|\band\b", str(raw).lower()):
+            tokens = [t for t in re.split(r"[^a-z0-9+#.]+", seg) if t]
+            core = [t for t in tokens if t not in _TERM_NOISE]
+            if not core:
+                continue
+            # A lone non-role token ("cloud" left over from "Cloud/DevOps")
+            # is too broad to search on its own.
+            if len(core) == 1 and core[0] not in {
+                "engineer", "developer", "scientist", "analyst", "architect",
+                "devops", "sre", "administrator", "consultant", "designer",
+            }:
+                continue
+            term = " ".join(core[:4])
+            if term in seen:
+                continue
+            seen.add(term)
+            out.append(term)
+            if len(out) >= cap:
+                return out
     return out or ["software engineer"]
 
 
-# Soft skills / ubiquitous tokens that would make terrible search terms.
+# Soft skills / ubiquitous tokens that would make terrible search terms —
+# CXS relevance search returns SOMETHING for any query, so a generic term
+# like "bash" floods the result with junk from every tenant.
 _SKILL_TERM_STOPLIST = frozenset({
     "communication", "leadership", "teamwork", "problem solving", "agile",
     "scrum", "git", "github", "microsoft office", "excel", "english", "jira",
     "collaboration", "documentation", "testing", "debugging", "linux",
+    "bash", "shell", "html", "css", "sql", "rest api", "apis", "windows",
 })
 
 
@@ -439,6 +453,31 @@ def _seniority(title: str) -> str:
     return "mid"
 
 
+_DESC_ENTRY_RE = re.compile(
+    r"entry[- ]level|new grad|recent graduate|early[- ]career|"
+    r"university grad|no prior experience|0-2 years", re.IGNORECASE)
+
+
+def _seniority_full(title: str, description: str) -> str:
+    """Title verdict, refined by the JD when the title carries no level.
+
+    Enterprise postings often title entry roles plainly ("Software
+    Engineer") and put the level in the description ("entry level",
+    "0-2 years experience") — title-only classification files those under
+    "mid" and starves the Entry filter. Only unmarked titles are refined;
+    an explicit "Senior X" title always wins.
+    """
+    level = _seniority(title)
+    if level != "mid" or not description:
+        return level
+    req = _required_years(description)
+    if _DESC_ENTRY_RE.search(description) or (req is not None and req <= 2):
+        return "entry"
+    if req is not None and req >= 7:
+        return "senior"
+    return "mid"
+
+
 # Tech-stack families for the frank tailor-feasibility check. A family is a
 # JD "core requirement" when it appears in the TITLE or >= 3 times in the
 # description; the resume "has" a family when any parsed skill matches it.
@@ -466,6 +505,16 @@ _STACK_FAMILIES: Dict[str, Tuple[str, re.Pattern]] = {
 
 _CLEARANCE_RE = re.compile(
     r"(active|current)\s+(security\s+)?clearance|ts/?sci|top secret|secret clearance",
+    re.IGNORECASE)
+# CXS relevance search returns a company's least-bad matches for ANY query,
+# so retail/banking rows ("Universal Banker I", "Retail Sales Associate")
+# leak in at low scores. A row with no tech-role word in the title, no
+# stack family anywhere, and zero matched skills is not a target for a
+# technical resume — feasibility marks it skip.
+_TECH_ROLE_RE = re.compile(
+    r"engineer|developer|architect|scientist|devops|sre\b|programmer|"
+    r"software|cloud|data|security|platform|infrastructure|\bqa\b|\bit\b|"
+    r"test|technolog|technical|systems|network|database|analytics|machine learning",
     re.IGNORECASE)
 _YEARS_RE = re.compile(r"(\d{1,2})\s*\+?\s*years?", re.IGNORECASE)
 
@@ -518,7 +567,9 @@ def _attach_feasibility(jobs: List[Dict[str, Any]], resume_skills: List[str],
         verdict, reason = "possible", "No hard conflicts found"
         overlap = core & resume_fams
         conflicts = core - resume_fams
-        if core and not overlap:
+        if not core and not job.get("matched_skills") and not _TECH_ROLE_RE.search(title):
+            verdict, reason = "skip", "Not a technical role"
+        elif core and not overlap:
             labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(conflicts))
             verdict, reason = "skip", f"Core stack mismatch — centers on {labels}, no resume footprint"
         elif desc and _CLEARANCE_RE.search(desc):
@@ -624,7 +675,7 @@ def _score_jobs(
         job["matched_skills"] = matched[:12]
         job["missing_skills"] = missing
         job["title_matched"] = title_matched
-        job["seniority"] = _seniority(job["title"])
+        job["seniority"] = _seniority_full(job["title"], job.get("description") or "")
     return jobs
 
 

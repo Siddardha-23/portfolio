@@ -185,6 +185,7 @@ export function WorkdayJobsPanel({
   const [suggesting, setSuggesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resumeTitles, setResumeTitles] = useState<string[]>([]);
+  const [needsAutoSuggest, setNeedsAutoSuggest] = useState(false);
 
   // Catalog metadata (industry chips) + resume titles prefill, once on mount.
   useEffect(() => {
@@ -202,6 +203,12 @@ export function WorkdayJobsPanel({
         // Prefill with ALL resume titles — but never clobber a saved or
         // user-edited set (saved prefs make prev non-empty on revisit).
         setTitles((prev) => (prev.length ? prev : fromResume.slice(0, 40)));
+      }
+      // Parsed resumes often carry only 1-2 (messy) past titles — a weak
+      // search seed. Auto-run the smart synthesizer ONCE to build a proper
+      // title set; the result persists via saved prefs afterwards.
+      if (!prefs.titles?.length && fromResume.length < 4) {
+        setNeedsAutoSuggest(true);
       }
     })();
     return () => {
@@ -267,6 +274,14 @@ export function WorkdayJobsPanel({
       });
     }
   }, []);
+
+  // Fires once when the parsed resume's own titles were too thin to search.
+  useEffect(() => {
+    if (needsAutoSuggest && !suggesting) {
+      setNeedsAutoSuggest(false);
+      void smartSuggest();
+    }
+  }, [needsAutoSuggest, suggesting, smartSuggest]);
 
   const toggleIndustry = (key: string) => {
     setIndustries((prev) =>

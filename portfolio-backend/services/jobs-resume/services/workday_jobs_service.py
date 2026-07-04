@@ -43,9 +43,9 @@ from services.workday_tenant_catalog import WORKDAY_TENANT_CATALOG, INDUSTRIES
 logger = logging.getLogger(__name__)
 
 # Bump when the record schema or fetch behavior changes so stale cached
-# results don't leak the old shape into the UI. v5: matched_terms tracking,
-# skill-derived search terms, description enrichment fields.
-RESULT_SCHEMA_VERSION = 5
+# results don't leak the old shape into the UI. v6: country_code from the
+# detail endpoint resolves "N Locations" rows' geo definitively.
+RESULT_SCHEMA_VERSION = 6
 
 # Fan-out envelope — tuned against a live full-catalog run (532 tenants x
 # 3 terms, 2026-07): 1 page/term is enough because the US facet + relevance
@@ -499,6 +499,18 @@ def _enrich_details(jobs: List[Dict[str, Any]]) -> int:
                 job["days_ago"] = days
         if "remote" in str(info.get("remoteType") or "").lower():
             job["is_remote"] = True
+        # Definitive geo: the detail payload names the posting's country,
+        # which resolves rows the list view hid behind "N Locations".
+        cinfo = info.get("country") or {}
+        rloc = ((info.get("jobRequisitionLocation") or {}).get("country") or {})
+        if cinfo or rloc:
+            is_us_row = (cinfo.get("id") == US_COUNTRY_FACET_ID
+                         or rloc.get("alpha2Code") == "US")
+            job["country_code"] = "US" if is_us_row else str(
+                rloc.get("alpha2Code") or cinfo.get("descriptor") or "non-US")[:40]
+        primary_loc = str(info.get("location") or "").strip()
+        if primary_loc and "location" in str(job.get("location") or "").lower():
+            job["location"] = primary_loc
         return bool(desc)
 
     with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, 64)) as pool:
@@ -740,6 +752,10 @@ def run_workday_jobs_search(
         days = _days_ago(j.get("date_posted") or "")
         if days is None or days > WINDOW_DAYS:
             continue
+        # country_code is set by detail enrichment (possibly via a cached
+        # earlier run) — it outranks the locationsText heuristic.
+        if us_only and j.get("country_code") not in (None, "US"):
+            continue
         j["days_ago"] = days
         jobs.append(j)
 
@@ -773,20 +789,27 @@ def run_workday_jobs_search(
     enriched = _enrich_details(top)
     if enriched:
         _score_jobs(top, titles, skills, skill_terms)
-        # startDate refinement can push a row past the 30-day window.
+        # startDate refinement can push a row past the window, and the
+        # detail country resolves "N Locations" rows definitively.
         jobs = [j for j in jobs
-                if j.get("days_ago") is not None and j["days_ago"] <= WINDOW_DAYS]
+                if j.get("days_ago") is not None and j["days_ago"] <= WINDOW_DAYS
+                and not (us_only and j.get("country_code") not in (None, "US"))]
         _rank(jobs)
-        # Persist descriptions/exact dates into the cache so repeat searches
-        # serve them without re-fetching 200 detail pages.
+        # Persist descriptions/exact dates/geo into the cache so repeat
+        # searches serve them without re-fetching 200 detail pages.
         if coll is not None:
-            enriched_by_id = {j["job_id"]: j for j in top if j.get("description")}
+            enriched_by_id = {j["job_id"]: j for j in top
+                              if j.get("description") or j.get("country_code")}
             for rj in raw_jobs:
                 e = enriched_by_id.get(rj["job_id"])
                 if e:
-                    rj["description"] = e["description"]
+                    if e.get("description"):
+                        rj["description"] = e["description"]
                     rj["date_posted"] = e["date_posted"]
                     rj["is_remote"] = e["is_remote"]
+                    rj["location"] = e["location"]
+                    if e.get("country_code"):
+                        rj["country_code"] = e["country_code"]
             _write_cache(coll, key, raw_jobs)
 
     jobs = jobs[:GLOBAL_KEEP]

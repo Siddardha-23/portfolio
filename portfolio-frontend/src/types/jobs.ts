@@ -209,6 +209,9 @@ export interface WorkdayJob extends Job {
   /** Which search terms (title families and/or resume skills) retrieved
    *  this posting. Skill-term hits keep differently-titled roles ranked. */
   matched_terms?: string[];
+  /** Definitive country from the job-detail API ("US" or a non-US label),
+   *  set for detail-enriched rows. */
+  country_code?: string;
 }
 
 export interface WorkdayJobsParams {

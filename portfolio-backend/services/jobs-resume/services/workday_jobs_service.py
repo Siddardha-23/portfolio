@@ -828,9 +828,29 @@ def run_workday_jobs_search(
         done_tasks = 0
         tasks_per_tenant = max(1, len(terms))
         matchers = _title_matchers(titles)
+        # Provisional per-job scores for the streamed preview: real skill
+        # matching against the TITLE (descriptions come later), computed once
+        # per job (memoized) so snapshots stay cheap. Without this the
+        # preview showed a flat wall of 45/15 until the final payload.
+        stream_rx = [(s, _build_match_regex(s)) for s in skills[:30]]
+        provisional: Dict[str, Tuple[int, List[str]]] = {}
+
+        def _provisional(j: Dict[str, Any]) -> Tuple[int, List[str]]:
+            cached = provisional.get(j["job_id"])
+            if cached is None:
+                tl = j["title"].lower()
+                tm = any(all(tok in tl for tok in m) for m in matchers)
+                matched = [s for s, rx in stream_rx if rx is not None and rx.search(tl)]
+                base = min(55, len(matched) * 6)
+                score = min(100, base + (45 if tm else (20 if matched else 0)))
+                if not skills and not tm:
+                    score = 15
+                cached = (score, matched[:8])
+                provisional[j["job_id"]] = cached
+            return cached
 
         def _stream_snapshot() -> None:
-            """Push a provisional, cheaply-ranked top slice to the poller so
+            """Push a provisional, skill-ranked top slice to the poller so
             the tab renders matches company-by-company during the scan."""
             if not partial_cb:
                 return
@@ -839,10 +859,9 @@ def run_workday_jobs_search(
                 snap.setdefault(j["job_id"], j)
             rows_snap = list(snap.values())
             for j in rows_snap:
-                tl = j["title"].lower()
-                tm = any(all(tok in tl for tok in m) for m in matchers)
-                j["match_score"] = 45 if tm else 15
-                j.setdefault("matched_skills", [])
+                score, matched = _provisional(j)
+                j["match_score"] = score
+                j["matched_skills"] = matched
                 j.setdefault("missing_skills", [])
             rows_snap.sort(key=lambda x: (
                 -(x["match_score"]),

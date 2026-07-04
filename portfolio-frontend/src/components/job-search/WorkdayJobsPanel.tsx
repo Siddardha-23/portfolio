@@ -105,6 +105,33 @@ const INDUSTRY_LABELS: Record<string, string> = {
   energy: 'Energy',
 };
 
+// Panel setup persists per browser so reopening the tab restores titles and
+// filters instantly — the resume fetch only refreshes the Reset defaults.
+const PREFS_KEY = 'workday_jobs_prefs_v1';
+
+interface WorkdayPrefs {
+  titles?: string[];
+  industries?: string[];
+  location?: string;
+  remoteOnly?: boolean;
+  recency?: RecencyChoice;
+  customDays?: number;
+  seniorityFilter?: string;
+  minScore?: number;
+  hideUnrealistic?: boolean;
+  sortBy?: 'score' | 'newest';
+  groupByCompany?: boolean;
+}
+
+function loadPrefs(): WorkdayPrefs {
+  try {
+    const raw = window.localStorage.getItem(PREFS_KEY);
+    return raw ? (JSON.parse(raw) as WorkdayPrefs) : {};
+  } catch {
+    return {};
+  }
+}
+
 interface WorkdayJobsPanelProps {
   isJobSaved: (jobId: string) => boolean;
   getJobStatus: (jobId: string) => string | null;
@@ -116,21 +143,35 @@ interface WorkdayJobsPanelProps {
 export function WorkdayJobsPanel({
   isJobSaved, getJobStatus, saveJob, unsaveJob, quickApply,
 }: WorkdayJobsPanelProps) {
-  // ── Controls ────────────────────────────────────────────────────────────
-  const [titles, setTitles] = useState<string[]>([]);
-  const [industries, setIndustries] = useState<string[]>([]);
-  const [location, setLocation] = useState('');
-  const [remoteOnly, setRemoteOnly] = useState(false);
-  const [recency, setRecency] = useState<RecencyChoice>('3d');
-  const [customDays, setCustomDays] = useState(2);
-  const [groupByCompany, setGroupByCompany] = useState(false);
-  const [seniorityFilter, setSeniorityFilter] = useState<string>('any');
-  const [minScore, setMinScore] = useState<number>(0);
+  // ── Controls (hydrated from saved prefs so nothing reloads every visit) ──
+  const [prefs] = useState<WorkdayPrefs>(loadPrefs);
+  const [titles, setTitles] = useState<string[]>(prefs.titles ?? []);
+  const [industries, setIndustries] = useState<string[]>(prefs.industries ?? []);
+  const [location, setLocation] = useState(prefs.location ?? '');
+  const [remoteOnly, setRemoteOnly] = useState(prefs.remoteOnly ?? false);
+  const [recency, setRecency] = useState<RecencyChoice>(prefs.recency ?? '3d');
+  const [customDays, setCustomDays] = useState(prefs.customDays ?? 2);
+  const [groupByCompany, setGroupByCompany] = useState(prefs.groupByCompany ?? false);
+  const [seniorityFilter, setSeniorityFilter] = useState<string>(prefs.seniorityFilter ?? 'any');
+  const [minScore, setMinScore] = useState<number>(prefs.minScore ?? 0);
   const [locationFilter, setLocationFilter] = useState<string>('all');
   // Frank mode: rows the feasibility engine marks "skip" (core-stack
   // mismatch, big experience gap, clearance) are hidden by default.
-  const [hideUnrealistic, setHideUnrealistic] = useState(true);
-  const [sortBy, setSortBy] = useState<'score' | 'newest'>('score');
+  const [hideUnrealistic, setHideUnrealistic] = useState(prefs.hideUnrealistic ?? true);
+  const [sortBy, setSortBy] = useState<'score' | 'newest'>(prefs.sortBy ?? 'score');
+
+  // Persist the setup on every change.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(PREFS_KEY, JSON.stringify({
+        titles, industries, location, remoteOnly, recency, customDays,
+        seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany,
+      } satisfies WorkdayPrefs));
+    } catch {
+      /* storage full/unavailable — non-fatal */
+    }
+  }, [titles, industries, location, remoteOnly, recency, customDays,
+      seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany]);
   // The backend returns up to 1500 scored roles — render incrementally so
   // wide windows don't mount a thousand JobCards at once.
   const PAGE_SIZE = 90;
@@ -158,7 +199,9 @@ export function WorkdayJobsPanel({
       const fromResume = resume.data?.resume?.job_titles ?? [];
       if (fromResume.length) {
         setResumeTitles(fromResume);
-        setTitles((prev) => (prev.length ? prev : fromResume.slice(0, 8)));
+        // Prefill with ALL resume titles — but never clobber a saved or
+        // user-edited set (saved prefs make prev non-empty on revisit).
+        setTitles((prev) => (prev.length ? prev : fromResume.slice(0, 40)));
       }
     })();
     return () => {
@@ -220,7 +263,7 @@ export function WorkdayJobsPanel({
     if (suggested.length) {
       setTitles((prev) => {
         const seen = new Set(prev.map((t) => t.toLowerCase()));
-        return [...prev, ...suggested.filter((t) => !seen.has(t.toLowerCase()))].slice(0, 20);
+        return [...prev, ...suggested.filter((t) => !seen.has(t.toLowerCase()))].slice(0, 40);
       });
     }
   }, []);
@@ -330,10 +373,10 @@ export function WorkdayJobsPanel({
             <ChipsInput
               values={titles}
               onChange={setTitles}
-              maxItems={20}
+              maxItems={40}
               placeholder="e.g. Backend Engineer, Data Engineer…"
-              defaultValues={resumeTitles.length ? resumeTitles.slice(0, 8) : undefined}
-              helperText="The first 3 core title families drive the Workday search; every title participates in ranking."
+              defaultValues={resumeTitles.length ? resumeTitles.slice(0, 40) : undefined}
+              helperText="The first 4 core title families drive the Workday search; every title participates in ranking. Your set is saved automatically."
               emptyState="Add a role title, or upload a resume to prefill."
             />
             <Button

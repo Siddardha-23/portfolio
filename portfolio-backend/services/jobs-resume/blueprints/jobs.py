@@ -621,7 +621,7 @@ def workday_search():
         return jsonify({"error": "Rate limit exceeded. Workday searches are limited to 6 / 5 min."}), 429
 
     data = request.get_json(silent=True) or {}
-    titles = _split_lines(data.get("titles"), max_items=20, max_len=120)
+    titles = _split_lines(data.get("titles"), max_items=40, max_len=120)
     industries = _split_lines(data.get("industries"), max_items=15, max_len=40)
     companies = _split_lines(data.get("companies"), max_items=100, max_len=60)
     location = InputSanitizer.sanitize_string(str(data.get("location") or ""), max_length=80)

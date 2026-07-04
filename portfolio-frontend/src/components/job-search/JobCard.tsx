@@ -123,8 +123,21 @@ export function JobCard({ job, saved, jobStatus, onSave, onUnsave, onQuickApply 
               <Badge className="border border-blue-500/30 bg-blue-500/15 px-1.5 py-0 text-blue-700 hover:bg-blue-500/20 dark:text-blue-300">Interview</Badge>
             )}
             {job.h1b_sponsor && (
-              <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-emerald-700 dark:text-emerald-300">
+              <Badge
+                variant="outline"
+                title={job.sponsor_note}
+                className="border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-emerald-700 dark:text-emerald-300"
+              >
                 H1B
+              </Badge>
+            )}
+            {job.sponsorship === 'refused' && (
+              <Badge
+                variant="outline"
+                title={job.sponsor_note}
+                className="border-red-500/40 bg-red-500/10 px-1.5 py-0 text-red-700 dark:text-red-300"
+              >
+                No sponsorship
               </Badge>
             )}
             {job.contract_friendly && (

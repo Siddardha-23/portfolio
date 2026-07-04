@@ -591,6 +591,59 @@ def _attach_feasibility(jobs: List[Dict[str, Any]], resume_skills: List[str],
         job["feasibility_reason"] = reason
 
 
+# ----------------------------------------------------------------------
+# Visa sponsorship signals (for international candidates)
+# ----------------------------------------------------------------------
+
+# JD-level refusal language — the strongest signal there is; overrides any
+# company-level sponsorship history.
+_NO_SPONSOR_RE = re.compile(
+    r"no (visa |work )?sponsorship"
+    r"|sponsorship (is |will )?not (be )?(available|provided|offered|considered)"
+    r"|(will|can|do(es)?) ?n[o']t (be able to )?(provide |offer )?sponsor"
+    r"|unable to sponsor|not eligible for (visa )?sponsorship"
+    r"|without (the need for |requiring |need of )?(visa |employer |work )?sponsorship"
+    r"|must be (a )?(u\.?s\.? citizen|us citizen)"
+    r"|u\.?s\.? citizenship (is )?required|citizens? only"
+    r"|no (h-?1b|opt|cpt)\b",
+    re.IGNORECASE)
+
+
+def _attach_sponsorship(jobs: List[Dict[str, Any]]) -> None:
+    """Per-job visa signal for international candidates.
+
+    sponsorship:
+      refused - the JD itself says no sponsorship / citizens only (checked
+                on title + description; description exists for top rows)
+      likely  - company filed meaningful H-1Bs last year (high/medium tier)
+      rare    - company files occasionally (low tier)
+      unknown - no data; NOT excluded by default (absence of evidence)
+
+    Also sets the existing h1b_sponsor flag so the JobCard's H1B badge
+    lights up for proven sponsors.
+    """
+    from services.h1b_sponsor_data import H1B_SPONSORS
+    for job in jobs:
+        text = (job.get("title") or "") + "\n" + (job.get("description") or "")
+        m = _NO_SPONSOR_RE.search(text)
+        tier_info = H1B_SPONSORS.get(job.get("tenant") or "")
+        tier = tier_info[0] if tier_info else None
+        if m:
+            job["sponsorship"] = "refused"
+            job["h1b_sponsor"] = False
+            job["sponsor_note"] = f'JD states: "…{m.group(0)[:70]}…"'
+        elif tier in ("high", "medium"):
+            job["sponsorship"] = "likely"
+            job["h1b_sponsor"] = True
+            job["sponsor_note"] = (
+                f"{job['company']} ≈{tier_info[1]:,} H-1B approvals/yr (recent USCIS data)")
+        elif tier == "low":
+            job["sponsorship"] = "rare"
+            job["sponsor_note"] = f"{job['company']} files few H-1Bs (≈{tier_info[1]}/yr)"
+        else:
+            job["sponsorship"] = "unknown"
+
+
 def _load_resume_profile(user_email: str) -> Tuple[List[str], Optional[int]]:
     """Skills (resume-prominence order) + experience years for feasibility."""
     if not user_email:
@@ -1061,6 +1114,7 @@ def run_workday_jobs_search(
 
     jobs = jobs[:GLOBAL_KEEP]
     _attach_feasibility(jobs, skills, resume_years)
+    _attach_sponsorship(jobs)
     # Release every pooled socket — a warm container must not carry idle
     # connections to hundreds of hosts into its next invocation.
     _drain_session_pools()

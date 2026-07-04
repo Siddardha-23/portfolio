@@ -121,6 +121,7 @@ interface WorkdayPrefs {
   hideUnrealistic?: boolean;
   sortBy?: 'score' | 'newest';
   groupByCompany?: boolean;
+  sponsorFilter?: 'all' | 'friendly' | 'proven';
 }
 
 function loadPrefs(): WorkdayPrefs {
@@ -159,6 +160,12 @@ export function WorkdayJobsPanel({
   // mismatch, big experience gap, clearance) are hidden by default.
   const [hideUnrealistic, setHideUnrealistic] = useState(prefs.hideUnrealistic ?? true);
   const [sortBy, setSortBy] = useState<'score' | 'newest'>(prefs.sortBy ?? 'score');
+  // International default: hide JDs that explicitly decline sponsorship.
+  // 'proven' additionally requires the company to have a real H-1B filing
+  // record; 'unknown' companies stay visible in 'friendly' (no evidence
+  // either way is not a refusal).
+  const [sponsorFilter, setSponsorFilter] =
+    useState<'all' | 'friendly' | 'proven'>(prefs.sponsorFilter ?? 'friendly');
 
   // Persist the setup on every change.
   useEffect(() => {
@@ -166,12 +173,14 @@ export function WorkdayJobsPanel({
       window.localStorage.setItem(PREFS_KEY, JSON.stringify({
         titles, industries, location, remoteOnly, recency, customDays,
         seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany,
+        sponsorFilter,
       } satisfies WorkdayPrefs));
     } catch {
       /* storage full/unavailable — non-fatal */
     }
   }, [titles, industries, location, remoteOnly, recency, customDays,
-      seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany]);
+      seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany,
+      sponsorFilter]);
   // The backend returns up to 1500 scored roles — render incrementally so
   // wide windows don't mount a thousand JobCards at once.
   const PAGE_SIZE = 90;
@@ -319,23 +328,30 @@ export function WorkdayJobsPanel({
     [recencyJobs],
   );
 
+  const refusedCount = useMemo(
+    () => recencyJobs.filter((j) => j.sponsorship === 'refused').length,
+    [recencyJobs],
+  );
+
   const visibleJobs = useMemo(() => {
     let out = recencyJobs;
     if (seniorityFilter !== 'any') out = out.filter((j) => seniorityOf(j) === seniorityFilter);
     if (minScore > 0) out = out.filter((j) => (j.match_score ?? 0) >= minScore);
     if (locationFilter !== 'all') out = out.filter((j) => locationKeyOf(j) === locationFilter);
     if (hideUnrealistic && hasFeasibility) out = out.filter((j) => j.tailor_feasibility !== 'skip');
+    if (sponsorFilter === 'friendly') out = out.filter((j) => j.sponsorship !== 'refused');
+    else if (sponsorFilter === 'proven') out = out.filter((j) => j.sponsorship === 'likely');
     if (sortBy === 'newest') {
       out = [...out].sort((a, b) =>
         (a.days_ago ?? 99) - (b.days_ago ?? 99) || (b.match_score ?? 0) - (a.match_score ?? 0));
     }
     return out;
-  }, [recencyJobs, seniorityFilter, minScore, locationFilter, hideUnrealistic, hasFeasibility, sortBy]);
+  }, [recencyJobs, seniorityFilter, minScore, locationFilter, hideUnrealistic, hasFeasibility, sortBy, sponsorFilter]);
 
   // Reset incremental rendering whenever the visible set changes shape.
   useEffect(() => {
     setVisibleCount(PAGE_SIZE);
-  }, [recency, customDays, groupByCompany, result, seniorityFilter, minScore, locationFilter, hideUnrealistic, sortBy]);
+  }, [recency, customDays, groupByCompany, result, seniorityFilter, minScore, locationFilter, hideUnrealistic, sortBy, sponsorFilter]);
   const renderedJobs = useMemo(
     () => visibleJobs.slice(0, visibleCount),
     [visibleJobs, visibleCount],
@@ -621,6 +637,26 @@ export function WorkdayJobsPanel({
                 Hide off-target ({skippedCount})
               </label>
             )}
+
+            <div
+              className="inline-flex rounded-lg border border-border/60 bg-muted/30 p-0.5"
+              title={`Sponsorship filter for international candidates. "Sponsor-friendly" hides JDs that explicitly decline visa sponsorship (${refusedCount} here); "Proven sponsors" additionally keeps only companies with a real recent H-1B filing record.`}
+            >
+              {([['all', 'All'], ['friendly', 'Sponsor-friendly'], ['proven', 'Proven sponsors']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSponsorFilter(key)}
+                  className={`rounded-md px-2 py-1.5 text-[11px] font-semibold transition ${
+                    sponsorFilter === key
+                      ? 'bg-background text-purple-600 shadow-sm dark:text-purple-300'
+                      : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
             <div className="ml-auto inline-flex rounded-lg border border-border/60 bg-muted/30 p-0.5">
               {(['score', 'newest'] as const).map((s) => (

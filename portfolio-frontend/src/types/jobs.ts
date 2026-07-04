@@ -199,6 +199,11 @@ export interface Job {
   feasibility_reason?: string;
   /** Title-derived seniority band. */
   seniority?: JobSeniority;
+  /** Visa signal for international candidates: 'refused' = the JD itself
+   *  declines sponsorship (strongest signal); 'likely' = company filed
+   *  meaningful H-1Bs last year; 'rare' = files occasionally; 'unknown'. */
+  sponsorship?: 'likely' | 'rare' | 'unknown' | 'refused';
+  sponsor_note?: string;
 }
 
 // ── Workday Jobs tab (direct CXS fan-out across the validated tenant catalog) ──

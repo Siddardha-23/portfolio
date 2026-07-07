@@ -912,6 +912,39 @@ class ApiService {
     );
   }
 
+  // ============================================
+  // Career Pages tab (/api/jobs/career-pages) — non-Workday ATS universe
+  // ============================================
+
+  async getCareerPagesCatalog() {
+    return this.request<import("../types/jobs").WorkdayCatalog>(
+      "/jobs/career-pages/catalog",
+      { method: "GET" },
+    );
+  }
+
+  async searchCareerPagesJobs(
+    params: import("../types/jobs").WorkdayJobsParams,
+    onPartial?: (partial: import("../types/jobs").WorkdayJobsResult) => void,
+  ): Promise<ApiResponse<import("../types/jobs").WorkdayJobsResult>> {
+    const submitResp = await this.request<{ job_id: string }>(
+      "/jobs/career-pages/search",
+      {
+        method: "POST",
+        body: JSON.stringify(params),
+      },
+      30000,
+    );
+    if (submitResp.error) return { error: submitResp.error };
+    if (!submitResp.data?.job_id) return { error: "Failed to start Career Pages search" };
+    return this.pollJob<import("../types/jobs").WorkdayJobsResult>(
+      submitResp.data.job_id,
+      900000,
+      undefined,
+      onPartial,
+    );
+  }
+
   async analyzeJob(
     job: import("../types/jobs").Job,
     action: "summarize" | "missing_skills" | "cover_letter",

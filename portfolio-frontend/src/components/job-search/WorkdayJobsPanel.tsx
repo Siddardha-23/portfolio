@@ -103,11 +103,21 @@ const INDUSTRY_LABELS: Record<string, string> = {
   telecom: 'Telecom',
   consulting: 'Consulting',
   energy: 'Energy',
+  media: 'Media',
+  aerospace_defense: 'Aerospace / Defense',
+  gaming: 'Gaming',
+  other: 'Other',
 };
 
 // Panel setup persists per browser so reopening the tab restores titles and
 // filters instantly — the resume fetch only refreshes the Reset defaults.
-const PREFS_KEY = 'workday_jobs_prefs_v1';
+// The Workday and Career Pages tabs each keep their own saved setup.
+const PREFS_KEYS = {
+  workday: 'workday_jobs_prefs_v1',
+  careers: 'career_pages_prefs_v1',
+} as const;
+
+export type DirectScanVariant = keyof typeof PREFS_KEYS;
 
 interface WorkdayPrefs {
   titles?: string[];
@@ -124,9 +134,9 @@ interface WorkdayPrefs {
   sponsorFilter?: 'all' | 'friendly' | 'proven';
 }
 
-function loadPrefs(): WorkdayPrefs {
+function loadPrefs(key: string): WorkdayPrefs {
   try {
-    const raw = window.localStorage.getItem(PREFS_KEY);
+    const raw = window.localStorage.getItem(key);
     return raw ? (JSON.parse(raw) as WorkdayPrefs) : {};
   } catch {
     return {};
@@ -139,13 +149,20 @@ interface WorkdayJobsPanelProps {
   saveJob: (job: Job) => void;
   unsaveJob: (jobId: string) => void;
   quickApply: (job: Job) => void;
+  /** 'workday' (default) scans the Workday tenant catalog; 'careers' scans
+   *  companies' own career sites (Greenhouse/Lever/Ashby/…). Same engine,
+   *  filters and scoring — different catalog, endpoints and saved setup. */
+  variant?: DirectScanVariant;
 }
 
 export function WorkdayJobsPanel({
   isJobSaved, getJobStatus, saveJob, unsaveJob, quickApply,
+  variant = 'workday',
 }: WorkdayJobsPanelProps) {
+  const isCareers = variant === 'careers';
+  const prefsKey = PREFS_KEYS[variant];
   // ── Controls (hydrated from saved prefs so nothing reloads every visit) ──
-  const [prefs] = useState<WorkdayPrefs>(loadPrefs);
+  const [prefs] = useState<WorkdayPrefs>(() => loadPrefs(prefsKey));
   const [titles, setTitles] = useState<string[]>(prefs.titles ?? []);
   const [industries, setIndustries] = useState<string[]>(prefs.industries ?? []);
   const [location, setLocation] = useState(prefs.location ?? '');
@@ -170,7 +187,7 @@ export function WorkdayJobsPanel({
   // Persist the setup on every change.
   useEffect(() => {
     try {
-      window.localStorage.setItem(PREFS_KEY, JSON.stringify({
+      window.localStorage.setItem(prefsKey, JSON.stringify({
         titles, industries, location, remoteOnly, recency, customDays,
         seniorityFilter, minScore, hideUnrealistic, sortBy, groupByCompany,
         sponsorFilter,
@@ -201,7 +218,7 @@ export function WorkdayJobsPanel({
     let cancelled = false;
     void (async () => {
       const [cat, resume] = await Promise.all([
-        apiService.getWorkdayCatalog(),
+        isCareers ? apiService.getCareerPagesCatalog() : apiService.getWorkdayCatalog(),
         apiService.getResume(),
       ]);
       if (cancelled) return;
@@ -229,7 +246,10 @@ export function WorkdayJobsPanel({
     setLoading(true);
     setError(null);
     setProgress(null);
-    const resp = await apiService.searchWorkdayJobs(
+    const search = isCareers
+      ? apiService.searchCareerPagesJobs.bind(apiService)
+      : apiService.searchWorkdayJobs.bind(apiService);
+    const resp = await search(
       {
         titles,
         industries,
@@ -267,7 +287,7 @@ export function WorkdayJobsPanel({
       return;
     }
     if (resp.data) setResult(resp.data);
-  }, [titles, industries, location, remoteOnly]);
+  }, [titles, industries, location, remoteOnly, isCareers]);
 
   // Smart-suggest resume-derived titles (same LLM synthesizer the Daily
   // Pipeline's Smart Filters use).
@@ -407,7 +427,7 @@ export function WorkdayJobsPanel({
               maxItems={40}
               placeholder="e.g. Backend Engineer, Data Engineer…"
               defaultValues={resumeTitles.length ? resumeTitles.slice(0, 40) : undefined}
-              helperText="The first 4 core title families drive the Workday search; every title participates in ranking. Your set is saved automatically."
+              helperText={`The first 4 core title families drive the ${isCareers ? 'career-site scan' : 'Workday search'}; every title participates in ranking. Your set is saved automatically.`}
               emptyState="Add a role title, or upload a resume to prefill."
             />
             <Button
@@ -480,7 +500,7 @@ export function WorkdayJobsPanel({
                 className="gap-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm shadow-purple-500/25 hover:from-purple-500 hover:to-indigo-500"
               >
                 {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
-                {loading ? 'Scanning…' : 'Search Workday'}
+                {loading ? 'Scanning…' : isCareers ? 'Search Career Sites' : 'Search Workday'}
               </Button>
               {result && (
                 <Button
@@ -506,7 +526,9 @@ export function WorkdayJobsPanel({
                     ? 'Fetching full descriptions for top matches — refining skill scores…'
                     : progress
                       ? `Scanned ${progress.tenants_done} of ${progress.tenants_total} companies — ${progress.jobs_found} postings so far (matches stream in below)`
-                      : 'Querying Workday career sites directly (no scraping, no credits)…'}
+                      : isCareers
+                        ? 'Querying company career pages directly — Greenhouse, Lever, Ashby & more (no scraping, no credits)…'
+                        : 'Querying Workday career sites directly (no scraping, no credits)…'}
                 </span>
               </div>
               <Progress
@@ -769,12 +791,13 @@ export function WorkdayJobsPanel({
           <CardContent className="p-10 text-center">
             <Building2 className="mx-auto mb-3 h-10 w-10 text-purple-500/40" />
             <p className="text-sm font-medium">
-              Search {catalogTotal ? `${catalogTotal} ` : ''}Workday career sites directly
+              Search {catalogTotal ? `${catalogTotal} ` : ''}{isCareers ? 'company career pages' : 'Workday career sites'} directly
             </p>
             <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-              70%+ of large enterprises hire through Workday. This tab queries each
-              company&apos;s public careers API directly — fast, free, and fresh. Defaults
-              to roles posted in the last 3 days; the full 30-day window loads in one scan.
+              {isCareers
+                ? 'Covers the non-Workday universe — companies hosting jobs on their own career pages via Greenhouse, Lever, Ashby, SmartRecruiters, Workable and Recruitee. Public JSON APIs, no scraping, no credits.'
+                : "70%+ of large enterprises hire through Workday. This tab queries each company's public careers API directly — fast, free, and fresh."}{' '}
+              Defaults to roles posted in the last 3 days; the full 30-day window loads in one scan.
             </p>
           </CardContent>
         </Card>

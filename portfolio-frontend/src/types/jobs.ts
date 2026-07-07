@@ -215,6 +215,9 @@ export type WorkdayRecency = 'today' | '24h' | '3d' | '7d' | '30d';
 export interface WorkdayJob extends Job {
   tenant: string;
   industry: string;
+  /** Career Pages rows: which ATS hosts this posting (greenhouse, lever,
+   *  ashby, smartrecruiters, workable, recruitee). Absent on Workday rows. */
+  ats?: string;
   /** Whole days since posting (0 = today). null/undefined = unknown. */
   days_ago?: number | null;
   /** True when the job title covers all core tokens of one of the user's
@@ -259,6 +262,8 @@ export interface WorkdayJobsResult {
   tenants_done: number;
   tenants_with_results: number;
   industries_available: string[];
+  /** Career Pages results: ATS kinds present in the catalog. */
+  ats_available?: string[];
   cache_hit: boolean;
   us_only?: boolean;
   /** 0 => no parsed resume on this account (skill scoring unavailable). */

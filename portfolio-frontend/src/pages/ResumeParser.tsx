@@ -35,6 +35,7 @@ const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab")
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
 const WorkdayJobsTab = lazy(() => import("@/components/resume/WorkdayJobsTab"));
+const CareerPagesTab = lazy(() => import("@/components/resume/CareerPagesTab"));
 const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
 const VisaTimelineTab = lazy(() => import("@/components/visa/VisaTimelineTab"));
 const BetaLabTab = lazy(() => import("@/components/beta/BetaLabTab"));
@@ -312,6 +313,7 @@ type NavTab =
   | "batch"
   | "jobs"
   | "workday-jobs"
+  | "career-pages"
   | "my-resumes"
   | "tailored"
   | "applications"
@@ -6021,6 +6023,13 @@ const NAV_ITEMS: ResumeNavItem[] = [
     hint: "Direct enterprise scan",
   },
   {
+    key: "career-pages",
+    label: "Career Pages",
+    icon: <BuildingOfficeIcon className="w-4 h-4" />,
+    badge: "New",
+    hint: "Greenhouse, Lever & more",
+  },
+  {
     key: "profile",
     label: "Profile",
     icon: <UserCircleIcon className="w-4 h-4" />,
@@ -6031,7 +6040,7 @@ const NAV_ITEMS: ResumeNavItem[] = [
 const NAV_SECTIONS: ResumeNavSection[] = [
   { label: "Create", items: ["tailor", "batch"] },
   { label: "Library", items: ["my-resumes", "tailored", "applications"] },
-  { label: "Career", items: ["interview", "visa", "copilot", "jobs", "workday-jobs"] },
+  { label: "Career", items: ["interview", "visa", "copilot", "jobs", "workday-jobs", "career-pages"] },
   { label: "Experimental", items: ["beta"] },
   { label: "Account", items: ["profile"] },
 ];
@@ -6197,6 +6206,7 @@ const VALID_NAV_TABS: readonly NavTab[] = [
   "batch",
   "jobs",
   "workday-jobs",
+  "career-pages",
   "my-resumes",
   "tailored",
   "applications",
@@ -6599,6 +6609,21 @@ export default function ResumeParser() {
                     }
                   >
                     <WorkdayJobsTab />
+                  </Suspense>
+                </div>
+              )}
+              {/* Career Pages: same keep-mounted pattern — an ATS-wide scan
+                  must survive tab switches mid-run. */}
+              {wasVisited("career-pages") && (
+                <div style={{ display: isVisible("career-pages") ? undefined : "none" }}>
+                  <Suspense
+                    fallback={
+                      <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
+                        <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
+                      </div>
+                    }
+                  >
+                    <CareerPagesTab />
                   </Suspense>
                 </div>
               )}

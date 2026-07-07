@@ -69,7 +69,8 @@ MAX_WORKERS = 96
 WINDOW_DAYS = 30
 # Top-ranked rows get their full JD fetched from the CXS detail endpoint so
 # skill matching + tailor-feasibility run against the real description.
-DETAIL_ENRICH_TOP = 300
+DETAIL_ENRICH_TOP = 300      # global top slice, whatever their age
+DETAIL_ENRICH_RECENT = 400   # extra slice from the <=3d cohort (default view)
 DETAIL_TIMEOUT = 5
 # Stream a provisional top slice to the poller as companies complete, so the
 # tab renders matches while the scan is still running.
@@ -195,6 +196,39 @@ def _title_matchers(titles: List[str]) -> List[List[str]]:
         if core:
             matchers.append(core[:5])
     return matchers
+
+
+def _role_matchers(titles: List[str]) -> List[List[str]]:
+    """Matchers built from the DERIVED role phrases, not the raw titles.
+
+    A raw compound resume title ("Cloud/DevOps Engineer (Associate Data
+    Scientist)") tokenizes to [cloud, devops, engineer, associate, data] —
+    no real job title contains all five, so the +45 title bonus never fired
+    and every row flatlined at the +20 skill-signal score. The derived
+    phrases ("devops engineer", "data scientist", "software developer")
+    are what a job title can actually cover.
+    """
+    return _title_matchers(_derive_query_terms(titles, cap=12))
+
+
+def _resume_family_weights(skills: List[str]) -> Tuple[set, set]:
+    """(primary, all) stack families of the resume, weighted by skill count.
+
+    A resume with 20 cloud/devops skills, 4 frontend and 3 python skills is
+    a cloud-primary profile — cloud-centered JDs must outrank equally
+    title-matched frontend JDs. Primary = families within 60% of the top
+    family's skill count (min 3 skills).
+    """
+    counts: Dict[str, int] = {}
+    for s in skills or []:
+        for key, (_label, rx) in _STACK_FAMILIES.items():
+            if rx.search(s):
+                counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return set(), set()
+    top = max(counts.values())
+    primary = {k for k, n in counts.items() if n >= max(3, int(top * 0.6))}
+    return primary, set(counts)
 
 
 def _days_ago(iso_date: str) -> Optional[int]:
@@ -516,6 +550,21 @@ _TECH_ROLE_RE = re.compile(
     r"software|cloud|data|security|platform|infrastructure|\bqa\b|\bit\b|"
     r"test|technolog|technical|systems|network|database|analytics|machine learning",
     re.IGNORECASE)
+# Business-side titles that sneak past _TECH_ROLE_RE via one generic word
+# ("Data Business Analyst", "Senior Marketing Technologist", "Finance
+# Manager, Data & Automation"). Unless the title ALSO carries a real IC
+# engineering word, these are not targets for an engineering resume.
+_OFF_ROLE_RE = re.compile(
+    r"marketing|\bsales\b|account (manager|executive)|talent|recruit|"
+    r"human resources|\bhr\b|finance|accounting|\baudit\b|business analyst|"
+    r"procurement|merchandis|underwrit|claims|compliance|paralegal|"
+    r"customer success|call center|collections|payroll|\btax\b",
+    re.IGNORECASE)
+_IC_ENG_RE = re.compile(
+    r"engineer|developer|architect|scientist|devops|\bsre\b|programmer|"
+    r"administrator", re.IGNORECASE)
+_MGMT_RE = re.compile(
+    r"\b(manager|director|vp|vice president|head of)\b", re.IGNORECASE)
 _YEARS_RE = re.compile(r"(\d{1,2})\s*\+?\s*years?", re.IGNORECASE)
 
 
@@ -567,8 +616,14 @@ def _attach_feasibility(jobs: List[Dict[str, Any]], resume_skills: List[str],
         verdict, reason = "possible", "No hard conflicts found"
         overlap = core & resume_fams
         conflicts = core - resume_fams
-        if not core and not job.get("matched_skills") and not _TECH_ROLE_RE.search(title):
+        # A title with no tech-role word and no stack family is not a target
+        # for a technical resume — an incidental skill hit ("sql" in a
+        # Universal Banker JD) must NOT rescue it. Only a description whose
+        # CORE stacks overlap the resume can (differently-titled tech roles).
+        if not _TECH_ROLE_RE.search(title) and not title_fams and not overlap:
             verdict, reason = "skip", "Not a technical role"
+        elif _OFF_ROLE_RE.search(title) and not _IC_ENG_RE.search(title) and not title_fams:
+            verdict, reason = "skip", "Business-side role, not an engineering fit"
         elif core and not overlap:
             labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(conflicts))
             verdict, reason = "skip", f"Core stack mismatch — centers on {labels}, no resume footprint"
@@ -587,8 +642,15 @@ def _attach_feasibility(jobs: List[Dict[str, Any]], resume_skills: List[str],
             elif overlap and (job.get("match_score") or 0) >= 55:
                 labels = ", ".join(_STACK_FAMILIES[k][0] for k in sorted(overlap))
                 verdict, reason = "strong", f"Direct overlap on {labels}"
+        if verdict in ("strong", "possible") and _MGMT_RE.search(title):
+            # An IC resume can't be tailored into a people-management req.
+            verdict, reason = "stretch", "Management-track title — not an IC engineering role"
         job["tailor_feasibility"] = verdict
         job["feasibility_reason"] = reason
+        if verdict == "skip":
+            # An off-target row must never outrank a real one, whatever
+            # incidental skills its JD mentions.
+            job["match_score"] = min(job.get("match_score") or 0, 12)
 
 
 # ----------------------------------------------------------------------
@@ -703,8 +765,9 @@ def _score_jobs(
     Nothing is ever dropped here — scoring only orders; recall is preserved.
     """
     skill_rx = [(s, _build_match_regex(s)) for s in skills]
-    matchers = _title_matchers(titles)
+    matchers = _role_matchers(titles)
     skill_terms_set = {t.lower() for t in skill_terms}
+    primary_fams, resume_fams = _resume_family_weights(skills)
 
     for job in jobs:
         title_lc = job["title"].lower()
@@ -721,7 +784,11 @@ def _score_jobs(
         skill_signal = bool(matched) or bool(
             skill_terms_set & {str(t).lower() for t in (job.get("matched_terms") or [])}
         )
-        score = min(100, base + (45 if title_matched else (20 if skill_signal else 0)))
+        # Stack alignment: a cloud-primary resume must rank cloud-centered
+        # JDs above equally title-matched off-stack ones.
+        job_fams = _families_in(blob)
+        align = 12 if job_fams & primary_fams else (6 if job_fams & resume_fams else 0)
+        score = min(100, base + (45 if title_matched else (20 if skill_signal else 0)) + align)
         if not skills and not title_matched:
             score = 15  # neutral floor so the ring isn't a sea of zeros
         job["match_score"] = score
@@ -931,7 +998,7 @@ def run_workday_jobs_search(
         fallback_tenants: set = set()
         done_tasks = 0
         tasks_per_tenant = max(1, len(terms))
-        matchers = _title_matchers(titles)
+        matchers = _role_matchers(titles)
         # Provisional per-job scores for the streamed preview: real skill
         # matching against the TITLE (descriptions come later), computed once
         # per job (memoized) so snapshots stay cheap. Without this the
@@ -1085,7 +1152,14 @@ def run_workday_jobs_search(
             })
         except Exception:
             pass
-    top = jobs[:DETAIL_ENRICH_TOP]
+    # Enrich the global top slice PLUS the recent cohort — the tab defaults
+    # to "last 3 days", and a 3d-old row stuck at the +20 skill-signal score
+    # because its description was never fetched is exactly the "wall of 20s"
+    # the user sees. Recent rows must carry real skill scores.
+    top = jobs[:DETAIL_ENRICH_TOP] + [
+        j for j in jobs[DETAIL_ENRICH_TOP:]
+        if (j.get("days_ago") if j.get("days_ago") is not None else 99) <= 3
+    ][:DETAIL_ENRICH_RECENT]
     enriched = _enrich_details(top)
     if enriched:
         _score_jobs(top, titles, skills, skill_terms)
@@ -1114,6 +1188,7 @@ def run_workday_jobs_search(
 
     jobs = jobs[:GLOBAL_KEEP]
     _attach_feasibility(jobs, skills, resume_years)
+    _rank(jobs)  # feasibility caps skip-row scores — order must reflect it
     _attach_sponsorship(jobs)
     # Release every pooled socket — a warm container must not carry idle
     # connections to hundreds of hosts into its next invocation.

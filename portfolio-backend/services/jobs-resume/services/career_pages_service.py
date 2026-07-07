@@ -58,7 +58,7 @@ STREAM_EVERY_TASKS = 25
 STREAM_TOP = 120
 MAX_QUERY_TERMS = 4
 TOTAL_TERMS_CAP = 6
-RESULT_SCHEMA_VERSION = 1
+RESULT_SCHEMA_VERSION = 2
 
 CACHE_COLLECTION = "career_pages_cache"
 CACHE_TTL_SECONDS = 6 * 3600
@@ -121,7 +121,8 @@ _REMOTE_RE = re.compile(r"\bremote\b", re.IGNORECASE)
 _ATS_LABEL = {
     "greenhouse": "Greenhouse", "lever": "Lever", "ashby": "Ashby",
     "smartrecruiters": "SmartRecruiters", "workable": "Workable",
-    "recruitee": "Recruitee",
+    "recruitee": "Recruitee", "amazon": "Amazon Jobs",
+    "eightfold": "Eightfold", "phenom": "Phenom",
 }
 
 # Explicit non-US markers for ATS location strings (board APIs often give
@@ -287,6 +288,164 @@ FETCHERS: Dict[str, Callable[[Dict[str, str]], List[Dict[str, Any]]]] = {
 
 
 # ----------------------------------------------------------------------
+# Enterprise custom platforms — search-style APIs (per-term queries, like
+# the Workday CXS flow, unlike the whole-board ATSes above).
+# Endpoints verified live 2026-07-06; Google/Meta/Tesla/iCIMS are bot-walled
+# (no anonymous JSON) and intentionally absent.
+# ----------------------------------------------------------------------
+
+_MONTH_DATE_RE = re.compile(r"^[A-Za-z]+\s+\d{1,2},\s+\d{4}$")
+
+
+def _us_month_to_iso(text: str) -> str:
+    """'July  7, 2026' (Amazon double-space quirk included) -> ISO date."""
+    t = re.sub(r"\s+", " ", str(text or "")).strip()
+    if not _MONTH_DATE_RE.match(t):
+        return ""
+    try:
+        return datetime.strptime(t, "%B %d, %Y").replace(
+            tzinfo=timezone.utc).isoformat()
+    except ValueError:
+        return ""
+
+
+def _epoch_to_iso(ts: Any) -> str:
+    try:
+        return datetime.fromtimestamp(int(ts), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError, OSError):
+        return ""
+
+
+def _fetch_amazon(c: Dict[str, str], terms: List[str]) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for term in terms[:3]:
+        r = _SESSION.get(
+            "https://www.amazon.jobs/en/search.json",
+            params={"base_query": term, "country": "USA", "result_limit": 50,
+                    "offset": 0, "sort": "recent"},
+            timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        for j in (r.json() or {}).get("jobs") or []:
+            desc = " ".join(x for x in [
+                j.get("description_short") or j.get("description") or "",
+                j.get("basic_qualifications") or ""] if x)
+            out.append(_row(
+                c, j.get("id_icims") or j.get("id"), j.get("title") or "",
+                f"https://www.amazon.jobs{j.get('job_path') or ''}",
+                _us_month_to_iso(j.get("posted_date")),
+                j.get("normalized_location") or j.get("location") or "",
+                description=_html_to_text(desc)[:5000],
+                country=str(j.get("country_code") or "")
+                       .replace("USA", "us").lower()))
+    return out
+
+
+def _fetch_eightfold(c: Dict[str, str], terms: List[str]) -> List[Dict[str, Any]]:
+    host = c["host"]
+    domain = (c.get("extra") or {}).get("domain") or ""
+    variant = (c.get("extra") or {}).get("variant") or "classic"
+    out: List[Dict[str, Any]] = []
+    for term in terms[:3]:
+        if variant == "pcsx":
+            r = _SESSION.get(
+                f"https://{host}/api/pcsx/search",
+                params={"domain": domain, "query": term,
+                        "location": "United States", "start": 0},
+                timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            positions = ((r.json() or {}).get("data") or {}).get("positions") or []
+        else:
+            r = _SESSION.get(
+                f"https://{host}/api/apply/v2/jobs",
+                params={"domain": domain, "query": term,
+                        "location": "United States", "start": 0, "num": 20},
+                timeout=REQUEST_TIMEOUT)
+            r.raise_for_status()
+            positions = (r.json() or {}).get("positions") or []
+        for j in positions:
+            locs = j.get("locations") or ([j.get("location")] if j.get("location") else [])
+            posted = j.get("postedTs") or j.get("creationTs") or j.get("t_update") or j.get("t_create")
+            url = (j.get("canonicalPositionUrl")
+                   or f"https://{host}/careers/job/{j.get('id')}?domain={domain}")
+            out.append(_row(
+                c, j.get("id"), j.get("name") or "", url,
+                _epoch_to_iso(posted), "; ".join(str(x) for x in locs[:3])))
+    return out
+
+
+def _fetch_phenom(c: Dict[str, str], terms: List[str]) -> List[Dict[str, Any]]:
+    host = c["host"]
+    out: List[Dict[str, Any]] = []
+    for term in terms[:3]:
+        body = {
+            "lang": "en_us", "deviceType": "desktop", "country": "us",
+            "pageName": "search-results", "ddoKey": "refineSearch",
+            "sortBy": "", "from": 0, "jobs": True, "counts": True,
+            "all_fields": ["category", "country", "state", "city", "type"],
+            "size": 20, "keywords": term, "global": True,
+            # No server-side country filter: tenants disagree on the value
+            # ("United States" vs "United States of America") and a miss
+            # silently returns 0 hits. _keep_us filters on the row's own
+            # country field instead.
+            "selected_fields": {},
+            "locationData": {},
+        }
+        r = _SESSION.post(f"https://{host}/widgets", json=body,
+                          timeout=REQUEST_TIMEOUT)
+        r.raise_for_status()
+        data = ((r.json() or {}).get("refineSearch") or {}).get("data") or {}
+        for j in data.get("jobs") or []:
+            loc = j.get("cityState") or ", ".join(
+                x for x in [j.get("city"), j.get("state")] if x)
+            jid = j.get("jobSeqNo") or j.get("jobId") or j.get("reqId")
+            url = (j.get("applyUrl") or j.get("externalApply")
+                   or f"https://{host}/us/en/job/{jid}")
+            out.append(_row(
+                c, jid, j.get("title") or "", url,
+                _iso(j.get("postedDate") or j.get("dateCreated")), loc,
+                description=_html_to_text(j.get("descriptionTeaser") or "")[:2000],
+                country=str(j.get("country") or "")))
+    return out
+
+
+ENTERPRISE_FETCHERS: Dict[str, Callable[[Dict[str, str], List[str]], List[Dict[str, Any]]]] = {
+    "amazon": _fetch_amazon,
+    "eightfold": _fetch_eightfold,
+    "phenom": _fetch_phenom,
+}
+
+# Hand-maintained (the auto-generated catalog covers board ATSes only).
+# Companies whose Eightfold/Phenom career SITE fronts a Workday ATS we
+# already scan (Micron, Qualcomm, PNC, Humana, ...) are deliberately absent.
+ENTERPRISE_CATALOG: List[Dict[str, Any]] = [
+    {"display_name": "Amazon", "ats": "amazon", "slug": "amazon",
+     "industry": "tech", "host": "www.amazon.jobs", "extra": {}},
+    {"display_name": "Microsoft", "ats": "eightfold", "slug": "microsoft",
+     "industry": "tech", "host": "apply.careers.microsoft.com",
+     "extra": {"domain": "microsoft.com", "variant": "pcsx"}},
+    {"display_name": "Netflix", "ats": "eightfold", "slug": "netflix",
+     "industry": "media", "host": "explore.jobs.netflix.net",
+     "extra": {"domain": "netflix.com", "variant": "classic"}},
+    {"display_name": "US Bank", "ats": "phenom", "slug": "usbank",
+     "industry": "banking", "host": "careers.usbank.com", "extra": {}},
+    {"display_name": "United Airlines", "ats": "phenom", "slug": "united",
+     "industry": "other", "host": "careers.united.com", "extra": {}},
+    {"display_name": "Southwest Airlines", "ats": "phenom", "slug": "southwest",
+     "industry": "other", "host": "careers.southwestair.com", "extra": {}},
+    {"display_name": "Eli Lilly", "ats": "phenom", "slug": "lilly",
+     "industry": "pharma", "host": "careers.lilly.com", "extra": {}},
+    {"display_name": "Merck", "ats": "phenom", "slug": "merck",
+     "industry": "pharma", "host": "jobs.merck.com", "extra": {}},
+    {"display_name": "Lowe's", "ats": "phenom", "slug": "lowes",
+     "industry": "ecommerce_retail", "host": "talent.lowes.com", "extra": {}},
+    {"display_name": "Ecolab", "ats": "phenom", "slug": "ecolab",
+     "industry": "other", "host": "jobs.ecolab.com", "extra": {}},
+    {"display_name": "Land O'Lakes", "ats": "phenom", "slug": "landolakes",
+     "industry": "other", "host": "careers.landolakesinc.com", "extra": {}},
+]
+
+
+# ----------------------------------------------------------------------
 # US filter for board rows
 # ----------------------------------------------------------------------
 
@@ -424,6 +583,19 @@ def _detail_one(job: Dict[str, Any]) -> bool:
                 (data.get("description") or "") + " " +
                 (data.get("requirements") or ""))[:5000]
             return bool(job["description"])
+        if ats == "eightfold":
+            ent = next((e for e in ENTERPRISE_CATALOG if e["slug"] == slug), None)
+            if not ent or (ent.get("extra") or {}).get("variant") == "pcsx":
+                return False  # no anonymous detail JSON on PCSX tenants
+            r = _SESSION.get(
+                f"https://{ent['host']}/api/apply/v2/jobs/{rid}",
+                params={"domain": (ent.get("extra") or {}).get("domain") or ""},
+                timeout=DETAIL_TIMEOUT)
+            if r.status_code != 200:
+                return False
+            job["description"] = _html_to_text(
+                (r.json() or {}).get("job_description") or "")[:5000]
+            return bool(job["description"])
     except (requests.RequestException, ValueError):
         return False
     return False
@@ -431,7 +603,8 @@ def _detail_one(job: Dict[str, Any]) -> bool:
 
 def _enrich_details(jobs: List[Dict[str, Any]]) -> int:
     need = [j for j in jobs if not j.get("description")
-            and j.get("ats") in ("greenhouse", "smartrecruiters", "workable")]
+            and j.get("ats") in ("greenhouse", "smartrecruiters", "workable",
+                                 "eightfold")]
     if not need:
         return 0
     done = 0
@@ -512,10 +685,22 @@ def _apply_career_sponsorship(jobs: List[Dict[str, Any]]) -> None:
         from services.h1b_sponsor_data_careers import CAREER_H1B_SPONSORS
     except Exception:  # pragma: no cover
         return
+    # Enterprise-platform companies aren't in the generated module (it is
+    # keyed to the board-ATS catalog) — approximate FY2025 USCIS volumes.
+    enterprise_tiers: Dict[str, Tuple[str, int]] = {
+        "amazon": ("high", 9000), "microsoft": ("high", 5000),
+        "netflix": ("medium", 250), "johndeere": ("medium", 150),
+        "whirlpool": ("low", 40), "usbank": ("medium", 150),
+        "united": ("medium", 90), "southwest": ("low", 30),
+        "lilly": ("medium", 200), "merck": ("medium", 300),
+        "lowes": ("medium", 120), "ecolab": ("medium", 90),
+        "landolakes": ("low", 20),
+    }
     for job in jobs:
         if job.get("sponsorship") == "refused":
             continue
-        info = CAREER_H1B_SPONSORS.get(job.get("tenant") or "")
+        info = (CAREER_H1B_SPONSORS.get(job.get("tenant") or "")
+                or enterprise_tiers.get(job.get("tenant") or ""))
         if not info:
             continue
         tier, approvals = info
@@ -552,8 +737,8 @@ def run_career_pages_search(
     user_email = str(payload.get("user_email") or "")
 
     rows = [
-        r for r in CAREER_PAGES_CATALOG
-        if r["ats"] in FETCHERS
+        r for r in list(CAREER_PAGES_CATALOG) + ENTERPRISE_CATALOG
+        if (r["ats"] in FETCHERS or r["ats"] in ENTERPRISE_FETCHERS)
         and (not industries or r.get("industry") in industries)
         and (not companies or r["slug"].lower() in companies)
     ]
@@ -637,7 +822,13 @@ def run_career_pages_search(
 
         def _one_company(c: Dict[str, str]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
             try:
-                jobs_c = FETCHERS[c["ats"]](c)
+                if c["ats"] in ENTERPRISE_FETCHERS:
+                    # Search-style platforms take the query terms directly.
+                    jobs_c = ENTERPRISE_FETCHERS[c["ats"]](c, title_terms)
+                    # Same posting often matches several terms — dedupe here.
+                    jobs_c = list({j["job_id"]: j for j in jobs_c}.values())
+                else:
+                    jobs_c = FETCHERS[c["ats"]](c)
             except Exception as e:
                 return [], f"{c['slug']}: {type(e).__name__}"
             jobs_c = [j for j in jobs_c
@@ -775,11 +966,12 @@ def run_career_pages_search(
 
 
 def catalog_summary() -> Dict[str, Any]:
+    all_rows = list(CAREER_PAGES_CATALOG) + ENTERPRISE_CATALOG
     by_ind: Dict[str, List[Dict[str, str]]] = {}
-    for r in CAREER_PAGES_CATALOG:
+    for r in all_rows:
         by_ind.setdefault(r["industry"], []).append(r)
     return {
-        "total": len(CAREER_PAGES_CATALOG),
+        "total": len(all_rows),
         "industries": [
             {"key": k, "count": len(v),
              "companies": [{"name": r["display_name"], "tenant": r["slug"],

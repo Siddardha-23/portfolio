@@ -374,7 +374,11 @@ resource "datadog_synthetics_test" "health_check" {
   type    = "api"
   subtype = "http"
   name    = "[portfolio] /api/health from 3 regions"
-  status  = "live"
+  # Paused in the Datadog UI and recorded here 2026-08-03 so the config stops
+  # disagreeing with reality — while it said "live", every `terraform apply`
+  # silently un-paused it and resumed burning synthetic test runs. Set back to
+  # "live" to re-enable the probe.
+  status = "paused"
   message = <<-EOT
     Portfolio /api/health failed a synthetic probe. The visitor Lambda is the
     likely source — check cold-start init, MongoDB connectivity, or the

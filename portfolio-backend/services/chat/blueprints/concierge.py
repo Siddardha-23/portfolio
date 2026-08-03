@@ -22,6 +22,12 @@ def concierge():
     Returns:
         { spoken, caption, intents[], display|null, suggestions[], emotion, meta{} }
     """
+    # Retired — see services/sunset.py. Answered before rate limiting and
+    # input validation because the reply is constant: there is no input that
+    # produces a different one, and no reason to 429 someone out of reading it.
+    from services.sunset import concierge_envelope
+    return jsonify(concierge_envelope()), 200
+
     client_ip = get_client_ip(request)
     limiter = get_rate_limiter()
 

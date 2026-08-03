@@ -28,17 +28,21 @@ import type {
   ATSScores,
 } from "@/types/resume";
 
+import SunsetBanner from "@/components/sunset/SunsetBanner";
+import MovedToAspirely from "@/components/sunset/MovedToAspirely";
+import { isRetiredTab } from "@/lib/sunset";
+
 const ResumeEditor = lazy(() => import("@/components/resume/ResumeEditor"));
-const BatchTailor = lazy(() => import("@/components/resume/BatchTailor"));
-const InterviewPrepTab = lazy(() => import("@/components/resume/InterviewPrepTab"));
+// BatchTailor / InterviewPrepTab / CareerCopilotTab / BetaLabTab are no longer
+// imported — their tabs render <MovedToAspirely /> instead, so dropping the
+// lazy() references keeps those chunks out of the bundle entirely. The
+// component files are left on disk for whenever tailoring is revived.
 const ApplicationsTab = lazy(() => import("@/components/resume/ApplicationsTab"));
 const VersionDiffViewer = lazy(() => import("@/components/resume/VersionDiffViewer"));
 const JobOpportunitiesTab = lazy(() => import("@/components/resume/JobOpportunitiesTab"));
 const WorkdayJobsTab = lazy(() => import("@/components/resume/WorkdayJobsTab"));
 const CareerPagesTab = lazy(() => import("@/components/resume/CareerPagesTab"));
-const CareerCopilotTab = lazy(() => import("@/components/resume/CareerCopilotTab"));
 const VisaTimelineTab = lazy(() => import("@/components/visa/VisaTimelineTab"));
-const BetaLabTab = lazy(() => import("@/components/beta/BetaLabTab"));
 
 // ─── Shared Icons ───────────────────────────────────────────────────────────
 
@@ -5951,18 +5955,24 @@ type ResumeNavSection = {
   items: NavTab[];
 };
 
+// Retired items keep their place in the nav rather than disappearing: a tab
+// that vanishes reads as a bug to anyone who had it bookmarked, whereas a
+// "Moved" badge answers the question before they click. `isRetiredTab()` in
+// lib/sunset.ts is the source of truth for which those are.
 const NAV_ITEMS: ResumeNavItem[] = [
   {
     key: "tailor",
     label: "Tailor",
     icon: <SparklesIcon className="w-4 h-4" />,
-    hint: "Single JD optimization",
+    badge: "Moved",
+    hint: "Now on aspirely.me",
   },
   {
     key: "batch",
     label: "Batch Tailor",
     icon: <ClipboardIcon className="w-4 h-4" />,
-    hint: "Multi-JD pipeline",
+    badge: "Moved",
+    hint: "Now on aspirely.me",
   },
   {
     key: "my-resumes",
@@ -5986,7 +5996,8 @@ const NAV_ITEMS: ResumeNavItem[] = [
     key: "interview",
     label: "Interview Prep",
     icon: <SparklesIcon className="w-4 h-4" />,
-    hint: "Practice + AI coach",
+    badge: "Moved",
+    hint: "Now on aspirely.me",
   },
   {
     key: "visa",
@@ -5999,14 +6010,15 @@ const NAV_ITEMS: ResumeNavItem[] = [
     key: "beta",
     label: "Beta Lab",
     icon: <SparklesIcon className="w-4 h-4" />,
-    badge: "Beta",
-    hint: "Experimental features",
+    badge: "Moved",
+    hint: "Now on aspirely.me",
   },
   {
     key: "copilot",
     label: "Career Copilot",
     icon: <Bot className="w-4 h-4" />,
-    hint: "Agentic RAG copilot",
+    badge: "Moved",
+    hint: "Now on aspirely.me",
   },
   {
     key: "jobs",
@@ -6119,7 +6131,13 @@ function ResumeSectionNav({
                           )}
                         </span>
                         {item.badge && (
-                          <span className="shrink-0 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                          <span
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                              isRetiredTab(item.key)
+                                ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                                : "border-indigo-500/25 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300"
+                            }`}
+                          >
                             {item.badge}
                           </span>
                         )}
@@ -6127,7 +6145,11 @@ function ResumeSectionNav({
                     )}
                     {collapsed && item.badge && (
                       <span
-                        className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-indigo-400 shadow-sm shadow-indigo-500/40"
+                        className={`absolute right-2 top-2 h-1.5 w-1.5 rounded-full shadow-sm ${
+                          isRetiredTab(item.key)
+                            ? "bg-amber-400 shadow-amber-500/40"
+                            : "bg-indigo-400 shadow-indigo-500/40"
+                        }`}
                         aria-hidden="true"
                       />
                     )}
@@ -6316,8 +6338,8 @@ export default function ResumeParser() {
 
   return (
     <AuthGate
-      title="AI Resume Tailor"
-      description="Upload your resume, tailor it to any job description, and get ATS compatibility scores powered by AI."
+      title="Job Search Workspace"
+      description="Resume tailoring has moved to aspirely.me. Sign in here to search jobs and download the resumes and tailored versions you already have — nothing was deleted."
     >
       <div
         className="min-h-screen bg-white dark:bg-gray-950 antialiased pb-24 lg:pb-0"
@@ -6357,7 +6379,13 @@ export default function ResumeParser() {
                   </span>
                   <h2 className="text-sm font-bold truncate">{activeNavItem.label}</h2>
                   {activeNavItem.badge && (
-                    <span className="ml-1 rounded-full border border-indigo-500/25 bg-indigo-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                    <span
+                      className={`ml-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                        isRetiredTab(activeNavItem.key)
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : "border-indigo-500/25 bg-indigo-500/10 text-indigo-600 dark:text-indigo-300"
+                      }`}
+                    >
                       {activeNavItem.badge}
                     </span>
                   )}
@@ -6562,28 +6590,15 @@ export default function ResumeParser() {
 
             <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
               <div className="mx-auto max-w-[1500px]">
-              {/* Tailor + Jobs stay mounted once visited so an in-flight tailor
-                  or pipeline run doesn't drop its results when the user switches
-                  away mid-run. Other tabs unmount as before. */}
-              {wasVisited("tailor") && (
-                <div style={{ display: isVisible("tailor") ? undefined : "none" }}>
-                  <TailorTab />
-                </div>
-              )}
-              {/* BatchTailor stays mounted once visited so an in-flight batch
-                  (poll loop + lazy-fetched cover letters + downloaded resumes)
-                  survives the user switching to Jobs/Applications and back. */}
-              {wasVisited("batch") && (
-                <div style={{ display: isVisible("batch") ? undefined : "none" }}>
-                  <Suspense
-                    fallback={
-                      <div className="animate-pulse h-48 rounded-2xl bg-gray-100 dark:bg-gray-800/40" />
-                    }
-                  >
-                    <BatchTailor />
-                  </Suspense>
-                </div>
-              )}
+              {/* Above every tab, including the ones that still work — someone
+                  who deep-links straight to ?tab=jobs should still find out
+                  that tailoring moved. */}
+              <SunsetBanner />
+              {/* Tailor and Batch Tailor are retired — see lib/sunset.ts. They
+                  no longer keep-mount, because there is no in-flight run left
+                  to protect: both render a static migration card. */}
+              {activeNav === "tailor" && <MovedToAspirely feature="Resume tailoring" />}
+              {activeNav === "batch" && <MovedToAspirely feature="Batch Tailor" />}
               {wasVisited("jobs") && (
                 <div style={{ display: isVisible("jobs") ? undefined : "none" }}>
                   <Suspense
@@ -6640,17 +6655,7 @@ export default function ResumeParser() {
                   <ApplicationsTab />
                 </Suspense>
               )}
-              {activeNav === "interview" && (
-                <Suspense
-                  fallback={
-                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
-                    </div>
-                  }
-                >
-                  <InterviewPrepTab />
-                </Suspense>
-              )}
+              {activeNav === "interview" && <MovedToAspirely feature="Interview Prep" />}
               {activeNav === "visa" && (
                 <Suspense
                   fallback={
@@ -6662,28 +6667,8 @@ export default function ResumeParser() {
                   <VisaTimelineTab />
                 </Suspense>
               )}
-              {activeNav === "beta" && (
-                <Suspense
-                  fallback={
-                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
-                    </div>
-                  }
-                >
-                  <BetaLabTab />
-                </Suspense>
-              )}
-              {activeNav === "copilot" && (
-                <Suspense
-                  fallback={
-                    <div className="rounded-xl border border-gray-200 dark:border-white/[0.07] bg-white dark:bg-gray-900/40 p-8 text-center">
-                      <div className="h-6 w-1/3 animate-pulse rounded bg-gray-200 dark:bg-white/10 mx-auto" />
-                    </div>
-                  }
-                >
-                  <CareerCopilotTab />
-                </Suspense>
-              )}
+              {activeNav === "beta" && <MovedToAspirely feature="Beta Lab" />}
+              {activeNav === "copilot" && <MovedToAspirely feature="Career Copilot" />}
               {activeNav === "profile" && <ProfileTab />}
               </div>
             </main>

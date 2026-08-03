@@ -16,7 +16,9 @@ const navItems = [
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },
   { label: 'Projects', href: '/home#projects', shortLabel: 'Projects' },
   { label: 'Cloud Lab', href: '/cloud-lab', shortLabel: 'Lab' },
-  { label: 'Resume AI', href: '/resume-parser', shortLabel: 'Resume AI' },
+  // Was "Resume AI". The AI moved to aspirely.me; what's left behind this link
+  // is job search plus read/download of existing resumes, so the label says so.
+  { label: 'Job Search', href: '/resume-parser', shortLabel: 'Jobs' },
   { label: 'Contact', href: '/home#contact', shortLabel: 'Contact' },
 ];
 

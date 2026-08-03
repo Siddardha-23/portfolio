@@ -35,6 +35,22 @@ _ORCHESTRATOR_DEADLINE_SECONDS = 25.0
 _BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31"
 
 
+def _sunset():
+    """Refuse the call — AI features moved to Aspirely.
+
+    `bedrock:InvokeModel` is revoked on the Lambda role, so reaching Bedrock
+    here can only produce an AccessDeniedException after burning two retries
+    and ~6s of wall clock. Failing fast with a typed error instead lets the
+    app-level handler answer with the real reason.
+
+    Imported lazily: this package is also imported by tooling that has no
+    Flask on the path, and `services.sunset` pulls in `flask.jsonify`.
+    """
+    from services.sunset import AIFeatureSunsetError, SUNSET_MESSAGE
+
+    raise AIFeatureSunsetError(SUNSET_MESSAGE)
+
+
 def _model_id(env_key: str, default: str) -> str:
     """Read a model ID from env or fall back to default. Lets us upgrade
     Haiku → Sonnet for a single tier without code changes."""
@@ -120,6 +136,11 @@ class ClaudeProvider(LLMProvider):
 
     def _invoke(self, body: dict, model: str, max_retries: int = 2) -> dict:
         """Call bedrock-runtime InvokeModel and return the parsed response."""
+        # Retired. Single chokepoint for json() / text() / tool_call() — every
+        # model call in this service funnels through here, so no AI path can
+        # slip past the sunset regardless of which caller reached it.
+        _sunset()
+
         # Defensive clamp — body may have come from json() or tool_call().
         if "max_tokens" in body:
             body["max_tokens"] = self._clamp_max_tokens(body["max_tokens"], model)
@@ -332,6 +353,12 @@ class ClaudeProvider(LLMProvider):
         """Multi-round tool-calling loop. Translates the caller's Gemini-style
         function declarations (`{"name", "description", "parameters"}`) into
         Claude tool specs (`{"name", "description", "input_schema"}`)."""
+        # Guarded here as well as in _invoke: the round loop wraps _invoke in
+        # a broad `except Exception` that degrades to "I could not generate a
+        # response — try again." Letting the sunset error reach that handler
+        # would tell users to retry something that is never coming back.
+        _sunset()
+
         pipeline_log: List[Dict[str, Any]] = []
         start_ts = time.time()
 

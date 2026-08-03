@@ -11,6 +11,7 @@ import FloatingFormPrompt from '@/components/FloatingFormPrompt';
 import BuilderAgent from '@/components/agent/BuilderAgent';
 import NowBuildingTicker from '@/components/NowBuildingTicker';
 import ConciergeRoot from '@/components/concierge/ConciergeRoot';
+import AspirelyCallout from '@/components/sunset/AspirelyCallout';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
 import { lazy, Suspense, useEffect } from 'react';
@@ -59,6 +60,10 @@ export default function Home() {
         <Education />
         <Experience />
         <Projects />
+        {/* Sits after Projects because the Resume Tailor IS one of the projects
+            shown above — the "it graduated to aspirely.me" note reads as the
+            next beat of that story rather than an interruption. */}
+        <AspirelyCallout />
         <Contact />
       </main>
 

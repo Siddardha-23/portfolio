@@ -306,28 +306,36 @@ resource "aws_iam_role_policy" "resume_s3_access" {
   })
 }
 
-# Bedrock Runtime InvokeModel — used by Claude provider in gemini_client.py.
-# Both jobs-resume (resume parse/tailor/score) and chat (concierge) reach
-# Claude via this permission. Resource is wildcard across Anthropic models so
-# we can bump Haiku → Sonnet via BEDROCK_*_MODEL_ID env vars without a TF
-# change. Cross-region inference profiles (us.anthropic.*) are also covered.
-resource "aws_iam_role_policy" "bedrock_invoke" {
-  name = "${var.project_name}-bedrock-invoke-policy"
+# =============================================================================
+# Bedrock — REVOKED (2026-08-03)
+# =============================================================================
+# AI resume tailoring moved to Aspirely (https://aspirely.me). The portfolio
+# keeps job discovery and full read/download access to stored resumes, neither
+# of which calls a model.
+#
+# The old `bedrock_invoke` Allow policy used to live here. It was the single
+# largest line on the AWS bill ($4.04 of a $6.50 July) and, being usage-priced
+# with no ceiling, the only resource in this account that could blow past the
+# $5/month target on its own. Both the app-layer guards
+# (portfolio-backend/services/*/services/sunset.py) and this Deny have to be
+# reverted to bring tailoring back — that redundancy is the point.
+#
+# An explicit Deny rather than simply deleting the Allow: Deny wins over any
+# Allow in IAM evaluation, so re-attaching a Bedrock policy by hand, or via a
+# half-reverted branch, still cannot spend money. To genuinely restore, delete
+# this resource and restore the Allow above it.
+resource "aws_iam_role_policy" "bedrock_denied" {
+  name = "${var.project_name}-bedrock-deny-policy"
   role = aws_iam_role.lambda.id
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Effect = "Allow"
-        Action = [
-          "bedrock:InvokeModel",
-          "bedrock:InvokeModelWithResponseStream",
-        ]
-        Resource = [
-          "arn:aws:bedrock:*::foundation-model/anthropic.*",
-          "arn:aws:bedrock:*:*:inference-profile/*anthropic.*",
-        ]
+        Sid      = "AIFeaturesMovedToAspirely"
+        Effect   = "Deny"
+        Action   = "bedrock:*"
+        Resource = "*"
       }
     ]
   })

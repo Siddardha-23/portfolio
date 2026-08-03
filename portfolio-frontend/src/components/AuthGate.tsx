@@ -1038,9 +1038,14 @@ export default function AuthGate({ children, title, description }: AuthGateProps
           <div className="w-full max-w-md">
             {/* Title with typing effect */}
             <div className="text-center mb-7">
-              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/25 mb-4">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-purple-300">AI-Powered Resume Tailoring</span>
+              {/* Tailoring moved to Aspirely — this pill used to advertise it,
+                  and leaving that claim up would promise something sign-in no
+                  longer delivers. */}
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/25 mb-4">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="text-[10px] uppercase tracking-wider font-semibold text-amber-300">
+                  Tailoring moved to aspirely.me
+                </span>
               </div>
               <h1 className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-purple-400 via-indigo-400 to-purple-400 bg-clip-text text-transparent">
                 {typedTitle}
@@ -1050,12 +1055,20 @@ export default function AuthGate({ children, title, description }: AuthGateProps
                 <p className="mt-3 text-gray-400 text-sm leading-relaxed">{description}</p>
               )}
               <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-500">
-                <span>Tailor your resume for</span>
+                <span>Search jobs for</span>
                 <span className="inline-flex items-center">
                   <span className="text-purple-300 font-semibold">{rotatingRole}</span>
                   <span className="inline-block w-0.5 h-3.5 bg-purple-400 ml-0.5 animate-pulse align-middle" />
                 </span>
               </div>
+              <a
+                href="https://aspirely.me"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-200 transition-colors hover:bg-amber-400/20"
+              >
+                Tailor resumes on Aspirely instead →
+              </a>
             </div>
 
             {/* Auth card */}

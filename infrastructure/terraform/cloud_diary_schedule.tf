@@ -12,9 +12,13 @@
 
 resource "aws_cloudwatch_event_rule" "cloud_diary_daily" {
   name                = "${var.project_name}-cloud-diary-daily"
-  description         = "Trigger Cloud Diary generation once per day"
+  description         = "Trigger Cloud Diary generation once per day (DISABLED — Bedrock revoked)"
   schedule_expression = "cron(0 3 * * ? *)" # 03:00 UTC daily
-  state               = "ENABLED"
+  # DISABLED 2026-08-03. Cloud Diary generation is a Bedrock call, and
+  # `bedrock:*` is now denied on the Lambda role (see lambda.tf). Left enabled
+  # this would fire 365 times a year purely to fail and write CloudWatch logs.
+  # The ticker keeps rendering the diary entries already in the database.
+  state = "DISABLED"
 
   tags = {
     Service = "chat"

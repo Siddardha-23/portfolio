@@ -79,11 +79,28 @@ def create_app():
             response.headers['Cache-Control'] = 'no-store'
         return response
 
+    # AI sunset — resume tailoring moved to Aspirely (https://aspirely.me).
+    # Two layers: a before_request guard that 410s the retired endpoints
+    # outright, and an error handler that catches any model call we didn't
+    # name explicitly. Both render the same payload, so the UI has one shape
+    # to handle. See services/sunset.py for the endpoint list and rationale.
+    from services.sunset import (
+        AIFeatureSunsetError,
+        sunset_guard,
+        sunset_response,
+    )
+
+    @app.errorhandler(AIFeatureSunsetError)
+    def handle_ai_sunset(_error):
+        return sunset_response()
+
     # Register blueprints — jobs and resume only
     from blueprints.jobs import jobs_bp
+    jobs_bp.before_request(sunset_guard)
     app.register_blueprint(jobs_bp, url_prefix='/api/jobs')
 
     from blueprints.resume import resume_bp
+    resume_bp.before_request(sunset_guard)
     app.register_blueprint(resume_bp, url_prefix='/api/resume')
 
     # Mounted UNDER /api/resume rather than a top-level /api/feedback so it
@@ -103,6 +120,7 @@ def create_app():
     # infrastructure/terraform/lambda.tf — without it the gateway silently
     # returns the SPA index.html for /api/apply/* instead of hitting this Lambda.
     from blueprints.apply import apply_bp
+    apply_bp.before_request(sunset_guard)
     app.register_blueprint(apply_bp, url_prefix='/api/apply')
 
     # Health check endpoint

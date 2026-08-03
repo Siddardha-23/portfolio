@@ -35,6 +35,19 @@ _ORCHESTRATOR_DEADLINE_SECONDS = 25.0
 _BEDROCK_ANTHROPIC_VERSION = "bedrock-2023-05-31"
 
 
+class AIFeatureSunsetError(Exception):
+    """Raised instead of calling Bedrock — AI features moved to Aspirely.
+
+    Defence in depth. The chat blueprints already short-circuit before
+    reaching a provider, so in practice only an unguarded caller (the Cloud
+    Diary cron, whose EventBridge rule is disabled) can land here. Failing
+    fast beats two retries against a role that no longer holds
+    `bedrock:InvokeModel`.
+    """
+
+    code = "ai_features_moved"
+
+
 def _model_id(env_key: str, default: str) -> str:
     """Read a model ID from env or fall back to default. Lets us upgrade
     Haiku → Sonnet for a single tier without code changes."""
@@ -120,6 +133,11 @@ class ClaudeProvider(LLMProvider):
 
     def _invoke(self, body: dict, model: str, max_retries: int = 2) -> dict:
         """Call bedrock-runtime InvokeModel and return the parsed response."""
+        # Retired. Single chokepoint for json() / text() / tool_call().
+        raise AIFeatureSunsetError(
+            "AI features have moved to Aspirely — https://aspirely.me"
+        )
+
         # Defensive clamp — body may have come from json() or tool_call().
         if "max_tokens" in body:
             body["max_tokens"] = self._clamp_max_tokens(body["max_tokens"], model)

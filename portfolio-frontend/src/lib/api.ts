@@ -11,6 +11,7 @@
  */
 
 import { toast } from "sonner";
+import { SUNSET_MESSAGE } from "@/lib/sunset";
 
 const LLM_RETRIES_EXHAUSTED_TOAST_ID = "llm-retries-exhausted";
 
@@ -118,6 +119,19 @@ class ApiService {
           window.dispatchEvent(new CustomEvent("auth:session-expired"));
         }
         return { error: "Session expired. Please sign in again." };
+      }
+
+      // Retired AI endpoints answer 410 with a machine-readable code and a
+      // human sentence. Without this, the generic branch below would surface
+      // the literal string "ai_features_moved" in a toast. Prefer the server's
+      // `message` so any surface we didn't explicitly convert still reads
+      // correctly; SUNSET_MESSAGE is the fallback if the body is truncated.
+      if (response.status === 410 && data.code === "ai_features_moved") {
+        return {
+          error: data.message || SUNSET_MESSAGE,
+          status: response.status,
+          errorPayload: data,
+        };
       }
 
       if (!response.ok) {

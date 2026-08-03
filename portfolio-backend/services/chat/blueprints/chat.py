@@ -21,6 +21,11 @@ def chat():
     Returns:
         JSON with 'response' and 'success' fields.
     """
+    # Retired — see services/sunset.py. Same constant reply for every input,
+    # so it short-circuits ahead of rate limiting and validation.
+    from services.sunset import SUNSET_REPLY
+    return jsonify({'response': SUNSET_REPLY, 'success': True}), 200
+
     # Rate limit: 10 requests per minute per IP
     client_ip = get_client_ip(request)
     rate_limiter = get_rate_limiter()

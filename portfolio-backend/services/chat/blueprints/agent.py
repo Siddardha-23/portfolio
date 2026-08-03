@@ -31,6 +31,31 @@ def agent():
     if request.method == "OPTIONS":
         return "", 204
 
+    # Retired — see services/sunset.py. Emitted as a normal session/delta/done
+    # stream rather than an `error` event: the frontend renders `error` as a
+    # red failure banner, which would bury the one thing worth reading.
+    from services.sunset import SUNSET_REPLY, NEW_PRODUCT_URL
+
+    def sunset_stream() -> Generator[str, None, None]:
+        yield _sse("session", {"specialists": [], "sunset": True})
+        yield _sse("delta", {"text": SUNSET_REPLY})
+        yield _sse("actions", {"items": [
+            {"label": "Open Aspirely", "href": NEW_PRODUCT_URL},
+        ]})
+        yield _sse("done", {
+            "latency_ms": 0,
+            "specialists_used": [],
+            "final_text": SUNSET_REPLY,
+            "sunset": True,
+        })
+
+    return Response(sunset_stream(), headers={
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no",
+        "Connection": "keep-alive",
+    })
+
     client_ip = get_client_ip(request)
     rate_limiter = get_rate_limiter()
     if rate_limiter.is_rate_limited(f"agent:{client_ip}", max_requests=12, window_seconds=60):

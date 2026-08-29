@@ -446,7 +446,7 @@ export default function Hero() {
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, duration: 0.6 }}
-              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold mb-4 text-foreground leading-tight"
+              className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-semibold tracking-[-0.02em] mb-4 text-foreground leading-[1.05]"
             >
               <span className="inline-flex items-center gap-3 flex-wrap">
                 <span className="gradient-text">Harshith</span>
@@ -488,7 +488,7 @@ export default function Hero() {
               {[
                 { icon: MapPin, label: 'Location', value: 'Tempe, AZ' },
                 { icon: Briefcase, label: 'Status', value: 'Seeking Full-Time' },
-                { icon: Sparkles, label: 'Graduating', value: 'May 2026' },
+                { icon: Sparkles, label: 'Graduated', value: 'ASU · May 2026' },
               ].map((stat, idx) => (
                 <div
                   key={idx}
@@ -550,7 +550,7 @@ export default function Hero() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
               </span>
-              <span>Available for opportunities starting May 2026</span>
+              <span>Graduated May 2026 &middot; available now</span>
             </motion.div>
 
             {/* Under the Hood chips */}

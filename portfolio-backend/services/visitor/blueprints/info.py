@@ -17,22 +17,10 @@ from services.linkedin_service import (
 from utils.db_connect import DBConnect
 from utils.security import InputSanitizer, get_rate_limiter, get_client_ip
 
+from utils.countries import resolve_country_code, country_name
+
 info_bp = Blueprint('info', __name__)
 logger = logging.getLogger(__name__)
-
-# Map country codes to full names so frontend map always gets a known key (India, United States, etc.)
-COUNTRY_CODE_TO_NAME = {
-    'US': 'United States', 'GB': 'United Kingdom', 'CA': 'Canada', 'IN': 'India',
-    'AU': 'Australia', 'DE': 'Germany', 'FR': 'France', 'JP': 'Japan', 'CN': 'China',
-    'BR': 'Brazil', 'MX': 'Mexico', 'NL': 'Netherlands', 'SE': 'Sweden', 'KR': 'South Korea',
-    'IT': 'Italy', 'ES': 'Spain', 'SG': 'Singapore', 'AE': 'UAE', 'RU': 'Russia',
-    'IL': 'Israel', 'TR': 'Turkey', 'PL': 'Poland', 'BE': 'Belgium', 'AT': 'Austria',
-    'CH': 'Switzerland', 'PT': 'Portugal', 'ZA': 'South Africa', 'AR': 'Argentina',
-    'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'PH': 'Philippines', 'ID': 'Indonesia',
-    'VN': 'Vietnam', 'TH': 'Thailand', 'MY': 'Malaysia', 'EG': 'Egypt', 'PK': 'Pakistan',
-    'BD': 'Bangladesh', 'NG': 'Nigeria', 'KE': 'Kenya', 'NZ': 'New Zealand', 'HK': 'Hong Kong',
-}
-
 
 @info_bp.route('', methods=['POST'])
 def store_visitor_info():
@@ -433,18 +421,15 @@ def get_organization_stats():
             for r in notable_raw
         ]
 
-        # Normalize country so frontend map finds it: "IN" -> "India", "United States" stays
-        def country_for_map(raw_country):
-            s = (raw_country or "").strip()
-            if not s or s.lower() in ('local', 'unknown', 'localhost', 'n/a', '-'):
-                return None
-            if len(s) == 2:
-                return COUNTRY_CODE_TO_NAME.get(s.upper(), s)
-            return s
-
+        # Every map row is keyed on one canonical alpha-2 code. Rows have been
+        # written as codes ("IN"), as names ("India") and as aliases ("UAE") over
+        # the life of this endpoint; without collapsing them onto a single key the
+        # same country appears twice and its visitors are split between the rows.
         def build_map_entry(m):
             cid = m["_id"]
-            country = country_for_map(cid.get("country"))
+            code = resolve_country_code(cid.get("country"))
+            if not code:
+                return None
             city = (cid.get("city") or "").strip() or None
             lat, lng = m.get("lat"), m.get("lng")
             if lat is not None and lng is not None:
@@ -453,11 +438,12 @@ def get_organization_stats():
                 except (TypeError, ValueError):
                     lat, lng = None, None
             return {
-                "country": country,
+                "country_code": code,
+                "country": country_name(code),
                 "city": city,
                 "latitude": lat,
                 "longitude": lng,
-                "count": m["count"]
+                "count": m["count"],
             }
 
         # Junk values to exclude from map data (dev/local traffic, missing geo)
@@ -529,26 +515,21 @@ def get_organization_stats():
             visitor_map_pipeline.insert(0, {"$match": {"timestamp": time_filter}})
         visitor_map_raw = list(visitor_info_coll.aggregate(visitor_map_pipeline))
 
-        # Merge: key by (country, city), sum counts, keep any non-null lat/lng
+        # Merge: key by (country code, city), sum counts, keep any non-null lat/lng
         merged = {}
-        for m in map_locations_raw:
+        for m in list(map_locations_raw) + list(visitor_map_raw):
             entry = build_map_entry(m)
-            if not entry["country"]:
+            if entry is None:
                 continue
-            key = (entry["country"], entry["city"] or "")
-            merged[key] = dict(entry)
-        for m in visitor_map_raw:
-            entry = build_map_entry(m)
-            if not entry["country"]:
-                continue
-            key = (entry["country"], entry["city"] or "")
-            if key not in merged:
+            key = (entry["country_code"], entry["city"] or "")
+            existing = merged.get(key)
+            if existing is None:
                 merged[key] = dict(entry)
-            else:
-                merged[key]["count"] += entry["count"]
-                if merged[key]["latitude"] is None and entry["latitude"] is not None:
-                    merged[key]["latitude"] = entry["latitude"]
-                    merged[key]["longitude"] = entry["longitude"]
+                continue
+            existing["count"] += entry["count"]
+            if existing["latitude"] is None and entry["latitude"] is not None:
+                existing["latitude"] = entry["latitude"]
+                existing["longitude"] = entry["longitude"]
 
         map_locations = sorted(merged.values(), key=lambda x: -x["count"])
 
@@ -558,11 +539,11 @@ def get_organization_stats():
         # Top countries (below map): derive from same merged map data
         by_country = {}
         for loc in map_locations:
-            c = loc["country"]
-            by_country[c] = by_country.get(c, 0) + loc["count"]
+            code = loc["country_code"]
+            by_country[code] = by_country.get(code, 0) + loc["count"]
         top_countries = [
-            {"country": c, "count": n}
-            for c, n in sorted(by_country.items(), key=lambda x: -x[1])
+            {"country_code": code, "country": country_name(code), "count": n}
+            for code, n in sorted(by_country.items(), key=lambda x: -x[1])
         ]
 
         return jsonify({

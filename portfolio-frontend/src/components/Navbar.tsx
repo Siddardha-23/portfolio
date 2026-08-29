@@ -14,6 +14,7 @@ const navItems = [
   { label: 'Skills', href: '/home#skills', shortLabel: 'Skills' },
   { label: 'Education', href: '/home#education', shortLabel: 'Edu' },
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },
+  { label: 'Spotlight', href: '/home#spotlight', shortLabel: 'Now' },
   { label: 'Projects', href: '/home#projects', shortLabel: 'Projects' },
   { label: 'Cloud Lab', href: '/cloud-lab', shortLabel: 'Lab' },
   // Was "Resume AI". The AI moved to aspirely.me; what's left behind this link

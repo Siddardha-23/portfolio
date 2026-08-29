@@ -291,13 +291,15 @@ export const FEATURES: FeatureMeta[] = [
         ],
         requestPath: [
             { label: 'User action', detail: 'Click "See visitors" → event dispatched' },
-            { label: 'React lazy', detail: 'Leaflet + VisitorGlobe chunk loaded on demand' },
+            { label: 'React lazy', detail: 'three.js + globe chunk loaded on demand' },
             { label: 'API Gateway', detail: 'GET /api/info/org-stats → returns map_locations[]' },
             { label: 'Lambda', detail: 'Aggregates geolocation data from MongoDB' },
-            { label: 'Leaflet', detail: 'Renders OpenStreetMap tiles + visitor markers' },
+            { label: 'three.js globe', detail: 'Vector country polygons + altitude-scaled markers and arcs' },
         ],
         keyFiles: [
-            { path: 'portfolio-frontend/src/components/VisitorGlobe.tsx', description: 'Leaflet map modal with city-level pins + country flyTo' },
+            { path: 'portfolio-frontend/src/components/globe/Globe3D.tsx', description: '3D globe renderer — polygons, arcs, rings, fly-to' },
+            { path: 'portfolio-frontend/src/lib/geo.ts', description: 'Canonical country resolution — codes, names, flags, centroids' },
+            { path: 'portfolio-frontend/src/components/VisitorGlobe.tsx', description: 'Filterable globe modal with period filters + country focus' },
             { path: 'portfolio-frontend/src/components/VisitorShowcase.tsx', description: 'Stats card triggering the globe modal' },
             { path: 'portfolio-frontend/src/lib/api.ts', description: 'getOrgStats() with map_locations response', lines: 'L224-L246' },
         ],

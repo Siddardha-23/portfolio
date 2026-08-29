@@ -12,6 +12,7 @@ from typing import Optional, Dict, Any
 import requests
 from utils.db_connect import DBConnect
 from utils.config import IPInfoConfig
+from utils.countries import country_name, resolve_country_code
 
 logger = logging.getLogger(__name__)
 
@@ -119,8 +120,8 @@ class IPService:
                 data = response.json()
                 # Location is taken from API's city/region/country (origin), not from lat/long.
                 # We never derive city/country from coordinates, so display stays consistent with ipinfo.io.
-                country_code = (data.get('country') or '').strip().upper() or 'Unknown'
-                country_name = self._get_country_name(country_code) if country_code != 'Unknown' else 'Unknown'
+                country_code = resolve_country_code(data.get('country')) or 'Unknown'
+                display_name = self._get_country_name(country_code) if country_code != 'Unknown' else 'Unknown'
                 city = (data.get('city') or 'Unknown').strip() or 'Unknown'
                 region = (data.get('region') or 'Unknown').strip() or 'Unknown'
 
@@ -129,7 +130,7 @@ class IPService:
                     "city": city,
                     "region": region,
                     "country": country_code,
-                    "country_name": country_name,
+                    "country_name": display_name,
                     "postal": (data.get('postal') or '').strip(),
                     "timezone": (data.get('timezone') or 'UTC').strip() or 'UTC',
                     "org": (data.get('org') or 'Unknown').strip() or 'Unknown',
@@ -204,22 +205,15 @@ class IPService:
             logger.error(f"Error saving IP info to cache: {e}")
     
     def _get_country_name(self, country_code: str) -> str:
-        """Convert country code to full country name"""
-        country_names = {
-            'US': 'United States', 'GB': 'United Kingdom', 'CA': 'Canada',
-            'AU': 'Australia', 'DE': 'Germany', 'FR': 'France', 'IN': 'India',
-            'JP': 'Japan', 'CN': 'China', 'BR': 'Brazil', 'MX': 'Mexico',
-            'NL': 'Netherlands', 'SE': 'Sweden', 'NO': 'Norway', 'DK': 'Denmark',
-            'FI': 'Finland', 'IE': 'Ireland', 'NZ': 'New Zealand', 'SG': 'Singapore',
-            'HK': 'Hong Kong', 'KR': 'South Korea', 'IT': 'Italy', 'ES': 'Spain',
-            'CH': 'Switzerland', 'AT': 'Austria', 'BE': 'Belgium', 'PL': 'Poland',
-            'PT': 'Portugal', 'RU': 'Russia', 'ZA': 'South Africa', 'AE': 'UAE',
-            'IL': 'Israel', 'TH': 'Thailand', 'MY': 'Malaysia', 'PH': 'Philippines',
-            'ID': 'Indonesia', 'VN': 'Vietnam', 'TR': 'Turkey', 'EG': 'Egypt',
-            'AR': 'Argentina', 'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru',
-        }
-        return country_names.get(country_code, country_code)
-    
+        """
+        Convert an ISO alpha-2 code to its display name.
+
+        Falls back to the code only when the code is not a country at all; every
+        assigned region resolves, so the map no longer renders raw codes like
+        "NP" where a country name belongs.
+        """
+        return country_name(country_code) or country_code
+
     def get_ip_stats(self) -> Dict[str, Any]:
         """Get statistics about IP lookups"""
         try:

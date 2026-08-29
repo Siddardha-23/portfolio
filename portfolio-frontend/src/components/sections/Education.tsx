@@ -166,13 +166,13 @@ export default function Education() {
               <GraduationCap className="h-3.5 w-3.5 mr-2" />
               Academic Journey
             </Badge>
-            <h2 className="text-4xl md:text-5xl font-bold mb-6 text-foreground">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight mb-4 md:mb-6 text-foreground">
               Education
             </h2>
             <p className="text-muted-foreground max-w-2xl mx-auto mb-6">
               MS in Information Technology (ASU) and BS in Computer Science (JNTU)
             </p>
-            <div className="w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
+            <div className="w-24 md:w-32 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent mx-auto" />
           </motion.div>
         </div>
 

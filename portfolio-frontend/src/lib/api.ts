@@ -432,9 +432,13 @@ class ApiService {
       total_registered: number;
       linkedin_profiles_found: number;
       notable_linkedin?: Array<{ name: string; count: number }>;
-      top_countries?: Array<{ country: string; count: number }>;
+      // country_code is the canonical alpha-2 key. `country` is a display name
+      // kept for older clients; rows written before the code was stored may
+      // still arrive with only a name, so treat country_code as optional.
+      top_countries?: Array<{ country: string; country_code?: string; count: number }>;
       map_locations?: Array<{
         country: string;
+        country_code?: string;
         city?: string | null;
         latitude?: number | null;
         longitude?: number | null;

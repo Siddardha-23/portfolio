@@ -246,14 +246,14 @@ export default function Contact() {
               <MessageSquare className="h-3 w-3 md:h-3.5 md:w-3.5 mr-1.5 md:mr-2" />
               Let's Connect
             </span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold mb-4 md:mb-6 gradient-text">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-semibold tracking-tight mb-4 md:mb-6 gradient-text">
               Get In Touch
             </h2>
             <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto mb-4 md:mb-6 px-4">
               Have a project in mind or interested in working together?
               I'd love to hear from you. Let's discuss how I can help.
             </p>
-            <div className="w-16 md:w-24 h-1 bg-gradient-to-r from-primary via-accent to-primary mx-auto rounded-full" />
+            <div className="w-24 md:w-32 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent mx-auto" />
           </motion.div>
           {/* Under the Hood chips */}
           {(() => {
@@ -290,7 +290,7 @@ export default function Contact() {
           >
             <Card className="h-full border-0 shadow-2xl bg-gradient-to-br from-card to-secondary/20">
               <CardContent className="p-8">
-                <h3 className="text-2xl font-bold mb-6 text-foreground flex items-center gap-2">
+                <h3 className="text-2xl font-semibold tracking-tight mb-6 text-foreground flex items-center gap-2">
                   <span className="w-8 h-1 bg-primary rounded-full" />
                   Contact Info
                 </h3>

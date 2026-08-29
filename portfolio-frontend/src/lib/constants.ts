@@ -4,7 +4,7 @@ export const PERSONAL_INFO = {
   email: "harshith.siddardha@gmail.com",
   linkedin: "linkedin.com/in/harshith-siddardha",
   github: "github.com/Siddardha-23",
-  summary: "Cloud & DevOps Professional graduating in May 2026, seeking full-time opportunities to apply expertise in cloud technologies, infrastructure management, and DevOps automation. Passionate about building scalable, secure solutions and contributing to impactful projects in a collaborative environment."
+  summary: "Cloud, DevOps and Applied-AI engineer. MS in Information Technology from Arizona State University, graduated May 2026 with a 4.0. I design and ship production systems end to end — multi-tenant SaaS on Postgres RLS, agentic AI pipelines on Vertex and Bedrock, and the CI/CD, observability and security work that keeps them running. Seeking full-time roles where infrastructure and applied AI meet."
 };
 
 export const EDUCATION = [
@@ -13,11 +13,11 @@ export const EDUCATION = [
     institution: "Arizona State University",
     institutionFull: "Arizona State University, Ira A. Fulton Schools of Engineering",
     location: "Tempe, AZ, USA",
-    period: "August 2024 - Present",
+    period: "August 2024 - May 2026",
     gpa: 4.0,
     maxGpa: 4.0,
     gpaText: "4.0 / 4.0 GPA",
-    status: "In Progress",
+    status: "Graduated",
     campusImage: "/images/education/asu-campus.png",
     logo: "https://upload.wikimedia.org/wikipedia/en/a/a8/Arizona_State_University_seal.svg",
     coursework: [
@@ -32,7 +32,8 @@ export const EDUCATION = [
       { name: "Technology Innovation Lab" }
     ],
     achievements: [
-      "Perfect 4.0 GPA"
+      "Perfect 4.0 GPA",
+      "Graduated May 2026"
     ],
     color: {
       primary: "#8C1D40",
@@ -795,9 +796,12 @@ export const PROJECTS = [
 
 export const ROLES = [
   "Cloud & DevOps Engineer",
+  "AI Infrastructure Engineer",
+  "Platform Engineer",
   "AWS Solutions Architect",
+  "Site Reliability Engineer",
+  "Applied AI Engineer",
   "Infrastructure Automation Specialist",
   "CI/CD Pipeline Expert",
-  "Site Reliability Engineer",
   "Full-Stack Developer"
 ];

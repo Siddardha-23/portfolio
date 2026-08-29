@@ -75,8 +75,8 @@ CORPUS: List[KBEntry] = [
         title="Who Harshith is",
         summary="Cloud & DevOps engineer + AI builder. ASU MS-IT (4.0 GPA). Ships small, real, often.",
         body=(
-            "Harshith is a Cloud & DevOps engineer pursuing his MS in Information Technology at "
-            "Arizona State University (Aug 2024 - May 2026, 4.0 GPA). He has ~1.5 years of "
+            "Harshith is a Cloud & DevOps engineer who completed his MS in Information Technology at "
+            "Arizona State University (Aug 2024 - May 2026, 4.0 GPA, graduated May 2026). He has ~1.5 years of "
             "professional experience plus an active portfolio of side projects spanning AWS Lambda "
             "serverless, EKS production migrations, multi-tenant SaaS, and agentic AI. He prefers "
             "building things end-to-end and showing receipts over claiming skills."
@@ -246,10 +246,10 @@ CORPUS: List[KBEntry] = [
         id="edu-asu",
         kind="education",
         title="MS in Information Technology — Arizona State University",
-        summary="Ira A. Fulton Schools of Engineering, 4.0 / 4.0 GPA, graduating May 2026.",
+        summary="Ira A. Fulton Schools of Engineering, 4.0 / 4.0 GPA, graduated May 2026.",
         body=(
             "Master of Science in Information Technology at Arizona State University (Aug 2024 – "
-            "May 2026, 4.0 GPA). Coursework spans Cloud Architecture, Cloud Security & Ops, "
+            "May 2026, 4.0 GPA), completed May 2026. Coursework spans Cloud Architecture, Cloud Security & Ops, "
             "Network Forensics, Advanced DBMS, Information Systems Security, Security Compliance, "
             "and Technology Innovation Lab."
         ),

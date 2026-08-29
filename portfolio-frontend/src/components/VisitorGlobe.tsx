@@ -122,15 +122,22 @@ export default function VisitorGlobe() {
                                 aria-label="Close visitor map"
                             />
 
+                            {/*
+                              * Centring lives in framer-motion's x/y, not in
+                              * -translate-x-1/2 classes: motion writes an inline
+                              * transform for `scale`, and an inline transform beats
+                              * the class, which silently drops the centring and
+                              * anchors the dialog's top-left at the viewport centre.
+                              */}
                             <motion.div
                                 role="dialog"
                                 aria-modal="true"
                                 aria-label="Global visitors"
-                                className="fixed left-1/2 top-1/2 z-[10000] flex -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:rounded-3xl"
+                                className="fixed left-1/2 top-1/2 z-[10000] flex flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-2xl sm:rounded-3xl"
                                 style={{ width: 'min(1100px, 95vw)', height: 'min(850px, 90vh)' }}
-                                initial={{ opacity: 0, scale: 0.94 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.94 }}
+                                initial={{ opacity: 0, scale: 0.94, x: '-50%', y: '-50%' }}
+                                animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+                                exit={{ opacity: 0, scale: 0.94, x: '-50%', y: '-50%' }}
                                 transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                             >
                                 {/* ── Header ── */}

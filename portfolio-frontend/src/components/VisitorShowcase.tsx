@@ -127,11 +127,11 @@ export default function VisitorShowcase() {
                             <AnimatePresence>
                                 {showLinkedinTooltip && stats.notable_linkedin && stats.notable_linkedin.length > 0 && (
                                     <motion.div
-                                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                                        initial={{ opacity: 0, y: 8, scale: 0.95, x: '-50%' }}
+                                        animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+                                        exit={{ opacity: 0, y: 8, scale: 0.95, x: '-50%' }}
                                         transition={{ duration: 0.15 }}
-                                        className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 w-56"
+                                        className="absolute bottom-full left-1/2 mb-2 z-50 w-56"
                                     >
                                         <div className="bg-popover border border-border rounded-lg shadow-xl p-3">
                                             <div className="text-xs font-semibold text-foreground mb-2">

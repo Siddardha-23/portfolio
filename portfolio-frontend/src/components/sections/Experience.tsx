@@ -414,11 +414,11 @@ export default function Experience() {
 
             {/* Timeline end marker */}
             <motion.div
-              initial={{ opacity: 0, scale: 0 }}
-              whileInView={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0, x: '-50%' }}
+              whileInView={{ opacity: 1, scale: 1, x: '-50%' }}
               viewport={{ once: true }}
               transition={{ delay: 0.5, duration: 0.3 }}
-              className="absolute left-6 md:left-8 bottom-0 transform -translate-x-1/2"
+              className="absolute left-6 md:left-8 bottom-0"
             >
               <div className="w-4 h-4 rounded-full bg-gradient-to-r from-primary to-accent shadow-lg" />
             </motion.div>

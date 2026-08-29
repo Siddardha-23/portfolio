@@ -13,21 +13,45 @@ import Globe from 'react-globe.gl';
 import type { GlobeMethods } from 'react-globe.gl';
 import * as THREE from 'three';
 import type { VisitorPoint } from '@/hooks/useVisitorGeo';
+import { useResolvedTheme } from '@/hooks/useResolvedTheme';
 
 /** Tempe, AZ — where the arcs originate. */
 export const HOME_COORDS = { lat: 33.4255, lng: -111.94, label: 'Tempe, Arizona' };
 
-const COLORS = {
-    ocean: '#070b14',
-    land: 'rgba(56, 82, 112, 0.55)',
-    landSide: 'rgba(10, 16, 28, 0.9)',
-    border: 'rgba(125, 175, 220, 0.28)',
-    atmosphere: '#4da3ff',
-    point: '#38e0d0',
-    pointHot: '#7dd3fc',
-    arc: '#38e0d0',
-    home: '#fbbf24',
-};
+/**
+ * Two palettes rather than one dark scene: the globe sits inside the page, so it
+ * has to follow the theme toggle like every other surface. Light mode inverts the
+ * figure/ground — pale ocean, darker land — instead of dimming the dark palette,
+ * which would just look grey.
+ */
+const PALETTES = {
+    dark: {
+        ocean: '#070b14',
+        land: 'rgba(56, 82, 112, 0.55)',
+        landSide: 'rgba(10, 16, 28, 0.9)',
+        border: 'rgba(125, 175, 220, 0.28)',
+        atmosphere: '#4da3ff',
+        point: '#38e0d0',
+        pointHot: '#7dd3fc',
+        ring: '56, 224, 208',
+        arc: '#38e0d0',
+        arcFade: 'rgba(56, 224, 208, 0)',
+        home: '#fbbf24',
+    },
+    light: {
+        ocean: '#dde5f0',
+        land: 'rgba(94, 124, 158, 0.75)',
+        landSide: 'rgba(168, 186, 210, 0.9)',
+        border: 'rgba(40, 76, 118, 0.35)',
+        atmosphere: '#6aa6f5',
+        point: '#0d9488',
+        pointHot: '#0369a1',
+        ring: '13, 148, 136',
+        arc: '#0d9488',
+        arcFade: 'rgba(13, 148, 136, 0)',
+        home: '#c2410c',
+    },
+} as const;
 
 interface CountryFeature {
     properties: { iso: string; name: string };
@@ -71,6 +95,9 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
     const [countries, setCountries] = useState<CountryFeature[]>([]);
     const [hovered, setHovered] = useState<VisitorPoint | null>(null);
 
+    const theme = useResolvedTheme();
+    const COLORS = PALETTES[theme];
+
     // Vector landmasses. Failing to load leaves a clean sphere rather than an error.
     useEffect(() => {
         let cancelled = false;
@@ -107,7 +134,7 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
         material.color = new THREE.Color(COLORS.ocean);
         material.shininess = 0;
         return material;
-    }, []);
+    }, [COLORS.ocean]);
 
     const maxCount = useMemo(
         () => Math.max(1, ...points.map((p) => p.count)),
@@ -155,8 +182,37 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
         if (controls) controls.autoRotate = autoRotate;
     }, [autoRotate]);
 
+    /**
+     * The camera's field of view is vertical, so on a canvas that is taller than
+     * it is wide — a phone, or the modal in portrait — the globe overflows left
+     * and right. Pulling the camera back by the inverse aspect makes it fit.
+     *
+     * distance = R * (1 + altitude), so scaling distance by 1/aspect gives
+     * altitude' = (1 + altitude) / aspect - 1.
+     */
+    const fittedAltitude = useMemo(() => {
+        if (!width || !height) return altitude;
+        const aspect = width / height;
+        if (aspect >= 1) return altitude;
+        return (1 + altitude) / aspect - 1;
+    }, [altitude, width, height]);
+
+    // Re-fit when the box changes shape (rotation, modal resize), not just on mount.
+    useEffect(() => {
+        const globe = globeRef.current;
+        if (!globe) return;
+        const current = globe.pointOfView();
+        globe.pointOfView({ ...current, altitude: fittedAltitude }, 400);
+    }, [fittedAltitude]);
+
     return (
-        <div className="relative" style={{ width, height }}>
+        // Centred and clipped: three-render-objects falls back to window-sized
+        // canvas when it is handed a non-finite width, which would otherwise put
+        // the globe's centre far down and to the right of this box.
+        <div
+            className="relative flex items-center justify-center overflow-hidden"
+            style={{ width, height }}
+        >
             <Globe
                 ref={globeRef}
                 width={width}
@@ -201,7 +257,7 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
                 ringsData={points}
                 ringLat="lat"
                 ringLng="lng"
-                ringColor={() => (t: number) => `rgba(56, 224, 208, ${1 - t})`}
+                ringColor={() => (t: number) => `rgba(${COLORS.ring}, ${1 - t})`}
                 ringMaxRadius={(d) => 1.5 + ((d as VisitorPoint).count / maxCount) * 3}
                 ringPropagationSpeed={1.4}
                 ringRepeatPeriod={2200}
@@ -211,7 +267,7 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
                 arcStartLng="startLng"
                 arcEndLat="endLat"
                 arcEndLng="endLng"
-                arcColor={() => ['rgba(251, 191, 36, 0.0)', COLORS.arc, 'rgba(56, 224, 208, 0.0)']}
+                arcColor={() => [COLORS.arcFade, COLORS.arc, COLORS.arcFade]}
                 arcAltitudeAutoScale={0.42}
                 arcStroke={0.32}
                 arcDashLength={0.45}
@@ -227,22 +283,24 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
                         controls.autoRotateSpeed = autoRotateSpeed;
                         controls.enableZoom = true;
                         controls.minDistance = 180;
-                        controls.maxDistance = 620;
-                        globe.pointOfView({ lat: 22, lng: 10, altitude }, 0);
+                        // Generous, so a tall canvas's fitted altitude is never
+                        // clamped back to a distance that crops the globe.
+                        controls.maxDistance = 1400;
+                        globe.pointOfView({ lat: 22, lng: 10, altitude: fittedAltitude }, 0);
                     }
                     onReady?.();
                 }}
             />
 
             {hovered && (
-                <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-white/10 bg-[#070b14]/95 px-3 py-2 font-mono text-[11px] tracking-tight text-slate-200 shadow-xl backdrop-blur">
+                <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-md border border-border bg-popover/95 px-3 py-2 font-mono text-[11px] tracking-tight text-popover-foreground shadow-xl backdrop-blur">
                     <span className="mr-2">{hovered.flag}</span>
                     {hovered.label}
-                    <span className="ml-2 text-teal-300">
+                    <span className="ml-2 text-primary">
                         {hovered.count} visitor{hovered.count === 1 ? '' : 's'}
                     </span>
                     {hovered.approximate && (
-                        <span className="ml-2 text-slate-500">~country</span>
+                        <span className="ml-2 text-muted-foreground">~country</span>
                     )}
                 </div>
             )}

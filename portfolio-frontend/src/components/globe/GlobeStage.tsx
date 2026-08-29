@@ -21,7 +21,7 @@ type GlobeStageProps = Omit<Globe3DProps, 'width' | 'height'> & {
 function DefaultFallback() {
     return (
         <div className="flex h-full w-full items-center justify-center">
-            <div className="h-24 w-24 animate-pulse rounded-full border border-teal-400/20 bg-teal-400/5" />
+            <div className="h-24 w-24 animate-pulse rounded-full border border-primary/20 bg-primary/5" />
         </div>
     );
 }
@@ -40,8 +40,15 @@ const GlobeStage = forwardRef<Globe3DHandle, GlobeStageProps>(function GlobeStag
         const observer = new ResizeObserver((entries) => {
             const box = entries[0]?.contentRect;
             if (!box) return;
-            // Round to whole pixels; fractional sizes make three.js resize every frame.
-            setSize({ width: Math.round(box.width), height: Math.round(box.height) });
+            // Round to whole pixels; fractional sizes make three.js resize every
+            // frame. Non-finite values must never reach the renderer: it treats
+            // those as "unset" and falls back to a window-sized canvas.
+            const width = Math.round(box.width);
+            const height = Math.round(box.height);
+            if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+            setSize((prev) =>
+                prev.width === width && prev.height === height ? prev : { width, height }
+            );
         });
         observer.observe(el);
         return () => observer.disconnect();
@@ -51,7 +58,9 @@ const GlobeStage = forwardRef<Globe3DHandle, GlobeStageProps>(function GlobeStag
     const placeholder = fallback ?? <DefaultFallback />;
 
     return (
-        <div ref={containerRef} className={className}>
+        // grid + place-items-center keeps the globe centred in this box whatever
+        // size the renderer ends up choosing for its canvas.
+        <div ref={containerRef} className={`grid place-items-center ${className ?? ''}`}>
             {ready ? (
                 <GlobeErrorBoundary fallback={placeholder}>
                     <Suspense fallback={placeholder}>

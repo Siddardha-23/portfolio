@@ -117,12 +117,16 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
     // Arcs read as traffic arriving, so they all start at home.
     const arcs = useMemo(() => {
         if (!showArcs) return [];
-        return points.map((p) => ({
+        return points.map((p, i) => ({
             startLat: HOME_COORDS.lat,
             startLng: HOME_COORDS.lng,
             endLat: p.lat,
             endLng: p.lng,
             count: p.count,
+            // Staggered here rather than in an accessor: an accessor returning a
+            // fresh random number would re-roll every arc on each re-render, so
+            // the dashes would jump whenever a marker is hovered.
+            dashGap: (i * 0.37) % 2,
         }));
     }, [points, showArcs]);
 
@@ -212,7 +216,7 @@ const Globe3D = forwardRef<Globe3DHandle, Globe3DProps>(function Globe3D(
                 arcStroke={0.32}
                 arcDashLength={0.45}
                 arcDashGap={1.8}
-                arcDashInitialGap={() => Math.random() * 2}
+                arcDashInitialGap={(d) => (d as { dashGap: number }).dashGap}
                 arcDashAnimateTime={2600}
                 arcsTransitionDuration={900}
                 onGlobeReady={() => {

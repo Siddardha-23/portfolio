@@ -4,6 +4,7 @@ import About from '@/components/sections/About';
 import Skills from '@/components/sections/Skills';
 import Education from '@/components/sections/Education';
 import Experience from '@/components/sections/Experience';
+import Contributions from '@/components/sections/Contributions';
 import Spotlight from '@/components/sections/Spotlight';
 import Projects from '@/components/sections/Projects';
 import Contact from '@/components/sections/Contact';
@@ -62,6 +63,10 @@ export default function Home() {
         <Skills />
         <Education />
         <Experience />
+
+        {/* Engineering contributions — architecture and decisions behind the
+            last year of work. Sits between Experience and Projects. */}
+        <Contributions />
 
         {/* Current work, and the strongest material on the page — so it lands
             straight after the roles rather than at the end of the archive. */}

@@ -1,4 +1,4 @@
-import { motion, useInView } from 'framer-motion';
+import { motion, useInView, useReducedMotion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -11,191 +11,152 @@ import {
   Database,
   Award,
   Sparkles,
-  Zap,
-  Terminal,
   Server,
-  GitBranch,
-  Container,
-  Globe,
+  Layout,
+  ShieldCheck,
+  BrainCircuit,
+  Activity,
+  Wrench,
+  Boxes,
   Shield,
-  Cpu,
-  FileCode,
-  Layers,
   ExternalLink,
   Calendar
 } from 'lucide-react';
 
-// Skill icons mapping
-const skillIcons: { [key: string]: React.ReactNode } = {
-  'Python': <FileCode className="h-5 w-5" />,
-  'Java': <Cpu className="h-5 w-5" />,
-  'Bash': <Terminal className="h-5 w-5" />,
-  'JavaScript': <Code2 className="h-5 w-5" />,
-  'SQL': <Database className="h-5 w-5" />,
-  'HTML': <Globe className="h-5 w-5" />,
-  'CSS': <Layers className="h-5 w-5" />,
-  'Terraform': <Server className="h-5 w-5" />,
-  'CloudFormation': <Cloud className="h-5 w-5" />,
-  'Docker': <Container className="h-5 w-5" />,
-  'Git': <GitBranch className="h-5 w-5" />,
-  'GitHub': <GitBranch className="h-5 w-5" />,
-  'Nginx': <Server className="h-5 w-5" />,
-  'Flask': <Zap className="h-5 w-5" />,
-  'Postgres': <Database className="h-5 w-5" />,
-  'Linux/Unix': <Terminal className="h-5 w-5" />,
-  'Windows': <Cpu className="h-5 w-5" />,
-  'CodeCommit': <GitBranch className="h-5 w-5" />,
-  'AWS Cloud Practitioner': <Award className="h-5 w-5" />
-};
+type SkillCategoryKey =
+  | 'languages'
+  | 'backend'
+  | 'frontend'
+  | 'data'
+  | 'cloud'
+  | 'infrastructure'
+  | 'ai'
+  | 'security'
+  | 'observability'
+  | 'aiTooling';
 
-// Skill colors
-const skillColors: { [key: string]: string } = {
-  'Python': '#3776AB',
-  'Java': '#ED8B00',
-  'Bash': '#4EAA25',
-  'JavaScript': '#F7DF1E',
-  'SQL': '#336791',
-  'HTML': '#E34F26',
-  'CSS': '#1572B6',
-  'Terraform': '#7B42BC',
-  'CloudFormation': '#FF9900',
-  'Docker': '#2496ED',
-  'Git': '#F05032',
-  'GitHub': '#181717',
-  'Nginx': '#009639',
-  'Flask': '#000000',
-  'Postgres': '#336791',
-  'Linux/Unix': '#FCC624',
-  'Windows': '#0078D6',
-  'CodeCommit': '#FF9900',
-  'AWS Cloud Practitioner': '#FF9900'
-};
-
-// Category configurations
-const categoryConfig = {
-  programmingLanguages: {
-    title: 'Programming Languages',
+// Category configurations — one per SKILLS group (certifications rendered separately).
+// Gradients reuse the existing purple/indigo family plus neutral supporting tints;
+// no new palette tokens introduced.
+const categoryConfig: Record<
+  SkillCategoryKey,
+  { title: string; icon: typeof Code2; gradient: string; description: string }
+> = {
+  languages: {
+    title: 'Languages',
     icon: Code2,
-    gradient: 'from-blue-500 to-cyan-500',
-    description: 'Core languages for development'
+    gradient: 'from-primary to-accent',
+    description: 'Core programming languages'
   },
-  cloudDevOps: {
-    title: 'Cloud & DevOps',
-    icon: Cloud,
-    gradient: 'from-orange-500 to-amber-500',
-    description: 'Infrastructure & deployment tools'
+  backend: {
+    title: 'Backend',
+    icon: Server,
+    gradient: 'from-violet-500 to-indigo-500',
+    description: 'APIs, services and frameworks'
   },
-  toolsAndDatabases: {
-    title: 'Tools & Databases',
+  frontend: {
+    title: 'Frontend',
+    icon: Layout,
+    gradient: 'from-indigo-500 to-blue-500',
+    description: 'Interfaces and build tooling'
+  },
+  data: {
+    title: 'Data',
     icon: Database,
-    gradient: 'from-emerald-500 to-teal-500',
-    description: 'Development ecosystem'
+    gradient: 'from-purple-500 to-fuchsia-500',
+    description: 'Databases and stores'
   },
-  certifications: {
-    title: 'Certifications',
-    icon: Award,
-    gradient: 'from-purple-500 to-pink-500',
-    description: 'Professional credentials'
+  cloud: {
+    title: 'Cloud',
+    icon: Cloud,
+    gradient: 'from-accent to-primary',
+    description: 'Cloud platforms and services'
+  },
+  infrastructure: {
+    title: 'Infrastructure',
+    icon: Boxes,
+    gradient: 'from-indigo-500 to-violet-500',
+    description: 'IaC, containers and CI/CD'
+  },
+  ai: {
+    title: 'AI & LLM',
+    icon: BrainCircuit,
+    gradient: 'from-fuchsia-500 to-purple-500',
+    description: 'Models, RAG and agent workflows'
+  },
+  security: {
+    title: 'Security & Compliance',
+    icon: ShieldCheck,
+    gradient: 'from-violet-500 to-purple-500',
+    description: 'Access control and data protection'
+  },
+  observability: {
+    title: 'Observability',
+    icon: Activity,
+    gradient: 'from-blue-500 to-indigo-500',
+    description: 'Metrics, logs and traces'
+  },
+  aiTooling: {
+    title: 'AI Tooling',
+    icon: Wrench,
+    gradient: 'from-purple-500 to-indigo-500',
+    description: 'Agent development and evals'
   }
 };
 
-// Deterministic skill proficiency levels (data-driven, not random)
-const skillProficiency: Record<string, number> = {
-  // Programming Languages
-  'Python': 92,
-  'Java': 80,
-  'Bash': 88,
-  'JavaScript': 82,
-  'SQL': 85,
-  'HTML': 90,
-  'CSS': 78,
-  // Cloud & DevOps
-  'AWS (EC2, S3, VPC, ECS, Lambda, CloudWatch, CloudTrail, CodePipeline)': 93,
-  'Terraform': 90,
-  'CloudFormation': 85,
-  'Docker': 88,
-  'Nginx': 78,
-  'Git': 92,
-  'GitHub': 90,
-  // Tools & Databases
-  'Flask': 88,
-  'Postgres': 82,
-  'CodeCommit': 75,
-  'Linux/Unix': 90,
-  'Windows': 80,
-};
+const CATEGORY_ORDER: SkillCategoryKey[] = [
+  'languages',
+  'backend',
+  'frontend',
+  'data',
+  'cloud',
+  'infrastructure',
+  'ai',
+  'security',
+  'observability',
+  'aiTooling'
+];
 
-// Animated skill level bar
-function SkillLevelBar({ skill, delay }: { skill: string; delay: number }) {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true });
-  const level = skillProficiency[skill] ?? 80;
+// Skill chip — informational tile, subtle hover.
+function SkillChip({ skill, index, categoryIndex }: { skill: string; index: number; categoryIndex: number }) {
+  const reduceMotion = useReducedMotion();
+  const delay = reduceMotion ? 0 : Math.min(categoryIndex * 0.05 + index * 0.03, 0.6);
 
   return (
-    <div ref={ref} className="h-1.5 w-full bg-muted/30 rounded-full overflow-hidden">
-      <motion.div
-        className="h-full bg-gradient-to-r from-primary to-accent rounded-full"
-        initial={{ width: 0 }}
-        animate={isInView ? { width: `${level}%` } : { width: 0 }}
-        transition={{ duration: 1, delay, ease: "easeOut" }}
-      />
-    </div>
-  );
-}
-
-// Skill display card — informational, not clickable. Subtle hover (border tint
-// only) so it reads as a tile, not a button.
-function SkillCard({ skill, index, categoryIndex }: { skill: string; index: number; categoryIndex: number }) {
-  const color = skillColors[skill.split(' ')[0]] || '#6366f1';
-  const Icon = skillIcons[skill.split(' ')[0]] || <Zap className="h-5 w-5" />;
-  const delay = categoryIndex * 0.2 + index * 0.05;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 16 }}
+    <motion.span
+      initial={reduceMotion ? false : { opacity: 0, y: 10 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ delay, duration: 0.35 }}
-      className="relative"
+      transition={{ delay, duration: 0.3 }}
+      className="inline-flex items-center rounded-lg border border-border/60 bg-card px-3 py-1.5 text-sm text-foreground/85 hover:border-primary/30 hover:text-foreground transition-colors"
     >
-      <div className="relative p-4 rounded-xl bg-card border border-border/50 shadow-sm hover:border-primary/20 transition-colors duration-200">
-        <div className="flex items-center gap-3 mb-3">
-          <div
-            className="w-10 h-10 rounded-lg flex items-center justify-center"
-            style={{ background: `${color}1a` }}
-            aria-hidden
-          >
-            <div style={{ color }}>{Icon}</div>
-          </div>
-          <span className="font-medium text-foreground text-sm">{skill}</span>
-        </div>
-        <SkillLevelBar skill={skill} delay={delay} />
-      </div>
-    </motion.div>
+      {skill}
+    </motion.span>
   );
 }
 
 // Category section component
-function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof typeof categoryConfig; skills: string[]; index: number }) {
+function CategorySection({ categoryKey, skills, index }: { categoryKey: SkillCategoryKey; skills: string[]; index: number }) {
   const config = categoryConfig[categoryKey];
   const Icon = config.icon;
+  const reduceMotion = useReducedMotion();
 
   return (
     <motion.div
       id={`skills-${categoryKey}`}
-      initial={{ opacity: 0, y: 40 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
-      transition={{ delay: index * 0.15, duration: 0.6 }}
-      className="rounded-xl transition-all duration-500"
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ delay: Math.min(index * 0.08, 0.4), duration: 0.5 }}
+      className="rounded-xl transition-all duration-500 scroll-mt-24"
     >
-      <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
+      <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm h-full">
         {/* Top gradient accent */}
         <div className={`h-1.5 bg-gradient-to-r ${config.gradient}`} />
 
         <div className="p-6">
           {/* Header */}
-          <div className="flex items-center gap-4 mb-6">
+          <div className="flex items-center gap-4 mb-5">
             <div className={`p-3 rounded-xl bg-gradient-to-br ${config.gradient} shadow-lg`}>
               <Icon className="h-6 w-6 text-white" />
             </div>
@@ -203,15 +164,15 @@ function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof ty
               <h3 className="text-xl font-bold text-foreground">{config.title}</h3>
               <p className="text-sm text-muted-foreground">{config.description}</p>
             </div>
-            <Badge variant="outline" className="ml-auto text-primary border-primary/30">
-              {skills.length} skills
+            <Badge variant="outline" className="ml-auto text-primary border-primary/30 shrink-0">
+              {skills.length}
             </Badge>
           </div>
 
-          {/* Skills grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Skills chips */}
+          <div className="flex flex-wrap gap-2">
             {skills.map((skill, i) => (
-              <SkillCard key={i} skill={skill} index={i} categoryIndex={index} />
+              <SkillChip key={i} skill={skill} index={i} categoryIndex={index} />
             ))}
           </div>
         </div>
@@ -222,7 +183,8 @@ function CategorySection({ categoryKey, skills, index }: { categoryKey: keyof ty
 
 // Certification card with clickable link
 function CertificationCard({ cert, index }: { cert: { name: string; issuer: string; date: string; link: string }; index: number }) {
-  const delay = 3 * 0.2 + index * 0.05;
+  const reduceMotion = useReducedMotion();
+  const delay = reduceMotion ? 0 : index * 0.05;
   const color = '#FF9900'; // AWS orange color
 
   const handleClick = () => {
@@ -233,11 +195,11 @@ function CertificationCard({ cert, index }: { cert: { name: string; issuer: stri
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.9 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 20, scale: 0.95 }}
       whileInView={{ opacity: 1, y: 0, scale: 1 }}
       viewport={{ once: true }}
-      transition={{ delay, duration: 0.4, type: "spring", stiffness: 100 }}
-      whileHover={{ scale: 1.02, y: -3 }}
+      transition={{ delay, duration: 0.4 }}
+      whileHover={reduceMotion ? undefined : { scale: 1.02, y: -3 }}
       className={`group relative ${cert.link ? 'cursor-pointer' : ''}`}
       onClick={handleClick}
     >
@@ -280,32 +242,31 @@ function CertificationCard({ cert, index }: { cert: { name: string; issuer: stri
 }
 
 // Certifications section with special card layout
-function CertificationsSection({ certifications, index }: { certifications: { name: string; issuer: string; date: string; link: string }[]; index: number }) {
-  const config = categoryConfig.certifications;
-  const Icon = config.icon;
+function CertificationsSection({ certifications }: { certifications: { name: string; issuer: string; date: string; link: string }[] }) {
+  const reduceMotion = useReducedMotion();
 
   return (
     <motion.div
       id="skills-certifications"
-      initial={{ opacity: 0, y: 40 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 40 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-50px" }}
-      transition={{ delay: index * 0.15, duration: 0.6 }}
-      className="rounded-xl transition-all duration-500"
+      viewport={{ once: true, margin: '-50px' }}
+      transition={{ duration: 0.5 }}
+      className="rounded-xl transition-all duration-500 scroll-mt-24 mt-8"
     >
       <Card className="relative overflow-hidden border-0 shadow-2xl bg-card/80 backdrop-blur-sm">
         {/* Top gradient accent */}
-        <div className={`h-1.5 bg-gradient-to-r ${config.gradient}`} />
+        <div className="h-1.5 bg-gradient-to-r from-primary to-accent" />
 
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center gap-4 mb-6">
-            <div className={`p-3 rounded-xl bg-gradient-to-br ${config.gradient} shadow-lg`}>
-              <Icon className="h-6 w-6 text-white" />
+            <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-accent shadow-lg">
+              <Award className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-foreground">{config.title}</h3>
-              <p className="text-sm text-muted-foreground">{config.description}</p>
+              <h3 className="text-xl font-bold text-foreground">Certifications</h3>
+              <p className="text-sm text-muted-foreground">Professional credentials</p>
             </div>
             <Badge variant="outline" className="ml-auto text-primary border-primary/30">
               {certifications.length} credentials
@@ -324,8 +285,10 @@ function CertificationsSection({ certifications, index }: { certifications: { na
   );
 }
 
-// Floating particles animation - hidden on mobile for performance
+// Floating particles animation - hidden on mobile for performance and when reduced motion is set
 function FloatingParticles() {
+  const reduceMotion = useReducedMotion();
+  if (reduceMotion) return null;
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none hidden md:block">
       {[...Array(15)].map((_, i) => (
@@ -345,7 +308,7 @@ function FloatingParticles() {
             duration: Math.random() * 10 + 10,
             repeat: Infinity,
             delay: Math.random() * 5,
-            ease: "linear"
+            ease: 'linear'
           }}
         />
       ))}
@@ -353,23 +316,23 @@ function FloatingParticles() {
   );
 }
 
-// Skill radar/stats component - clickable to scroll to category
+// Skill stats — clickable to scroll to a category cluster.
 function SkillsStats() {
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true });
+  const reduceMotion = useReducedMotion();
 
   const stats = [
-    { label: 'Languages', value: SKILLS.programmingLanguages.length, icon: Code2, color: '#3b82f6', scrollTo: 'skills-programmingLanguages' },
-    { label: 'Cloud Tools', value: SKILLS.cloudDevOps.length, icon: Cloud, color: '#f59e0b', scrollTo: 'skills-cloudDevOps' },
-    { label: 'Databases', value: SKILLS.toolsAndDatabases.length, icon: Database, color: '#10b981', scrollTo: 'skills-toolsAndDatabases' },
-    { label: 'Certifications', value: SKILLS.certifications.length, icon: Award, color: '#a855f7', scrollTo: 'skills-certifications' }
+    { label: 'Backend', value: SKILLS.backend.length, icon: Server, color: '#8b5cf6', scrollTo: 'skills-backend' },
+    { label: 'Cloud & Infra', value: SKILLS.cloud.length + SKILLS.infrastructure.length, icon: Cloud, color: '#6366f1', scrollTo: 'skills-cloud' },
+    { label: 'AI & LLM', value: SKILLS.ai.length + SKILLS.aiTooling.length, icon: BrainCircuit, color: '#a855f7', scrollTo: 'skills-ai' },
+    { label: 'Certifications', value: SKILLS.certifications.length, icon: Award, color: '#8b5cf6', scrollTo: 'skills-certifications' }
   ];
 
   const handleClick = (scrollTo: string) => {
     const el = document.getElementById(scrollTo);
     if (el) {
       el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Add a brief highlight effect
       el.classList.add('ring-2', 'ring-primary/50', 'ring-offset-2', 'ring-offset-background');
       setTimeout(() => {
         el.classList.remove('ring-2', 'ring-primary/50', 'ring-offset-2', 'ring-offset-background');
@@ -382,9 +345,9 @@ function SkillsStats() {
       {stats.map((stat, i) => (
         <motion.div
           key={i}
-          initial={{ opacity: 0, scale: 0.8 }}
+          initial={reduceMotion ? false : { opacity: 0, scale: 0.9 }}
           animate={isInView ? { opacity: 1, scale: 1 } : {}}
-          transition={{ delay: i * 0.1, duration: 0.5, type: "spring" }}
+          transition={{ delay: reduceMotion ? 0 : i * 0.1, duration: 0.4 }}
           className="relative group cursor-pointer"
           onClick={() => handleClick(stat.scrollTo)}
           role="button"
@@ -399,14 +362,7 @@ function SkillsStats() {
             >
               <stat.icon className="h-6 w-6" style={{ color: stat.color }} />
             </div>
-            <motion.div
-              className="text-3xl font-bold text-foreground mb-1"
-              initial={{ opacity: 0 }}
-              animate={isInView ? { opacity: 1 } : {}}
-              transition={{ delay: 0.3 + i * 0.1, duration: 0.5 }}
-            >
-              {stat.value}
-            </motion.div>
+            <div className="text-3xl font-bold text-foreground mb-1">{stat.value}</div>
             <div className="text-sm text-muted-foreground group-hover:text-primary transition-colors">{stat.label}</div>
             <div className="text-[10px] text-muted-foreground/60 mt-1">Click to view ↓</div>
           </div>
@@ -422,10 +378,12 @@ export default function Skills() {
     const handler = (e: Event) => {
       const group = (e as CustomEvent<{ group: string }>).detail?.group;
       const map: Record<string, string> = {
-        cloud: 'skills-cloudDevOps',
-        programming: 'skills-programmingLanguages',
-        tools: 'skills-toolsAndDatabases',
-        all: 'skills',
+        cloud: 'skills-cloud',
+        programming: 'skills-languages',
+        tools: 'skills-infrastructure',
+        ai: 'skills-ai',
+        security: 'skills-security',
+        all: 'skills'
       };
       const id = map[group] || 'skills';
       const el = document.getElementById(id);
@@ -474,8 +432,8 @@ export default function Skills() {
               Skills & Technologies
             </h2>
             <p className="text-sm md:text-base text-muted-foreground max-w-2xl mx-auto mb-4 md:mb-6 px-4">
-              A comprehensive toolkit built through hands-on experience in cloud infrastructure,
-              DevOps practices, and software development
+              A production toolkit spanning backend and APIs, cloud and infrastructure, applied
+              AI and LLM systems, and the security and observability that keep them running.
             </p>
             <div className="w-24 md:w-32 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent mx-auto" />
           </motion.div>
@@ -494,34 +452,26 @@ export default function Skills() {
         <SkillsStats />
 
         {/* Skills categories grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <CategorySection
-            categoryKey="programmingLanguages"
-            skills={SKILLS.programmingLanguages}
-            index={0}
-          />
-          <CategorySection
-            categoryKey="cloudDevOps"
-            skills={SKILLS.cloudDevOps}
-            index={1}
-          />
-          <CategorySection
-            categoryKey="toolsAndDatabases"
-            skills={SKILLS.toolsAndDatabases}
-            index={2}
-          />
-          <CertificationsSection
-            certifications={SKILLS.certifications}
-            index={3}
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+          {CATEGORY_ORDER.map((key, i) => (
+            <CategorySection
+              key={key}
+              categoryKey={key}
+              skills={SKILLS[key]}
+              index={i}
+            />
+          ))}
         </div>
+
+        {/* Certifications */}
+        <CertificationsSection certifications={SKILLS.certifications} />
 
         {/* Bottom CTA */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ delay: 0.5, duration: 0.5 }}
+          transition={{ delay: 0.3, duration: 0.5 }}
           className="mt-16 text-center"
         >
           <div className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-primary/10 to-accent/10 border border-primary/20">

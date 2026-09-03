@@ -1,7 +1,7 @@
 export const PERSONAL_INFO = {
   name: "Harshith Siddardha Manne",
   phone: "602-580-1838",
-  email: "harshith.siddardha@gmail.com",
+  email: "mannesiddardha@gmail.com",
   linkedin: "linkedin.com/in/harshith-siddardha",
   github: "github.com/Siddardha-23",
   summary: "Cloud, DevOps and Applied-AI engineer. MS in Information Technology from Arizona State University, graduated May 2026 with a 4.0. I design and ship production systems end to end — multi-tenant SaaS on Postgres RLS, agentic AI pipelines on Vertex and Bedrock, and the CI/CD, observability and security work that keeps them running. Seeking full-time roles where infrastructure and applied AI meet."
@@ -70,9 +70,30 @@ export const EDUCATION = [
 ];
 
 export const SKILLS = {
-  programmingLanguages: ["Python", "Java", "Bash", "JavaScript", "SQL", "HTML", "CSS"],
-  cloudDevOps: ["AWS (EC2, S3, VPC, ECS, Lambda, CloudWatch, CloudTrail, CodePipeline)", "Terraform", "CloudFormation", "Docker", "Nginx", "Git", "GitHub"],
-  toolsAndDatabases: ["Flask", "Postgres", "CodeCommit", "Linux/Unix", "Windows"],
+  languages: ["Python", "TypeScript", "Java", "SQL", "Bash", "JavaScript"],
+  backend: ["FastAPI", "Flask", "Django", "Spring Boot", "Pydantic", "SQLAlchemy", "Celery", "REST", "SSE"],
+  frontend: ["React", "Next.js", "Tailwind CSS", "shadcn/ui", "Vite"],
+  data: ["PostgreSQL", "Supabase", "MongoDB", "Redis", "pgvector", "ClickHouse", "Alembic"],
+  cloud: [
+    "AWS (Lambda, API Gateway, ECS, EKS, S3, RDS, IAM, STS, CloudFront, Bedrock)",
+    "GCP (Cloud Run, Vertex AI, GCS, Workload Identity Federation)",
+    "Vercel",
+    "Cloudflare"
+  ],
+  infrastructure: ["Terraform", "CloudFormation", "Docker", "Kubernetes", "Helm", "GitHub Actions", "Jenkins", "systemd"],
+  ai: [
+    "Gemini", "Claude", "AWS Bedrock", "Vertex AI", "RAG", "embeddings", "knowledge graphs",
+    "NetworkX", "agent workflows", "golden-set evaluation", "guardrails", "prompt caching", "MCP"
+  ],
+  security: [
+    "Postgres RLS", "RBAC", "OIDC SSO", "MFA", "SCIM 2.0", "OAuth 2.0", "HMAC webhooks",
+    "replay protection", "idempotency", "audit logging", "DPDP", "data residency"
+  ],
+  observability: ["Prometheus", "Grafana", "Loki", "Sentry", "CloudWatch", "X-Ray", "readiness probes", "incident runbooks"],
+  aiTooling: [
+    "Claude Code", "OpenAI Codex", "Cursor", "MCP server development", "custom agent skills",
+    "subagents", "multi-agent loops", "agent memory and context design", "eval harnesses"
+  ],
   certifications: [
     {
       name: "AWS Academy Graduate - Cloud Security Foundations",
@@ -103,7 +124,91 @@ export const SKILLS = {
 
 export const EXPERIENCE = [
   {
-    position: "Associate Data Scientist",
+    position: "Software Engineer",
+    company: "Gnanalytica",
+    companyInitials: "GN",
+    location: "Tempe, AZ (Remote)",
+    period: "June 2026 - Present",
+    duration: "3 months",
+    type: "Contract",
+    companyColor: "#8b5cf6",
+    impactMetrics: [
+      { value: 306, label: "API Endpoints Shipped", suffix: "" },
+      { value: 2812, label: "Automated Tests", suffix: "" },
+      { value: 95.9, label: "Extraction Accuracy", suffix: "%" }
+    ],
+    responsibilities: [
+      {
+        text: "Sole engineer on Standup AI, a multi-tenant meeting intelligence SaaS in production: 306 FastAPI endpoints, 2,812 tests, 16 schema migrations and a React dashboard, designed, built and operated end to end.",
+        category: "Development"
+      },
+      {
+        text: "Built the ingest pipeline that verifies transcript webhooks every two seconds, buffers utterances per bot, flushes 30-second chunks to Gemini 2.5 Flash, and keeps Live, Corpus and Unified knowledge graphs in step, with prompt-cached Claude Sonnet rebuilding the corpus at meeting close.",
+        category: "Innovation"
+      },
+      {
+        text: "Shipped enterprise access control: OIDC SSO, TOTP MFA and SCIM 2.0 over four-level tenant, workspace, layer and scope isolation on Postgres row-level security, with fail-closed route registration, HMAC webhook verification, replay protection and audit trails.",
+        category: "Security"
+      },
+      {
+        text: "Built a five-tier query router that answers the common case straight from an in-memory graph in roughly 50ms with no model call, escalating to costlier paths only when the question shape requires it.",
+        category: "Optimization"
+      },
+      {
+        text: "Integrated 11 external systems including Slack, Linear, Jira, GitHub, Notion, HubSpot and Salesforce with bi-directional sync, retries and a human approval queue before any outward action.",
+        category: "Development"
+      },
+      {
+        text: "On Valytica: raised image-only extraction accuracy from 91.8% to 95.9% across 97 expected fields, shipped the IBA-format report engine for Indian bank valuers, led pre-launch security hardening clearing 46 dependency advisories, and implemented India DPDP consent, access and withdrawal flows.",
+        category: "Security"
+      },
+      {
+        text: "Rebuilt production on GCP onto systemd and Workload Identity Federation, moved the SPA to Vercel, put the origin behind Cloudflare TLS, and added readiness probes and incident runbooks.",
+        category: "Infrastructure"
+      }
+    ],
+    skills: ["Python", "FastAPI", "PostgreSQL", "GCP", "Gemini", "Claude", "Knowledge Graphs", "Postgres RLS", "OIDC SSO", "SCIM 2.0", "React", "TypeScript", "Vertex AI"]
+  },
+  {
+    position: "Software Engineering Intern",
+    company: "Gnanalytica",
+    companyInitials: "GN",
+    location: "Tempe, AZ (Remote)",
+    period: "December 2025 - May 2026",
+    duration: "6 months",
+    type: "Internship",
+    companyColor: "#8b5cf6",
+    impactMetrics: [
+      { value: 164, label: "Students Served", suffix: "" },
+      { value: 6, label: "RBAC Personas", suffix: "" },
+      { value: 30, label: "Day Curriculum", suffix: "" }
+    ],
+    responsibilities: [
+      {
+        text: "Built multi-tenant organization onboarding, RBAC on cases and documents, org-scoped audit trails and email verification for a FastAPI, React and PostgreSQL valuation platform.",
+        category: "Security"
+      },
+      {
+        text: "Deployed with Terraform, Lambda, API Gateway and CloudFront, untangling resource policies, CORS and stage routing so frontend and API shared one origin.",
+        category: "Infrastructure"
+      },
+      {
+        text: "Removed the N+1 query that made permission checks the slowest call on the page, and migrated users, roles and permissions onto an organization-scoped schema.",
+        category: "Optimization"
+      },
+      {
+        text: "Delivered the student experience for a 30-day AI curriculum platform on Next.js and Supabase that ran a live 164-student cohort across three pods and six faculty: Day 0 onboarding, a chunked lesson reader, a help-desk assistant, realtime polls and roster operations, behind six-persona row-level security.",
+        category: "Development"
+      },
+      {
+        text: "Authored three days of the curriculum, including Agentic AI and the cost economics of tokens, APIs, knowledge graphs and GPUs.",
+        category: "Learning"
+      }
+    ],
+    skills: ["FastAPI", "React", "PostgreSQL", "Terraform", "AWS Lambda", "API Gateway", "CloudFront", "Next.js", "Supabase", "RBAC", "Row-Level Security"]
+  },
+  {
+    position: "Cloud & DevOps Engineer",
     company: "Deep Algorithms & Solutions",
     companyInitials: "DAS",
     location: "Hyderabad, India",
@@ -179,12 +284,12 @@ export const EXPERIENCE = [
     skills: ["Java", "Spring Boot", "Reactive Spring", "React", "React Native", "Redux", "Backend Development"]
   },
   {
-    position: "Data Science Intern",
+    position: "DevOps & Backend Engineer Intern",
     company: "Deep Algorithms & Solutions",
     companyInitials: "DAS",
     location: "Hyderabad, India",
-    period: "January 2021 - May 2022",
-    duration: "1 year 5 months",
+    period: "January 2021 - March 2022",
+    duration: "1 year 3 months",
     type: "Internship",
     companyColor: "#6366f1",
     impactMetrics: [
@@ -214,6 +319,63 @@ export const EXPERIENCE = [
 ];
 
 export const PROJECTS = [
+  {
+    title: "Aithrex — Infratrix, Aspirely, Cupola",
+    slug: "aithrex",
+    period: "April 2026 - Present",
+    status: "Live",
+    description: [
+      "Infratrix. Reads a customer's AWS account read-only through least-privilege cross-account STS across 22 service APIs, models it as an 11,880-node, 14,159-edge NetworkX graph, and runs a deterministic five-stage solver over 104 optimization patterns that returns Well-Architected findings with a traversable evidence path instead of a model's opinion. Multi-tenant RBAC with PostgreSQL row-level isolation and SOC 2 / HIPAA / PCI DSS compliance filtering.",
+      "Aspirely. Four independently deployed Flask Lambda services (auth, jobs, resume, billing) behind one API Gateway HTTP API sharing a single Lambda layer, on MongoDB and Claude via AWS Bedrock. Async LLM jobs, grounding guardrails, duplicate-submission guards, ATS round-trip checks, and deterministic adapters for Greenhouse, Lever, Ashby and a 1,013-tenant Workday catalog.",
+      "Cupola (in design and early build). Monitoring as a service that runs inside the customer's own AWS, GCP, Azure or on-premises estate. ClickHouse for hot and warm telemetry, embedded Kùzu for a graph of topology, ownership, change and cost, a cost-based query planner that filters the small graph before hitting ClickHouse, an in-process compressed-sparse-row adjacency mirror rebuilt every 30 seconds for sub-millisecond traversal, and a Rust + eBPF node agent doing HyperLogLog cardinality estimation and Gorilla compression at the edge. Cold tier is plain Parquet in the customer's own bucket, still queryable by DuckDB or Athena with Cupola uninstalled."
+    ],
+    technologies: ["FastAPI", "Flask", "AWS Lambda", "NetworkX", "PostgreSQL", "ClickHouse", "MongoDB", "AWS Bedrock", "Rust", "eBPF"],
+    github: "https://github.com/Siddardha-23",
+    architecture: {
+      stack: {
+        frontend: ["React SPA", "TypeScript", "Tailwind CSS"],
+        backend: [
+          "Infratrix graph solver (five-stage, deterministic)",
+          "Aspirely Flask Lambda services (auth, jobs, resume, billing)",
+          "Cupola query planner (in design)"
+        ],
+        infrastructure: [
+          "Cross-account STS (least-privilege, read-only)",
+          "API Gateway HTTP API + shared Lambda layer",
+          "Customer-hosted estate: AWS / GCP / Azure / on-prem (Cupola)"
+        ],
+        cicd: ["Independent per-service deploys", "AWS Bedrock (Claude) integration"],
+        monitoring: ["ClickHouse hot/warm telemetry (Cupola)", "Parquet cold tier in customer bucket (Cupola)"]
+      },
+      security: [
+        "Least-privilege cross-account STS, read-only access to customer AWS accounts",
+        "Multi-tenant RBAC with PostgreSQL row-level isolation (Infratrix)",
+        "SOC 2 / HIPAA / PCI DSS compliance filtering on findings",
+        "Grounding guardrails and duplicate-submission guards on LLM jobs (Aspirely)",
+        "Telemetry stays inside the customer estate; cold tier remains in the customer's own bucket (Cupola, in design)"
+      ],
+      scalability: [
+        "11,880-node, 14,159-edge NetworkX account graph traversed by the solver (Infratrix)",
+        "104 optimization patterns evaluated across 22 AWS service APIs (Infratrix)",
+        "Four independently deployed Flask Lambda services behind one API Gateway HTTP API (Aspirely)",
+        "1,013-tenant Workday catalog plus Greenhouse, Lever and Ashby adapters (Aspirely)",
+        "In-process compressed-sparse-row adjacency mirror rebuilt every 30 seconds for sub-millisecond traversal (Cupola, in design)"
+      ],
+      costEfficiency: [
+        "Deterministic five-stage solver returns evidence paths instead of paying for a model's opinion (Infratrix)",
+        "Single shared Lambda layer across four Aspirely services",
+        "Cost-based query planner filters the small graph before hitting ClickHouse (Cupola, in design)",
+        "HyperLogLog cardinality estimation and Gorilla compression at the edge via a Rust + eBPF agent (Cupola, in design)",
+        "Cold tier is plain Parquet, queryable by DuckDB or Athena with Cupola uninstalled (Cupola, in design)"
+      ],
+      innovations: [
+        "Traversable evidence path from a finding back to the resources that justify it (Infratrix)",
+        "Async LLM jobs with ATS round-trip checks and deterministic ATS adapters (Aspirely)",
+        "Sovereign monitoring that runs entirely inside the customer's estate (Cupola, in design and early build)",
+        "Embedded Kùzu graph of topology, ownership, change and cost (Cupola, in design)"
+      ]
+    }
+  },
   {
     title: "Live Infrastructure Health Dashboard",
     slug: "infra-health-dashboard",

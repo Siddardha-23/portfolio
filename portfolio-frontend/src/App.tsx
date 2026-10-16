@@ -59,7 +59,11 @@ function AppContent() {
       <UnderTheHoodDrawer />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Welcome />} />
+          {/* Landing route renders the portfolio directly so recruiters and
+              crawlers see the full Hero positioning and all sections with no
+              terminal/form gate. The interactive terminal intro lives at
+              /welcome for anyone who wants it. */}
+          <Route path="/" element={<Home />} />
           <Route path="/welcome" element={<Welcome />} />
           <Route path="/home" element={<Home />} />
           <Route path="/cloud-lab" element={<Suspense fallback={<RouteLoadingFallback />}><CloudLab /></Suspense>} />

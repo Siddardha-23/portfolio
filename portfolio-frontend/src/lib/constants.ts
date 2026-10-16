@@ -957,7 +957,9 @@ export const PROJECTS = [
 ];
 
 export const ROLES = [
+  "Software Engineer",
   "Cloud & DevOps Engineer",
+  "Applied AI Engineer",
   "AI Infrastructure Engineer",
   "Platform Engineer",
   "AWS Solutions Architect",

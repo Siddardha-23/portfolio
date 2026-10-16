@@ -11,6 +11,7 @@ import { ResumeViewer } from '@/components/ResumeViewer';
 const navItems = [
   { label: 'Home', href: '/home', shortLabel: 'Home' },
   { label: 'About', href: '/home#about', shortLabel: 'About' },
+  { label: 'How I Build', href: '/home#how-i-build', shortLabel: 'Build' },
   { label: 'Skills', href: '/home#skills', shortLabel: 'Skills' },
   { label: 'Education', href: '/home#education', shortLabel: 'Edu' },
   { label: 'Experience', href: '/home#experience', shortLabel: 'Work' },

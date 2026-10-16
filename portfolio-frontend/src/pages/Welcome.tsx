@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { FaAws, FaDocker, FaLinux, FaPython, FaGitAlt, FaJenkins, FaTerminal, FaReact } from 'react-icons/fa';
 import { SiKubernetes, SiTerraform, SiAnsible, SiGrafana, SiPrometheus, SiApachekafka, SiNginx, SiRedis } from 'react-icons/si';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
+import { useSeo } from '@/hooks/useSeo';
 import { ThemeToggle } from '@/components/theme-toggle';
 
 const PORTFOLIO_VISITED_KEY = 'portfolio_visited';
@@ -36,6 +37,14 @@ export default function Welcome() {
 
   // Track visitor immediately on page load
   useVisitorTracking('welcome-page');
+
+  useSeo({
+    title:
+      'Harshith Siddardha Manne | Software Engineer in Tempe, AZ · MS ASU 2026 · Cloud, DevOps & Applied AI',
+    description:
+      'Software Engineer in Tempe, Arizona. MS from ASU (2026, 4.0 GPA). 3+ years production Java/Python/TypeScript. Sole engineer building multi-tenant SaaS end to end with AI-assisted engineering (Claude Code, Cursor, MCP, multi-agent). Open to full-time roles.',
+    path: '/',
+  });
 
   if (shouldRedirect) return null;
 

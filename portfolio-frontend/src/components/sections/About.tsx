@@ -111,10 +111,10 @@ export default function About() {
   ];
 
   const stats = [
-    { value: 2, label: 'Years Experience', suffix: '+', icon: Clock },
-    { value: 15, label: 'AWS Services', suffix: '+', icon: Cloud },
-    { value: 45, label: 'CI/CD Efficiency Gain', suffix: '%', icon: Zap },
-    { value: 5, label: 'Projects Deployed', suffix: '+', icon: Target }
+    { value: 3, label: 'Years Production Experience', suffix: '+', icon: Clock },
+    { value: 4, label: 'Sole-Engineer SaaS Products', suffix: '', icon: Server },
+    { value: 4, label: 'ASU GPA (MS, 2026)', suffix: '.0', icon: Target },
+    { value: 5, label: 'Projects Deployed', suffix: '+', icon: Zap }
   ];
 
   return (
@@ -196,27 +196,31 @@ export default function About() {
               <div className="space-y-4 text-foreground/80 leading-relaxed">
                 <p>
                   I'm <span className="font-semibold text-primary">Harshith Siddardha Manne</span>,
-                  a passionate Cloud & DevOps Engineer pursuing my Master's in Information Technology
-                  at <span className="font-semibold">Arizona State University</span>.
+                  a Software Engineer based in <span className="font-semibold">Tempe, Arizona</span>, with an
+                  <span className="font-semibold"> MS in Information Technology from Arizona State University</span>
+                  {' '}(graduated 2026, 4.0 GPA) and <span className="font-semibold">3+ years of production experience</span>
+                  {' '}across Java, Python and TypeScript.
                 </p>
                 <p>
                   {PERSONAL_INFO.summary}
                 </p>
                 <p>
-                  My expertise lies in designing and implementing secure, scalable infrastructure
-                  solutions using AWS, Terraform, Docker, and modern CI/CD practices. I thrive on
-                  automating workflows and optimizing deployment pipelines to deliver reliable
-                  software faster.
+                  As the <span className="font-semibold text-primary">sole engineer</span>, I design, build and
+                  operate multi-tenant SaaS end to end — <span className="font-semibold">Aithrex, Infratrix,
+                  Cupola and Aspirely</span> — owning everything from backend and cloud infrastructure to CI/CD,
+                  observability and security. I work with <span className="font-semibold">AI-assisted engineering</span>:
+                  Claude Code, Cursor, the Model Context Protocol (MCP) and multi-agent workflows applied to
+                  real production codebases.
                 </p>
               </div>
 
               {/* Quick highlights */}
               <div className="mt-8 space-y-3">
                 {[
-                  'AWS Infrastructure Architecture',
-                  'DevOps & CI/CD Pipeline Automation',
-                  'Container Orchestration with ECS/Fargate',
-                  'Infrastructure as Code (Terraform & CloudFormation)'
+                  'Production Java, Python & TypeScript',
+                  'Sole-engineer, end-to-end SaaS ownership',
+                  'AWS & GCP infrastructure, CI/CD, observability',
+                  'AI-assisted engineering (Claude Code, Cursor, MCP, multi-agent)'
                 ].map((item, i) => (
                   <motion.div
                     key={i}

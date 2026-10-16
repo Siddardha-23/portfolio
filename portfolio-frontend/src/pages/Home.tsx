@@ -1,6 +1,7 @@
 import Navbar from '@/components/Navbar';
 import Hero from '@/components/sections/Hero';
 import About from '@/components/sections/About';
+import HowIBuild from '@/components/sections/HowIBuild';
 import Skills from '@/components/sections/Skills';
 import Education from '@/components/sections/Education';
 import Experience from '@/components/sections/Experience';
@@ -16,6 +17,7 @@ import ConciergeRoot from '@/components/concierge/ConciergeRoot';
 import AspirelyCallout from '@/components/sunset/AspirelyCallout';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSectionTimeTracking } from '@/hooks/useSectionTimeTracking';
+import { useSeo } from '@/hooks/useSeo';
 import { lazy, Suspense, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -26,6 +28,14 @@ const VisitorGlobe = lazy(() => import('@/components/VisitorGlobe'));
 
 export default function Home() {
   const location = useLocation();
+
+  useSeo({
+    title:
+      'Harshith Siddardha Manne | Software Engineer in Tempe, AZ · MS ASU 2026 · Cloud, DevOps & Applied AI',
+    description:
+      'Software Engineer in Tempe, Arizona. MS in Information Technology from ASU (2026, 4.0 GPA). 3+ years production experience in Java, Python & TypeScript. Sole engineer building multi-tenant SaaS end to end (Aithrex, Infratrix, Cupola, Aspirely) with AI-assisted engineering (Claude Code, Cursor, MCP, multi-agent). Open to full-time roles.',
+    path: '/home',
+  });
 
   // Track visitor on home page load (captures even skipped users)
   useVisitorTracking('home');
@@ -60,6 +70,12 @@ export default function Home() {
         <NowBuildingTicker />
 
         <About />
+
+        {/* How I Build — sole-engineer SaaS ownership (founder story) and
+            AI-assisted engineering, placed early so recruiters catch both
+            differentiators before scrolling into the detail sections. */}
+        <HowIBuild />
+
         <Skills />
         <Education />
         <Experience />

@@ -436,7 +436,7 @@ export default function Hero() {
               transition={{ duration: 0.6 }}
             >
               <h2 className="text-lg md:text-xl text-muted-foreground mb-2 font-light">
-                Hello, I'm
+                Software Engineer in Tempe, AZ &middot; 3+ years production experience
               </h2>
             </motion.div>
 
@@ -468,6 +468,20 @@ export default function Hero() {
               <RoleTypewriter />
             </motion.div>
 
+            {/* Recruiter snapshot — the headline facts up top so a 15-second
+                scan lands location, degree, experience and ownership. */}
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.45, duration: 0.6 }}
+              className="text-base md:text-lg text-foreground/90 max-w-xl mx-auto lg:mx-0 mb-4 leading-relaxed font-medium"
+            >
+              <strong className="text-primary">MS in Information Technology, Arizona State University (2026, 4.0 GPA).</strong>{' '}
+              3+ years of production experience across <strong className="text-foreground">Java, Python &amp; TypeScript</strong>.
+              Sole engineer building multi-tenant SaaS end to end — <strong className="text-foreground">Aithrex, Infratrix, Cupola &amp; Aspirely</strong> —
+              with AI-assisted engineering (Claude Code, Cursor, MCP, multi-agent workflows).
+            </motion.p>
+
             {/* Summary */}
             <motion.p
               initial={{ opacity: 0, y: 20 }}
@@ -478,7 +492,7 @@ export default function Hero() {
               {PERSONAL_INFO.summary}
             </motion.p>
 
-            {/* Quick stats */}
+            {/* Quick stats — recruiter-critical facts, scannable in seconds */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -487,8 +501,10 @@ export default function Hero() {
             >
               {[
                 { icon: MapPin, label: 'Location', value: 'Tempe, AZ' },
+                { icon: Sparkles, label: 'Degree', value: 'MS · ASU 2026 · 4.0 GPA' },
+                { icon: Code, label: 'Stack', value: 'Java · Python · TypeScript' },
+                { icon: Server, label: 'Ownership', value: 'Sole-engineer SaaS' },
                 { icon: Briefcase, label: 'Status', value: 'Seeking Full-Time' },
-                { icon: Sparkles, label: 'Graduated', value: 'ASU · May 2026' },
               ].map((stat, idx) => (
                 <div
                   key={idx}

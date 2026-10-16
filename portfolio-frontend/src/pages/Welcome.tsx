@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, KeyboardEvent, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import WelcomeForm from '@/components/WelcomeForm';
 import { motion } from 'framer-motion';
-import { FaAws, FaDocker, FaLinux, FaPython, FaGitAlt, FaJenkins, FaTerminal, FaReact } from 'react-icons/fa';
+import { FaAws, FaDocker, FaLinux, FaPython, FaGitAlt, FaJenkins, FaTerminal, FaReact, FaArrowRight } from 'react-icons/fa';
 import { SiKubernetes, SiTerraform, SiAnsible, SiGrafana, SiPrometheus, SiApachekafka, SiNginx, SiRedis } from 'react-icons/si';
 import { useVisitorTracking } from '@/hooks/useVisitorTracking';
 import { useSeo } from '@/hooks/useSeo';
@@ -46,13 +46,31 @@ export default function Welcome() {
     path: '/',
   });
 
-  if (shouldRedirect) return null;
+  // NOTE: do not early-return here. Returning before the hooks below would
+  // violate the Rules of Hooks (conditional hook calls). The redirect is
+  // handled by the effect above; we simply render nothing at the end when
+  // shouldRedirect is true.
 
   // Focus the hidden input whenever user clicks anywhere on the terminal
   const focusTerminal = () => {
     if (inputRef.current) {
       inputRef.current.focus();
     }
+  };
+
+  // Reliable, single-source "Skip to Portfolio" — marks the visit so returning
+  // users land straight on /home, and navigates immediately (no backend call,
+  // no form, nothing that can fail).
+  const skipToPortfolio = () => {
+    try {
+      localStorage.setItem(PORTFOLIO_VISITED_KEY, 'true');
+      if (!localStorage.getItem('portfolio_visit_count')) {
+        localStorage.setItem('portfolio_visit_count', '1');
+      }
+    } catch {
+      // localStorage may be unavailable (private mode) — navigate regardless.
+    }
+    navigate('/home');
   };
 
   // Available commands and their outputs
@@ -417,10 +435,22 @@ export default function Welcome() {
     }
   };
 
+  // Render nothing while redirecting returning visitors to /home.
+  if (shouldRedirect) return null;
+
   return (
     <div className="min-h-screen relative bg-gradient-to-br from-background via-secondary to-background dark:from-black dark:via-pink-950/30 dark:to-black flex items-center justify-center p-4 overflow-hidden">
-      {/* Theme Toggle - Fixed top right */}
-      <div className="fixed top-4 right-4 z-50">
+      {/* Fixed top bar: prominent, always-available Skip + theme toggle.
+          The portfolio is never gated behind the form or the terminal. */}
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={skipToPortfolio}
+          className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-lg hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-opacity"
+        >
+          Skip to Portfolio
+          <FaArrowRight className="h-3 w-3" />
+        </button>
         <ThemeToggle />
       </div>
 

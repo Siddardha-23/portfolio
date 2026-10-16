@@ -109,7 +109,18 @@ function RecruiterPanel() {
       try {
         const response = await apiService.getOrgStats();
         if (response.data) {
-          setStats(response.data);
+          // Normalize: the backend can return a partial payload (or an error
+          // body with a 200), so guarantee `organizations` is always an array
+          // and the counters are numbers. Without this, an undefined
+          // `organizations` crashes the whole Home page via the ErrorBoundary
+          // right after the welcome form navigates here.
+          const d = response.data as Partial<typeof response.data>;
+          setStats({
+            organizations: Array.isArray(d.organizations) ? d.organizations : [],
+            total_visitors: Number(d.total_visitors) || 0,
+            total_registered: Number(d.total_registered) || 0,
+            linkedin_profiles_found: Number(d.linkedin_profiles_found) || 0,
+          });
         }
       } catch {
         // Silently handle fetch failure
@@ -476,10 +487,11 @@ export default function Hero() {
               transition={{ delay: 0.45, duration: 0.6 }}
               className="text-base md:text-lg text-foreground/90 max-w-xl mx-auto lg:mx-0 mb-4 leading-relaxed font-medium"
             >
-              <strong className="text-primary">MS in Information Technology, Arizona State University (2026, 4.0 GPA).</strong>{' '}
-              3+ years of production experience across <strong className="text-foreground">Java, Python &amp; TypeScript</strong>.
-              Sole engineer building multi-tenant SaaS end to end — <strong className="text-foreground">Aithrex, Infratrix, Cupola &amp; Aspirely</strong> —
-              with AI-assisted engineering (Claude Code, Cursor, MCP, multi-agent workflows).
+              <strong className="text-primary">MS in Information Technology, Arizona State University (2026, 4.0 GPA)</strong>, based in Tempe, AZ.
+              3+ years of production experience in <strong className="text-foreground">Java, Python &amp; TypeScript</strong>,
+              with <strong className="text-foreground">React &amp; Next.js</strong> on the front end and <strong className="text-foreground">distributed systems</strong> on the back.
+              As <strong className="text-foreground">founder of Aithrex</strong>, I'm the sole engineer building multi-tenant SaaS end to end — Infratrix, Cupola &amp; Aspirely —
+              with AI-assisted engineering (<strong className="text-foreground">Claude Code, Cursor, MCP</strong>, multi-agent workflows).
             </motion.p>
 
             {/* Summary */}

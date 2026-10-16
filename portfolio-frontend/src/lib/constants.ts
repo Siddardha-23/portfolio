@@ -4,7 +4,7 @@ export const PERSONAL_INFO = {
   email: "mannesiddardha@gmail.com",
   linkedin: "linkedin.com/in/harshith-siddardha",
   github: "github.com/Siddardha-23",
-  summary: "Cloud, DevOps and Applied-AI engineer. MS in Information Technology from Arizona State University, graduated May 2026 with a 4.0. I design and ship production systems end to end — multi-tenant SaaS on Postgres RLS, agentic AI pipelines on Vertex and Bedrock, and the CI/CD, observability and security work that keeps them running. Seeking full-time roles where infrastructure and applied AI meet."
+  summary: "Software engineer in Tempe, Arizona, building across the full stack and the cloud. MS in Information Technology from Arizona State University, graduated 2026 with a 4.0 GPA. 3+ years of production experience in Java, Python and TypeScript, with React and Next.js on the front end and distributed systems on the back. As founder of Aithrex, I'm the sole engineer designing, shipping and operating multi-tenant SaaS end to end — Infratrix, Cupola and Aspirely — covering backend, cloud infrastructure, CI/CD, observability and security. I build with AI-assisted engineering: Claude Code, Cursor, the Model Context Protocol (MCP) and multi-agent workflows. Seeking full-time software, cloud and applied-AI roles."
 };
 
 export const EDUCATION = [
